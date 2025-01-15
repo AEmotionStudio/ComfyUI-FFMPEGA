@@ -1,0 +1,595 @@
+"""Base class for CLI-based LLM connectors.
+
+Consolidates the shared subprocess boilerplate (process creation,
+timeout handling, error handling, return-code checking) so that
+individual CLI connectors only need to specify:
+
+- Binary names to search for
+- How to build the command list
+- How to prepare the stdin payload
+- Install instructions for the error message
+"""
+
+import asyncio
+import json
+import logging
+import random
+import re
+from abc import abstractmethod
+from pathlib import Path
+from typing import Optional, AsyncIterator
+
+from .base import LLMConnector, LLMResponse, LLMProvider
+from .cli_utils import resolve_cli_binary
+
+logger = logging.getLogger("ffmpega")
+
+
+def _levenshtein(a: str, b: str) -> int:
+    """Compute the Levenshtein edit distance between two strings."""
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    row = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        new_row = [i]
+        for j, cb in enumerate(b, 1):
+            cost = 0 if ca == cb else 1
+            new_row.append(min(new_row[j - 1] + 1, row[j] + 1, row[j - 1] + cost))
+        row = new_row
+    return row[-1]
+
+
+def _fuzzy_match_tool_name(
+    name: str,
+    known_names: set[str],
+    max_distance: int = 2,
+) -> Optional[str]:
+    """Return the closest known tool name within *max_distance* edits.
+
+    Returns ``None`` if the closest match exceeds *max_distance* so that
+    callers can decide whether to accept or reject the hallucination.
+    """
+    if not known_names or name in known_names:
+        return name
+    best_match: Optional[str] = None
+    best_dist = max_distance + 1
+    for candidate in known_names:
+        dist = _levenshtein(name.lower(), candidate.lower())
+        if dist < best_dist:
+            best_dist = dist
+            best_match = candidate
+    return best_match if best_dist <= max_distance else None
+
+# Marker the LLM uses to request a tool call
+_TOOL_CALL_MARKER = "TOOL_CALL:"
+
+
+class CLIConnectorBase(LLMConnector):
+    """Abstract base for connectors that invoke a CLI binary via subprocess.
+
+    Subclasses must implement :meth:`_binary_names`, :meth:`_build_cmd`,
+    :meth:`_prepare_stdin`, :meth:`_model_name`, :meth:`_provider`,
+    and :meth:`_install_hint`.
+    """
+
+    # ------------------------------------------------------------------
+    # Subclass hooks (override these)
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    def _binary_names(self) -> tuple[str, ...]:
+        """Return candidate binary names, e.g. ``("qwen", "qwen.cmd")``."""
+
+    @abstractmethod
+    def _build_cmd(self, binary_path: str, prompt: str,
+                   system_prompt: Optional[str]) -> list[str]:
+        """Build the full command list including resolved binary path."""
+
+    @abstractmethod
+    def _prepare_stdin(self, prompt: str,
+                       system_prompt: Optional[str]) -> Optional[bytes]:
+        """Return bytes to pipe to stdin, or ``None`` for no stdin."""
+
+    @abstractmethod
+    def _model_name(self) -> str:
+        """Return the model identifier string, e.g. ``"qwen-cli"``."""
+
+    @abstractmethod
+    def _provider(self) -> LLMProvider:
+        """Return the LLMProvider enum value."""
+
+    @abstractmethod
+    def _install_hint(self) -> str:
+        """Return a multi-line install instruction for the error message."""
+
+    def _log_tag(self) -> str:
+        """Short tag for log messages.  Defaults to class name."""
+        return self.__class__.__name__
+
+    @property
+    def supports_vision(self) -> bool:
+        """CLI agents can view files on disk natively."""
+        return True
+
+    # ------------------------------------------------------------------
+    # Shared implementation
+    # ------------------------------------------------------------------
+
+    def _resolve_binary(self) -> str:
+        """Resolve the full path to the binary, or raise RuntimeError."""
+        path = resolve_cli_binary(*self._binary_names())
+        if not path:
+            raise RuntimeError(self._install_hint())
+        return path
+
+    # Retry settings for transient errors (rate limits, capacity)
+    _MAX_RETRIES = 3
+    _INITIAL_BACKOFF = 5.0  # seconds
+    _BACKOFF_MULTIPLIER = 3.0
+    _BACKOFF_JITTER = 0.25  # ±25%
+
+    @staticmethod
+    def _is_retryable_error(stderr_text: str) -> bool:
+        """Check if stderr indicates a transient rate-limit error."""
+        lower = stderr_text.lower()
+        return any(indicator in lower for indicator in (
+            "429",
+            "resource_exhausted",
+            "capacity_exhausted",
+            "rate limit",
+            "ratelimitexceeded",
+            "no capacity available",
+            "quota",
+        ))
+
+    @staticmethod
+    def _extract_clean_error(stderr_text: str) -> str:
+        """Extract a concise error message from verbose CLI stderr.
+
+        Looks for the most informative line instead of dumping the
+        entire stack trace.  Falls back to the first 200 chars if
+        no clean message can be found.
+        """
+        # Try to extract a JSON error message
+        msg_match = re.search(
+            r'"message"\s*:\s*"([^"]+)"', stderr_text,
+        )
+        if msg_match:
+            return msg_match.group(1)
+
+        # Look for common error summary lines
+        for line in stderr_text.splitlines():
+            stripped = line.strip()
+            # Skip deprecation warnings, stack frames, and empty lines
+            if not stripped:
+                continue
+            if stripped.startswith(("(", "at ", "File ")):
+                continue
+            if "DeprecationWarning" in stripped:
+                continue
+            if "Hook registry" in stripped:
+                continue
+            if "Loaded cached" in stripped:
+                continue
+            # Found a meaningful line
+            if any(kw in stripped.lower() for kw in (
+                "error", "failed", "exhausted", "capacity", "limit",
+                "timeout", "refused", "denied",
+            )):
+                return stripped[:300]
+
+        # Fallback: first 200 chars
+        return stderr_text[:200].strip()
+
+    async def generate(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+    ) -> LLMResponse:
+        """Run the CLI binary and capture text output.
+
+        Retries up to ``_MAX_RETRIES`` times with exponential backoff
+        when the CLI fails due to transient rate-limit errors.
+        """
+
+        binary_path = self._resolve_binary()
+        cmd = self._build_cmd(binary_path, prompt, system_prompt)
+        stdin_data = self._prepare_stdin(prompt, system_prompt)
+
+        # Sandbox: restrict CLI agent workspace to the node directory
+        # (prevents access to user's home dir, SSH keys, configs, etc.)
+        node_dir = str(Path(__file__).resolve().parent.parent.parent)
+
+        logger.debug("[%s] Running: %s (cwd=%s)", self._log_tag(), " ".join(cmd[:3]), node_dir)
+
+        last_error: Exception | None = None
+        backoff = self._INITIAL_BACKOFF
+
+        for attempt in range(1, self._MAX_RETRIES + 1):
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=node_dir,
+                )
+
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(input=stdin_data),
+                    timeout=self.config.timeout,
+                )
+            except asyncio.TimeoutError:
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except Exception:
+                    pass
+                raise TimeoutError(
+                    f"{self._log_tag()} timed out after {self.config.timeout}s"
+                )
+            except FileNotFoundError:
+                raise RuntimeError(self._install_hint())
+
+            if proc.returncode != 0:
+                err_raw = stderr.decode("utf-8", errors="replace").strip()
+
+                if self._is_retryable_error(err_raw) and attempt < self._MAX_RETRIES:
+                    clean_msg = self._extract_clean_error(err_raw)
+                    jitter = 1.0 + random.uniform(-self._BACKOFF_JITTER, self._BACKOFF_JITTER)
+                    delay = backoff * jitter
+                    logger.warning(
+                        "[%s] Attempt %d/%d failed (rate limit): %s — retrying in %.1fs",
+                        self._log_tag(), attempt, self._MAX_RETRIES, clean_msg, delay,
+                    )
+                    last_error = RuntimeError(
+                        f"{self._log_tag()} rate-limited: {clean_msg}"
+                    )
+                    await asyncio.sleep(delay)
+                    backoff *= self._BACKOFF_MULTIPLIER
+                    continue
+
+                # Non-retryable or final attempt — raise with clean message
+                clean_msg = self._extract_clean_error(err_raw)
+                raise RuntimeError(
+                    f"{self._log_tag()} failed (exit {proc.returncode}): {clean_msg}"
+                )
+
+            # Success
+            content = stdout.decode("utf-8", errors="replace").strip()
+            if attempt > 1:
+                logger.info("[%s] Succeeded on attempt %d/%d", self._log_tag(), attempt, self._MAX_RETRIES)
+            return self._parse_raw_output(content, stdin_data)
+
+        # Should not reach here, but just in case
+        raise last_error or RuntimeError(f"{self._log_tag()} failed after {self._MAX_RETRIES} attempts")
+
+    def _parse_raw_output(
+        self,
+        raw_output: str,
+        stdin_data: Optional[bytes] = None,
+    ) -> LLMResponse:
+        """Parse raw CLI output into an LLMResponse.
+
+        Calls ``_parse_json_output`` (overridden by subclasses to extract
+        structured JSON with native token stats). If that returns ``None``
+        or yields no token counts, falls back to char-based estimation.
+        """
+        response = self._parse_json_output(raw_output)
+        if response is not None:
+            # If JSON parsing yielded token counts, use them directly
+            if response.prompt_tokens is not None or response.completion_tokens is not None:
+                return response
+            # JSON parsed content but no tokens — fill in estimates
+            content = response.content
+        else:
+            content = raw_output
+
+        _CPC = 4  # chars per token estimate
+        est_prompt = len(stdin_data) // _CPC if stdin_data else 0
+        est_completion = max(1, len(content) // _CPC) if content else 0
+
+        return LLMResponse(
+            content=content,
+            model=self._model_name(),
+            provider=self._provider(),
+            prompt_tokens=est_prompt,
+            completion_tokens=est_completion,
+            total_tokens=est_prompt + est_completion,
+        )
+
+    def _parse_json_output(self, raw_output: str) -> Optional[LLMResponse]:
+        """Parse structured JSON from CLI output.
+
+        Subclasses override this to extract content and native token stats.
+        Return ``None`` if the output is not valid JSON (base class will
+        fall back to char-based estimation).
+        """
+        return None
+
+    @staticmethod
+    def _first_not_none(a: Optional[int], b: Optional[int]) -> Optional[int]:
+        """Return the first non-None value (preserves valid 0)."""
+        return a if a is not None else b
+
+    async def generate_stream(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+    ) -> AsyncIterator[str]:
+        """Streaming not supported — falls back to single generate call."""
+        response = await self.generate(prompt, system_prompt)
+        yield response.content
+
+    async def list_models(self) -> list[str]:
+        """Return the single CLI model identifier."""
+        return [self._model_name()]
+
+    async def is_available(self) -> bool:
+        """Check if the binary is findable."""
+        return resolve_cli_binary(*self._binary_names()) is not None
+
+    # ------------------------------------------------------------------
+    # Tool calling (prompt-based simulation)
+    # ------------------------------------------------------------------
+
+    async def chat_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+    ) -> LLMResponse:
+        """Simulate tool calling via prompt engineering.
+
+        Since CLI binaries only accept text in/out, we embed tool
+        definitions in the prompt and parse structured markers from
+        the response.
+
+        Args:
+            messages: Conversation history.
+            tools: Tool definitions in OpenAI-compatible format.
+
+        Returns:
+            LLMResponse with content and/or tool_calls.
+        """
+        # Build the full prompt from message history
+        system_prompt, user_prompt = self._build_tool_prompt(messages, tools)
+        response = await self.generate(user_prompt, system_prompt)
+
+        # Try to parse tool calls from the response
+        tool_calls = self._parse_tool_calls(response.content)
+
+        if tool_calls:
+            # Strip TOOL_CALL lines from content to keep it clean
+            clean_content = self._strip_tool_calls(response.content)
+            return LLMResponse(
+                content=clean_content,
+                model=response.model,
+                provider=response.provider,
+                prompt_tokens=response.prompt_tokens,
+                completion_tokens=response.completion_tokens,
+                total_tokens=response.total_tokens,
+                tool_calls=tool_calls,
+            )
+
+        return response
+
+    @staticmethod
+    def _build_tool_prompt(
+        messages: list[dict],
+        tools: list[dict],
+    ) -> tuple[Optional[str], str]:
+        """Convert messages + tool defs into a single system/user prompt pair.
+
+        Returns:
+            (system_prompt, user_prompt) tuple.
+        """
+        system_parts = []
+        conversation_parts = []
+
+        for msg in messages:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if role == "system":
+                system_parts.append(content)
+            elif role == "user":
+                conversation_parts.append(f"USER: {content}")
+            elif role == "assistant":
+                conversation_parts.append(f"ASSISTANT: {content}")
+            elif role == "tool":
+                conversation_parts.append(f"TOOL_RESULT: {content}")
+
+        # Embed tool definitions in the system prompt
+        if tools:
+            tool_descriptions = []
+            for tool in tools:
+                func = tool.get("function", {})
+                name = func.get("name", "")
+                desc = func.get("description", "")
+                params = func.get("parameters", {})
+                props = params.get("properties", {})
+                required = params.get("required", [])
+
+                param_strs = []
+                for pname, pinfo in props.items():
+                    req_marker = " (required)" if pname in required else ""
+                    ptype = pinfo.get("type", "string")
+                    pdesc = pinfo.get("description", "")
+                    param_strs.append(f"    - {pname} ({ptype}{req_marker}): {pdesc}")
+
+                param_block = "\n".join(param_strs) if param_strs else "    (no parameters)"
+                tool_descriptions.append(
+                    f"  {name}: {desc}\n  Parameters:\n{param_block}"
+                )
+
+            available_names = {
+                t.get("function", {}).get("name") for t in tools
+            } - {None}
+            usage_lines = [
+                "IMPORTANT: You MUST use tools before producing a pipeline.\n",
+            ]
+            if "search_skills" in available_names:
+                usage_lines.append(
+                    "- Call search_skills once to discover correct skill names\n"
+                )
+            if "get_skill_details" in available_names:
+                usage_lines.append(
+                    "- ALWAYS call get_skill_details to learn valid parameters\n"
+                )
+            if "search_skills" in available_names:
+                usage_lines.append(
+                    "- Do NOT guess or hallucinate skill names — only use names "
+                    "returned by search_skills\n"
+                )
+            usage_lines.append(
+                "- Output your TOOL_CALL lines FIRST, then wait for results\n"
+                "- Only output the final JSON pipeline AFTER receiving tool "
+                "results (without any TOOL_CALL markers)\n"
+            )
+
+            # Concrete correct/wrong examples help weak models get the format right
+            available_list = ", ".join(sorted(available_names))
+            format_examples = (
+                f"\nCORRECT (exactly this format, tool name spelled correctly):\n"
+                f'TOOL_CALL: {{"name": "{sorted(available_names)[0] if available_names else "tool_name"}", "arguments": {{"key": "value"}}}}\n'
+                f"\nWRONG (do NOT do these):\n"
+                f'  TOOL_CALL: {{name: search_skills, arguments: {{}}}}      <- unquoted keys\n'
+                f'  TOOL_CALL: {{"name": "search_skill"}}                   <- missing arguments key\n'
+                f'  TOOL_CALL: {{"function": {{"name": "search_skills"}}}}  <- wrong schema\n'
+                f'  tool_call: {{"name": "search_skills", ...}}             <- wrong case\n'
+                f"\nAvailable tool names (use EXACTLY these spellings): {available_list}\n"
+                "Each call must be on its own line starting with TOOL_CALL:\n"
+            )
+
+            tool_section = (
+                "\n\n=== AVAILABLE TOOLS ===\n"
+                "You have the following tools available. To call a tool, output a line "
+                "in this exact format (one per line, valid JSON only):\n"
+                f'{_TOOL_CALL_MARKER} {{"name": "tool_name", "arguments": {{"key": "value"}}}}\n'
+                + format_examples + "\n"
+                + "".join(usage_lines) + "\n"
+                "Tools:\n" + "\n\n".join(tool_descriptions) +
+                "\n=== END TOOLS ===\n"
+            )
+            system_parts.append(tool_section)
+
+        system_prompt = "\n\n".join(system_parts) if system_parts else None
+        user_prompt = "\n\n".join(conversation_parts)
+
+        return system_prompt, user_prompt
+
+    @staticmethod
+    def _parse_tool_calls(
+        text: str,
+        known_tool_names: Optional[set[str]] = None,
+    ) -> Optional[list[dict]]:
+        """Parse TOOL_CALL: markers from CLI output.
+
+        Performs two layers of defence against hallucinated output:
+
+        1. **Schema validation** — each parsed JSON payload must contain
+           both a ``"name"`` key (non-empty string) and an ``"arguments"``
+           key (dict).  Malformed payloads are logged and skipped rather
+           than silently producing broken tool calls.
+
+        2. **Fuzzy name correction** — when ``known_tool_names`` is
+           provided and the model uses a slightly misspelled name (e.g.
+           ``"search_skill"`` instead of ``"search_skills"``), the closest
+           known name within edit-distance 2 is substituted automatically
+           and a warning is emitted.  If no close match exists, the call
+           is skipped with a warning.
+
+        Args:
+            text: Raw LLM output that may contain ``TOOL_CALL:`` lines.
+            known_tool_names: Optional set of valid tool names used for
+                fuzzy correction.  Pass ``None`` to skip name validation.
+
+        Returns:
+            List of tool call dicts, or ``None`` if none were found/valid.
+        """
+        pattern = re.compile(
+            r'TOOL_CALL:\s*(\{.*?\})\s*$',
+            re.MULTILINE,
+        )
+        matches = pattern.findall(text)
+
+        if not matches:
+            return None
+
+        tool_calls = []
+        for i, match in enumerate(matches):
+            # ── 1. Parse JSON ──────────────────────────────────────────
+            try:
+                parsed = json.loads(match)
+            except json.JSONDecodeError:
+                logger.warning(
+                    "Tool call JSON parse error (call %d) — skipping: %s", i, match
+                )
+                continue
+
+            # ── 2. Schema validation ───────────────────────────────────
+            name = parsed.get("name")
+            arguments = parsed.get("arguments")
+
+            if not isinstance(name, str) or not name:
+                logger.warning(
+                    "Tool call missing/invalid 'name' key (call %d) — skipping: %s",
+                    i, match,
+                )
+                continue
+
+            if not isinstance(arguments, dict):
+                # Tolerate missing arguments by defaulting to empty dict
+                if arguments is None and "arguments" not in parsed:
+                    logger.warning(
+                        "Tool call missing 'arguments' key (call %d) — defaulting to {}: %s",
+                        i, match,
+                    )
+                    arguments = {}
+                else:
+                    logger.warning(
+                        "Tool call 'arguments' must be a dict (call %d) — skipping: %s",
+                        i, match,
+                    )
+                    continue
+
+            # ── 3. Fuzzy name correction ───────────────────────────────
+            if known_tool_names:
+                corrected = _fuzzy_match_tool_name(name, known_tool_names)
+                if corrected is None:
+                    logger.warning(
+                        "Hallucinated tool name '%s' has no close match in known "
+                        "tools %s (call %d) — skipping",
+                        name, sorted(known_tool_names), i,
+                    )
+                    continue
+                if corrected != name:
+                    logger.warning(
+                        "Fuzzy-corrected tool name '%s' → '%s' (call %d)",
+                        name, corrected, i,
+                    )
+                    name = corrected
+
+            tool_calls.append({
+                "id": f"cli_call_{i}",
+                "function": {
+                    "name": name,
+                    "arguments": arguments,
+                },
+            })
+
+        return tool_calls if tool_calls else None
+
+    @staticmethod
+    def _strip_tool_calls(text: str) -> str:
+        """Remove TOOL_CALL: lines from text, returning remaining content."""
+        lines = text.split("\n")
+        clean = [
+            line for line in lines
+            if not line.strip().startswith(_TOOL_CALL_MARKER)
+        ]
+        return "\n".join(clean).strip()
+

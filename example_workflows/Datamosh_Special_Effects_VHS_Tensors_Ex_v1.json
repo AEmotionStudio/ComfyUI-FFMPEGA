@@ -1,0 +1,518 @@
+{
+  "id": "bfe9cfaa-ab53-4981-ba65-6a9bf53d55f5",
+  "revision": 0,
+  "last_node_id": 67,
+  "last_link_id": 247,
+  "nodes": [
+    {
+      "id": 14,
+      "type": "PreviewAny",
+      "pos": [
+        -714.9896412413187,
+        -5958.5141051055
+      ],
+      "size": [
+        377.9481178804681,
+        469.0949791723042
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 245
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.12.3",
+        "Node name for S&R": "PreviewAny"
+      },
+      "widgets_values": [
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "id": 15,
+      "type": "PreviewAny",
+      "pos": [
+        -330.9401458138841,
+        -5956.704155180603
+      ],
+      "size": [
+        324.02822578125006,
+        444.5335867187496
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 244
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.12.3",
+        "Node name for S&R": "PreviewAny"
+      },
+      "widgets_values": [
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "id": 16,
+      "type": "PreviewAny",
+      "pos": [
+        -147.80736673039428,
+        -6196.190853107587
+      ],
+      "size": [
+        210,
+        166
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 243
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.12.3",
+        "Node name for S&R": "PreviewAny"
+      },
+      "widgets_values": [
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "id": 65,
+      "type": "FFMPEGAgent",
+      "pos": [
+        -549.6182576420167,
+        -6639.787847245359
+      ],
+      "size": [
+        400,
+        612
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images_a",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 237
+        },
+        {
+          "name": "image_a",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "audio_a",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": 239
+        },
+        {
+          "name": "video_a",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        },
+        {
+          "name": "image_path_a",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        },
+        {
+          "name": "text_a",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        },
+        {
+          "name": "images_b",
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "audio_b",
+          "type": "AUDIO",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": [
+            246
+          ]
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": [
+            247
+          ]
+        },
+        {
+          "name": "video_path",
+          "type": "STRING",
+          "links": [
+            243
+          ]
+        },
+        {
+          "name": "command_log",
+          "type": "STRING",
+          "links": [
+            244
+          ]
+        },
+        {
+          "name": "analysis",
+          "type": "STRING",
+          "links": [
+            245
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "AEmotionStudio/ComfyUI-FFMPEGA",
+        "ver": "955ae34ad83eca0df3bb11d1ad3883cd9453b570",
+        "Node name for S&R": "FFMPEGAgent"
+      },
+      "widgets_values": [
+        "Apply datamosh glitch effect, add chromatic aberration with strong RGB split, pixelate slightly, add ghost trails",
+        "",
+        "gemini-cli",
+        "standard",
+        930670269111261,
+        "fixed",
+        "",
+        false,
+        false,
+        "",
+        "http://localhost:11434",
+        "",
+        "",
+        -1,
+        "auto",
+        true,
+        true,
+        false,
+        "",
+        "*.mp4",
+        4,
+        true,
+        true
+      ],
+      "color": "#2a3a5a",
+      "bgcolor": "#1a2a4a"
+    },
+    {
+      "id": 66,
+      "type": "VHS_VideoCombine",
+      "pos": [
+        135.64747371288013,
+        -7377.517619040788
+      ],
+      "size": [
+        618.3260085603797,
+        1410.028665194674
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 246
+        },
+        {
+          "name": "audio",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": 247
+        },
+        {
+          "name": "meta_batch",
+          "shape": 7,
+          "type": "VHS_BatchManager",
+          "link": null
+        },
+        {
+          "name": "vae",
+          "shape": 7,
+          "type": "VAE",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "Filenames",
+          "type": "VHS_FILENAMES",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfyui-videohelpersuite",
+        "ver": "1.7.9",
+        "Node name for S&R": "VHS_VideoCombine"
+      },
+      "widgets_values": {
+        "frame_rate": 24,
+        "loop_count": 0,
+        "filename_prefix": "FFMPEGA_VHS",
+        "format": "video/h264-mp4",
+        "pix_fmt": "yuv420p",
+        "crf": 19,
+        "save_metadata": true,
+        "trim_to_audio": false,
+        "pingpong": false,
+        "save_output": true,
+        "videopreview": {
+          "hidden": false,
+          "paused": false,
+          "params": {
+            "filename": "FFMPEGA_VHS_00003-audio.mp4",
+            "subfolder": "",
+            "type": "output",
+            "format": "video/h264-mp4",
+            "frame_rate": 24,
+            "workflow": "FFMPEGA_VHS_00003.png",
+            "fullpath": "/home/tealdisk/ComfyUI/output/FFMPEGA_VHS_00003-audio.mp4"
+          }
+        }
+      }
+    },
+    {
+      "id": 67,
+      "type": "Note",
+      "pos": [
+        -511.70897532507826,
+        -7144.832863343279
+      ],
+      "size": [
+        325.94769531249995,
+        352.2622656249996
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "💡 Tip: While this workflow demonstrates the images_a connection, video_a is the recommended input for most use cases. The images_a input requires loading every frame as a tensor into VRAM/RAM, which can consume significant memory — especially with longer or higher-resolution clips. In contrast, video_a (and other path-based connections) passes only a lightweight file path string, so there is no tensor loading overhead, meaning dramatically lower memory usage for complex edits.\n\n"
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 12,
+      "type": "VHS_LoadVideo",
+      "pos": [
+        -1493.409448986033,
+        -7377.517619040788
+      ],
+      "size": [
+        616.7350906982422,
+        1384.8623834635416
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "meta_batch",
+          "shape": 7,
+          "type": "VHS_BatchManager",
+          "link": null
+        },
+        {
+          "name": "vae",
+          "shape": 7,
+          "type": "VAE",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            237
+          ]
+        },
+        {
+          "name": "frame_count",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": [
+            164,
+            183,
+            239
+          ]
+        },
+        {
+          "name": "video_info",
+          "type": "VHS_VIDEOINFO",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfyui-videohelpersuite",
+        "ver": "1.7.9",
+        "Node name for S&R": "VHS_LoadVideo"
+      },
+      "widgets_values": {
+        "video": "A_podcast_on_202602150001_cergk.mp4",
+        "force_rate": 0,
+        "custom_width": 0,
+        "custom_height": 0,
+        "frame_load_cap": 0,
+        "skip_first_frames": 0,
+        "select_every_nth": 1,
+        "format": "None",
+        "videopreview": {
+          "hidden": false,
+          "paused": false,
+          "params": {
+            "filename": "A_podcast_on_202602150001_cergk.mp4",
+            "type": "input",
+            "format": "video/mp4",
+            "force_rate": 0,
+            "custom_width": 0,
+            "custom_height": 0,
+            "frame_load_cap": 0,
+            "skip_first_frames": 0,
+            "select_every_nth": 1
+          }
+        }
+      }
+    }
+  ],
+  "links": [
+    [
+      164,
+      12,
+      2,
+      44,
+      16,
+      "AUDIO"
+    ],
+    [
+      183,
+      12,
+      2,
+      45,
+      20,
+      "AUDIO"
+    ],
+    [
+      237,
+      12,
+      0,
+      65,
+      0,
+      "IMAGE"
+    ],
+    [
+      239,
+      12,
+      2,
+      65,
+      2,
+      "AUDIO"
+    ],
+    [
+      243,
+      65,
+      2,
+      16,
+      0,
+      "STRING"
+    ],
+    [
+      244,
+      65,
+      3,
+      15,
+      0,
+      "STRING"
+    ],
+    [
+      245,
+      65,
+      4,
+      14,
+      0,
+      "STRING"
+    ],
+    [
+      246,
+      65,
+      0,
+      66,
+      0,
+      "IMAGE"
+    ],
+    [
+      247,
+      65,
+      1,
+      66,
+      1,
+      "AUDIO"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.28966437973668835,
+      "offset": [
+        3531.262242647668,
+        7681.978959234247
+      ]
+    },
+    "workflowRendererVersion": "LG",
+    "frontendVersion": "1.38.13",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}
