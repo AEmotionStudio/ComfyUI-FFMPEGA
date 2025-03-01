@@ -8,6 +8,17 @@ import os
 import re
 from pathlib import Path
 
+# Common video, image, and audio extensions
+ALLOWED_EXTENSIONS = {
+    # Video
+    '.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv', '.wmv', '.m4v', '.mpg', '.mpeg', '.3gp', '.ts',
+    '.m2ts', '.mts', '.vob', '.ogv',
+    # Image (often used as input)
+    '.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif', '.tiff', '.heic',
+    # Audio
+    '.mp3', '.wav', '.aac', '.flac', '.m4a', '.ogg', '.wma', '.opus'
+}
+
 
 def validate_video_path(path: str, must_exist: bool = True) -> str:
     """Validate and resolve a video file path.
@@ -21,7 +32,7 @@ def validate_video_path(path: str, must_exist: bool = True) -> str:
 
     Raises:
         ValueError: If the path is empty, contains traversal sequences,
-                     or doesn't exist (when must_exist is True).
+                     is not a supported file type, or doesn't exist (when must_exist is True).
     """
     if not path or not path.strip():
         raise ValueError("Path cannot be empty")
@@ -32,6 +43,12 @@ def validate_video_path(path: str, must_exist: bool = True) -> str:
     if ".." in Path(path).parts:
         raise ValueError(
             f"Path contains directory traversal (..): {path}"
+        )
+
+    if resolved.suffix.lower() not in ALLOWED_EXTENSIONS:
+        raise ValueError(
+            f"Invalid file extension: {resolved.suffix}. "
+            f"Allowed: {sorted(list(ALLOWED_EXTENSIONS))}"
         )
 
     if must_exist and not resolved.exists():
@@ -93,5 +110,39 @@ def sanitize_text_param(text: str) -> str:
     text = text.replace(";", "\\;")
     # Escape % (used for time codes in drawtext)
     text = text.replace("%", "%%")
+    # Escape comma (used for filter delimiters)
+    text = text.replace(",", "\\,")
 
     return text
+
+
+def redact_secret(secret: str, visible_chars: int = 4) -> str:
+    """Redact a secret string, showing only the last few characters.
+
+    Args:
+        secret: The secret value to redact.
+        visible_chars: Number of trailing characters to keep visible.
+
+    Returns:
+        Redacted string like '****abcd', or '****' if too short.
+    """
+    if not secret:
+        return ""
+    if len(secret) <= visible_chars:
+        return "****"
+    return "****" + secret[-visible_chars:]
+
+
+def sanitize_api_key(text: str, api_key: str) -> str:
+    """Remove all occurrences of an API key from a text string.
+
+    Args:
+        text: The text that may contain the API key.
+        api_key: The API key to scrub.
+
+    Returns:
+        Text with all key occurrences replaced by a redacted placeholder.
+    """
+    if not text or not api_key:
+        return text or ""
+    return text.replace(api_key, redact_secret(api_key))

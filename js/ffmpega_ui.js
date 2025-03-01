@@ -36,29 +36,92 @@ app.registerExtension({
                         submenu: {
                             options: [
                                 {
-                                    content: "Cinematic",
-                                    callback: () => setPrompt(this, "Apply cinematic letterbox and color grading")
+                                    content: "Cinematic & Style",
+                                    submenu: {
+                                        options: [
+                                            {
+                                                content: "Cinematic",
+                                                callback: () => setPrompt(this, "Apply cinematic letterbox and color grading")
+                                            },
+                                            {
+                                                content: "Vintage",
+                                                callback: () => setPrompt(this, "Create a vintage film look with grain")
+                                            },
+                                            {
+                                                content: "Noir",
+                                                callback: () => setPrompt(this, "Black and white film noir style with high contrast")
+                                            }
+                                        ]
+                                    }
                                 },
                                 {
-                                    content: "Vintage",
-                                    callback: () => setPrompt(this, "Create a vintage film look with grain")
+                                    content: "Format & Social",
+                                    submenu: {
+                                        options: [
+                                            {
+                                                content: "Social Vertical (9:16)",
+                                                callback: () => setPrompt(this, "Crop to vertical 9:16 for TikTok/Reels")
+                                            },
+                                            {
+                                                content: "Instagram Square (1:1)",
+                                                callback: () => setPrompt(this, "Crop to square 1:1 format")
+                                            },
+                                            {
+                                                content: "Compress for Web",
+                                                callback: () => setPrompt(this, "Compress for web delivery, optimize file size")
+                                            }
+                                        ]
+                                    }
                                 },
                                 {
-                                    content: "Social Vertical (9:16)",
-                                    callback: () => setPrompt(this, "Crop to vertical 9:16 for TikTok/Reels")
+                                    content: "Time & Motion",
+                                    submenu: {
+                                        options: [
+                                            {
+                                                content: "Slow Motion (0.5x)",
+                                                callback: () => setPrompt(this, "Create smooth slow motion at 0.5x speed")
+                                            },
+                                            {
+                                                content: "Speed Up (2x)",
+                                                callback: () => setPrompt(this, "Speed up the video 2x while keeping audio pitch")
+                                            },
+                                            {
+                                                content: "Reverse",
+                                                callback: () => setPrompt(this, "Play the video in reverse")
+                                            },
+                                            {
+                                                content: "Stabilize",
+                                                callback: () => setPrompt(this, "Stabilize shaky footage")
+                                            }
+                                        ]
+                                    }
                                 },
                                 {
-                                    content: "Compress for Web",
-                                    callback: () => setPrompt(this, "Compress for web delivery, optimize file size")
+                                    content: "Audio",
+                                    submenu: {
+                                        options: [
+                                            {
+                                                content: "Remove Audio",
+                                                callback: () => setPrompt(this, "Remove all audio tracks")
+                                            },
+                                            {
+                                                content: "Boost Volume",
+                                                callback: () => setPrompt(this, "Increase audio volume")
+                                            }
+                                        ]
+                                    }
                                 },
+                                null, // Separator
                                 {
-                                    content: "Slow Motion (0.5x)",
-                                    callback: () => setPrompt(this, "Create smooth slow motion at 0.5x speed")
-                                },
-                                {
-                                    content: "Speed Up (2x)",
-                                    callback: () => setPrompt(this, "Speed up the video 2x while keeping audio pitch")
-                                },
+                                    content: "Clear Prompt",
+                                    callback: () => {
+                                        const promptWidget = this.widgets?.find(w => w.name === "prompt");
+                                        if (promptWidget) {
+                                            promptWidget.value = "";
+                                            this.setDirtyCanvas(true, true);
+                                        }
+                                    }
+                                }
                             ]
                         }
                     },
@@ -117,7 +180,15 @@ app.registerExtension({
 function setPrompt(node, text) {
     const promptWidget = node.widgets?.find(w => w.name === "prompt");
     if (promptWidget) {
-        promptWidget.value = text;
+        const currentText = promptWidget.value;
+        // If prompt is empty, just set it
+        if (!currentText || currentText.trim() === "") {
+            promptWidget.value = text;
+        }
+        // If not empty, append if not already present
+        else if (!currentText.includes(text)) {
+            promptWidget.value = currentText.trim() + " and " + text;
+        }
         node.setDirtyCanvas(true, true);
     }
 }

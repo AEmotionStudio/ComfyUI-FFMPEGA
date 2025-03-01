@@ -27,6 +27,18 @@ class LLMConfig:
     timeout: float = 300.0
     extra_options: dict = field(default_factory=dict)
 
+    def __repr__(self) -> str:
+        """Redact api_key in string representation."""
+        key_display = ""
+        if self.api_key:
+            visible = self.api_key[-4:] if len(self.api_key) > 4 else "****"
+            key_display = f"****{visible}"
+        return (
+            f"LLMConfig(provider={self.provider!r}, model={self.model!r}, "
+            f"base_url={self.base_url!r}, api_key={key_display!r}, "
+            f"temperature={self.temperature}, max_tokens={self.max_tokens})"
+        )
+
 
 @dataclass
 class LLMResponse:

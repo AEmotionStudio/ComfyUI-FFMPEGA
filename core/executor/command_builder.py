@@ -104,11 +104,13 @@ class FFMPEGCommand:
             args.extend(["-filter_complex", self.complex_filter])
         else:
             vf = self.video_filters.to_string()
-            af = self.audio_filters.to_string()
             if vf:
                 args.extend(["-vf", vf])
-            if af:
-                args.extend(["-af", af])
+
+        # Audio filters are always applied via -af (independent of filter_complex)
+        af = self.audio_filters.to_string()
+        if af:
+            args.extend(["-af", af])
 
         # Output options
         args.extend(self.output_options)
@@ -145,6 +147,18 @@ class CommandBuilder:
         self._command.inputs.append(path_str)
         if options:
             self._command.input_options[path_str] = options
+        return self
+
+    def add_input_options(
+        self,
+        path: str | Path,
+        options: list[str],
+    ) -> "CommandBuilder":
+        """Add options to an existing input."""
+        path_str = str(path)
+        if path_str not in self._command.input_options:
+            self._command.input_options[path_str] = []
+        self._command.input_options[path_str].extend(options)
         return self
 
     def output(self, path: str | Path) -> "CommandBuilder":

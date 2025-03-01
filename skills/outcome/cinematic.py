@@ -209,3 +209,35 @@ def register_skills(registry: SkillRegistry) -> None:
         ],
         tags=["dynamic", "vibrant", "punch", "pop"],
     ))
+
+    # Color temperature
+    registry.register(Skill(
+        name="color_temperature",
+        category=SkillCategory.OUTCOME,
+        description="Adjust color temperature in Kelvin (warm/cool white balance)",
+        parameters=[
+            SkillParameter(
+                name="temperature",
+                type=ParameterType.INT,
+                description="Color temperature in Kelvin (2000=warm candle, 6500=neutral, 10000=cold blue)",
+                required=False,
+                default=6500,
+                min_value=1000,
+                max_value=40000,
+            ),
+            SkillParameter(
+                name="mix",
+                type=ParameterType.FLOAT,
+                description="Mix with original (0=no change, 1=full effect)",
+                required=False,
+                default=1.0,
+                min_value=0.0,
+                max_value=1.0,
+            ),
+        ],
+        examples=[
+            "color_temperature:temperature=3500 - Warm candlelight look",
+            "color_temperature:temperature=9000 - Cold blue moonlight look",
+        ],
+        tags=["temperature", "kelvin", "warm", "cool", "white_balance", "color"],
+    ))

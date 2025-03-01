@@ -5,7 +5,7 @@
 **An AI-powered FFMPEG agent node for ComfyUI — edit videos with natural language.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-1.6.1-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-1.7.1-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-4-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 
@@ -20,15 +20,11 @@
 
 ---
 
-## 🚀 What's New in v1.6.1 (February 9, 2026)
+## 🚀 What's New in v1.7.1 (February 9, 2026)
 
-**Audio Fixes + LLM Reliability + Test Suite**
+**API Key Security**
 
-*   **🔊 Audio Pipeline Fixes**: Fixed audio mux re-adding audio after `remove_audio`, fixed audio overwriting when `audio_input` is connected, and fixed audio template skill misrouting.
-*   **🧠 Smarter LLM Retry**: Auto-retry JSON parsing failures with a correction prompt and self-correction loop for non-JSON responses.
-*   **🧪 Test Suite**: Added test infrastructure with `conftest.py`, import-safe `__init__.py`, and `dev` extras — run with `uv run --extra dev pytest`.
-*   **🌀 Pulse Fix**: Rewrote `pulse` zoompan filter to resolve parsing issues.
-*   **📄 Skill Test Prompts**: Added `SKILL_TEST_PROMPTS.md` with copy-friendly test prompts for every skill category.
+*   **🔒 API Key Sanitization**: API keys are automatically redacted from all output paths — error messages, logs, tracebacks, `LLMConfig` repr, and ComfyUI workflow metadata embedded in output images/videos. Keys never leak into saved files.
 
 > 📄 **See [CHANGELOG.md](CHANGELOG.md) for the complete version history.**
 
@@ -54,8 +50,8 @@ Works with **Ollama** (local, free), **OpenAI** (GPT-4o), and **Anthropic** (Cla
 <tr>
 <td width="50%">
 
-### 🎨 100+ Skills
-Over 100 video editing skills across visual effects, audio processing, spatial transforms, temporal edits, encoding settings, cinematic presets, vintage looks, social media optimization, and creative effects.
+### 🎨 119+ Skills
+Over 119 video editing skills across visual effects, audio processing, spatial transforms, temporal edits, encoding, cinematic presets, vintage looks, social media, creative effects, audio visualization, and multi-input operations like grids, slideshows, and overlays.
 
 </td>
 <td width="50%">
@@ -121,6 +117,10 @@ Restart ComfyUI after installation.
 | `"Fade in from black and out at the end"` | Smooth intro/outro transitions |
 | `"Wipe reveal from the left"` | Directional wipe reveal animation |
 | `"Make it pulse like a heartbeat"` | Rhythmic zoom breathing effect |
+| `"Show audio waveform at the bottom"` | Audio visualization overlay |
+| `"Arrange these images in a grid"` | Multi-image grid collage |
+| `"Create a slideshow with fades"` | Image slideshow with transitions |
+| `"Overlay the logo in the corner"` | Picture-in-picture / watermark |
 
 ---
 
@@ -140,7 +140,7 @@ The main node — translates natural language into FFMPEG commands.
 | `preview_mode` | Quick preview instead of full render |
 | `output_path` | Custom output path (optional) |
 | `ollama_url` | Ollama server URL (default: `http://localhost:11434`) |
-| `api_key` | API key for cloud LLM providers |
+| `api_key` | API key for cloud LLM providers (auto-redacted from outputs) |
 
 | Output | Description |
 | :--- | :--- |
@@ -154,7 +154,7 @@ The main node — translates natural language into FFMPEG commands.
 
 ## 🎯 Skill System
 
-FFMPEGA includes a comprehensive skill system with **115+ operations** organized into categories. The AI agent selects the right skills based on your prompt.
+FFMPEGA includes a comprehensive skill system with **119+ operations** organized into categories. The AI agent selects the right skills based on your prompt.
 
 > 📄 **See [SKILLS_REFERENCE.md](SKILLS_REFERENCE.md) for the complete skill reference with all parameters and example prompts.**
 
@@ -377,6 +377,26 @@ FFMPEGA includes a comprehensive skill system with **115+ operations** organized
 | `iris_reveal` | Circle expanding from center |
 | `wipe` | Directional wipe from black |
 | `slide_in` | Slide video in from edge |
+
+</details>
+
+<details>
+<summary><b>🎵 Audio Visualization (1 skill)</b></summary>
+
+| Skill | Description |
+| :--- | :--- |
+| `waveform` | Audio waveform overlay (line, point, cline modes) |
+
+</details>
+
+<details>
+<summary><b>🖼️ Multi-Input (3 skills)</b></summary>
+
+| Skill | Description |
+| :--- | :--- |
+| `grid` | Arrange images in a grid layout (xstack) |
+| `slideshow` | Create slideshow with fade transitions (concat) |
+| `overlay_image` | Picture-in-picture / watermark overlay |
 
 </details>
 

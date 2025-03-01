@@ -139,6 +139,36 @@ class MediaConverter:
 
         return tmp.name
 
+    def save_frames_as_images(
+        self, images: torch.Tensor, max_frames: int = 50
+    ) -> list[str]:
+        """Save individual frames from an IMAGE tensor as temporary PNG files.
+
+        Used by multi-input skills (grid, slideshow, overlay) that need
+        separate image files as FFMPEG inputs.
+
+        Args:
+            images: Batched image tensor (B, H, W, 3) with float32 in [0, 1].
+            max_frames: Maximum number of frames to export (safety limit).
+
+        Returns:
+            List of paths to temporary PNG files.
+        """
+        from PIL import Image  # type: ignore[import-not-found]
+
+        frames = (images.cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
+        num_frames = min(frames.shape[0], max_frames)
+        tmp_dir = tempfile.mkdtemp(prefix="ffmpega_frames_")
+
+        paths = []
+        for i in range(num_frames):
+            path = os.path.join(tmp_dir, f"frame_{i:03d}.png")
+            img = Image.fromarray(frames[i])
+            img.save(path)
+            paths.append(path)
+
+        return paths
+
     def mux_audio(self, video_path: str, audio: dict) -> None:
         """Mux a ComfyUI AUDIO dict into an existing video file.
 
@@ -205,6 +235,21 @@ class MediaConverter:
                         os.remove(f)
                     except OSError:
                         pass
+
+    def has_audio_stream(self, video_path: str) -> bool:
+        """Check whether a video file contains an audio stream."""
+        ffprobe_bin = shutil.which("ffprobe")
+        if not ffprobe_bin:
+            return False
+        try:
+            probe = subprocess.run(
+                [ffprobe_bin, "-v", "error", "-select_streams", "a",
+                 "-show_entries", "stream=codec_type", "-of", "csv=p=0", video_path],
+                capture_output=True, check=True,
+            )
+            return bool(probe.stdout.decode("utf-8", "backslashreplace").strip())
+        except subprocess.CalledProcessError:
+            return False
 
     @staticmethod
     def _silence() -> dict:

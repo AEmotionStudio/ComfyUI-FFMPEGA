@@ -683,3 +683,55 @@ Apply slow motion at half speed
 ```
 Stabilize the shaky footage
 ```
+
+---
+
+## 🎵 Audio Visualization
+
+### waveform
+```
+Show the audio waveform at the bottom of the video
+```
+```
+Add a cyan audio waveform in the center with line mode
+```
+```
+Display a tall semi-transparent waveform overlay
+```
+
+---
+
+## 🖼️ Multi-Input (Images → Video)
+
+### grid
+```
+Arrange these images in a 2-column grid collage
+```
+```
+Create a 3-column grid layout with 8px gaps on a white background
+```
+```
+Make a mosaic from these images lasting 10 seconds
+```
+
+### slideshow
+```
+Create a slideshow from these images with fade transitions
+```
+```
+Make a photo slideshow with 5 seconds per image and no transitions
+```
+```
+Create a presentation with slow 1-second fade transitions between slides
+```
+
+### overlay_image
+```
+Overlay the second image as a small watermark in the bottom-right corner
+```
+```
+Put a transparent logo in the top-left at 15% scale
+```
+```
+Add a semi-transparent picture-in-picture overlay in the center
+```
