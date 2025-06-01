@@ -475,7 +475,7 @@ Add an intro segment to the beginning
 
 ### neon
 ```
-Apply a neon glow effect
+Apply a neon edge glow effect
 ```
 
 ### horror
@@ -500,12 +500,12 @@ Give it a cyberpunk neon aesthetic
 
 ### comic_book
 ```
-Make it look like a comic book
+Make it look like a comic book with bold outlines
 ```
 
 ### miniature
 ```
-Apply a tilt-shift miniature effect
+Apply a tilt-shift miniature effect with selective blur
 ```
 
 ### surveillance
@@ -530,7 +530,7 @@ Give it a lo-fi chill aesthetic
 
 ### thermal
 ```
-Apply a thermal heat vision camera effect
+Apply a thermal heat vision camera effect with pseudocolor
 ```
 
 ### posterize
@@ -541,6 +541,91 @@ Posterize to reduce the color palette
 ### emboss
 ```
 Apply an emboss relief effect
+```
+
+---
+
+## 🔮 Enhanced Effects (Advanced Filters)
+
+### chromatic_aberration
+```
+Add chromatic aberration with RGB channel split
+```
+
+### sketch
+```
+Turn the video into a pencil sketch drawing
+```
+
+```
+Apply an ink line art effect
+```
+
+```
+Apply colored edge detection
+```
+
+### glow
+```
+Add a soft bloom glow to the video
+```
+
+```
+Apply a strong dreamy glow effect
+```
+
+### ghost_trail
+```
+Add ghostly motion trails to the video
+```
+
+```
+Apply ghost afterimage effect with long persistence
+```
+
+### color_channel_swap
+```
+Swap the red and blue color channels for a surreal look
+```
+
+```
+Apply a matrix green channel effect
+```
+
+```
+Apply night vision effect
+```
+
+### tilt_shift
+```
+Apply a tilt-shift effect to make it look like a toy model
+```
+
+```
+Add selective blur with focus near the top
+```
+
+### frame_blend
+```
+Blend frames together for a dreamy motion blur
+```
+
+```
+Apply heavy long-exposure motion blur
+```
+
+### false_color
+```
+Apply a heat map false color effect
+```
+
+```
+Apply rainbow pseudocolor
+```
+
+### halftone
+```
+Apply a newspaper halftone dot pattern
 ```
 
 ---
@@ -692,46 +777,680 @@ Stabilize the shaky footage
 ```
 Show the audio waveform at the bottom of the video
 ```
+
 ```
 Add a cyan audio waveform in the center with line mode
 ```
+
 ```
 Display a tall semi-transparent waveform overlay
 ```
 
 ---
 
-## 🖼️ Multi-Input (Images → Video)
+## 🔗 Multi-Input & Composition
 
 ### grid
 ```
 Arrange these images in a 2-column grid collage
 ```
+
 ```
 Create a 3-column grid layout with 8px gaps on a white background
 ```
+
 ```
 Make a mosaic from these images lasting 10 seconds
+```
+
+```
+Create a side-by-side comparison
 ```
 
 ### slideshow
 ```
 Create a slideshow from these images with fade transitions
 ```
+
 ```
 Make a photo slideshow with 5 seconds per image and no transitions
 ```
+
 ```
 Create a presentation with slow 1-second fade transitions between slides
+```
+
+```
+Create a slideshow starting with the video
 ```
 
 ### overlay_image
 ```
 Overlay the second image as a small watermark in the bottom-right corner
 ```
+
 ```
 Put a transparent logo in the top-left at 15% scale
 ```
+
 ```
 Add a semi-transparent picture-in-picture overlay in the center
 ```
+
+```
+Overlay images in the corners at 20% scale
+```
+
+### concat
+```
+Concatenate these videos together
+```
+
+```
+Join the main video with the extra images into one continuous video
+```
+
+```
+Append all connected video inputs sequentially
+```
+
+### xfade
+```
+Create a slideshow with dissolve transitions between each segment
+```
+
+```
+Join these clips with a wipe left transition
+```
+
+```
+Concatenate with a pixelize transition lasting 2 seconds
+```
+
+```
+Add a radial transition between each video segment
+```
+
+### split_screen
+```
+Show both videos side by side
+```
+
+```
+Create a vertical split screen with the video on top and image on bottom
+```
+
+```
+Make a horizontal split screen comparison
+```
+
+### animated_overlay
+```
+Add a scrolling logo that moves across the bottom of the video
+```
+
+```
+Overlay the image with a floating bounce animation
+```
+
+```
+Slide the overlay image in from the left edge
+```
+
+```
+Add a moving watermark that floats around the video
+```
+
+## 🕐 Temporal & Audio (New)
+
+### scene_detect
+```
+Auto-detect scene changes and split the video at cut points
+```
+
+### silence_remove
+```
+Remove all the silent pauses from this podcast recording
+```
+
+### time_remap
+```
+Gradually slow the video from normal speed to half speed
+```
+
+### noise_reduction
+```
+Clean up the background noise from the audio
+```
+
+### audio_crossfade
+```
+Add a smooth audio crossfade transition
+```
+
+### audio_delay
+```
+Add a 500ms delay to the audio track
+```
+
+### ducking
+```
+Apply audio ducking to compress the dynamic range
+```
+
+### dereverb
+```
+Remove the room echo and reverb from the voice recording
+```
+
+### split_audio
+```
+Extract just the left audio channel
+```
+
+### audio_normalize_loudness
+```
+Normalize the audio loudness to streaming standard (-14 LUFS)
+```
+
+### freeze_frame
+```
+Freeze the frame at 3 seconds for 2 seconds
+```
+
+---
+
+## 🎨 Visual Correction (New)
+
+### white_balance
+```
+Adjust the white balance to make it look warmer like candlelight
+```
+
+### shadows_highlights
+```
+Lift the shadows and recover the blown-out highlights
+```
+
+### split_tone
+```
+Add warm tones to highlights and cool tones to shadows
+```
+
+### deflicker
+```
+Fix the flickering from the fluorescent lights
+```
+
+### unsharp_mask
+```
+Apply precise unsharp mask sharpening to the luma channel
+```
+
+---
+
+## 📐 Spatial Transform (New)
+
+### auto_crop
+```
+Automatically detect and remove the black letterbox borders
+```
+
+### scale_2x
+```
+Upscale the video 2x with Lanczos filtering
+```
+
+---
+
+## 📦 Encoding (New)
+
+### audio_bitrate
+```
+Set the audio bitrate to 320kbps for high quality
+```
+
+### frame_rate_interpolation
+```
+Interpolate frames to smooth 60fps using motion estimation
+```
+
+---
+
+## ✏️ Text & Graphics (New)
+
+### animated_text
+```
+Add animated 'Hello World' text in the center
+```
+
+### scrolling_text
+```
+Add scrolling credits text at the bottom of the video
+```
+
+### ticker
+```
+Add a breaking news ticker bar at the bottom
+```
+
+### lower_third
+```
+Add a professional lower third with name and title
+```
+
+### typewriter_text
+```
+Add a typewriter reveal effect for the text 'Coming Soon'
+```
+
+### bounce_text
+```
+Add bouncing text that says 'NEW!' at the top
+```
+
+### fade_text
+```
+Fade in the title text over 2 seconds then fade out
+```
+
+### karaoke_text
+```
+Add karaoke-style text that fills in as the song plays
+```
+
+### countdown
+```
+Add a 5-second countdown timer overlay at the start
+```
+
+---
+
+## ✂️ Editing & Composition (New)
+
+### picture_in_picture
+```
+Add a picture-in-picture window in the bottom right corner
+```
+
+### blend
+```
+Blend this video with the second input using overlay mode
+```
+
+### delogo
+```
+Remove the logo watermark from the top-left corner
+```
+
+### remove_dup_frames
+```
+Strip out duplicate frames to clean up the video
+```
+
+### mask_blur
+```
+Blur the face region at coordinates x=300,y=200 for privacy
+```
+
+### extract_frames
+```
+Extract one frame per second as PNG images
+```
+
+### jump_cut
+```
+Auto-detect and cut to the high-energy moments
+```
+
+### beat_sync
+```
+Sync cuts to the beat of the music every 2 seconds
+```
+
+### color_match
+```
+Auto-match the colors and brightness via histogram equalization
+```
+
+---
+
+## 🎆 Creative Effects (New)
+
+### datamosh
+```
+Apply a datamosh glitch art effect showing motion vectors
+```
+
+### radial_blur
+```
+Add a radial zoom blur effect
+```
+
+### grain_overlay
+```
+Add subtle cinematic film grain with intensity 20
+```
+
+```
+Apply heavy film grain at 80% intensity for a gritty look
+```
+---
+
+## 🎭 Keying & Masking
+
+### colorkey
+```
+Key out the red background and replace with black
+```
+
+```
+Remove the blue color from the video and make it transparent
+```
+
+### lumakey
+```
+Key out the dark areas based on brightness
+```
+
+```
+Remove the bright white regions with luma keying
+```
+
+### colorhold
+```
+Keep only the red and desaturate everything else — sin city style
+```
+
+```
+Isolate the blue tones and grayscale the rest
+```
+
+### despill
+```
+Clean up the green spill on the actor from the green screen
+```
+
+```
+Remove the blue color bleeding from chroma key edges
+```
+
+### chroma_key_simple
+```
+Simple green screen removal with black background
+```
+
+```
+Quick chroma key with blue screen
+```
+
+### remove_background
+```
+Remove the background from the video automatically
+```
+
+```
+Cut out the subject from the background
+```
+
+---
+
+## 📦 Additional Skills
+
+### burn_subtitles
+```
+Burn these subtitles into the video
+```
+
+```
+Hardcode the SRT file
+```
+
+### color_grade
+```
+Apply teal and orange color grading
+```
+
+```
+Add warm cinematic color grade
+```
+
+### color_temperature
+```
+Make it warmer
+```
+
+```
+Cool down the color temperature
+```
+
+### deinterlace
+```
+Deinterlace the footage
+```
+
+```
+Remove interlacing artifacts
+```
+
+### deshake
+```
+Deshake the camera movement
+```
+
+```
+Quick stabilization for handheld footage
+```
+
+### extract_subtitles
+```
+Extract the subtitles
+```
+
+```
+Save the subtitle track as SRT
+```
+
+### fill_borders
+```
+Fill the black borders
+```
+
+```
+Mirror-fill the blank edges
+```
+
+### film_grain
+```
+Add film grain
+```
+
+```
+Apply subtle film grain texture
+```
+
+### frame_interpolation
+```
+Interpolate to 60fps for smooth motion
+```
+
+```
+Create smooth slow motion with frame interpolation
+```
+
+### hls_package
+```
+Package for HLS streaming
+```
+
+```
+Create HLS segments for adaptive playback
+```
+
+### lens_correction
+```
+Fix the barrel distortion
+```
+
+```
+Apply lens correction
+```
+
+### letterbox
+```
+Add cinematic letterbox bars
+```
+
+```
+Add widescreen black bars
+```
+
+### lut_apply
+```
+Apply this LUT file
+```
+
+```
+Load a .cube LUT for color grading
+```
+
+### monochrome
+```
+Make it black and white
+```
+
+```
+Apply a warm monochrome look
+```
+
+### perspective
+```
+Add perspective tilt
+```
+
+```
+Apply keystoning effect
+```
+
+### preview_strip
+```
+Create a filmstrip preview
+```
+
+```
+Generate a thumbnail strip
+```
+
+### replace_audio
+```
+Replace the audio with this track
+```
+
+```
+Swap out the audio
+```
+
+### scroll
+```
+Scroll the video upward
+```
+
+```
+Add a horizontal scroll
+```
+
+### selective_color
+```
+Make only the red pop
+```
+
+```
+Desaturate everything except blue
+```
+
+### sprite_sheet
+```
+Create a sprite sheet
+```
+
+```
+Generate a contact sheet of frames
+```
+
+### two_pass
+```
+Encode with two-pass at 5M bitrate
+```
+
+```
+Use two-pass encoding for best quality
+```
+
+---
+
+## 🤖 AI-Powered
+
+### auto_mask
+```
+Blur all faces for privacy
+```
+
+```
+Keep the person in color and make everything else grayscale
+```
+
+```
+Pixelate the license plate with high strength
+```
+
+```
+Remove the watermark using AI masking
+```
+
+```
+Isolate the subject on a green screen background
+```
+
+### mix_audio
+```
+Mix audio from both video inputs equally
+```
+
+```
+Blend the two audio tracks but keep the main one louder
+```
+
+---
+
+## 🎙️ Transcription & Subtitles (Whisper AI)
+
+### auto_transcribe
+```
+Auto-transcribe and burn subtitles
+```
+
+```
+Transcribe the speech and add white subtitles at the bottom
+```
+
+```
+Burn subtitles with blue text at 32px
+```
+
+```
+Auto-transcribe and burn subtitles on the bottom with blue text
+```
+
+### karaoke_subtitles
+```
+Add karaoke-style word-by-word subtitles
+```
+
+```
+Add karaoke lyrics with yellow fill and white base text at 48px
+```
+
+```
+Auto-transcribe with progressive word highlight in pink
+```
+

@@ -9,6 +9,8 @@ import logging
 import re
 from typing import Optional
 
+from .errors import PipelineGenerationError
+
 logger = logging.getLogger("ffmpega")
 
 
@@ -22,6 +24,7 @@ class PipelineGenerator:
             registry: Optional SkillRegistry for retry prompts and agentic tools.
         """
         self._registry = registry
+        self.last_token_usage: dict | None = None
 
     @property
     def registry(self):
@@ -40,23 +43,52 @@ class PipelineGenerator:
         from ..core.llm.base import LLMConfig, LLMProvider  # type: ignore[import-not-found]
         from ..core.llm.ollama import OllamaConnector  # type: ignore[import-not-found]
         from ..core.llm.api import APIConnector  # type: ignore[import-not-found]
+        from ..core.llm.gemini_cli import GeminiCLIConnector  # type: ignore[import-not-found]
 
-        API_MODELS = [
-            "gpt-4o", "gpt-4o-mini",
-            "claude-sonnet-4-20250514", "claude-3-5-haiku-20241022",
-            "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash",
-        ]
+        # Provider is detected by model name prefix.
+        # No need to maintain a hardcoded list — any model with a
+        # recognised prefix is routed to the right API connector.
 
-        if model not in API_MODELS and not model.startswith(("gpt", "claude", "gemini")):
+        # Gemini CLI — uses local binary, no API key needed
+        if model == "gemini-cli":
             config = LLMConfig(
-                provider=LLMProvider.OLLAMA,
+                provider=LLMProvider.GEMINI_CLI,
                 model=model,
-                base_url=ollama_url,
                 temperature=0.3,
             )
-            return OllamaConnector(config)
+            return GeminiCLIConnector(config)
 
-        elif model.startswith("gpt"):
+        # Claude Code CLI — uses local binary, no API key needed
+        if model == "claude-cli":
+            from ..core.llm.claude_cli import ClaudeCodeCLIConnector  # type: ignore[import-not-found]
+            config = LLMConfig(
+                provider=LLMProvider.CLAUDE_CLI,
+                model=model,
+                temperature=0.3,
+            )
+            return ClaudeCodeCLIConnector(config)
+
+        # Cursor Agent CLI — uses local binary, no API key needed
+        if model == "cursor-agent":
+            from ..core.llm.cursor_agent import CursorAgentConnector  # type: ignore[import-not-found]
+            config = LLMConfig(
+                provider=LLMProvider.CURSOR_AGENT,
+                model=model,
+                temperature=0.3,
+            )
+            return CursorAgentConnector(config)
+
+        # Qwen Code CLI — uses local binary, free OAuth auth
+        if model == "qwen-cli":
+            from ..core.llm.qwen_cli import QwenCodeCLIConnector  # type: ignore[import-not-found]
+            config = LLMConfig(
+                provider=LLMProvider.QWEN_CLI,
+                model=model,
+                temperature=0.3,
+            )
+            return QwenCodeCLIConnector(config)
+
+        if model.startswith("gpt"):
             config = LLMConfig(
                 provider=LLMProvider.OPENAI,
                 model=model,
@@ -65,7 +97,7 @@ class PipelineGenerator:
             )
             return APIConnector(config)
 
-        elif model.startswith("claude"):
+        if model.startswith("claude"):
             config = LLMConfig(
                 provider=LLMProvider.ANTHROPIC,
                 model=model,
@@ -74,7 +106,7 @@ class PipelineGenerator:
             )
             return APIConnector(config)
 
-        elif model.startswith("gemini"):
+        if model.startswith("gemini"):
             config = LLMConfig(
                 provider=LLMProvider.GEMINI,
                 model=model,
@@ -83,14 +115,26 @@ class PipelineGenerator:
             )
             return APIConnector(config)
 
-        else:
+        # Qwen API models use dash format: qwen-max, qwen-plus, qwen-turbo
+        # Ollama Qwen models use colon format: qwen3:8b, qwen2.5:7b
+        # Only match dash-prefixed names to avoid hijacking Ollama models.
+        if model.startswith("qwen-") and model != "qwen-cli":
             config = LLMConfig(
-                provider=LLMProvider.OLLAMA,
-                model="llama3.1:8b",
-                base_url=ollama_url,
+                provider=LLMProvider.QWEN,
+                model=model,
+                api_key=api_key,
                 temperature=0.3,
             )
-            return OllamaConnector(config)
+            return APIConnector(config)
+
+        # Default: treat as Ollama model
+        config = LLMConfig(
+            provider=LLMProvider.OLLAMA,
+            model=model,
+            base_url=ollama_url,
+            temperature=0.3,
+        )
+        return OllamaConnector(config)
 
     # ------------------------------------------------------------------ #
     #  High-level generate (with retry)                                    #
@@ -101,6 +145,10 @@ class PipelineGenerator:
         connector,
         prompt: str,
         video_metadata: str,
+        connected_inputs: str = "",
+        video_path: str = "",
+        use_vision: bool = True,
+        ptc_mode: str = "off",
     ) -> dict:
         """Generate a pipeline spec, with auto-retry on invalid JSON.
 
@@ -108,6 +156,10 @@ class PipelineGenerator:
             connector: LLM connector instance.
             prompt: User's editing prompt.
             video_metadata: Video analysis string.
+            connected_inputs: Summary of connected inputs.
+            video_path: Absolute path to the input video for frame extraction.
+            use_vision: Whether to embed frames as images (True) or use
+                color analysis fallback (False).
 
         Returns:
             Parsed pipeline dict.
@@ -118,11 +170,14 @@ class PipelineGenerator:
         # Try agentic mode first, fall back to single-shot
         try:
             raw_response = await self._generate_agentic(
-                connector, prompt, video_metadata
+                connector, prompt, video_metadata, connected_inputs,
+                video_path=video_path,
+                use_vision=use_vision,
+                ptc_mode=ptc_mode,
             )
         except NotImplementedError:
             raw_response = await self._generate_single_shot(
-                connector, prompt, video_metadata
+                connector, prompt, video_metadata, connected_inputs
             )
 
         spec = self.parse_response(raw_response)
@@ -134,7 +189,7 @@ class PipelineGenerator:
 
         if spec is None:
             preview = raw_response[:300] if raw_response else "(empty)"
-            raise ValueError(
+            raise PipelineGenerationError(
                 f"Failed to parse LLM response as JSON.\n"
                 f"LLM returned: {preview}\n"
                 f"Tip: Try running the prompt again or use a different model."
@@ -171,6 +226,7 @@ class PipelineGenerator:
 
     async def _generate_single_shot(
         self, connector, prompt: str, video_metadata: str,
+        connected_inputs: str = "",
     ) -> str:
         """Single-shot generation: full registry in system prompt."""
         from ..prompts.system import get_system_prompt  # type: ignore[import-not-found]
@@ -179,8 +235,9 @@ class PipelineGenerator:
         system_prompt = get_system_prompt(
             video_metadata=video_metadata,
             include_full_registry=True,
+            connected_inputs=connected_inputs,
         )
-        user_prompt = get_generation_prompt(prompt, video_metadata)
+        user_prompt = get_generation_prompt(prompt, video_metadata, connected_inputs)
         response = await connector.generate(user_prompt, system_prompt)
         return response.content
 
@@ -193,31 +250,96 @@ class PipelineGenerator:
         connector,
         prompt: str,
         video_metadata: str,
+        connected_inputs: str = "",
         max_iterations: int = 10,
+        video_path: str = "",
+        use_vision: bool = True,
+        ptc_mode: str = "off",
     ) -> str:
-        """Agentic pipeline generation with tool calling.
+        """Agentic pipeline generation with tool calling."""
+        from ..core.token_tracker import TokenTracker  # type: ignore[import-not-found]
+        import time as _time
 
-        Raises:
-            NotImplementedError: If connector doesn't support tool calling.
-        """
         from ..prompts.system import get_agentic_system_prompt  # type: ignore[import-not-found]
         from ..prompts.generation import get_generation_prompt  # type: ignore[import-not-found]
-        from ..mcp.tool_defs import TOOL_DEFINITIONS  # type: ignore[import-not-found]
+        from ..mcp.tool_defs import TOOL_DEFINITIONS, strip_nonstandard_fields  # type: ignore[import-not-found]
+
+        # Filter tool definitions based on PTC mode
+        if ptc_mode == "off":
+            # Classic mode: all tools except execute_code
+            tool_defs = [
+                t for t in TOOL_DEFINITIONS
+                if t["function"]["name"] != "execute_code"
+            ]
+        elif ptc_mode == "on":
+            # Forced PTC: only execute_code (model must orchestrate
+            # all tool calls through a single Python script)
+            tool_defs = [
+                t for t in TOOL_DEFINITIONS
+                if t["function"]["name"] == "execute_code"
+            ]
+        else:
+            # Auto mode: all tools including execute_code
+            tool_defs = list(TOOL_DEFINITIONS)
+
+        # Strip non-standard fields (e.g. input_examples) for API
+        # connectors that validate schemas strictly. CLI connectors
+        # embed tools as text, so non-standard fields are harmless.
+        # (Stripping is deferred until after _is_cli is known.)
         from ..mcp.tools import (  # type: ignore[import-not-found]
             analyze_video,
+            analyze_colors,
+            analyze_audio,
             build_pipeline,
             list_skills,
             search_skills,
             get_skill_details,
+            extract_frames,
+            cleanup_vision_frames,
+            list_luts,
         )
+        from ..mcp.vision import (  # type: ignore[import-not-found]
+            frames_to_base64,
+            frames_to_base64_anthropic,
+            frames_to_base64_raw_strings,
+        )
+        from ..core.llm.cli_base import CLIConnectorBase  # type: ignore[import-not-found]
+        from ..core.llm.ollama import OllamaConnector  # type: ignore[import-not-found]
 
-        system_prompt = get_agentic_system_prompt(video_metadata=video_metadata)
-        user_prompt = get_generation_prompt(prompt, video_metadata)
+        system_prompt = get_agentic_system_prompt(
+            video_metadata=video_metadata,
+            connected_inputs=connected_inputs,
+            ptc_mode=ptc_mode,
+        )
+        user_prompt = get_generation_prompt(prompt, video_metadata, connected_inputs)
 
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
+
+        # Resolve video path for extract_frames tool
+        _vid = video_path or ""
+        _vision_run_ids: list[str] = []  # Track per-run frame folders
+
+        # Token usage tracking
+        _model = getattr(connector, 'config', None)
+        _model_name = getattr(_model, 'model', 'unknown') if _model else 'unknown'
+        _provider_name = getattr(_model, 'provider', 'unknown') if _model else 'unknown'
+        _provider_str = _provider_name.value if hasattr(_provider_name, 'value') else str(_provider_name)
+        tracker = TokenTracker(model=_model_name, provider=_provider_str)
+
+        def _extract_frames_handler(args: dict) -> dict:
+            result = extract_frames(
+                video_path=args.get("video_path", _vid) or _vid,
+                start=args.get("start", 0.0),
+                duration=args.get("duration", 5.0),
+                fps=args.get("fps", 1.0),
+                max_frames=args.get("max_frames", 8),
+            )
+            if "run_id" in result:
+                _vision_run_ids.append(result["run_id"])
+            return result
 
         tool_handlers = {
             "list_skills": lambda args: list_skills(args.get("category")),
@@ -229,80 +351,358 @@ class PipelineGenerator:
                 input_path=args.get("input_path", "/tmp/input.mp4"),
                 output_path=args.get("output_path", "/tmp/output.mp4"),
             ),
+            "extract_frames": _extract_frames_handler,
+            "analyze_colors": lambda args: analyze_colors(
+                video_path=args.get("video_path", _vid) or _vid,
+                start=args.get("start", 0.0),
+                duration=args.get("duration", 5.0),
+            ),
+            "list_luts": lambda args: list_luts(),
+            "analyze_audio": lambda args: analyze_audio(
+                video_path=args.get("video_path", _vid) or _vid,
+                start=args.get("start", 0.0),
+                duration=args.get("duration", 10.0),
+            ),
         }
 
-        for iteration in range(max_iterations):
-            response = await connector.chat_with_tools(messages, TOOL_DEFINITIONS)
+        # ── Programmatic Tool Calling (PTC) ──────────────────────── #
+        # The LLM can call execute_code with a Python script that
+        # orchestrates multiple tool calls in one pass.  Only the
+        # print() output is returned to the LLM's context.
+        # extract_frames is available; collected frame paths are
+        # embedded as images via the same vision routing as regular
+        # tool calls.
+        _ptc_frame_paths: list[str] = []  # side-channel for vision
 
-            if not response.tool_calls:
-                parsed = self.parse_response(response.content)
-                if parsed is not None:
-                    return response.content
+        if ptc_mode != "off":
+            from ..core.ptc_executor import PTCExecutor  # type: ignore[import-not-found]
 
-                logger.warning(
-                    f"Agentic iteration {iteration+1}: model returned "
-                    f"non-JSON, requesting correction..."
+            def _ptc_extract_frames(
+                video_path=_vid, start=0.0, duration=5.0,
+                fps=1.0, max_frames=8,
+            ):
+                result = extract_frames(
+                    video_path=video_path or _vid,
+                    start=start, duration=duration,
+                    fps=fps, max_frames=max_frames,
                 )
-                messages.append({"role": "assistant", "content": response.content or ""})
-                messages.append({
-                    "role": "user",
-                    "content": (
-                        "That response was not valid JSON. You MUST respond with "
-                        "ONLY a JSON object like: "
-                        '{"interpretation": "...", "pipeline": '
-                        '[{"skill": "skill_name", "params": {}}], '
-                        '"warnings": [], "estimated_changes": "..."}\n'
-                        "Use get_skill_details to confirm exact skill names "
-                        "before outputting the pipeline. Do NOT explain — "
-                        "just output the JSON."
-                    ),
-                })
-                continue
+                if result.get("run_id"):
+                    _vision_run_ids.append(result["run_id"])
+                if result.get("paths"):
+                    _ptc_frame_paths.extend(result["paths"])
+                return result
 
-            # Process tool calls
-            assistant_msg = {"role": "assistant", "content": response.content or ""}
-            assistant_msg["tool_calls"] = [
-                {
-                    "function": {
-                        "name": tc["function"]["name"],
-                        "arguments": tc["function"]["arguments"],
-                    }
+            _ptc_tools = {
+                "search_skills": lambda query: search_skills(query),
+                "get_skill_details": lambda skill_name: get_skill_details(skill_name),
+                "list_skills": lambda category=None: list_skills(category),
+                "build_pipeline": lambda skills, input_path="/tmp/in.mp4", output_path="/tmp/out.mp4": (
+                    build_pipeline(skills, input_path, output_path)
+                ),
+                "analyze_video": lambda video_path: analyze_video(video_path),
+                "extract_frames": _ptc_extract_frames,
+                "analyze_colors": lambda video_path=_vid, start=0.0, duration=5.0: (
+                    analyze_colors(video_path or _vid, start, duration)
+                ),
+                "list_luts": lambda: list_luts(),
+                "analyze_audio": lambda video_path=_vid, start=0.0, duration=10.0: (
+                    analyze_audio(video_path or _vid, start, duration)
+                ),
+            }
+            _ptc_executor = PTCExecutor(tool_handlers=_ptc_tools, timeout=30.0)
+
+            def _execute_code_handler(args: dict) -> dict:
+                _ptc_frame_paths.clear()
+                code = args.get("code", "")
+                result = _ptc_executor.execute(code)
+                if result.success:
+                    out: dict = {"output": result.stdout}
+                    # Attach frame paths so vision routing can embed them
+                    if _ptc_frame_paths:
+                        out["_frame_paths"] = list(_ptc_frame_paths)
+                    return out
+                return {
+                    "error": result.error,
+                    "error_type": result.error_type,
                 }
-                for tc in response.tool_calls
-            ]
-            messages.append(assistant_msg)
 
-            for tool_call in response.tool_calls:
-                func_name = tool_call["function"]["name"]
-                func_args = tool_call["function"]["arguments"]
+            tool_handlers["execute_code"] = _execute_code_handler
 
-                logger.info(f"Tool call [{iteration+1}]: {func_name}({func_args})")
+        # Determine connector type for vision routing
+        _is_cli = isinstance(connector, CLIConnectorBase)
+        _is_ollama = isinstance(connector, OllamaConnector)
 
-                handler = tool_handlers.get(func_name)
-                if handler:
-                    try:
-                        result = handler(func_args)
-                        result_str = json.dumps(result, indent=2)
-                    except Exception as e:
-                        result_str = json.dumps({"error": str(e)})
-                        logger.warning(f"Tool error: {func_name} -> {e}")
-                else:
-                    result_str = json.dumps({"error": f"Unknown tool: {func_name}"})
+        # Now strip non-standard fields for non-CLI connectors
+        if not _is_cli:
+            tool_defs = strip_nonstandard_fields(tool_defs)
 
-                messages.append({"role": "tool", "content": result_str})
+        # Auto-embed initial frames for Ollama VL models so the model
+        # sees the video content from the very first message.  Without
+        # this, VL models operate text-only unless they voluntarily
+        # call extract_frames (which they often skip).
+        if use_vision and _is_ollama and _vid:
+            try:
+                init_frames = extract_frames(
+                    video_path=_vid, start=0.0,
+                    duration=9999, fps=0.5, max_frames=3,
+                )
+                if init_frames.get("paths"):
+                    if init_frames.get("run_id"):
+                        _vision_run_ids.append(init_frames["run_id"])
+                    raw_b64 = frames_to_base64_raw_strings(
+                        init_frames["paths"], max_size=256,
+                    )
+                    if raw_b64:
+                        messages[1]["images"] = raw_b64
+                        logger.info(
+                            "Vision: auto-embedded %d initial frames "
+                            "for Ollama VL model",
+                            len(raw_b64),
+                        )
+            except Exception as e:
+                logger.warning("Auto-frame embedding failed: %s", e)
 
-        # Exhausted iterations
-        logger.warning(f"Agentic loop hit max iterations ({max_iterations})")
-        messages.append({
-            "role": "user",
-            "content": (
-                "You have used all available tool calls. Based on "
-                "what you've learned, please output the final JSON "
-                "pipeline now."
-            ),
-        })
-        response = await connector.chat_with_tools(messages, [])
-        return response.content
+        try:
+            for iteration in range(max_iterations):
+                _call_start = _time.time()
+                _tool_names_this_iter: list[str] = []
+                response = await connector.chat_with_tools(messages, tool_defs)
+
+                if not response.tool_calls:
+                    tracker.record(response, iteration + 1, call_start=_call_start)
+                    parsed = self.parse_response(response.content)
+                    if parsed is not None:
+                        self.last_token_usage = tracker.summary()
+                        return response.content
+
+                    logger.warning(
+                        f"Agentic iteration {iteration+1}: model returned "
+                        f"non-JSON, requesting correction..."
+                    )
+                    messages.append({"role": "assistant", "content": response.content or ""})
+
+                    # If first iteration and model skipped tools entirely,
+                    # send a stronger nudge to force tool use
+                    if iteration == 0:
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "You have access to these tools: search_skills, "
+                                "get_skill_details, list_skills, build_pipeline. "
+                                "You MUST call search_skills first to find valid "
+                                "skill names. Do NOT guess skill names. Call "
+                                "search_skills now with keywords from the user's "
+                                "request."
+                            ),
+                        })
+                    else:
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "That response was not valid JSON. You MUST respond with "
+                                "ONLY a JSON object like: "
+                                '{"interpretation": "...", "pipeline": '
+                                '[{"skill": "skill_name", "params": {}}], '
+                                '"warnings": [], "estimated_changes": "..."}\n'
+                                "Use get_skill_details to confirm exact skill names "
+                                "before outputting the pipeline. Do NOT explain — "
+                                "just output the JSON."
+                            ),
+                        })
+                    continue
+
+                # Process tool calls
+                assistant_msg = {"role": "assistant", "content": response.content or ""}
+                assistant_msg["tool_calls"] = [
+                    {
+                        "id": tc.get("id", f"call_{i}"),
+                        "function": {
+                            "name": tc["function"]["name"],
+                            "arguments": tc["function"]["arguments"],
+                        }
+                    }
+                    for i, tc in enumerate(response.tool_calls)
+                ]
+                messages.append(assistant_msg)
+
+                for i, tool_call in enumerate(response.tool_calls):
+                    func_name = tool_call["function"]["name"]
+                    func_args = tool_call["function"]["arguments"]
+                    # OpenAI returns arguments as JSON string; handlers expect dict
+                    if isinstance(func_args, str):
+                        try:
+                            func_args = json.loads(func_args)
+                        except (json.JSONDecodeError, ValueError):
+                            func_args = {}
+
+                    logger.info(f"Tool call [{iteration+1}]: {func_name}({func_args})")
+                    _tool_names_this_iter.append(func_name)
+
+                    handler = tool_handlers.get(func_name)
+                    if handler:
+                        result = None
+                        try:
+                            result = handler(func_args)
+                            result_str = json.dumps(result, indent=2)
+                        except Exception as e:
+                            result_str = json.dumps({"error": str(e)})
+                            logger.warning(f"Tool error: {func_name} -> {e}")
+                    else:
+                        result_str = json.dumps({"error": f"Unknown tool: {func_name}"})
+
+                    tool_result_msg: dict = {
+                        "role": "tool",
+                        "content": result_str,
+                        "tool_call_id": tool_call.get("id", f"call_{i}"),
+                    }
+
+                    # Vision routing: embed images for API/Ollama after
+                    # extract_frames returns successfully
+                    if (
+                        func_name == "extract_frames"
+                        and isinstance(result, dict)
+                        and result.get("paths")
+                    ):
+                        frame_paths = result["paths"]
+                        if not use_vision:
+                            # Vision disabled — always use color analysis
+                            fallback = analyze_colors(
+                                video_path=_vid,
+                                start=func_args.get("start", 0.0),
+                                duration=func_args.get("duration", 5.0),
+                            )
+                            tool_result_msg["content"] = json.dumps(
+                                {**result, "color_analysis": fallback},
+                                indent=2,
+                            )
+                            logger.info("Vision: disabled by user, using color analysis")
+                        elif _is_cli:
+                            # CLI agents read files natively — paths suffice
+                            logger.info(
+                                f"Vision: CLI connector, returning "
+                                f"{len(frame_paths)} frame paths"
+                            )
+                        elif _is_ollama:
+                            # Ollama: add raw base64 strings in 'images' field
+                            b64_strings = frames_to_base64_raw_strings(frame_paths)
+                            if b64_strings:
+                                tool_result_msg["images"] = b64_strings
+                                logger.info(
+                                    f"Vision: embedded {len(b64_strings)} "
+                                    f"frames for Ollama"
+                                )
+                            else:
+                                # Fallback to color analysis
+                                fallback = analyze_colors(
+                                    video_path=_vid,
+                                    start=func_args.get("start", 0.0),
+                                    duration=func_args.get("duration", 5.0),
+                                )
+                                tool_result_msg["content"] = json.dumps(
+                                    {**result, "color_analysis": fallback},
+                                    indent=2,
+                                )
+                                logger.info("Vision: Ollama fallback to color analysis")
+                        else:
+                            # API connectors: embed base64 as multimodal content
+                            # Detect Anthropic (needs different image format)
+                            _is_anthropic = (
+                                hasattr(connector, 'config')
+                                and hasattr(connector.config, 'provider')
+                                and str(connector.config.provider) == "anthropic"
+                            )
+                            if _is_anthropic:
+                                image_blocks = frames_to_base64_anthropic(frame_paths)
+                            else:
+                                image_blocks = frames_to_base64(frame_paths)
+                            if image_blocks:
+                                # Build multimodal content: text + images
+                                tool_result_msg["content"] = [
+                                    {"type": "text", "text": result_str},
+                                    *image_blocks,
+                                ]
+                                logger.info(
+                                    f"Vision: embedded {len(image_blocks)} "
+                                    f"frames for API connector"
+                                )
+                            else:
+                                # Fallback to color analysis
+                                fallback = analyze_colors(
+                                    video_path=_vid,
+                                    start=func_args.get("start", 0.0),
+                                    duration=func_args.get("duration", 5.0),
+                                )
+                                tool_result_msg["content"] = json.dumps(
+                                    {**result, "color_analysis": fallback},
+                                    indent=2,
+                                )
+                                logger.info("Vision: API fallback to color analysis")
+
+                    # Vision routing for PTC execute_code: if the sandbox
+                    # called extract_frames, embed the collected frames
+                    if (
+                        func_name == "execute_code"
+                        and isinstance(result, dict)
+                        and result.get("_frame_paths")
+                    ):
+                        frame_paths = result["_frame_paths"]
+                        if use_vision and not _is_cli:
+                            if _is_ollama:
+                                b64_strings = frames_to_base64_raw_strings(frame_paths)
+                                if b64_strings:
+                                    tool_result_msg["images"] = b64_strings
+                                    logger.info(
+                                        "PTC Vision: embedded %d frames for Ollama",
+                                        len(b64_strings),
+                                    )
+                            else:
+                                _is_anthropic = (
+                                    hasattr(connector, 'config')
+                                    and hasattr(connector.config, 'provider')
+                                    and str(connector.config.provider) == "anthropic"
+                                )
+                                if _is_anthropic:
+                                    image_blocks = frames_to_base64_anthropic(frame_paths)
+                                else:
+                                    image_blocks = frames_to_base64(frame_paths)
+                                if image_blocks:
+                                    tool_result_msg["content"] = [
+                                        {"type": "text", "text": result_str},
+                                        *image_blocks,
+                                    ]
+                                    logger.info(
+                                        "PTC Vision: embedded %d frames for API",
+                                        len(image_blocks),
+                                    )
+                        elif use_vision and _is_cli:
+                            logger.info(
+                                "PTC Vision: CLI connector, %d frame paths in output",
+                                len(frame_paths),
+                            )
+
+                    messages.append(tool_result_msg)
+
+                tracker.record(response, iteration + 1, tool_names=_tool_names_this_iter, call_start=_call_start)
+
+            # Exhausted iterations
+            logger.warning(f"Agentic loop hit max iterations ({max_iterations})")
+            messages.append({
+                "role": "user",
+                "content": (
+                    "You have used all available tool calls. Based on "
+                    "what you've learned, please output the final JSON "
+                    "pipeline now."
+                ),
+            })
+            _call_start = _time.time()
+            response = await connector.chat_with_tools(messages, [])
+            tracker.record(response, max_iterations + 1, call_start=_call_start)
+            self.last_token_usage = tracker.summary()
+            return response.content
+        finally:
+            # Clean up only this run's extracted vision frames
+            for rid in _vision_run_ids:
+                cleanup_vision_frames(rid)
 
     # ------------------------------------------------------------------ #
     #  JSON parsing                                                        #
@@ -361,3 +761,154 @@ class PipelineGenerator:
                             break
 
         return None
+
+
+# ------------------------------------------------------------------ #
+#  AgenticSession: named lifecycle object for the tool loop           #
+# ------------------------------------------------------------------ #
+
+
+class AgenticSession:
+    # Multi-turn tool-calling session with a clear open/run/close lifecycle.
+    #
+    # This class holds all the mutable state for one LLM + tools exchange so
+    # that it can be unit-tested independently of the rest of PipelineGenerator
+    # and paves the way for future multi-session support (e.g. ComfyUI batch).
+    #
+    #   session = AgenticSession(connector, tools, tool_handlers, max_iterations=10)
+    #   async with session:
+    #       result = await session.run(messages)
+
+    def __init__(
+        self,
+        connector,
+        tools: list,
+        tool_handlers: dict,
+        max_iterations: int = 10,
+    ):
+        self.connector = connector
+        self.tools = tools
+        self.tool_handlers = tool_handlers
+        self.max_iterations = max_iterations
+        # Accumulated conversation history for the current run
+        self.messages: list[dict] = []
+        # Run-level metadata
+        self.iterations_used: int = 0
+        self.tool_calls_made: list[str] = []
+        self._closed: bool = False
+
+    # Async context manager: reserves resources, cleans up on exit
+
+    async def __aenter__(self):
+        self._closed = False
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False  # do not suppress exceptions
+
+    def close(self) -> None:
+        # Mark the session inactive.  Callers that hold references can
+        # check .closed before trying to submit more messages.
+        self._closed = True
+
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
+    async def run(self, messages: list[dict]) -> str:
+        # Execute the multi-turn tool loop starting from the given messages.
+        #
+        # Args:
+        #     messages: Initial conversation, usually system + user turn.
+        #
+        # Returns:
+        #     Final LLM text output (pipeline JSON string or explanation).
+        #
+        # Raises:
+        #     RuntimeError: If the session has already been closed.
+        import json
+        import logging
+
+        if self._closed:
+            raise RuntimeError("AgenticSession.run() called on a closed session")
+
+        logger_local = logging.getLogger("ffmpega")
+        self.messages = list(messages)
+        self.iterations_used = 0
+        self.tool_calls_made = []
+
+        for iteration in range(self.max_iterations):
+            self.iterations_used = iteration + 1
+            response = await self.connector.chat_with_tools(
+                self.messages, self.tools
+            )
+
+            if not response.tool_calls:
+                # Model emitted a final answer — return it
+                return response.content or ""
+
+            # Append assistant turn with tool_calls metadata
+            assistant_msg: dict = {
+                "role": "assistant",
+                "content": response.content or "",
+                "tool_calls": [
+                    {
+                        "id": tc.get("id", f"call_{i}"),
+                        "function": {
+                            "name": tc["function"]["name"],
+                            "arguments": tc["function"]["arguments"],
+                        },
+                    }
+                    for i, tc in enumerate(response.tool_calls)
+                ],
+            }
+            self.messages.append(assistant_msg)
+
+            # Dispatch each tool call
+            for i, tool_call in enumerate(response.tool_calls):
+                func_name = tool_call["function"]["name"]
+                func_args = tool_call["function"]["arguments"]
+                if isinstance(func_args, str):
+                    try:
+                        func_args = json.loads(func_args)
+                    except (json.JSONDecodeError, ValueError):
+                        func_args = {}
+
+                logger_local.info(
+                    "AgenticSession[%d]: %s(%s)", iteration + 1, func_name, func_args
+                )
+                self.tool_calls_made.append(func_name)
+
+                handler = self.tool_handlers.get(func_name)
+                if handler:
+                    try:
+                        result = handler(func_args)
+                        result_str = json.dumps(result, indent=2)
+                    except Exception as exc:
+                        result_str = json.dumps({"error": str(exc)})
+                        logger_local.warning(
+                            "AgenticSession tool error: %s -> %s", func_name, exc
+                        )
+                else:
+                    result_str = json.dumps({"error": f"Unknown tool: {func_name}"})
+
+                self.messages.append({
+                    "role": "tool",
+                    "content": result_str,
+                    "tool_call_id": tool_call.get("id", f"call_{i}"),
+                })
+
+        # Exhausted iterations — ask for final answer with no more tools
+        logger_local.warning(
+            "AgenticSession: exhausted max_iterations=%d", self.max_iterations
+        )
+        self.messages.append({
+            "role": "user",
+            "content": (
+                "You have used all available tool calls. "
+                "Please output the final JSON pipeline now."
+            ),
+        })
+        response = await self.connector.chat_with_tools(self.messages, [])
+        return response.content or ""

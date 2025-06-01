@@ -71,19 +71,91 @@ tests/fixtures/sample_videos/*.avi
 *.temp
 tmp/
 temp/
+_vision_frames/
 
-# Output files (generated during testing)
+# Output files (generated during testing/processing)
 output/
 *.output.mp4
+*.output.mkv
+*.output.webm
+
+# Media files (generated, not source)
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.webm
+*.wav
+*.mp3
+*.flac
+*.aac
 
 # Debug/error notes
 Errors.md
+Agent_Analysis.md
+command_log.md
+response.json
+errors_2.md
 
 # Package manager lock files
-uv.lock
 
-# Type checker config
+# Type checker / linter caches
 .pyre_configuration
+.mypy_cache/
+.ruff_cache/
+
+# Node.js (if Gemini CLI is installed locally)
+node_modules/
+package-lock.json
+
+# Coverage reports
+coverage.xml
+*.cover
 
 # Gemini
 .gemini/
+
+# Jules
+.jules/
+
+# Agent workflows
+.agent/
+You are Sentinel🛡.md
+
+# PostScript artifacts (ImageMagick generates these)
+*.ps
+*.eps
+
+# PRD
+PRD.md
+
+# Custom skills (user-defined, not shipped)
+custom_skills/*.yaml
+custom_skills/*.yml
+custom_skills/*/
+!custom_skills/.gitkeep
+!custom_skills/examples/
+
+# Token usage logs
+usage_log.jsonl
+
+# Local integration tests (require local LLM servers)
+tests/test_*_ollama.py
+tests/test_*_local.py
+
+# Stray files from Python REPL / ImageMagick (bare module names)
+/ast
+/json
+/re
+/os
+/sys
+uv.lock
+
+# MiniMax-Remover (local-only, not pushed to public — unlicensed code)
+core/minimax_remover.py
+
+# Advertisements
+advert/
+index.html
+index.html.bak
+

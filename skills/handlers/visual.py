@@ -611,50 +611,23 @@ def _f_auto_mask(p):
     if _metadata_ref is not None and isinstance(_metadata_ref, dict):
         _metadata_ref["_mask_video_path"] = mask_path
 
-    # Special handling for "remove" — use FLUX Klein AI inpainting (subprocess)
+    # Special handling for "remove" — try LaMa AI inpainting first
     if effect == "remove":
         try:
             try:
-                from ...core.flux_klein_editor import remove_object_subprocess
+                from ...core.lama_inpainter import remove_object
             except ImportError:
-                from core.flux_klein_editor import remove_object_subprocess
-            inpainted_path = remove_object_subprocess(
+                from core.lama_inpainter import remove_object
+            inpainted_path = remove_object(
                 video_path=video_path,
                 mask_video_path=mask_path,
             )
-            log.info("FLUX Klein removal complete: %s", inpainted_path)
+            log.info("LaMa inpainting complete: %s", inpainted_path)
             escaped = _escape_filter_path(inpainted_path)
             fc = f"movie={escaped}[inp];[inp]format=yuv420p"
             return make_result(fc=fc)
         except Exception as e:
-            log.error("FLUX Klein removal failed: %s", e)
-            raise
-
-    # Special handling for "edit" — use FLUX Klein text-guided editing (subprocess)
-    if effect == "edit":
-        edit_prompt = str(p.get("edit_prompt", ""))
-        if not edit_prompt:
-            raise ValueError(
-                "auto_mask effect='edit' requires an 'edit_prompt' parameter "
-                "describing the desired change (e.g. 'change hair to blonde')"
-            )
-        try:
-            try:
-                from ...core.flux_klein_editor import edit_video_subprocess
-            except ImportError:
-                from core.flux_klein_editor import edit_video_subprocess
-            edited_path = edit_video_subprocess(
-                video_path=video_path,
-                mask_video_path=mask_path,
-                prompt=edit_prompt,
-            )
-            log.info("FLUX Klein edit complete: %s", edited_path)
-            escaped = _escape_filter_path(edited_path)
-            fc = f"movie={escaped}[inp];[inp]format=yuv420p"
-            return make_result(fc=fc)
-        except Exception as e:
-            log.error("FLUX Klein edit failed: %s", e)
-            raise
+            log.warning("LaMa inpainting failed: %s — falling back to black fill", e)
 
     # Build FFmpeg filter_complex that uses the mask
     return _build_mask_fc(mask_path, effect, strength, invert)

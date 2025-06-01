@@ -24,17 +24,18 @@ def register_skills(registry: SkillRegistry) -> None:
             SkillParameter(
                 name="out_duration",
                 type=ParameterType.FLOAT,
-                description="Fade-out duration in seconds (0 to skip)",
+                description="Fade-out duration in seconds (0 to skip, default 0 = no fade out)",
                 required=False,
-                default=1.0,
+                default=0,
                 min_value=0,
                 max_value=10.0,
             ),
         ],
         examples=[
-            "fade_to_black - 1s fade in + 1s fade out",
+            "fade_to_black - 1s fade in from black",
             "fade_to_black:in_duration=2,out_duration=3 - 2s fade in, 3s fade out",
             "fade_to_black:in_duration=0,out_duration=2 - Only fade out at end",
+            "fade_to_black:out_duration=1 - 1s fade in + 1s fade out",
         ],
         tags=["fade", "black", "transition", "intro", "outro", "smooth"],
     ))

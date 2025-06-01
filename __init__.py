@@ -10,8 +10,8 @@ Example usage:
     - "Create a vintage VHS look with grain and color shift"
 """
 
-__version__ = "1.6.1"
-__author__ = "FFMPEGA Team"
+__version__ = "2.6.6"
+__author__ = "Æmotion Studio"
 
 # Import node mappings for ComfyUI
 # Guarded so the package can be imported standalone (e.g. during pytest)
@@ -23,6 +23,12 @@ except ImportError:
 
 # Web directory for custom JavaScript (relative to this module)
 WEB_DIRECTORY = "./js"
+
+# Register custom API routes (video preview, metadata endpoints)
+try:
+    from . import server as _server  # noqa: F401
+except Exception:
+    pass
 
 __all__ = [
     "NODE_CLASS_MAPPINGS",
@@ -56,3 +62,31 @@ if _dependency_issues:
     for issue in _dependency_issues:
         print(f"  - {issue}")
     print("=" * 50)
+
+# Clean up any leftover vision frames from prior crashes / early terminations
+try:
+    from .mcp.tools import cleanup_vision_frames as _cleanup_frames
+
+    _cleanup_frames()
+    del _cleanup_frames
+except Exception:
+    pass
+
+
+def _check_optional_deps():
+    """Log notices for missing optional AI features."""
+    missing = []
+    try:
+        import sam3  # noqa: F401
+    except ImportError:
+        missing.append(
+            "SAM3 (auto_mask): pip install --no-deps "
+            "git+https://github.com/facebookresearch/sam3.git"
+        )
+    if missing:
+        print("[FFMPEGA] Optional AI features not installed:")
+        for m in missing:
+            print(f"  → {m}")
+
+
+_check_optional_deps()

@@ -1,9 +1,18 @@
-# Core
-imageio>=2.31.0
-imageio-ffmpeg>=0.4.8
-
 # LLM Integration
 httpx>=0.25.0
 
-# Data Models
-pydantic>=2.0.0
+# Speech-to-text (auto-transcription)
+openai-whisper>=20240930
+
+# --- Optional AI features (installed automatically by install.py with --no-deps) ---
+# These packages pin torch/numpy/opencv aggressively, so they are installed
+# via install.py using --no-deps to avoid breaking ComfyUI's environment.
+#
+# SAM3 (object segmentation for auto_mask / remove / greenscreen):
+#   pip install --no-deps git+https://github.com/facebookresearch/sam3.git
+#
+# LaMa inpainting (AI object removal for the remove skill):
+#   pip install --no-deps simple-lama-inpainting
+#
+# MMAudio (AI audio synthesis for generate_audio skill):
+#   pip install --no-deps mmaudio

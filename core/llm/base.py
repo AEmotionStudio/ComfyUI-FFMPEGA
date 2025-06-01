@@ -12,6 +12,11 @@ class LLMProvider(str, Enum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
+    QWEN = "qwen"
+    GEMINI_CLI = "gemini_cli"
+    CLAUDE_CLI = "claude_cli"
+    CURSOR_AGENT = "cursor_agent"
+    QWEN_CLI = "qwen_cli"
     CUSTOM = "custom"
 
 
@@ -24,7 +29,7 @@ class LLMConfig:
     api_key: Optional[str] = None
     temperature: float = 0.3
     max_tokens: int = 4096
-    timeout: float = 300.0
+    timeout: float = 240.0
     extra_options: dict = field(default_factory=dict)
 
     def __repr__(self) -> str:
@@ -64,6 +69,11 @@ class LLMConnector(ABC):
             config: LLM configuration.
         """
         self.config = config
+
+    @property
+    def supports_vision(self) -> bool:
+        """Whether this connector supports vision/image inputs."""
+        return False
 
     @abstractmethod
     async def generate(

@@ -1,14 +1,13 @@
 """MCP Tool implementations for FFMPEGA."""
 
-import asyncio
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from ..core.video.analyzer import VideoAnalyzer
-from ..core.executor.command_builder import CommandBuilder
 from ..core.executor.process_manager import ProcessManager
 from ..skills.registry import get_registry, SkillCategory
-from ..skills.composer import SkillComposer, Pipeline, PipelineStep
+from ..skills.composer import SkillComposer, Pipeline
+from ..core.sanitize import validate_video_path, validate_output_file_path
 
 
 def analyze_video(video_path: str) -> dict:
@@ -20,6 +19,11 @@ def analyze_video(video_path: str) -> dict:
     Returns:
         Dictionary with video metadata.
     """
+    try:
+        video_path = validate_video_path(video_path)
+    except Exception as e:
+        return {"error": str(e)}
+
     analyzer = VideoAnalyzer()
     metadata = analyzer.analyze(video_path)
 
@@ -115,6 +119,15 @@ def build_pipeline(
     Returns:
         Dictionary with pipeline information and command string.
     """
+    try:
+        input_path = validate_video_path(input_path)
+        output_path = validate_output_file_path(output_path)
+    except Exception as e:
+        return {
+            "success": False,
+            "errors": [str(e)],
+        }
+
     registry = get_registry()
     composer = SkillComposer(registry)
 
@@ -253,6 +266,113 @@ def get_skill_details(skill_name: str) -> dict:
     }
 
 
+def extract_frames(
+    video_path: str,
+    start: float = 0.0,
+    duration: float = 5.0,
+    fps: float = 1.0,
+    max_frames: int = 8,
+) -> dict:
+    """Extract frames from a video for visual inspection.
+
+    Extracts PNG frames to a temp folder so CLI agents with vision
+    capabilities can view the actual video content.
+
+    Args:
+        video_path: Path to the input video file.
+        start: Start time in seconds.
+        duration: Duration in seconds to extract from.
+        fps: Frames per second to extract.
+        max_frames: Maximum number of frames (capped at 16).
+
+    Returns:
+        Dictionary with frame_count, paths, and folder.
+    """
+    from ..core.executor.preview import PreviewGenerator
+
+    try:
+        video_path = validate_video_path(video_path)
+    except Exception as e:
+        return {"error": str(e)}
+
+    # Cap max_frames to prevent excessive disk/token usage
+    max_frames = min(max(max_frames, 1), 16)
+    fps = max(fps, 0.1)
+
+    # Limit duration so ffmpeg never extracts more frames than needed
+    max_duration = max_frames / fps
+    duration = min(duration, max_duration)
+
+    # Create a unique per-run subfolder to avoid cross-run interference
+    import uuid
+    node_dir = Path(__file__).resolve().parent.parent
+    run_id = uuid.uuid4().hex
+    frames_dir = node_dir / "_vision_frames" / run_id
+    frames_dir.mkdir(parents=True, exist_ok=True)
+
+    preview = PreviewGenerator()
+
+    try:
+        frame_paths = preview.extract_frames(
+            input_path=video_path,
+            output_dir=frames_dir,
+            fps=fps,
+            start=start if start > 0 else None,
+            duration=duration,
+        )
+    except Exception as e:
+        # Clean up the created directory on failure
+        import shutil
+        shutil.rmtree(frames_dir, ignore_errors=True)
+        return {"error": f"Frame extraction failed: {e}", "run_id": run_id}
+
+    # Limit to max_frames and remove excess files from disk
+    if len(frame_paths) > max_frames:
+        for excess in frame_paths[max_frames:]:
+            excess.unlink(missing_ok=True)
+        frame_paths = frame_paths[:max_frames]
+
+    path_strings = [str(p.resolve()) for p in frame_paths]
+
+    return {
+        "frame_count": len(path_strings),
+        "paths": path_strings,
+        "folder": str(frames_dir.resolve()),
+        "run_id": run_id,
+        "hint": (
+            "These are absolute paths to PNG frame images extracted from "
+            "the video. You can view them to understand the video content, "
+            "colors, composition, and lighting before choosing effects."
+        ),
+    }
+
+
+def cleanup_vision_frames(run_id: str = "") -> None:
+    """Remove the temporary vision frames folder.
+
+    Args:
+        run_id: If provided, removes only the specific run's subfolder.
+                If empty, removes the entire _vision_frames directory.
+
+    Called after pipeline generation completes to clean up disk space.
+    """
+    import shutil
+
+    base_dir = Path(__file__).resolve().parent.parent / "_vision_frames"
+    if run_id:
+        target = base_dir / run_id
+        if target.exists():
+            shutil.rmtree(target, ignore_errors=True)
+        # Remove parent if empty (ignore errors to avoid masking success)
+        try:
+            if base_dir.exists() and not any(base_dir.iterdir()):
+                base_dir.rmdir()
+        except OSError:
+            pass
+    elif base_dir.exists():
+        shutil.rmtree(base_dir, ignore_errors=True)
+
+
 def validate_skill_params(skill_name: str, params: dict) -> dict:
     """Validate parameters for a skill.
 
@@ -277,3 +397,113 @@ def validate_skill_params(skill_name: str, params: dict) -> dict:
         "skill": skill_name,
         "params": params,
     }
+
+
+def analyze_colors(
+    video_path: str,
+    start: float = 0.0,
+    duration: float = 5.0,
+) -> dict:
+    """Analyze video colors using ffprobe signalstats.
+
+    Provides numeric color data (luminance, chroma, saturation) that
+    the LLM can use for informed color grading without vision.
+
+    Args:
+        video_path: Path to the video file.
+        start: Start time in seconds.
+        duration: Duration in seconds to analyze.
+
+    Returns:
+        Dictionary with color metrics and recommendations.
+    """
+    try:
+        video_path = validate_video_path(video_path)
+    except Exception as e:
+        return {"error": str(e)}
+
+    from .vision import analyze_colors_ffmpeg
+
+    return analyze_colors_ffmpeg(
+        video_path=video_path,
+        start=start,
+        duration=duration,
+    )
+
+
+def list_luts() -> dict:
+    """List available LUT files in the luts/ folder.
+
+    Scans for .cube and .3dl files and returns their names and paths.
+    Users can add their own LUT files to the luts/ folder.
+
+    Returns:
+        Dictionary with list of available LUTs and the folder path.
+    """
+
+    luts_dir = Path(__file__).resolve().parent.parent / "luts"
+    if not luts_dir.is_dir():
+        return {
+            "luts": [],
+            "luts_folder": str(luts_dir),
+            "note": "LUTs folder not found.",
+        }
+
+    lut_files = sorted(
+        p for p in luts_dir.iterdir()
+        if p.suffix.lower() in (".cube", ".3dl") and p.is_file()
+    )
+
+    luts = []
+    for p in lut_files:
+        name = p.stem  # e.g. "cinematic_teal_orange"
+        display = name.replace("_", " ").title()
+        luts.append({
+            "name": name,
+            "display_name": display,
+            "filename": p.name,
+        })
+
+    return {
+        "luts": luts,
+        "count": len(luts),
+        "luts_folder": str(luts_dir),
+        "usage_hint": (
+            "Use lut_apply skill with path=<name> (e.g. "
+            "lut_apply:path=cinematic_teal_orange). "
+            "Short names auto-resolve to full paths."
+        ),
+    }
+
+
+def analyze_audio(
+    video_path: str,
+    start: float = 0.0,
+    duration: float = 10.0,
+) -> dict:
+    """Analyze audio characteristics using ffmpeg filters.
+
+    Provides numeric audio data (volume, loudness, silence) that
+    the LLM can use for informed audio editing decisions.
+
+    Args:
+        video_path: Path to the video/audio file.
+        start: Start time in seconds.
+        duration: Duration in seconds to analyze.
+
+    Returns:
+        Dictionary with audio metrics and recommendations.
+    """
+    try:
+        video_path = validate_video_path(video_path)
+    except Exception as e:
+        return {"error": str(e)}
+
+    from .vision import analyze_audio_ffmpeg
+
+    return analyze_audio_ffmpeg(
+        video_path=video_path,
+        start=start,
+        duration=duration,
+    )
+

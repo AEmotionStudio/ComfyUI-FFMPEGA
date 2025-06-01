@@ -10,8 +10,8 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from core.sanitize import (
-    validate_video_path, validate_output_path, sanitize_text_param,
-    redact_secret, sanitize_api_key,
+    validate_video_path, validate_output_path, validate_output_file_path,
+    sanitize_text_param, redact_secret, sanitize_api_key, ffmpeg_escape_path,
 )
 
 
@@ -99,6 +99,26 @@ class TestValidateOutputPath:
         assert result.endswith("my_output.mp4")
 
 
+class TestValidateOutputFilePath:
+    """Tests for validate_output_file_path."""
+
+    def test_valid_extension(self):
+        result = validate_output_file_path("/tmp/output.mp4")
+        assert result.endswith("output.mp4")
+
+    def test_invalid_extension(self):
+        with pytest.raises(ValueError, match="Invalid output file extension"):
+            validate_output_file_path("/tmp/script.sh")
+
+    def test_no_extension(self):
+        with pytest.raises(ValueError, match="must have an extension"):
+            validate_output_file_path("/tmp/output")
+
+    def test_traversal_raises(self):
+        with pytest.raises(ValueError, match="traversal"):
+            validate_output_file_path("/tmp/../output.mp4")
+
+
 class TestSanitizeTextParam:
     """Tests for sanitize_text_param."""
 
@@ -137,6 +157,10 @@ class TestSanitizeTextParam:
         assert "%%" in result
         assert "\\;" in result
         assert "\\\\" in result
+
+    def test_escapes_brackets(self):
+        # Brackets used for stream specifiers must be escaped
+        assert sanitize_text_param("test[0:v]") == "test\\[0\\:v\\]"
 
 
 class TestRedactSecret:
@@ -184,3 +208,19 @@ class TestSanitizeApiKey:
     def test_no_key_in_text_unchanged(self):
         text = "normal error message"
         assert sanitize_api_key(text, "sk-nothere") == text
+
+
+class TestFFMPEGEscapePath:
+    """Tests for ffmpeg_escape_path."""
+
+    def test_clean_path_unchanged(self):
+        assert ffmpeg_escape_path("/home/user/video.mp4") == "/home/user/video.mp4"
+
+    def test_escapes_special_chars(self):
+        # Backslash, single quote, colon, comma, brackets, space
+        s = r"C:\My Documents\Video's[1]:New,Ver.mp4"
+        expected = r"C\:\\My\ Documents\\Video\'s\[1\]\:New\,Ver.mp4"
+        assert ffmpeg_escape_path(s) == expected
+
+    def test_escapes_spaces(self):
+        assert ffmpeg_escape_path("my video.mp4") == "my\\ video.mp4"

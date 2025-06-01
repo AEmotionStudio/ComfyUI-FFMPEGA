@@ -1,6 +1,5 @@
 """MCP Resource definitions for FFMPEGA."""
 
-from typing import Any
 
 from .database.commands import FFMPEG_COMMAND_REFERENCE
 from .database.filters import FFMPEG_FILTERS

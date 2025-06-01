@@ -1,36 +1,48 @@
 """ComfyUI node definitions for FFMPEGA."""
 
 from .agent_node import FFMPEGAgentNode
-from .preview_node import VideoPreviewNode, VideoInfoNode, FrameExtractNode
-from .batch_node import BatchProcessorNode, BatchStatusNode
+from .frame_extract_node import FrameExtractNode
+from .load_image_path_node import LoadImagePathNode
+from .load_video_path_node import LoadVideoPathNode
+from .text_input_node import TextInputNode
+from .save_video_node import SaveVideoNode
+from .video_to_path_node import VideoToPathNode
+from .effects_node import FFMPEGAEffectsNode
 
 # Node class mappings for ComfyUI
 NODE_CLASS_MAPPINGS = {
     "FFMPEGAgent": FFMPEGAgentNode,
-    "FFMPEGAPreview": VideoPreviewNode,
-    "FFMPEGAVideoInfo": VideoInfoNode,
     "FFMPEGAFrameExtract": FrameExtractNode,
-    "FFMPEGABatchProcessor": BatchProcessorNode,
-    "FFMPEGABatchStatus": BatchStatusNode,
+    "FFMPEGALoadImagePath": LoadImagePathNode,
+    "FFMPEGALoadVideoPath": LoadVideoPathNode,
+    "FFMPEGASaveVideo": SaveVideoNode,
+    "FFMPEGAVideoToPath": VideoToPathNode,
+    "FFMPEGATextInput": TextInputNode,
+    "FFMPEGAEffects": FFMPEGAEffectsNode,
 }
 
 # Display names for nodes
 NODE_DISPLAY_NAME_MAPPINGS = {
     "FFMPEGAgent": "FFMPEG Agent",
-    "FFMPEGAPreview": "Video Preview (FFMPEGA)",
-    "FFMPEGAVideoInfo": "Video Info (FFMPEGA)",
     "FFMPEGAFrameExtract": "Frame Extract (FFMPEGA)",
-    "FFMPEGABatchProcessor": "Batch Processor (FFMPEGA)",
-    "FFMPEGABatchStatus": "Batch Status (FFMPEGA)",
+    "FFMPEGALoadImagePath": "Load Image Path (FFMPEGA)",
+    "FFMPEGALoadVideoPath": "Load Video Path (FFMPEGA)",
+    "FFMPEGASaveVideo": "Save Video (FFMPEGA)",
+    "FFMPEGAVideoToPath": "Video to Path (FFMPEGA)",
+    "FFMPEGATextInput": "FFMPEGA Text",
+    "FFMPEGAEffects": "FFMPEGA Effects Builder",
 }
 
 __all__ = [
     "FFMPEGAgentNode",
-    "VideoPreviewNode",
-    "VideoInfoNode",
     "FrameExtractNode",
-    "BatchProcessorNode",
-    "BatchStatusNode",
+    "LoadImagePathNode",
+    "LoadVideoPathNode",
+    "SaveVideoNode",
+    "VideoToPathNode",
+    "TextInputNode",
+    "FFMPEGAEffectsNode",
     "NODE_CLASS_MAPPINGS",
     "NODE_DISPLAY_NAME_MAPPINGS",
 ]
+

@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "comfyui-ffmpega"
-version = "1.6.1"
+version = "2.8.0"
 description = "Intelligent FFMPEG agent node for ComfyUI with natural language video editing"
 readme = "README.md"
 license = {text = "GPL-3.0"}
 authors = [
-    {name = "FFMPEGA Team"}
+    {name = "Æmotion Studio"}
 ]
 keywords = ["comfyui", "ffmpeg", "video-editing", "ai-agent", "llm"]
 classifiers = [
@@ -23,33 +23,35 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "ffmpeg-python>=0.2.0",
-    "imageio>=2.31.0",
-    "imageio-ffmpeg>=0.4.8",
-    "numpy>=1.24.0",
-    "pillow>=10.0.0",
     "httpx>=0.25.0",
-    "pydantic>=2.0.0",
-    "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]
+masking = ["rembg[cpu]>=2.0.50"]
 ollama = ["ollama>=0.1.0"]
 mcp = ["mcp>=1.0.0"]
+whisper = ["openai-whisper>=20240930"]  # pip install 'comfyui-ffmpega[whisper]'
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
 ]
 
 [project.urls]
-Homepage = "https://github.com/comfyui-ffmpega/ComfyUI-FFMPEGA"
-Repository = "https://github.com/comfyui-ffmpega/ComfyUI-FFMPEGA"
+Homepage = "https://github.com/AEmotionStudio/ComfyUI-FFMPEGA"
+Repository = "https://github.com/AEmotionStudio/ComfyUI-FFMPEGA"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["nodes*", "core*", "skills*", "mcp*", "prompts*"]
 
+[tool.setuptools.package-data]
+"*" = ["py.typed", "config/*.yaml"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 
+[tool.comfy]
+PublisherId = "aemotionstudio"
+DisplayName = "ComfyUI-FFMPEGA"
+Icon = ""

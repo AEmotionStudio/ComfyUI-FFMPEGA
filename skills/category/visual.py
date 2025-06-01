@@ -406,12 +406,60 @@ def register_skills(registry: SkillRegistry) -> None:
                 required=False,
                 default=True,
             ),
+            SkillParameter(
+                name="blink",
+                type=ParameterType.FLOAT,
+                description="Blink/flash interval in seconds (0 = always visible, 1 = blink every 1s)",
+                required=False,
+                default=0,
+                min_value=0,
+                max_value=10,
+            ),
+            SkillParameter(
+                name="x",
+                type=ParameterType.STRING,
+                description="Custom X position (expression)",
+                required=False,
+                max_value=100,
+            ),
+            SkillParameter(
+                name="y",
+                type=ParameterType.STRING,
+                description="Custom Y position (expression)",
+                required=False,
+                max_value=100,
+            ),
+            SkillParameter(
+                name="enable",
+                type=ParameterType.STRING,
+                description="Enable expression (e.g. 'between(t,0,5)')",
+                required=False,
+                max_value=200,
+            ),
+            SkillParameter(
+                name="borderw",
+                type=ParameterType.INT,
+                description="Border width in pixels",
+                required=False,
+                default=2,
+                min_value=0,
+                max_value=100,
+            ),
+            SkillParameter(
+                name="bordercolor",
+                type=ParameterType.STRING,
+                description="Border color",
+                required=False,
+                default="black",
+                max_value=30,
+            ),
         ],
         examples=[
             "text_overlay:text=Hello World - Center text",
             "text_overlay:text=Subscribe!,position=bottom,color=yellow,size=72 - Large yellow text at bottom",
+            "text_overlay:text=REC,position=top_left,color=red,blink=1 - Blinking red REC indicator",
         ],
-        tags=["text", "title", "caption", "subtitle", "watermark", "label"],
+        tags=["text", "title", "caption", "subtitle", "watermark", "label", "blink", "flash"],
     ))
 
     # Invert/negative skill
@@ -572,7 +620,6 @@ def register_skills(registry: SkillRegistry) -> None:
                 max_value=1.0,
             ),
         ],
-        ffmpeg_template="chromakey=color={color}:similarity={similarity}:blend={blend}",
         examples=[
             "chromakey - Remove green screen",
             "chromakey:color=0x0000FF,similarity=0.2 - Remove blue screen",
@@ -584,22 +631,247 @@ def register_skills(registry: SkillRegistry) -> None:
     registry.register(Skill(
         name="deband",
         category=SkillCategory.VISUAL,
-        description="Remove color banding artifacts",
+        description="Remove color banding artifacts (especially from AI-generated video)",
         parameters=[
             SkillParameter(
                 name="threshold",
                 type=ParameterType.FLOAT,
-                description="Deband threshold (higher = more aggressive)",
+                description="Deband threshold (higher = more aggressive, 0.08 = moderate, 0.2+ = heavy)",
                 required=False,
-                default=0.02,
+                default=0.08,
                 min_value=0.0,
-                max_value=0.1,
+                max_value=0.5,
+            ),
+            SkillParameter(
+                name="range",
+                type=ParameterType.INT,
+                description="Banding detection range in pixels (higher = detects wider bands)",
+                required=False,
+                default=16,
+                min_value=8,
+                max_value=64,
+            ),
+            SkillParameter(
+                name="blur",
+                type=ParameterType.BOOL,
+                description="Enable dithering/blur to smooth band transitions",
+                required=False,
+                default=True,
             ),
         ],
-        ffmpeg_template="deband=1thr={threshold}:2thr={threshold}:3thr={threshold}:4thr={threshold}",
         examples=[
             "deband - Remove color banding",
-            "deband:threshold=0.05 - Aggressive debanding",
+            "deband:threshold=0.15 - Aggressive debanding",
+            "deband:threshold=0.3,range=32 - Heavy debanding (AI video)",
         ],
-        tags=["banding", "gradient", "smooth", "quality"],
+        tags=["banding", "gradient", "smooth", "quality", "ai"],
+    ))
+
+    # White balance correction
+    registry.register(Skill(
+        name="white_balance",
+        category=SkillCategory.VISUAL,
+        description="Adjust white balance / color temperature of footage",
+        parameters=[
+            SkillParameter(
+                name="temperature",
+                type=ParameterType.INT,
+                description="Color temperature in Kelvin (2000=warm/orange, 6500=neutral, 10000=cool/blue)",
+                required=False,
+                default=6500,
+                min_value=2000,
+                max_value=12000,
+            ),
+        ],
+        ffmpeg_template="colortemperature={temperature}",
+        examples=[
+            "white_balance - Neutral white balance (6500K)",
+            "white_balance:temperature=3200 - Warm tungsten white balance",
+            "white_balance:temperature=9000 - Cool/blue white balance",
+        ],
+        tags=["white", "balance", "temperature", "kelvin", "color", "correct"],
+    ))
+
+    # Shadows & highlights adjustment
+    registry.register(Skill(
+        name="shadows_highlights",
+        category=SkillCategory.VISUAL,
+        description="Separately adjust shadows and highlights (lift dark areas, recover bright areas)",
+        parameters=[
+            SkillParameter(
+                name="shadows",
+                type=ParameterType.FLOAT,
+                description="Shadow input minimum level (0.0-1.0, higher = lift/brighten shadows)",
+                required=False,
+                default=0.05,
+                min_value=0.0,
+                max_value=1.0,
+            ),
+            SkillParameter(
+                name="highlights",
+                type=ParameterType.FLOAT,
+                description="Highlight input maximum level (0.0-1.0, lower = recover/dim highlights)",
+                required=False,
+                default=0.95,
+                min_value=0.0,
+                max_value=1.0,
+            ),
+        ],
+        ffmpeg_template="colorlevels=rimin={shadows}:gimin={shadows}:bimin={shadows}:rimax={highlights}:gimax={highlights}:bimax={highlights}",
+        examples=[
+            "shadows_highlights - Slightly lift shadows and recover highlights",
+            "shadows_highlights:shadows=0.1,highlights=0.85 - Strong shadow lift, pull highlights",
+        ],
+        tags=["shadows", "highlights", "lift", "recover", "exposure", "dynamic_range"],
+    ))
+
+    # Split toning — different colors for shadows vs highlights
+    # Color mapping: shadow_color -> rs,gs,bs  highlight_color -> rh,gh,bh
+    # blue:  bs+, teal: gs+/bs+, green: gs+, purple: rs+/bs+, brown: rs+
+    # warm:  rh+, orange: rh+, yellow: rh+/gh+, gold: rh+/gh+, pink: rh+/bh+
+    # The intensity parameter scales everything.
+    # Since ffmpeg_template can't do conditional mapping, use a generic
+    # colorbalance formula that exposes all 6 channels as parameters.
+    registry.register(Skill(
+        name="split_tone",
+        category=SkillCategory.VISUAL,
+        description="Apply different color tints to shadows and highlights (split toning). Set per-channel values directly.",
+        parameters=[
+            SkillParameter(
+                name="rs",
+                type=ParameterType.FLOAT,
+                description="Red shadows (-1 to 1)",
+                required=False,
+                default=0.0,
+                min_value=-1.0,
+                max_value=1.0,
+            ),
+            SkillParameter(
+                name="gs",
+                type=ParameterType.FLOAT,
+                description="Green shadows (-1 to 1)",
+                required=False,
+                default=0.0,
+                min_value=-1.0,
+                max_value=1.0,
+            ),
+            SkillParameter(
+                name="bs",
+                type=ParameterType.FLOAT,
+                description="Blue shadows (-1 to 1)",
+                required=False,
+                default=0.3,
+                min_value=-1.0,
+                max_value=1.0,
+            ),
+            SkillParameter(
+                name="rh",
+                type=ParameterType.FLOAT,
+                description="Red highlights (-1 to 1)",
+                required=False,
+                default=0.3,
+                min_value=-1.0,
+                max_value=1.0,
+            ),
+            SkillParameter(
+                name="gh",
+                type=ParameterType.FLOAT,
+                description="Green highlights (-1 to 1)",
+                required=False,
+                default=0.1,
+                min_value=-1.0,
+                max_value=1.0,
+            ),
+            SkillParameter(
+                name="bh",
+                type=ParameterType.FLOAT,
+                description="Blue highlights (-1 to 1)",
+                required=False,
+                default=-0.2,
+                min_value=-1.0,
+                max_value=1.0,
+            ),
+        ],
+        ffmpeg_template="colorbalance=rs={rs}:gs={gs}:bs={bs}:rh={rh}:gh={gh}:bh={bh}",
+        examples=[
+            "split_tone - Blue shadows, warm highlights",
+            "split_tone:bs=0.4,gs=0.2,rh=0.4,gh=0.1,bh=-0.3 - Teal shadows, orange highlights",
+            "split_tone:rs=0.0,gs=0.0,bs=0.5,rh=0.5,gh=0.2,bh=-0.2 - Cool shadows, warm highlights",
+        ],
+        tags=["split", "tone", "grade", "color", "shadows", "highlights", "cinematic"],
+    ))
+
+    # Deflicker — fix flickering footage
+    registry.register(Skill(
+        name="deflicker",
+        category=SkillCategory.VISUAL,
+        description="Remove flicker from timelapse, slow-motion, or fluorescent-lit footage",
+        parameters=[
+            SkillParameter(
+                name="size",
+                type=ParameterType.INT,
+                description="Averaging window size in frames (larger = smoother but more blur)",
+                required=False,
+                default=5,
+                min_value=2,
+                max_value=129,
+            ),
+            SkillParameter(
+                name="mode",
+                type=ParameterType.CHOICE,
+                description="Flicker detection mode",
+                required=False,
+                default="pm",
+                choices=["am", "gm", "pm"],
+            ),
+        ],
+        ffmpeg_template="deflicker=size={size}:mode={mode}",
+        examples=[
+            "deflicker - Standard deflicker (5-frame window)",
+            "deflicker:size=15 - Aggressive deflicker for bad timelapse",
+        ],
+        tags=["flicker", "timelapse", "fix", "strobe", "fluorescent", "smooth"],
+    ))
+
+    # Unsharp mask — fine-grained sharpening
+    registry.register(Skill(
+        name="unsharp_mask",
+        category=SkillCategory.VISUAL,
+        description="Apply unsharp mask sharpening with separate luma/chroma control",
+        parameters=[
+            SkillParameter(
+                name="luma_amount",
+                type=ParameterType.FLOAT,
+                description="Luma (brightness) sharpening amount (negative = blur)",
+                required=False,
+                default=1.5,
+                min_value=-2.0,
+                max_value=5.0,
+            ),
+            SkillParameter(
+                name="chroma_amount",
+                type=ParameterType.FLOAT,
+                description="Chroma (color) sharpening amount",
+                required=False,
+                default=0.0,
+                min_value=-2.0,
+                max_value=5.0,
+            ),
+            SkillParameter(
+                name="luma_size",
+                type=ParameterType.INT,
+                description="Luma matrix size (odd, 3-13)",
+                required=False,
+                default=5,
+                min_value=3,
+                max_value=13,
+            ),
+        ],
+        ffmpeg_template="unsharp={luma_size}:{luma_size}:{luma_amount}:{luma_size}:{luma_size}:{chroma_amount}",
+        examples=[
+            "unsharp_mask - Standard luma sharpening",
+            "unsharp_mask:luma_amount=2.5 - Strong sharpening",
+            "unsharp_mask:luma_amount=-1.0 - Subtle blur (softening)",
+        ],
+        tags=["sharpen", "unsharp", "luma", "chroma", "detail", "crisp", "soft"],
     ))

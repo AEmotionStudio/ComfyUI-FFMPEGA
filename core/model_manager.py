@@ -76,26 +76,6 @@ _MODEL_INFO: dict[str, dict] = {
                   "and place them in ComfyUI/models/mmaudio/. "
                   "⚠️ Model weights are CC-BY-NC 4.0 (non-commercial).",
     },
-    "musetalk": {
-        "name": "MuseTalk (Lip Sync)",
-        "size": "~3.2 GB (UNet) + ~335 MB (VAE, Whisper – separate downloads)",
-        "url": "https://huggingface.co/TMElyralab/MuseTalk",
-        "mirror_repo": "AEmotionStudio/musetalk-models",
-        "license": "MIT (code), CreativeML Open RAIL-M (SD-VAE)",
-        "manual": "Download model files from "
-                  "https://huggingface.co/AEmotionStudio/musetalk-models "
-                  "and place them in ComfyUI/models/musetalk/.",
-    },
-    "flux_klein": {
-        "name": "FLUX Klein 4B (Image Editing)",
-        "size": "~15 GB (bf16)",
-        "url": "https://huggingface.co/AEmotionStudio/flux-klein",
-        "mirror_repo": "AEmotionStudio/flux-klein",
-        "license": "Apache 2.0",
-        "manual": "Download model files from "
-                  "https://huggingface.co/AEmotionStudio/flux-klein "
-                  "and place them in ComfyUI/models/flux_klein/.",
-    },
 }
 
 

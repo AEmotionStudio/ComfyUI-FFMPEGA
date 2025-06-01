@@ -5,8 +5,20 @@ from typing import Optional, Any
 from pathlib import Path
 
 from .registry import SkillRegistry, Skill, SkillCategory, ParameterType, get_registry
-from ..core.executor.command_builder import CommandBuilder, FFMPEGCommand
-from ..core.sanitize import sanitize_text_param
+try:
+    from ..core.executor.command_builder import CommandBuilder, FFMPEGCommand
+    from ..core.sanitize import sanitize_text_param
+except ImportError:
+    from core.executor.command_builder import CommandBuilder, FFMPEGCommand
+    from core.sanitize import sanitize_text_param
+
+_VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".ts", ".m4v"}
+
+
+def _is_video_file(path: str) -> bool:
+    """Return True if the file extension indicates a video file."""
+    return Path(path).suffix.lower() in _VIDEO_EXTENSIONS
+
 
 
 @dataclass
@@ -25,6 +37,8 @@ class Pipeline:
     input_path: Optional[str] = None
     output_path: Optional[str] = None
     extra_inputs: list[str] = field(default_factory=list)
+    extra_audio_inputs: list[str] = field(default_factory=list)
+    text_inputs: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def add_step(
@@ -76,6 +90,70 @@ class Pipeline:
 class SkillComposer:
     """Composes skills into executable FFMPEG pipelines."""
 
+    # Common aliases LLMs tend to use
+    SKILL_ALIASES = {
+        "overlay": "overlay_image",
+        "pip": "picture_in_picture",
+        "picture-in-picture": "picture_in_picture",
+        "pictureinpicture": "picture_in_picture",
+        "stabilize": "deshake",
+        "grayscale": "monochrome",
+        "greyscale": "monochrome",
+        "black_and_white": "monochrome",
+        "bw": "monochrome",
+        "concatenate": "concat",
+        "join": "concat",
+        "transition": "xfade",
+        "splitscreen": "split_screen",
+        "side_by_side": "split_screen",
+        "moving_overlay": "animated_overlay",
+        "chroma_key": "chromakey",
+        "green_screen": "chromakey",
+        "luma_key": "lumakey",
+        "color_hold": "colorhold",
+        "sin_city": "colorhold",
+        "color_key": "colorkey",
+        "de_spill": "despill",
+        "color_spill": "despill",
+        "remove_bg": "remove_background",
+        "background_removal": "remove_background",
+        "text": "text_overlay",
+        "drawtext": "text_overlay",
+        "title": "text_overlay",
+        "subtitle": "text_overlay",
+        "caption": "text_overlay",
+        "audio_mix": "mix_audio",
+        "blend_audio": "mix_audio",
+        "combine_audio": "mix_audio",
+        "auto_subtitle": "auto_transcribe",
+        "auto_caption": "auto_transcribe",
+        "whisper": "auto_transcribe",
+        "speech_to_text": "auto_transcribe",
+        "subtitle_burn": "auto_transcribe",
+        "burn_subtitles": "auto_transcribe",
+        "burn_subtitle": "auto_transcribe",
+        "transcribe_audio": "auto_transcribe",
+        "transcribe_video": "auto_transcribe",
+        "stt": "auto_transcribe",
+        "auto_segment": "auto_mask",
+        "segment": "auto_mask",
+        "smart_mask": "auto_mask",
+        "sam2": "auto_mask",
+        "sam_mask": "auto_mask",
+        "ai_mask": "auto_mask",
+        "object_mask": "auto_mask",
+        "add_audio": "generate_audio",
+        "ai_audio": "generate_audio",
+        "sound_effects": "generate_audio",
+        "foley": "generate_audio",
+        "video_to_audio": "generate_audio",
+        "v2a": "generate_audio",
+        "mmaudio": "generate_audio",
+        "synthesize_audio": "generate_audio",
+        "generate_sound": "generate_audio",
+        "add_sound": "generate_audio",
+    }
+
     def __init__(self, registry: Optional[SkillRegistry] = None):
         """Initialize the composer.
 
@@ -83,6 +161,291 @@ class SkillComposer:
             registry: Skill registry to use. Uses global registry if not provided.
         """
         self.registry = registry or get_registry()
+
+    # ------------------------------------------------------------------ #
+    #  Extracted orchestration helpers                                    #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _resolve_audio_conflicts(
+        output_options: list[str],
+        audio_filters: list[str],
+        step_names: set[str],
+    ) -> tuple[list[str], list[str]]:
+        """Resolve conflict between ``-an`` and audio filters.
+
+        - ``remove_audio`` is explicit — always wins, clears audio filters.
+        - Skills like beat_sync/jump_cut emit ``-an`` defensively; if the
+          pipeline also has explicit audio skills, we drop ``-an``.
+
+        Returns:
+            Updated (output_options, audio_filters).
+        """
+        if "-an" not in output_options:
+            return output_options, audio_filters
+        if "remove_audio" in step_names:
+            audio_filters.clear()
+        elif audio_filters:
+            output_options = [o for o in output_options if o != "-an"]
+        else:
+            audio_filters.clear()
+        return output_options, audio_filters
+
+    @staticmethod
+    def _dedup_output_options(output_options: list[str]) -> list[str]:
+        """Deduplicate key-value output flags (last writer wins).
+
+        ``-map`` intentionally allows duplicates.
+
+        Returns:
+            Deduplicated list of output options.
+        """
+        seen_flags: dict[str, int] = {}
+        deduped: list[str] = []
+        i = 0
+        while i < len(output_options):
+            opt = output_options[i]
+            if (
+                opt.startswith("-")
+                and i + 1 < len(output_options)
+                and not output_options[i + 1].startswith("-")
+            ):
+                flag, val = opt, output_options[i + 1]
+                if flag == "-map" or flag not in seen_flags:
+                    seen_flags[flag] = len(deduped)
+                    deduped.extend([flag, val])
+                else:
+                    idx = seen_flags[flag]
+                    deduped[idx + 1] = val
+                i += 2
+            else:
+                if opt not in seen_flags:
+                    seen_flags[opt] = len(deduped)
+                    deduped.append(opt)
+                i += 1
+        return deduped
+
+    @staticmethod
+    def _resolve_overlay_inputs(
+        pipeline: 'Pipeline',
+        resolved_name: str,
+        _image_paths: list[str],
+        _image_input_start: int,
+        aliases: dict[str, str],
+    ) -> set[int]:
+        """Determine which ffmpeg input indices should be excluded from concat/xfade.
+
+        When concat/xfade runs alongside overlay_image, overlay-reserved
+        inputs must be excluded from concatenation.
+
+        Returns:
+            Set of ffmpeg input indices to exclude.
+        """
+        if resolved_name not in ("concat", "xfade", "slideshow"):
+            return set()
+
+        exclude: set[int] = set()
+
+        if _image_paths:
+            # Pattern (a): images come via _image_paths (after extras)
+            _source_names = ["image_a", "image_b", "image_c", "image_d"]
+            _source_idx_map: dict[str, int] = {}
+            for si, src_name in enumerate(_source_names):
+                if si < len(_image_paths):
+                    _source_idx_map[src_name] = _image_input_start + si
+
+            for other in pipeline.steps:
+                other_name = aliases.get(other.skill_name, other.skill_name)
+                if other_name == "overlay_image":
+                    src = other.params.get("image_source")
+                    if src and src in _source_idx_map:
+                        exclude.add(_source_idx_map[src])
+                    else:
+                        other.params["image_source"] = _source_names[0]
+                        exclude.add(_image_input_start)
+                elif other_name == "animated_overlay":
+                    for img_idx in range(
+                        _image_input_start,
+                        _image_input_start + len(_image_paths),
+                    ):
+                        exclude.add(img_idx)
+        else:
+            # Pattern (b): images mixed into extra_inputs
+            _source_idx_map_b = {
+                "image_a": 1, "image_b": 2, "image_c": 3, "image_d": 4,
+            }
+            _idx_source_map = {v: k for k, v in _source_idx_map_b.items()}
+
+            for other in pipeline.steps:
+                other_name = aliases.get(other.skill_name, other.skill_name)
+                if other_name == "overlay_image":
+                    src = other.params.get("image_source")
+                    if src and src in _source_idx_map_b:
+                        exclude.add(_source_idx_map_b[src])
+                    elif not src and pipeline.extra_inputs:
+                        for ei, path in enumerate(pipeline.extra_inputs):
+                            if not _is_video_file(path):
+                                inferred_idx = ei + 1
+                                inferred_src = _idx_source_map.get(
+                                    inferred_idx, "image_a"
+                                )
+                                other.params["image_source"] = inferred_src
+                                exclude.add(inferred_idx)
+                                break
+                elif other_name == "animated_overlay":
+                    if pipeline.extra_inputs:
+                        for ei, path in enumerate(pipeline.extra_inputs):
+                            if not _is_video_file(path):
+                                exclude.add(ei + 1)
+                                break
+
+        return exclude
+
+    @staticmethod
+    def _chain_filter_complex(
+        complex_filters: list[str],
+        output_options: list[str],
+        audio_in_fc: bool,
+    ) -> tuple[str, str | None, list[str]]:
+        """Chain multiple filter_complex blocks with labelled output pads.
+
+        Returns:
+            (fc_graph, _fc_audio_label, output_options) — the merged
+            filter_complex string, the audio output label (if any), and
+            updated output_options (with handler -map flags stripped when
+            chaining takes over mapping).
+        """
+        _fc_audio_label: str | None = None
+
+        if len(complex_filters) > 1:
+            chained = []
+            for ci, fc_block in enumerate(complex_filters):
+                is_last = (ci == len(complex_filters) - 1)
+                block_has_audio = audio_in_fc and ci == 0 and (
+                    "a=1" in fc_block or "acrossfade" in fc_block
+                    or "amix" in fc_block
+                )
+
+                if ci == 0:
+                    if block_has_audio:
+                        v_label = f"[_pipe_{ci}_v]"
+                        a_label = f"[_pipe_{ci}_a]"
+                        rewired_block = fc_block
+                        if "[_vout]" in rewired_block:
+                            rewired_block = rewired_block.replace("[_vout]", v_label)
+                        if "[_aout]" in rewired_block:
+                            rewired_block = rewired_block.replace("[_aout]", a_label)
+                        if rewired_block != fc_block:
+                            chained.append(rewired_block)
+                        else:
+                            chained.append(fc_block + v_label + a_label)
+                        _fc_audio_label = a_label
+                        _strip = {"[_vout]", "[_aout]"}
+                        new_opts = []
+                        skip_next = False
+                        for oi, o in enumerate(output_options):
+                            if skip_next:
+                                skip_next = False
+                                continue
+                            if (
+                                o == "-map"
+                                and oi + 1 < len(output_options)
+                                and output_options[oi + 1] in _strip
+                            ):
+                                skip_next = True
+                                continue
+                            new_opts.append(o)
+                        output_options = new_opts
+                    else:
+                        pipe_label = f"[_pipe_{ci}]"
+                        chained.append(fc_block + pipe_label)
+                elif not is_last:
+                    if _fc_audio_label:
+                        prev_label = f"[_pipe_{ci - 1}_v]"
+                    else:
+                        prev_label = f"[_pipe_{ci - 1}]"
+                    pipe_label = f"[_pipe_{ci}]"
+                    rewired = fc_block.replace("[0:v]", prev_label)
+                    chained.append(rewired + pipe_label)
+                else:
+                    if _fc_audio_label and ci == 1:
+                        prev_label = f"[_pipe_{ci - 1}_v]"
+                    elif ci > 0:
+                        prev_label = f"[_pipe_{ci - 1}]"
+                    else:
+                        prev_label = "[0:v]"
+                    rewired = fc_block.replace("[0:v]", prev_label)
+                    if _fc_audio_label:
+                        chained.append(rewired + "[_vfinal]")
+                    else:
+                        chained.append(rewired)
+            fc_graph = ";".join(chained)
+        else:
+            fc_graph = complex_filters[0]
+            if audio_in_fc and (
+                "a=1" in fc_graph or "acrossfade" in fc_graph
+                or "amix" in fc_graph
+            ):
+                _fc_audio_label = "[_aout]"
+
+        return fc_graph, _fc_audio_label, output_options
+
+    @staticmethod
+    def _fold_audio_into_fc(
+        fc_graph: str,
+        audio_filters: list[str],
+        output_options: list[str],
+        _fc_audio_label: str | None,
+    ) -> tuple[str, list[str], list[str]]:
+        """Fold audio filters into filter_complex when needed.
+
+        When concat/xfade produce audio inside filter_complex, ``-af``
+        cannot coexist — we fold audio filters into the graph and
+        set appropriate ``-map`` flags.
+
+        Returns:
+            Updated (fc_graph, audio_filters, output_options).
+        """
+        # If -an is present (remove_audio), do NOT map audio from the
+        # filter graph.  Also strip audio streams from concat so ffmpeg
+        # doesn't process audio that will be discarded.
+        if "-an" in output_options:
+            if _fc_audio_label:
+                # Remove audio stream processing from concat: a=1 → a=0
+                # and strip all [idx:a] audio references from the graph.
+                import re
+                fc_graph = re.sub(r'concat=n=(\d+):v=1:a=1', r'concat=n=\1:v=1:a=0', fc_graph)
+                # Remove audio stream processing lines (e.g. [0:a]aresample...)
+                fc_graph = re.sub(r';\[\d+:a\][^;]*?\[_ca\d+\]', '', fc_graph)
+                fc_graph = re.sub(r'\[\d+:a\][^;]*?\[_ca\d+\];', '', fc_graph)
+                # Remove audio labels from concat input
+                fc_graph = re.sub(r'\[_ca\d+\]', '', fc_graph)
+
+            # Map only video output
+            if "[_vfinal]" in fc_graph and "-map" not in output_options:
+                output_options.extend(["-map", "[_vfinal]"])
+            elif "[_vout]" in fc_graph and "-map" not in output_options:
+                output_options.extend(["-map", "[_vout]"])
+
+            audio_filters = []
+            return fc_graph, audio_filters, output_options
+
+        if _fc_audio_label and audio_filters:
+            af_chain = ",".join(audio_filters)
+            fc_graph += f";{_fc_audio_label}{af_chain}[_aout]"
+            audio_filters = []
+            output_options.extend(["-map", "[_vfinal]", "-map", "[_aout]"])
+        elif _fc_audio_label and "[_vfinal]" in fc_graph:
+            output_options.extend(["-map", "[_vfinal]", "-map", _fc_audio_label])
+        elif "[0:a]" in fc_graph and audio_filters:
+            af_chain = ",".join(audio_filters)
+            fc_graph += f";[0:a]{af_chain}"
+            audio_filters = []
+
+        if "[_vout]" in fc_graph and "-map" not in output_options:
+            output_options.extend(["-map", "[_vout]"])
+
+        return fc_graph, audio_filters, output_options
 
     def compose(self, pipeline: Pipeline) -> FFMPEGCommand:
         """Compose a pipeline into an FFMPEG command.
@@ -108,17 +471,42 @@ class SkillComposer:
         for extra in pipeline.extra_inputs:
             builder.input(extra)
 
+        # Register image_path inputs as separate -i entries AFTER extra_inputs
+        # so they don't inflate _extra_input_count (which xfade/concat use
+        # to determine segment count).  Their ffmpeg indices start after
+        # input[0] + extra_inputs.
+        _image_paths = pipeline.metadata.get("_image_paths", [])
+        _image_input_start = 1 + len(pipeline.extra_inputs)  # 0=main, 1..N=extras
+        for img_path in _image_paths:
+            builder.input(img_path)
+
         # Process each step
         video_filters = []
         audio_filters = []
         output_options = []
         complex_filters = []  # filter_complex strings from multi-stream skills
 
+        # Pre-scan for skills that handle audio internally (xfade, concat)
+        # so we can skip redundant audio_crossfade steps the LLM may add.
+        _audio_embedded_skills = {"xfade", "concat"}
+        step_names = {
+            self.SKILL_ALIASES.get(s.skill_name, s.skill_name)
+            for s in pipeline.steps if s.enabled
+        }
+        has_audio_embedding_skill = bool(step_names & _audio_embedded_skills)
+        _overlay_seen = False  # Track first overlay step to dedup duplicates
+        _xfade_transition_dur = None  # Captured from xfade steps for fade_to_black
+        _xfade_still_dur = None  # still_duration from xfade for fade_to_black
+
         for step in pipeline.steps:
             if not step.enabled:
                 continue
 
-            skill = self.registry.get(step.skill_name)
+            # Resolve common aliases LLMs tend to use
+            resolved_name = self.SKILL_ALIASES.get(step.skill_name, step.skill_name)
+            skill = self.registry.get(resolved_name)
+            if skill:
+                step.skill_name = resolved_name  # update for debug output
             if not skill:
                 import logging
                 logging.getLogger("ffmpega").warning(
@@ -127,51 +515,197 @@ class SkillComposer:
                 )
                 continue
 
-            # Auto-fill missing params with defaults from skill definition
-            for param in skill.parameters:
-                if param.name not in step.params and param.default is not None:
-                    step.params[param.name] = param.default
-
-            # Auto-coerce types from LLM (e.g. float 2.0 → int 2)
-            for param in skill.parameters:
-                if param.name in step.params:
-                    val = step.params[param.name]
-                    if param.type == ParameterType.INT:
-                        try:
-                            step.params[param.name] = int(float(val))
-                        except (ValueError, TypeError):
-                            pass
-                    elif param.type == ParameterType.FLOAT:
-                        try:
-                            step.params[param.name] = float(val)
-                        except (ValueError, TypeError):
-                            pass
-                    elif param.type == ParameterType.BOOL:
-                        if isinstance(val, str):
-                            step.params[param.name] = val.lower() in ("true", "1", "yes")
-
-            # Auto-clamp numeric values to valid range
-            for param in skill.parameters:
-                if param.name in step.params:
-                    val = step.params[param.name]
-                    if param.type in (ParameterType.INT, ParameterType.FLOAT):
-                        if isinstance(val, (int, float)):
-                            if param.min_value is not None and val < param.min_value:
-                                step.params[param.name] = type(val)(param.min_value)
-                            if param.max_value is not None and val > param.max_value:
-                                step.params[param.name] = type(val)(param.max_value)
-
-            # Validate parameters (warn but don't fail — LLMs are imprecise)
-            is_valid, errors = skill.validate_params(step.params)
-            if not is_valid:
+            # Skip audio_crossfade when xfade/concat already handles audio
+            # internally — LLMs sometimes add both, causing duplicate filters.
+            if resolved_name == "audio_crossfade" and has_audio_embedding_skill:
                 import logging
-                logger = logging.getLogger("ffmpega")
-                for err in errors:
-                    logger.warning(f"Skill '{step.skill_name}': {err} (continuing anyway)")
+                logging.getLogger("ffmpega").info(
+                    "Skipping redundant audio_crossfade — "
+                    "xfade/concat already handles audio crossfade"
+                )
+                continue
+
+            # Deduplicate overlay steps: when _image_paths provides multiple
+            # images, the handler already processes ALL of them in one call.
+            # LLMs often emit one overlay_image per image — skip duplicates.
+            _overlay_names = {"overlay_image", "overlay", "animated_overlay", "moving_overlay"}
+            if resolved_name in _overlay_names and _image_paths:
+                if _overlay_seen:
+                    import logging
+                    logging.getLogger("ffmpega").info(
+                        "Skipping duplicate %s step — all %d images "
+                        "already handled by first overlay call",
+                        resolved_name, len(_image_paths),
+                    )
+                    continue
+                _overlay_seen = True
+
+            # Capture xfade transition duration and still_duration for fade_to_black
+            if resolved_name == "xfade" and _xfade_transition_dur is None:
+                _xfade_transition_dur = float(step.params.get("duration", 1.0))
+                _xfade_still_dur = float(step.params.get("still_duration", 4.0))
+
+            # Resolve parameter aliases before filling defaults — so
+            # "bitrate=128k" is resolved to "kbps=128" before the
+            # default-fill loop checks whether "kbps" is present.
+            step.params = self._normalize_params(skill, step.params)
+
+            # ⚡ Perf: Single-pass parameter processing — merges default fill,
+            # type coercion, range clamping, CHOICE normalization, and
+            # validation into one iteration over skill.parameters instead
+            # of four separate loops.  Reduces iterations by ~75%.
+            for param in skill.parameters:
+                name = param.name
+
+                # 1. Fill defaults for missing params
+                if name not in step.params:
+                    if param.default is not None:
+                        step.params[name] = param.default
+                    continue  # No value to coerce/clamp/validate
+
+                val = step.params[name]
+
+                # 2. Type coercion (LLMs return imprecise types)
+                if param.type == ParameterType.INT:
+                    try:
+                        val = int(float(val))
+                    except (ValueError, TypeError):
+                        pass
+                elif param.type == ParameterType.FLOAT:
+                    try:
+                        val = float(val)
+                    except (ValueError, TypeError):
+                        pass
+                elif param.type == ParameterType.BOOL:
+                    if isinstance(val, str):
+                        val = val.lower() in ("true", "1", "yes")
+
+                # 3. Range clamp
+                if param.type in (ParameterType.INT, ParameterType.FLOAT):
+                    if isinstance(val, (int, float)):
+                        if param.min_value is not None and val < param.min_value:
+                            val = type(val)(param.min_value)
+                        if param.max_value is not None and val > param.max_value:
+                            val = type(val)(param.max_value)
+
+                step.params[name] = val
+
+                # 4. Normalize CHOICE values: LLMs often send underscores
+                # where hyphens are expected (bottom_right → bottom-right)
+                if (param.type == ParameterType.CHOICE
+                        and isinstance(val, str)
+                        and param.choices):
+
+                    # ⚡ Perf: Use O(1) map lookup instead of O(N) list scan for normalization.
+                    # Covers underscore handling AND case insensitivity if mapped.
+                    if val in param._choice_map:
+                        match = param._choice_map[val]
+                        if match != val:
+                            step.params[name] = match
+                            val = match
+
+                # 5. Validate & drop invalid params to prevent injection
+                p_valid, p_err = param.validate(val)
+                if p_err and isinstance(p_err, str) and p_err.startswith("__autocorrect__:"):
+                    # Apply auto-corrected value (e.g. fuzzy CHOICE match)
+                    correction = p_err.split(":", 1)[1]
+                    corr_name, corrected_value = correction.split("=", 1)
+                    step.params[corr_name] = corrected_value
+                elif not p_valid:
+                    import logging
+                    logging.getLogger("ffmpega").warning(
+                        f"Security/Validation: Dropping invalid parameter '{name}' "
+                        f"value '{val}' for skill '{step.skill_name}'. Using default."
+                    )
+                    del step.params[name]
+
+            # 6. Security: Strict Allowlist Filtering
+            # Remove any parameters not defined in the schema to prevent handlers
+            # from using unvalidated input (e.g. arbitrary file paths in 'font').
+            allowed_params = set(skill._param_map.keys())
+            filtered_params = {}
+            for k, v in step.params.items():
+                if k in allowed_params:
+                    filtered_params[k] = v
+                else:
+                    import logging
+                    logging.getLogger("ffmpega").warning(
+                        f"Security: Dropping unknown parameter '{k}' for skill '{step.skill_name}'"
+                    )
+            step.params = filtered_params
 
             # Inject multi-input metadata for handlers that need it
+            if pipeline.input_path:
+                step.params["_input_path"] = pipeline.input_path
             if pipeline.extra_inputs:
                 step.params["_extra_input_count"] = len(pipeline.extra_inputs)
+                step.params["_extra_input_paths"] = pipeline.extra_inputs
+            if pipeline.text_inputs:
+                step.params["_text_inputs"] = pipeline.text_inputs
+            if pipeline.metadata.get("_has_embedded_audio"):
+                step.params["_has_embedded_audio"] = True
+            if "_input_fps" in pipeline.metadata:
+                step.params["_input_fps"] = pipeline.metadata["_input_fps"]
+            if "_video_duration" in pipeline.metadata:
+                step.params["_video_duration"] = pipeline.metadata["_video_duration"]
+            if "_input_width" in pipeline.metadata:
+                step.params["_input_width"] = pipeline.metadata["_input_width"]
+            if "_input_height" in pipeline.metadata:
+                step.params["_input_height"] = pipeline.metadata["_input_height"]
+            if "_audio_input_path" in pipeline.metadata:
+                step.params["_audio_input_path"] = pipeline.metadata["_audio_input_path"]
+            if "_whisper_device" in pipeline.metadata:
+                step.params["_whisper_device"] = pipeline.metadata["_whisper_device"]
+            if "_whisper_model" in pipeline.metadata:
+                step.params["_whisper_model"] = pipeline.metadata["_whisper_model"]
+            if "_sam3_device" in pipeline.metadata:
+                step.params["_sam3_device"] = pipeline.metadata["_sam3_device"]
+            if "_sam3_max_objects" in pipeline.metadata:
+                step.params["_sam3_max_objects"] = pipeline.metadata["_sam3_max_objects"]
+            if "_sam3_det_threshold" in pipeline.metadata:
+                step.params["_sam3_det_threshold"] = pipeline.metadata["_sam3_det_threshold"]
+            if "_mask_points" in pipeline.metadata:
+                step.params["_mask_points"] = pipeline.metadata["_mask_points"]
+            # Provide mutable reference so handlers can write back metadata
+            # (e.g. _f_auto_mask stores _mask_video_path for overlay generation)
+            step.params["_metadata_ref"] = pipeline.metadata
+            # Propagate xfade transition duration and still_duration so
+            # fade_to_black can calculate the correct total output duration.
+            if _xfade_transition_dur is not None:
+                step.params["_xfade_duration"] = _xfade_transition_dur
+            if _xfade_still_dur is not None:
+                step.params["_still_duration"] = _xfade_still_dur
+
+            # Inject image_path indices for overlay/animated_overlay handlers
+            # These are separate from extra_inputs (which xfade/concat use)
+            if _image_paths and resolved_name in (
+                "overlay_image", "overlay", "watermark",
+                "animated_overlay", "moving_overlay",
+            ):
+                # Tell overlay handlers about image_path inputs
+                step.params["_image_input_indices"] = list(
+                    range(_image_input_start, _image_input_start + len(_image_paths))
+                )
+                step.params["_image_paths"] = _image_paths
+                # Bump extra_input_count so overlay knows about these inputs
+                current = step.params.get("_extra_input_count", 0)
+                step.params["_extra_input_count"] = current + len(_image_paths)
+
+            # When concat/xfade runs alongside overlay_image, exclude
+            # overlay-reserved inputs from concatenation.
+            #
+            # Two image input patterns exist:
+            #   (a) Zero-memory path: images come via _image_paths and are
+            #       added as ffmpeg inputs AFTER extra_inputs, starting
+            #       at _image_input_start.
+            #   (b) Legacy path: images are mixed into extra_inputs
+            #       (e.g. /logo.png at extra_inputs[0] → ffmpeg idx 1).
+            exclude = self._resolve_overlay_inputs(
+                pipeline, resolved_name, _image_paths,
+                _image_input_start, self.SKILL_ALIASES,
+            )
+            if exclude:
+                step.params["_exclude_inputs"] = exclude
 
             # Get filters/options for this skill
             vf, af, opts, fc, input_opts = self._skill_to_filters(skill, step.params)
@@ -184,50 +718,235 @@ class SkillComposer:
                 # Add input options to the main input (index 0)
                 builder.add_input_options(pipeline.input_path, input_opts)
 
-        # If the pipeline strips audio (-an), discard any audio filters to
-        # avoid the -af/-an conflict that causes ffmpeg to include audio.
-        if "-an" in output_options:
-            audio_filters.clear()
+        # Subtitle filters (ass=, subtitles=) should always render LAST
+        # so they appear on top of letterbox bars, neon glow, etc.
+        # regardless of the pipeline order the LLM chose.
+        _sub_filters = [f for f in video_filters if f.startswith(("ass=", "subtitles="))]
+        if _sub_filters:
+            video_filters = [f for f in video_filters if f not in _sub_filters] + _sub_filters
+
+        output_options, audio_filters = self._resolve_audio_conflicts(
+            output_options, audio_filters, step_names
+        )
 
         # Apply filter_complex if any skill needs multi-stream processing
         if complex_filters:
-            fc_graph = ";".join(complex_filters)
+            # Detect whether any skill produces audio inside filter_complex
+            # (concat with a=1, xfade with audio crossfade, or PiP with amix).
+            _audio_producing_skills = {"xfade", "concat"}
+            audio_in_fc = bool(
+                step_names & _audio_producing_skills
+                and pipeline.metadata.get("_has_embedded_audio", False)
+            ) or any("amix" in fc for fc in complex_filters)
 
-            # Merge simple video filters into the filter_complex graph
-            # only when the graph actually references [0:v]
-            if video_filters:
-                vf_chain = ",".join(video_filters)
+            # Determine up-front whether we need to fold audio filters
+            # into the filter_complex graph (when concat/xfade produce
+            # audio inside filter_complex, -af would conflict).
+            need_audio_fold = audio_in_fc and bool(audio_filters)
+
+            # Chain multiple filter_complex blocks: when one skill's output
+            # feeds into the next (e.g. concat → overlay), label the first
+            # graph's output and replace [0:v] in subsequent graphs.
+            #
+            # When the first skill produces audio (concat a=1, xfade),
+            # its filter produces TWO output pads (video + audio).
+            # We label both: [_pipe_N_v][_pipe_N_a] so subsequent skills
+            # chain from the video pad, and audio filters can be appended
+            # to the audio pad.
+            _fc_audio_label = None  # Track the audio output label
+
+            fc_graph, _fc_audio_label, output_options = self._chain_filter_complex(
+                complex_filters, output_options, audio_in_fc,
+            )
+
+            # Single-block audio folding: when a single filter_complex
+            # needs audio filters folded, relabel its outputs.
+            if len(complex_filters) == 1 and need_audio_fold and _fc_audio_label:
+                if "[_vout]" in fc_graph:
+                    fc_graph = fc_graph.replace("[_vout]", "[_vfinal]")
+                else:
+                    fc_graph += "[_vfinal]"
+                if "[_aout]" in fc_graph:
+                    fc_graph = fc_graph.replace("[_aout]", "[_aout_pre]")
+                else:
+                    fc_graph += "[_aout_pre]"
+                _fc_audio_label = "[_aout_pre]"
+                # Strip handler -map flags — we add our own after folding.
+                _strip = {"[_vout]", "[_aout]"}
+                new_opts = []
+                skip_next = False
+                for oi, o in enumerate(output_options):
+                    if skip_next:
+                        skip_next = False
+                        continue
+                    if (
+                        o == "-map"
+                        and oi + 1 < len(output_options)
+                        and output_options[oi + 1] in _strip
+                    ):
+                        skip_next = True
+                        continue
+                    new_opts.append(o)
+                output_options = new_opts
+
+            # Multi-input skills (xfade, concat, split_screen, grid, slideshow)
+            # handle their own scaling. Drop simple scale/pad video filters
+            # to avoid double-scaling when the LLM adds a redundant resize.
+            _self_scaling_skills = {
+                "xfade", "concat", "split_screen", "grid", "slideshow",
+            }
+            if step_names & _self_scaling_skills:
+                video_filters = [
+                    f for f in video_filters
+                    if not f.startswith("scale=") and not f.startswith("pad=")
+                ]
+
+            # Merge simple video filters into the filter_complex graph.
+            # When xfade/concat is present, fade filters must go AFTER the
+            # concat chain output (not before it on [0:v]), otherwise fade-out
+            # only affects the first clip instead of the final result.
+            _concat_skills = {"xfade", "concat"}
+            _has_concat = bool(step_names & _concat_skills)
+
+            if _has_concat and video_filters:
+                # ALL video filters go post-xfade so they apply to the
+                # combined output, not just the first (dummy) segment.
+                pre_filters = []
+                post_filters = list(video_filters)
+            else:
+                pre_filters = video_filters
+                post_filters = []
+
+            if pre_filters:
+                vf_chain = ",".join(pre_filters)
                 if "[0:v]" in fc_graph:
                     # Prepend simple filters before the complex graph
                     fc_graph = f"[0:v]{vf_chain}[_pre];" + fc_graph.replace("[0:v]", "[_pre]")
+                elif "[_vout]" in fc_graph:
+                    # Graph produces a labeled video output (xfade/concat) —
+                    # chain filters from it so they apply to the combined
+                    # output, not to a disconnected input stream.
+                    fc_graph = fc_graph.replace("[_vout]", "[_vout_pre]")
+                    fc_graph += f";[_vout_pre]{vf_chain}[_vout]"
+                elif _has_concat:
+                    # xfade/concat has an unlabeled output — add a label
+                    # so we can chain from it, then apply the filters.
+                    fc_graph += f"[_vout_pre];[_vout_pre]{vf_chain}[_vout]"
                 else:
                     # Graph doesn't use [0:v] (e.g. grid/slideshow) —
                     # apply video filters as a separate unlabeled chain
                     fc_graph += f";[0:v]{vf_chain}"
 
-            # If filter_complex consumes [0:a] (e.g. waveform), we cannot
-            # also use -af — fold audio filters into the graph instead.
-            if "[0:a]" in fc_graph and audio_filters:
-                af_chain = ",".join(audio_filters)
-                fc_graph += f";[0:a]{af_chain}"
-                audio_filters = []  # Don't also emit -af
+            if post_filters:
+                # Append fade filters after the final video output label
+                fade_chain = ",".join(post_filters)
+                if "[_vfinal]" in fc_graph:
+                    fc_graph = fc_graph.replace("[_vfinal]", "[_vfade_pre]")
+                    fc_graph += f";[_vfade_pre]{fade_chain}[_vfinal]"
+                elif "[_vout]" in fc_graph:
+                    fc_graph = fc_graph.replace("[_vout]", "[_vfade_pre]")
+                    fc_graph += f";[_vfade_pre]{fade_chain}[_vout]"
+                elif _has_concat:
+                    # xfade/concat has an unlabeled output — add a label
+                    # so we can chain fade from it.
+                    fc_graph += f"[_vfade_pre];[_vfade_pre]{fade_chain}[_vout]"
+
+            # Fold audio filters into filter_complex and set -map flags
+            fc_graph, audio_filters, output_options = self._fold_audio_into_fc(
+                fc_graph, audio_filters, output_options,
+                _fc_audio_label,
+            )
 
             builder.complex_filter(fc_graph)
             # Audio filters go via -af when not consumed by filter_complex
             for af in audio_filters:
                 builder.af(af)
         else:
-            # Apply filters
-            for vf in video_filters:
-                builder.vf(vf)
-            for af in audio_filters:
-                builder.af(af)
+            # When replace_audio is present WITH audio filters, -af would
+            # apply to input 0's audio (original), not input 1's (the
+            # replacement).  Route [1:a] through filter_complex instead.
+            # NOTE: -vf and -filter_complex CANNOT coexist, so when we
+            # use filter_complex for audio, we must also fold video filters
+            # into the graph.
+            if "replace_audio" in step_names and audio_filters:
+                fc_parts = []
+                # Fold video filters into filter_complex
+                if video_filters:
+                    vf_chain = ",".join(video_filters)
+                    fc_parts.append(f"[0:v]{vf_chain}[_vout]")
+                # Fold audio filters into filter_complex
+                af_chain = ",".join(audio_filters)
+                fc_parts.append(f"[1:a]{af_chain}[_aout]")
+                builder.complex_filter(";".join(fc_parts))
 
-        # Apply output options
-        builder.output_options(*output_options)
+                # Replace -map 0:v / -map 1:a with labeled output pads
+                new_opts = []
+                i = 0
+                while i < len(output_options):
+                    if (output_options[i] == "-map"
+                            and i + 1 < len(output_options)):
+                        target = output_options[i + 1]
+                        if target == "1:a":
+                            new_opts.extend(["-map", "[_aout]"])
+                            i += 2
+                            continue
+                        elif target == "0:v" and video_filters:
+                            new_opts.extend(["-map", "[_vout]"])
+                            i += 2
+                            continue
+                    new_opts.append(output_options[i])
+                    i += 1
+                output_options = new_opts
+            else:
+                # Simple path — no filter_complex conflict
+                for vf in video_filters:
+                    builder.vf(vf)
+                for af in audio_filters:
+                    builder.af(af)
+
+        # Apply output options — deduplicate key-value flags
+        deduped_opts = self._dedup_output_options(output_options)
+        builder.output_options(*deduped_opts)
         builder.output(pipeline.output_path)
 
         return builder.build()
+
+    def _normalize_params(
+        self,
+        skill: Skill,
+        params: dict,
+    ) -> dict:
+        """Resolve parameter aliases and strip unit suffixes.
+
+        - Maps alias names (e.g. ``bitrate``) to the canonical parameter
+          name (e.g. ``kbps``) using ``SkillParameter.aliases``.
+        - Strips trailing unit suffixes like ``k`` / ``K`` / ``M`` from
+          strings when the canonical parameter is INT or FLOAT.
+        """
+        # Use cached mappings from skill object
+        alias_map = skill._alias_map
+        param_map = skill._param_map
+
+        normalized: dict[str, object] = {}
+        for key, value in params.items():
+            resolved_key = alias_map.get(key, key)
+            # Strip unit suffixes for numeric parameters
+            if resolved_key in param_map:
+                p = param_map[resolved_key]
+                if isinstance(value, str):
+                    cleaned = value.rstrip("kKmM")
+                    if p.type == ParameterType.INT:
+                        try:
+                            value = int(cleaned)
+                        except ValueError:
+                            pass
+                    elif p.type == ParameterType.FLOAT:
+                        try:
+                            value = float(cleaned)
+                        except ValueError:
+                            pass
+            normalized[resolved_key] = value
+        return normalized
 
     def _skill_to_filters(
         self,
@@ -244,6 +963,9 @@ class SkillComposer:
             Tuple of (video_filters, audio_filters, output_options, filter_complex, input_options).
             filter_complex is an empty string if not needed.
         """
+        # Note: _normalize_params is already called in compose() before
+        # reaching here, so we skip it to avoid redundant processing.
+
         video_filters = []
         audio_filters = []
         output_options = []
@@ -259,6 +981,11 @@ class SkillComposer:
                     val_str = sanitize_text_param(val_str)
                 template = template.replace(f"{{{key}}}", val_str)
 
+            # Resolve any remaining {placeholder} with skill defaults
+            for sp in (skill.parameters or []):
+                if sp.default is not None:
+                    template = template.replace(f"{{{sp.name}}}", str(sp.default))
+
             # Determine if it's a video filter, audio filter, or output option
             if template.startswith("-"):
                 output_options.extend(template.split())
@@ -269,7 +996,24 @@ class SkillComposer:
 
         # If skill has a pipeline, recursively compose
         elif skill.pipeline:
+            # Build a defaults map from the skill's parameter definitions
+            # so we can resolve placeholders that weren't in the user params
+            # (e.g. when validation dropped a param, or it wasn't provided).
+            _defaults = {}
+            for sp in (skill.parameters or []):
+                if sp.default is not None:
+                    _defaults[sp.name] = str(sp.default)
+
             for step_str in skill.pipeline:
+                # Substitute {placeholder} values from parent params
+                for key, value in params.items():
+                    step_str = step_str.replace(f"{{{key}}}", str(value))
+
+                # Resolve any remaining {placeholder} with skill defaults
+                # to prevent literal "{ratio}" from reaching handlers.
+                for key, default_val in _defaults.items():
+                    step_str = step_str.replace(f"{{{key}}}", default_val)
+
                 # Parse step string (format: "skill_name:param1=val1,param2=val2")
                 if ":" in step_str:
                     sub_skill_name, params_str = step_str.split(":", 1)
@@ -284,6 +1028,11 @@ class SkillComposer:
 
                 sub_skill = self.registry.get(sub_skill_name)
                 if sub_skill:
+                    # Forward internal metadata from parent params so
+                    # sub-handlers can access _input_width, _input_height, etc.
+                    for pk, pv in params.items():
+                        if pk.startswith("_") and pk not in sub_params:
+                            sub_params[pk] = pv
                     vf, af, opts, fc, io = self._skill_to_filters(sub_skill, sub_params)
                     video_filters.extend(vf)
                     audio_filters.extend(af)
@@ -294,7 +1043,21 @@ class SkillComposer:
 
         # Handle specific skill types
         else:
-            vf, af, opts, fc, io = self._builtin_skill_filters(skill.name, params)
+            # Check for custom Python handler from skill packs first
+            custom_handlers = getattr(self.registry, "_custom_handlers", {})
+            handler = custom_handlers.get(skill.name)
+            if handler is not None:
+                result = handler(params)
+                if len(result) == 5:
+                    vf, af, opts, fc, io = result
+                elif len(result) == 4:
+                    vf, af, opts, fc = result
+                    io = []
+                else:
+                    vf, af, opts = result
+                    fc, io = "", []
+            else:
+                vf, af, opts, fc, io = self._builtin_skill_filters(skill.name, params)
             video_filters.extend(vf)
             audio_filters.extend(af)
             output_options.extend(opts)
@@ -389,7 +1152,7 @@ class SkillComposer:
         Returns:
             Tuple of (video_filters, audio_filters, output_options, filter_complex, input_options).
         """
-        handler = _SKILL_DISPATCH.get(skill_name)
+        handler = _get_dispatch().get(skill_name)
         if handler is None:
             return [], [], [], "", []
         result = handler(params)
@@ -403,908 +1166,248 @@ class SkillComposer:
 
 
 # ====================================================================== #
-#  Per-skill filter handlers                                               #
-#  Each returns (video_filters: list, audio_filters: list, opts: list)     #
+#  Dispatch table — built lazily to avoid circular imports               #
 # ====================================================================== #
 
-def _f_trim(p):
-    input_opts = []
-    output_opts = []
-
-    start = p.get("start")
-    end = p.get("end")
-    duration = p.get("duration")
-
-    try:
-        # Try to parse start/end as floats for calculation (fast seek optimization)
-        s_val = float(start) if start is not None else 0.0
-
-        if start is not None:
-            input_opts.extend(["-ss", str(start)])
-
-        if end is not None:
-            e_val = float(end)
-            # Duration is end - start
-            output_opts.extend(["-t", str(e_val - s_val)])
-        elif duration is not None:
-            # Duration is independent of start point
-            output_opts.extend(["-t", str(duration)])
-
-    except (ValueError, TypeError):
-        # Fallback to slow seek if we can't do math (e.g. strings like "00:01:00")
-        opts = []
-        if start: opts.extend(["-ss", str(start)])
-        if end: opts.extend(["-to", str(end)])
-        if duration: opts.extend(["-t", str(duration)])
-        return [], [], opts
-
-    return [], [], output_opts, "", input_opts
+_SKILL_DISPATCH: dict | None = None
 
 
-def _f_speed(p):
-    factor = p.get("factor", 1.0)
-    vf = [f"setpts={1.0 / factor}*PTS"]
-    af = []
-    if 0.5 <= factor <= 2.0:
-        af.append(f"atempo={factor}")
-    elif factor < 0.5:
-        remaining = factor
-        while remaining < 0.5:
-            af.append("atempo=0.5")
-            remaining *= 2
-        af.append(f"atempo={remaining}")
-    else:
-        remaining = factor
-        while remaining > 2.0:
-            af.append("atempo=2.0")
-            remaining /= 2
-        af.append(f"atempo={remaining}")
-    return vf, af, []
+def _get_dispatch() -> dict:
+    """Return the skill dispatch table, building it on first access."""
+    global _SKILL_DISPATCH
+    if _SKILL_DISPATCH is not None:
+        return _SKILL_DISPATCH
 
-
-def _f_reverse(p):
-    return ["reverse"], ["areverse"], []
-
-
-def _f_loop(p):
-    count = p.get("count", 2)
-    return [f"loop=loop={count}:size=32767"], [], []
-
-
-def _f_resize(p):
-    return [f"scale={p.get('width', -1)}:{p.get('height', -1)}"], [], []
-
-
-def _f_crop(p):
-    w = p.get("width", "iw")
-    h = p.get("height", "ih")
-    x = p.get("x", "(in_w-out_w)/2")
-    y = p.get("y", "(in_h-out_h)/2")
-    return [f"crop={w}:{h}:{x}:{y}"], [], []
-
-
-def _f_pad(p):
-    w = p.get("width", "iw")
-    h = p.get("height", "ih")
-    x = p.get("x", "(ow-iw)/2")
-    y = p.get("y", "(oh-ih)/2")
-    color = sanitize_text_param(str(p.get("color", "black")))
-    return [f"pad={w}:{h}:{x}:{y}:{color}"], [], []
-
-
-def _f_rotate(p):
-    angle = p.get("angle", 0)
-    if angle == 90:
-        return ["transpose=1"], [], []
-    elif angle == -90 or angle == 270:
-        return ["transpose=2"], [], []
-    elif angle == 180:
-        return ["transpose=1,transpose=1"], [], []
-    else:
-        radians = angle * 3.14159 / 180
-        return [f"rotate={radians}"], [], []
-
-
-def _f_flip(p):
-    d = p.get("direction", "horizontal")
-    return ["hflip" if d == "horizontal" else "vflip"], [], []
-
-
-def _f_brightness(p):
-    return [f"eq=brightness={p.get('value', 0)}"], [], []
-
-
-def _f_contrast(p):
-    return [f"eq=contrast={p.get('value', 1.0)}"], [], []
-
-
-def _f_saturation(p):
-    return [f"eq=saturation={p.get('value', 1.0)}"], [], []
-
-
-def _f_hue(p):
-    return [f"hue=h={p.get('value', 0)}"], [], []
-
-
-def _f_sharpen(p):
-    amount = p.get("amount", 1.0)
-    return [f"unsharp=5:5:{amount}:5:5:0"], [], []
-
-
-def _f_blur(p):
-    radius = p.get("radius", 5)
-    return [f"boxblur={radius}:{radius}"], [], []
-
-
-def _f_denoise(p):
-    strength = p.get("strength", "medium")
-    m = {"light": "hqdn3d=2:2:3:3", "medium": "hqdn3d=4:3:6:4"}
-    return [m.get(strength, "hqdn3d=6:4:9:6")], [], []
-
-
-def _f_vignette(p):
-    intensity = p.get("intensity", 0.3)
-    return [f"vignette=PI/4*{intensity}"], [], []
-
-
-def _f_fade(p):
-    fade_type = p.get("type", "in")
-    start = p.get("start", 0)
-    duration = p.get("duration", 1)
-    vf = []
-    if fade_type == "both":
-        vf.append(f"fade=t=in:st=0:d={duration}")
-        vf.append(f"fade=t=out:d={duration}")
-    else:
-        vf.append(f"fade=t={fade_type}:st={start}:d={duration}")
-    return vf, [], []
-
-
-def _f_volume(p):
-    return [], [f"volume={p.get('level', 1.0)}"], []
-
-
-def _f_normalize(p):
-    return [], ["loudnorm"], []
-
-
-def _f_fade_audio(p):
-    fade_type = p.get("type", "in")
-    start = p.get("start", 0)
-    duration = p.get("duration", 1)
-    return [], [f"afade=t={fade_type}:st={start}:d={duration}"], []
-
-
-def _f_remove_audio(p):
-    return [], [], ["-an"]
-
-
-def _f_extract_audio(p):
-    return [], [], ["-vn", "-c:a", "copy"]
-
-
-def _f_compress(p):
-    preset = p.get("preset", "medium")
-    crf_map = {"light": 20, "medium": 23, "heavy": 28}
-    crf = crf_map.get(preset, 23)
-    return [], [], ["-c:v", "libx264", "-crf", str(crf), "-preset", "medium"]
-
-
-def _f_convert(p):
-    codec = p.get("codec", "h264")
-    codec_map = {"h264": "libx264", "h265": "libx265", "vp9": "libvpx-vp9", "av1": "libaom-av1"}
-    return [], [], ["-c:v", codec_map.get(codec, "libx264")]
-
-
-def _f_bitrate(p):
-    opts = []
-    if p.get("video"):
-        opts.extend(["-b:v", p["video"]])
-    if p.get("audio"):
-        opts.extend(["-b:a", p["audio"]])
-    return [], [], opts
-
-
-def _f_quality(p):
-    crf = p.get("crf", 23)
-    preset = p.get("preset", "medium")
-    return [], [], ["-c:v", "libx264", "-crf", str(crf), "-preset", preset]
-
-
-def _f_text_overlay(p):
-    text = sanitize_text_param(str(p.get("text", "")))
-    size = p.get("size", 48)
-    color = sanitize_text_param(str(p.get("color", "white")))
-    font = sanitize_text_param(str(p.get("font", "Sans")))
-    border = p.get("border", True)
-    position = p.get("position", "center")
-
-    pos_map = {
-        "center": "x=(w-text_w)/2:y=(h-text_h)/2",
-        "top": "x=(w-text_w)/2:y=text_h",
-        "bottom": "x=(w-text_w)/2:y=h-text_h*2",
-        "top_left": "x=text_h:y=text_h",
-        "top_right": "x=w-text_w-text_h:y=text_h",
-        "bottom_left": "x=text_h:y=h-text_h*2",
-        "bottom_right": "x=w-text_w-text_h:y=h-text_h*2",
-    }
-    xy = pos_map.get(position, pos_map["center"])
-    border_style = ":borderw=3:bordercolor=black" if border else ""
-
-    drawtext = (
-        f"drawtext=text='{text}':fontsize={size}"
-        f":fontcolor={color}:font='{font}'"
-        f":{xy}{border_style}"
+    from .handlers import (  # noqa: F401
+        # temporal
+        _f_trim, _f_speed, _f_reverse, _f_loop, _f_boomerang,
+        _f_jump_cut, _f_beat_sync,
+        # spatial
+        _f_resize, _f_crop, _f_pad, _f_rotate, _f_flip, _f_zoom,
+        _f_ken_burns, _f_mirror, _f_caption_space, _f_lens_correction,
+        _f_deinterlace, _f_frame_interpolation, _f_scroll, _f_aspect,
+        _f_perspective, _f_fill_borders, _f_deshake, _f_frame_blend,
+        # visual
+        _f_brightness, _f_contrast, _f_saturation, _f_hue,
+        _f_sharpen, _f_blur, _f_denoise, _f_vignette, _f_fade,
+        _f_pixelate, _f_posterize, _f_color_grade, _f_chromakey_simple,
+        _f_deband, _f_color_temperature, _f_selective_color, _f_monochrome,
+        _f_chromatic_aberration, _f_sketch, _f_glow, _f_ghost_trail,
+        _f_color_channel_swap, _f_tilt_shift, _f_false_color, _f_halftone,
+        _f_neon_enhanced, _f_thermal_enhanced, _f_comic_book_enhanced,
+        _f_waveform, _f_chromakey, _f_colorkey, _f_lumakey, _f_colorhold,
+        _f_despill, _f_remove_background, _f_blend, _f_color_match,
+        _f_datamosh, _f_mask_blur, _f_lut_apply,
+        # audio
+        _f_volume, _f_normalize, _f_fade_audio, _f_remove_audio,
+        _f_extract_audio, _f_replace_audio, _f_audio_crossfade, _f_mix_audio,
+        # encoding
+        _f_compress, _f_convert, _f_bitrate, _f_quality, _f_gif,
+        _f_container, _f_two_pass, _f_audio_codec, _f_hwaccel,
+        _f_thumbnail, _f_extract_frames,
+        # composite
+        _f_add_text, _f_grid, _f_slideshow, _f_overlay_image, _f_watermark,
+        _f_concat, _f_xfade, _f_split_screen, _f_animated_overlay,
+        _f_text_overlay, _f_pip, _f_burn_subtitles, _f_countdown,
+        _f_animated_text, _f_scrolling_text, _f_ticker, _f_lower_third,
+        _f_typewriter_text, _f_bounce_text, _f_fade_text, _f_karaoke_text,
+        # transcribe
+        _f_auto_transcribe, _f_karaoke_subtitles,
+        # masking (SAM2)
+        _f_auto_mask,
+        # generate audio (MMAudio)
+        _f_generate_audio,
+        # presets
+        _f_fade_to_black, _f_fade_to_white, _f_flash,
+        _f_spin, _f_shake, _f_pulse, _f_bounce, _f_drift,
+        _f_iris_reveal, _f_wipe, _f_slide_in,
     )
-    return [drawtext], [], []
 
-
-def _f_pixelate(p):
-    factor = p.get("factor", 10)
-    return [
-        f"scale=iw/{factor}:ih/{factor},"
-        f"scale=iw*{factor}:ih*{factor}:flags=neighbor"
-    ], [], []
-
-
-def _f_posterize(p):
-    levels = int(p.get("levels", 4))
-    step = max(1, 256 // levels)
-    lut_expr = f"trunc(val/{step})*{step}"
-    return [f"lutrgb=r='{lut_expr}':g='{lut_expr}':b='{lut_expr}'"], [], []
-
-
-def _f_fade_to_black(p):
-    in_dur = float(p.get("in_duration", 1.0))
-    out_dur = float(p.get("out_duration", 1.0))
-    vf = []
-    if in_dur > 0:
-        vf.append(f"fade=t=in:st=0:d={in_dur}")
-    if out_dur > 0:
-        vf.append(f"fade=t=out:d={out_dur}")
-    return vf, [], []
-
-
-def _f_fade_to_white(p):
-    in_dur = float(p.get("in_duration", 1.0))
-    out_dur = float(p.get("out_duration", 1.0))
-    vf = []
-    if in_dur > 0:
-        vf.append(f"fade=t=in:st=0:d={in_dur}:c=white")
-    if out_dur > 0:
-        vf.append(f"fade=t=out:d={out_dur}:c=white")
-    return vf, [], []
-
-
-def _f_flash(p):
-    t = float(p.get("time", 0))
-    duration = float(p.get("duration", 0.3))
-    mid = t + duration / 2
-    return [
-        f"fade=t=out:st={t}:d={duration/2}:c=white,"
-        f"fade=t=in:st={mid}:d={duration/2}:c=white"
-    ], [], []
-
-
-def _f_spin(p):
-    speed = float(p.get("speed", 90.0))
-    direction = p.get("direction", "cw")
-    rad_per_sec = speed * 3.14159 / 180
-    if direction == "ccw":
-        rad_per_sec = -rad_per_sec
-    return [f"rotate={rad_per_sec}*t:fillcolor=black"], [], []
-
-
-def _f_shake(p):
-    intensity = p.get("intensity", "medium")
-    shake_map = {"light": 5, "medium": 12, "heavy": 25}
-    amount = shake_map.get(intensity, 12)
-    return [
-        f"crop=iw-{amount*2}:ih-{amount*2}"
-        f":{amount}+{amount}*random(1)"
-        f":{amount}+{amount}*random(2),"
-        f"scale=iw+{amount*2}:ih+{amount*2}"
-    ], [], []
-
-
-def _f_pulse(p):
-    rate = float(p.get("rate", 1.0))
-    amount = float(p.get("amount", 0.05))
-    margin = int(amount * 100) + 10
-    offset_expr = f"{margin}+{margin}*{amount}*10*sin(2*PI*{rate}*t)"
-    return [
-        f"pad=iw+{margin*2}:ih+{margin*2}:{margin}:{margin}:color=black",
-        f"crop=iw-{margin*2}:ih-{margin*2}:'{offset_expr}':'{offset_expr}'",
-    ], [], []
-
-
-def _f_bounce(p):
-    height = int(p.get("height", 30))
-    speed = float(p.get("speed", 2.0))
-    return [
-        f"pad=iw:ih+{height*2}:(ow-iw)/2:{height}:black,"
-        f"crop=iw:ih-{height*2}:0:{height}*abs(sin({speed}*PI*t))"
-    ], [], []
-
-
-def _f_drift(p):
-    direction = p.get("direction", "right")
-    amount = int(p.get("amount", 50))
-    # Speed in px/sec: cover `amount` pixels over ~10s (configurable via amount)
-    speed = max(1, amount // 10) if amount > 10 else amount
-    d = {
-        "right": (
-            f"pad=iw+{amount}:ih:0:0:black,"
-            f"crop=iw-{amount}:ih:min({speed}*t\\,{amount}):0"
-        ),
-        "left": (
-            f"pad=iw+{amount}:ih:{amount}:0:black,"
-            f"crop=iw-{amount}:ih:max({amount}-{speed}*t\\,0):0"
-        ),
-        "down": (
-            f"pad=iw:ih+{amount}:0:0:black,"
-            f"crop=iw:ih-{amount}:0:min({speed}*t\\,{amount})"
-        ),
-        "up": (
-            f"pad=iw:ih+{amount}:0:{amount}:black,"
-            f"crop=iw:ih-{amount}:0:max({amount}-{speed}*t\\,0)"
-        ),
+    _SKILL_DISPATCH = {
+        # Temporal
+        "trim": _f_trim,
+        "speed": _f_speed,
+        "reverse": _f_reverse,
+        "loop": _f_loop,
+        "boomerang": _f_boomerang,
+        "jump_cut": _f_jump_cut,
+        "beat_sync": _f_beat_sync,
+        # Spatial
+        "resize": _f_resize,
+        "crop": _f_crop,
+        "pad": _f_pad,
+        "rotate": _f_rotate,
+        "flip": _f_flip,
+        "zoom": _f_zoom,
+        "ken_burns": _f_ken_burns,
+        "mirror": _f_mirror,
+        "caption_space": _f_caption_space,
+        "lens_correction": _f_lens_correction,
+        "deinterlace": _f_deinterlace,
+        "frame_interpolation": _f_frame_interpolation,
+        "scroll": _f_scroll,
+        "aspect": _f_aspect,
+        "perspective": _f_perspective,
+        "fill_borders": _f_fill_borders,
+        "deshake": _f_deshake,
+        "frame_blend": _f_frame_blend,
+        # Visual
+        "brightness": _f_brightness,
+        "contrast": _f_contrast,
+        "saturation": _f_saturation,
+        "hue": _f_hue,
+        "sharpen": _f_sharpen,
+        "blur": _f_blur,
+        "denoise": _f_denoise,
+        "vignette": _f_vignette,
+        "fade": _f_fade,
+        "pixelate": _f_pixelate,
+        "posterize": _f_posterize,
+        "color_grade": _f_color_grade,
+        "deband": _f_deband,
+        "color_temperature": _f_color_temperature,
+        "selective_color": _f_selective_color,
+        "monochrome": _f_monochrome,
+        "chromatic_aberration": _f_chromatic_aberration,
+        "sketch": _f_sketch,
+        "glow": _f_glow,
+        "ghost_trail": _f_ghost_trail,
+        "color_channel_swap": _f_color_channel_swap,
+        "tilt_shift": _f_tilt_shift,
+        "false_color": _f_false_color,
+        "halftone": _f_halftone,
+        "neon": _f_neon_enhanced,
+        "thermal": _f_thermal_enhanced,
+        "comic_book": _f_comic_book_enhanced,
+        "waveform": _f_waveform,
+        "datamosh": _f_datamosh,
+        "mask_blur": _f_mask_blur,
+        "lut_apply": _f_lut_apply,
+        "color_match": _f_color_match,
+        "blend": _f_blend,
+        "double_exposure": _f_blend,
+        # Audio
+        "volume": _f_volume,
+        "normalize": _f_normalize,
+        "fade_audio": _f_fade_audio,
+        "remove_audio": _f_remove_audio,
+        "extract_audio": _f_extract_audio,
+        "replace_audio": _f_replace_audio,
+        "audio_crossfade": _f_audio_crossfade,
+        # Encoding
+        "compress": _f_compress,
+        "convert": _f_convert,
+        "bitrate": _f_bitrate,
+        "quality": _f_quality,
+        "gif": _f_gif,
+        "container": _f_container,
+        "two_pass": _f_two_pass,
+        "audio_codec": _f_audio_codec,
+        "hwaccel": _f_hwaccel,
+        "thumbnail": _f_thumbnail,
+        "extract_frames": _f_extract_frames,
+        "mix_audio": _f_mix_audio,
+        "audio_mix": _f_mix_audio,
+        "blend_audio": _f_mix_audio,
+        "combine_audio": _f_mix_audio,
+        # Composite / Overlay
+        "text_overlay": _f_text_overlay,
+        "add_text": _f_add_text,
+        "text": _f_text_overlay,
+        "drawtext": _f_text_overlay,
+        "title": _f_text_overlay,
+        "subtitle": _f_text_overlay,
+        "caption": _f_text_overlay,
+        "grid": _f_grid,
+        "slideshow": _f_slideshow,
+        "overlay_image": _f_overlay_image,
+        "overlay": _f_overlay_image,
+        "watermark": _f_watermark,
+        "concat": _f_concat,
+        "concatenate": _f_concat,
+        "join": _f_concat,
+        "xfade": _f_xfade,
+        "transition": _f_xfade,
+        "split_screen": _f_split_screen,
+        "splitscreen": _f_split_screen,
+        "side_by_side": _f_split_screen,
+        "animated_overlay": _f_animated_overlay,
+        "moving_overlay": _f_animated_overlay,
+        "picture_in_picture": _f_pip,
+        "pip": _f_pip,
+        "burn_subtitles": _f_burn_subtitles,
+        "hardcode_subtitles": _f_burn_subtitles,
+        # Transcription
+        "auto_transcribe": _f_auto_transcribe,
+        "transcribe": _f_auto_transcribe,
+        "speech_to_text": _f_auto_transcribe,
+        "karaoke_subtitles": _f_karaoke_subtitles,
+        "countdown": _f_countdown,
+        "timer": _f_countdown,
+        "animated_text": _f_animated_text,
+        "scrolling_text": _f_scrolling_text,
+        "credits_roll": _f_scrolling_text,
+        "vertical_scroll": _f_scrolling_text,
+        "ticker": _f_ticker,
+        "horizontal_scroll": _f_ticker,
+        "news_ticker": _f_ticker,
+        "lower_third": _f_lower_third,
+        "name_plate": _f_lower_third,
+        "typewriter_text": _f_typewriter_text,
+        "typewriter": _f_typewriter_text,
+        "bounce_text": _f_bounce_text,
+        "fade_text": _f_fade_text,
+        "karaoke_text": _f_karaoke_text,
+        "karaoke": _f_karaoke_text,
+        # Keying / Masking
+        "chromakey": _f_chromakey,
+        "chroma_key": _f_chromakey,
+        "chroma_key_simple": _f_chromakey_simple,
+        "green_screen": _f_chromakey,
+        "colorkey": _f_colorkey,
+        "color_key": _f_colorkey,
+        "lumakey": _f_lumakey,
+        "luma_key": _f_lumakey,
+        "colorhold": _f_colorhold,
+        "color_hold": _f_colorhold,
+        "despill": _f_despill,
+        "de_spill": _f_despill,
+        "remove_background": _f_remove_background,
+        "remove_bg": _f_remove_background,
+        "background_removal": _f_remove_background,
+        # SAM2 Auto-Mask
+        "auto_mask": _f_auto_mask,
+        "auto_segment": _f_auto_mask,
+        "segment": _f_auto_mask,
+        "smart_mask": _f_auto_mask,
+        "sam2": _f_auto_mask,
+        "sam_mask": _f_auto_mask,
+        "ai_mask": _f_auto_mask,
+        "object_mask": _f_auto_mask,
+        # MMAudio — AI Audio Generation
+        "generate_audio": _f_generate_audio,
+        "add_audio": _f_generate_audio,
+        "ai_audio": _f_generate_audio,
+        "sound_effects": _f_generate_audio,
+        "foley": _f_generate_audio,
+        "video_to_audio": _f_generate_audio,
+        "v2a": _f_generate_audio,
+        "mmaudio": _f_generate_audio,
+        "synthesize_audio": _f_generate_audio,
+        "generate_sound": _f_generate_audio,
+        "add_sound": _f_generate_audio,
+        # Presets / Transitions
+        "fade_to_black": _f_fade_to_black,
+        "fade_to_white": _f_fade_to_white,
+        "flash": _f_flash,
+        "spin": _f_spin,
+        "shake": _f_shake,
+        "pulse": _f_pulse,
+        "bounce": _f_bounce,
+        "drift": _f_drift,
+        "iris_reveal": _f_iris_reveal,
+        "wipe": _f_wipe,
+        "slide_in": _f_slide_in,
     }
-    return [d.get(direction, d["right"])], [], []
+    return _SKILL_DISPATCH
 
-
-def _f_iris_reveal(p):
-    duration = float(p.get("duration", 2.0))
-    return [
-        f"geq="
-        f"lum='if(lte(sqrt(pow(X-W/2,2)+pow(Y-H/2,2)),sqrt(pow(W/2,2)+pow(H/2,2))*min(T/{duration},1)),lum(X,Y),0)'"
-        f":cb='if(lte(sqrt(pow(X-W/2,2)+pow(Y-H/2,2)),sqrt(pow(W/2,2)+pow(H/2,2))*min(T/{duration},1)),cb(X,Y),128)'"
-        f":cr='if(lte(sqrt(pow(X-W/2,2)+pow(Y-H/2,2)),sqrt(pow(W/2,2)+pow(H/2,2))*min(T/{duration},1)),cr(X,Y),128)'"
-    ], [], []
-
-
-def _f_wipe(p):
-    direction = p.get("direction", "left")
-    duration = float(p.get("duration", 1.5))
-    cond_map = {
-        "left": f"lte(X,W*min(T/{duration},1))",
-        "right": f"gte(X,W*(1-min(T/{duration},1)))",
-        "down": f"lte(Y,H*min(T/{duration},1))",
-        "up": f"gte(Y,H*(1-min(T/{duration},1)))",
-    }
-    cond = cond_map.get(direction, cond_map["left"])
-    return [
-        f"geq="
-        f"lum='if({cond},lum(X,Y),0)'"
-        f":cb='if({cond},cb(X,Y),128)'"
-        f":cr='if({cond},cr(X,Y),128)'"
-    ], [], []
-
-
-def _f_slide_in(p):
-    direction = p.get("direction", "left")
-    duration = float(p.get("duration", 1.0))
-    d = {
-        "left": (
-            f"pad=iw*2:ih:iw:0:black,"
-            f"crop=iw/2:ih:iw/2*min(t/{duration}\\,1):0"
-        ),
-        "right": (
-            f"pad=iw*2:ih:0:0:black,"
-            f"crop=iw/2:ih:iw/2*(1-min(t/{duration}\\,1)):0"
-        ),
-        "down": (
-            f"pad=iw:ih*2:0:ih:black,"
-            f"crop=iw:ih/2:0:ih/2*min(t/{duration}\\,1)"
-        ),
-        "up": (
-            f"pad=iw:ih*2:0:0:black,"
-            f"crop=iw:ih/2:0:ih/2*(1-min(t/{duration}\\,1))"
-        ),
-    }
-    return [d.get(direction, d["left"])], [], []
-
-
-def _f_zoom(p):
-    factor = float(p.get("factor", 1.5))
-    x = p.get("x", "center")
-    y = p.get("y", "center")
-    # Static zoom via crop then scale back to original dimensions
-    crop_w = f"iw/{factor}"
-    crop_h = f"ih/{factor}"
-    if x == "center":
-        crop_x = f"(iw-iw/{factor})/2"
-    else:
-        crop_x = f"iw*{float(x)}-iw/{factor}/2"
-    if y == "center":
-        crop_y = f"(ih-ih/{factor})/2"
-    else:
-        crop_y = f"ih*{float(y)}-ih/{factor}/2"
-    return [f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale=iw*{factor}:ih*{factor}"], [], []
-
-
-def _f_ken_burns(p):
-    direction = p.get("direction", "zoom_in")
-    amount = float(p.get("amount", 0.2))
-    # Animated zoom/pan using crop with time-varying expressions
-    # Amount is the fraction of the frame to travel (0.2 = 20%)
-    margin = int(amount * 200)  # extra pixels to pad
-    speed = max(1, margin // 10)
-    if direction == "zoom_in":
-        # Start wide (padded), crop inward over time
-        return [
-            f"pad=iw+{margin}:ih+{margin}:{margin//2}:{margin//2}:black,"
-            f"crop=iw-{margin}+min({speed}*t\\,{margin}):"
-            f"ih-{margin}+min({speed}*t\\,{margin}):"
-            f"max({margin//2}-{speed//2}*t\\,0):"
-            f"max({margin//2}-{speed//2}*t\\,0),"
-            f"scale=iw:ih"
-        ], [], []
-    elif direction == "zoom_out":
-        # Start cropped, expand outward over time
-        return [
-            f"pad=iw+{margin}:ih+{margin}:{margin//2}:{margin//2}:black,"
-            f"crop=iw-min({speed}*t\\,{margin}):"
-            f"ih-min({speed}*t\\,{margin}):"
-            f"min({speed//2}*t\\,{margin//2}):"
-            f"min({speed//2}*t\\,{margin//2}),"
-            f"scale=iw:ih"
-        ], [], []
-    elif direction == "pan_right":
-        return _f_drift({"direction": "right", "amount": margin})
-    elif direction == "pan_left":
-        return _f_drift({"direction": "left", "amount": margin})
-    else:
-        return _f_drift({"direction": "right", "amount": margin})
-
-
-def _f_mirror(p):
-    mode = p.get("mode", "horizontal")
-    if mode == "horizontal":
-        return ["crop=iw/2:ih:0:0,split[l][r];[r]hflip[rf];[l][rf]hstack"], [], []
-    elif mode == "vertical":
-        return ["crop=iw:ih/2:0:0,split[t][b];[b]vflip[bf];[t][bf]vstack"], [], []
-    elif mode == "quad":
-        return [
-            "crop=iw/2:ih/2:0:0,split=4[a][b][c][d];"
-            "[b]hflip[bh];[c]vflip[cv];[d]hflip,vflip[dh];"
-            "[a][bh]hstack[top];[cv][dh]hstack[bot];"
-            "[top][bot]vstack"
-        ], [], []
-    else:
-        return ["hflip"], [], []
-
-
-def _f_boomerang(p):
-    loops = int(p.get("loops", 3))
-    # Forward + reverse concatenated, then looped
-    return [
-        f"split[fwd][rev];[rev]reverse[r];[fwd][r]concat=n=2:v=1:a=0,loop=loop={loops - 1}:size=32767"
-    ], [], []
-
-
-def _f_caption_space(p):
-    position = p.get("position", "bottom")
-    height = int(p.get("height", 200))
-    color = sanitize_text_param(str(p.get("color", "black")))
-    if position == "top":
-        return [f"pad=iw:ih+{height}:0:{height}:{color}"], [], []
-    else:
-        return [f"pad=iw:ih+{height}:0:0:{color}"], [], []
-
-
-def _f_color_grade(p):
-    style = p.get("style", "teal_orange")
-    grades = {
-        "teal_orange": "eq=saturation=1.3:contrast=1.1,hue=h=-10",
-        "warm": "eq=saturation=1.15:contrast=1.05,colorbalance=rs=0.1:gs=0.05:bs=-0.1",
-        "cool": "eq=saturation=1.1:contrast=1.05,colorbalance=rs=-0.1:gs=0.0:bs=0.15",
-        "desaturated": "eq=saturation=0.6:contrast=1.2:brightness=0.02",
-        "high_contrast": "eq=contrast=1.4:saturation=1.15:brightness=-0.05",
-    }
-    return [grades.get(style, grades["teal_orange"])], [], []
-
-
-def _f_gif(p):
-    width = int(p.get("width", 480))
-    fps = int(p.get("fps", 15))
-    # GIF conversion requires split + palettegen + paletteuse filtergraph
-    return [
-        f"fps={fps},scale={width}:-1:flags=lanczos,"
-        f"split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse"
-    ], [], []
-
-
-def _f_chromakey(p):
-    color = sanitize_text_param(str(p.get("color", "green")))
-    # Map common names to hex
-    color_map = {"green": "0x00FF00", "blue": "0x0000FF", "red": "0xFF0000"}
-    color_hex = color_map.get(color.lower(), color)
-    similarity = float(p.get("similarity", 0.3))
-    blend = float(p.get("blend", 0.1))
-    return [f"chromakey=color={color_hex}:similarity={similarity}:blend={blend}"], [], []
-
-
-def _f_deband(p):
-    thr = float(p.get("threshold", 0.04))
-    rng = int(p.get("range", 16))
-    return [f"deband=1thr={thr}:2thr={thr}:3thr={thr}:range={rng}"], [], []
-
-
-def _f_lens_correction(p):
-    k1 = float(p.get("k1", -0.2))
-    k2 = float(p.get("k2", 0.0))
-    return [f"lenscorrection=k1={k1}:k2={k2}:i=bilinear"], [], []
-
-
-def _f_color_temperature(p):
-    temp = int(p.get("temperature", 6500))
-    mix = float(p.get("mix", 1.0))
-    return [f"colortemperature=temperature={temp}:mix={mix}"], [], []
-
-
-def _f_deinterlace(p):
-    mode = p.get("mode", "send_frame")
-    mode_map = {"send_frame": "0", "send_field": "1"}
-    return [f"yadif=mode={mode_map.get(mode, '0')}"], [], []
-
-
-def _f_frame_interpolation(p):
-    fps = int(p.get("fps", 60))
-    mode = p.get("mode", "mci")
-    return [f"minterpolate=fps={fps}:mi_mode={mode}"], [], []
-
-
-def _f_scroll(p):
-    direction = p.get("direction", "up")
-    speed = float(p.get("speed", 0.05))
-    d = {
-        "up": f"scroll=vertical=-{speed}",
-        "down": f"scroll=vertical={speed}",
-        "left": f"scroll=horizontal=-{speed}",
-        "right": f"scroll=horizontal={speed}",
-    }
-    return [d.get(direction, d["up"])], [], []
-
-
-def _f_aspect(p):
-    ratio = p.get("ratio", "16:9")
-    mode = p.get("mode", "pad")
-    color = sanitize_text_param(str(p.get("color", "black")))
-    # Parse ratio string like "16:9" or "2.35:1"
-    parts = ratio.split(":")
-    if len(parts) == 2:
-        r = float(parts[0]) / float(parts[1])
-    else:
-        r = float(ratio)
-    if mode == "crop":
-        return [f"crop=if(gt(iw/ih\\,{r})\\,ih*{r}\\,iw):if(gt(iw/ih\\,{r})\\,ih\\,iw/{r})"], [], []
-    elif mode == "stretch":
-        return [f"scale=if(gt(iw/ih\\,{r})\\,iw\\,ih*{r}):if(gt(iw/ih\\,{r})\\,iw/{r}\\,ih)"], [], []
-    else:  # pad
-        return [f"pad=if(gt(iw/ih\\,{r})\\,iw\\,ih*{r}):if(gt(iw/ih\\,{r})\\,iw/{r}\\,ih):(ow-iw)/2:(oh-ih)/2:{color}"], [], []
-
-
-def _f_container(p):
-    fmt = p.get("format", "mp4")
-    return [], [], ["-f", fmt]
-
-
-def _f_two_pass(p):
-    bitrate = p.get("target_bitrate", "4M")
-    return [], [], ["-b:v", bitrate]
-
-
-def _f_audio_codec(p):
-    codec = p.get("codec", "aac")
-    bitrate = p.get("bitrate", "128k")
-    if codec == "copy":
-        return [], [], ["-c:a", "copy"]
-    return [], [], ["-c:a", codec, "-b:a", bitrate]
-
-
-def _f_hwaccel(p):
-    accel_type = p.get("type", "auto")
-    return [], [], [], "", ["-hwaccel", accel_type]
-
-
-def _f_perspective(p):
-    preset = p.get("preset", "tilt_forward")
-    strength = float(p.get("strength", 0.3))
-    # s is the pixel offset proportional to strength (max ~25% of dimension)
-    presets = {
-        "tilt_forward":  "x0=0+{s}:y0=0:x1=W-{s}:y1=0:x2=0:y2=H:x3=W:y3=H",
-        "tilt_back":     "x0=0:y0=0:x1=W:y1=0:x2=0+{s}:y2=H:x3=W-{s}:y3=H",
-        "lean_left":     "x0=0:y0=0+{s}:x1=W:y1=0:x2=0:y2=H:x3=W:y3=H-{s}",
-        "lean_right":    "x0=0:y0=0:x1=W:y1=0+{s}:x2=0:y2=H-{s}:x3=W:y3=H",
-    }
-    tmpl = presets.get(preset, presets["tilt_forward"])
-    # Convert strength 0-1 to pixel expression: strength * W/4 (max 25% offset)
-    s = f"W*{strength}/4"
-    expr = tmpl.replace("{s}", s)
-    return [f"perspective={expr}:interpolation=linear:sense=source"], [], []
-
-
-def _f_fill_borders(p):
-    left = int(p.get("left", 10))
-    right = int(p.get("right", 10))
-    top = int(p.get("top", 10))
-    bottom = int(p.get("bottom", 10))
-    mode = p.get("mode", "smear")
-    mode_map = {"smear": 0, "mirror": 1, "fixed": 2, "reflect": 3, "wrap": 4, "fade": 5}
-    m = mode_map.get(mode, 0)
-    return [f"fillborders=left={left}:right={right}:top={top}:bottom={bottom}:mode={m}"], [], []
-
-
-def _f_deshake(p):
-    rx = int(p.get("rx", 16))
-    ry = int(p.get("ry", 16))
-    edge = p.get("edge", "mirror")
-    edge_map = {"blank": 0, "original": 1, "clamp": 2, "mirror": 3}
-    e = edge_map.get(edge, 3)
-    return [f"deshake=rx={rx}:ry={ry}:edge={e}"], [], []
-
-
-def _f_selective_color(p):
-    color_range = p.get("color_range", "reds")
-    c = float(p.get("cyan", 0.0))
-    m = float(p.get("magenta", 0.0))
-    y = float(p.get("yellow", 0.0))
-    k = float(p.get("black", 0.0))
-    # selectivecolor expects CMYK values as space-separated string
-    return [f"selectivecolor={color_range}='{c} {m} {y} {k}'"], [], []
-
-
-def _f_monochrome(p):
-    preset = p.get("preset", "neutral")
-    size = float(p.get("size", 1.0))
-    # cb = chroma blue spot, cr = chroma red spot
-    presets = {
-        "neutral":    {"cb": 0.0, "cr": 0.0},
-        "warm":       {"cb": -0.1, "cr": 0.2},
-        "cool":       {"cb": 0.2, "cr": -0.1},
-        "sepia_tone": {"cb": -0.2, "cr": 0.15},
-        "blue_tone":  {"cb": 0.3, "cr": -0.05},
-        "green_tone": {"cb": 0.1, "cr": -0.2},
-    }
-    p_vals = presets.get(preset, presets["neutral"])
-    return [f"monochrome=cb={p_vals['cb']}:cr={p_vals['cr']}:size={size}"], [], []
-
-
-# Dispatch table: skill_name → handler(params) → (vf, af, opts)
-_SKILL_DISPATCH: dict[str, callable] = {
-    # Temporal
-    "trim": _f_trim,
-    "speed": _f_speed,
-    "reverse": _f_reverse,
-    "loop": _f_loop,
-    # Spatial
-    "resize": _f_resize,
-    "crop": _f_crop,
-    "pad": _f_pad,
-    "rotate": _f_rotate,
-    "flip": _f_flip,
-    # Visual
-    "brightness": _f_brightness,
-    "contrast": _f_contrast,
-    "saturation": _f_saturation,
-    "hue": _f_hue,
-    "sharpen": _f_sharpen,
-    "blur": _f_blur,
-    "denoise": _f_denoise,
-    "vignette": _f_vignette,
-    "fade": _f_fade,
-    # Audio
-    "volume": _f_volume,
-    "normalize": _f_normalize,
-    "fade_audio": _f_fade_audio,
-    "remove_audio": _f_remove_audio,
-    "extract_audio": _f_extract_audio,
-    # Encoding
-    "compress": _f_compress,
-    "convert": _f_convert,
-    "bitrate": _f_bitrate,
-    "quality": _f_quality,
-    # Overlay
-    "text_overlay": _f_text_overlay,
-    "pixelate": _f_pixelate,
-    "posterize": _f_posterize,
-    # Transitions
-    "fade_to_black": _f_fade_to_black,
-    "fade_to_white": _f_fade_to_white,
-    "flash": _f_flash,
-    # Motion
-    "spin": _f_spin,
-    "shake": _f_shake,
-    "pulse": _f_pulse,
-    "bounce": _f_bounce,
-    "drift": _f_drift,
-    # Reveals
-    "iris_reveal": _f_iris_reveal,
-    "wipe": _f_wipe,
-    "slide_in": _f_slide_in,
-    # Zoom
-    "zoom": _f_zoom,
-    "ken_burns": _f_ken_burns,
-    # Effects
-    "mirror": _f_mirror,
-    "boomerang": _f_boomerang,
-    "caption_space": _f_caption_space,
-    "color_grade": _f_color_grade,
-    "gif": _f_gif,
-    # High-impact
-    "chromakey": _f_chromakey,
-    "deband": _f_deband,
-    "lens_correction": _f_lens_correction,
-    "color_temperature": _f_color_temperature,
-    "deinterlace": _f_deinterlace,
-    "frame_interpolation": _f_frame_interpolation,
-    "scroll": _f_scroll,
-    # Infrastructure
-    "aspect": _f_aspect,
-    "container": _f_container,
-    "two_pass": _f_two_pass,
-    "audio_codec": _f_audio_codec,
-    "hwaccel": _f_hwaccel,
-    # Medium-value
-    "perspective": _f_perspective,
-    "fill_borders": _f_fill_borders,
-    "deshake": _f_deshake,
-    "selective_color": _f_selective_color,
-    "monochrome": _f_monochrome,
-}
-
-
-def _f_waveform(p):
-    """Audio waveform visualization using showwaves + overlay (filter_complex)."""
-    mode = p.get("mode", "cline")
-    height = int(p.get("height", 200))
-    color = sanitize_text_param(str(p.get("color", "white")))
-    position = p.get("position", "bottom")
-    opacity = float(p.get("opacity", 0.8))
-
-    # Position mapping: y-coordinate expression
-    pos_map = {
-        "bottom": f"H-{height}",
-        "center": f"(H-{height})/2",
-        "top": "0",
-    }
-    y_expr = pos_map.get(position, pos_map["bottom"])
-
-    # Build filter_complex graph:
-    # [0:a] → showwaves → [wave]
-    # [0:v][wave] → overlay → output
-    fc = (
-        f"[0:a]showwaves=s=Wx{height}:mode={mode}:colors={color},"
-        f"format=yuva420p,colorchannelmixer=aa={opacity}[wave];"
-        f"[0:v][wave]overlay=0:{y_expr}"
-    )
-    return [], [], [], fc
-
-
-# Register waveform in dispatch (uses filter_complex, 4-tuple return)
-_SKILL_DISPATCH["waveform"] = _f_waveform
-
-
-# ── Multi-input skill handlers ──────────────────────────────────── #
-
-
-def _f_grid(p):
-    """Arrange multiple images in a grid using xstack filter_complex."""
-    columns = int(p.get("columns", 2))
-    gap = int(p.get("gap", 4))
-    duration = float(p.get("duration", 5.0))
-    bg = sanitize_text_param(str(p.get("background", "black")))
-    n = int(p.get("_extra_input_count", 0))
-
-    if n < 2:
-        # Not enough images — fall back to single input passthrough
-        return [], [], [], ""
-
-    rows = (n + columns - 1) // columns  # ceil division
-
-    # Scale all extra inputs to same size and pad for gap
-    # Use the first extra input's dimensions as target (scale all to match)
-    parts = []
-    for i in range(n):
-        idx = i + 1  # extra inputs start at [1:v]
-        parts.append(
-            f"[{idx}:v]scale=iw:ih,setsar=1[_g{i}]"
-        )
-
-    # Build xstack layout string
-    # layout format: "x0_y0|x1_y1|..." where positions are expressions
-    layout_parts = []
-    for i in range(n):
-        col = i % columns
-        row = i // columns
-        x = f"{col}*(w0+{gap})" if col > 0 else "0"
-        y = f"{row}*(h0+{gap})" if row > 0 else "0"
-        layout_parts.append(f"{x}_{y}")
-
-    input_labels = "".join(f"[_g{i}]" for i in range(n))
-    layout_str = "|".join(layout_parts)
-
-    fc_parts = parts + [
-        f"{input_labels}xstack=inputs={n}:layout={layout_str}:fill={bg}"
-    ]
-
-    # Add duration control via output options
-    opts = ["-t", str(duration)]
-    return [], [], opts, ";".join(fc_parts)
-
-
-def _f_slideshow(p):
-    """Create a slideshow from multiple images using concat filter_complex."""
-    dur = float(p.get("duration_per_image", 3.0))
-    transition = p.get("transition", "fade")
-    trans_dur = float(p.get("transition_duration", 0.5))
-    width = int(p.get("width", 1920))
-    height = int(p.get("height", 1080))
-    n = int(p.get("_extra_input_count", 0))
-
-    if n < 1:
-        return [], [], [], ""
-
-    # Scale each extra input to target size and set duration
-    parts = []
-    concat_inputs = []
-    for i in range(n):
-        idx = i + 1
-        scale = f"[{idx}:v]loop=loop={int(dur * 25)}:size=1:start=0,"
-        scale += f"setpts=N/25/TB,scale={width}:{height}:force_original_aspect_ratio=decrease,"
-        scale += f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1"
-        if transition == "fade" and n > 1:
-            # Add fade out at end (except last) and fade in at start (except first)
-            if i > 0:
-                scale += f",fade=t=in:st=0:d={trans_dur}"
-            if i < n - 1:
-                fade_st = dur - trans_dur
-                scale += f",fade=t=out:st={fade_st}:d={trans_dur}"
-        label = f"[_s{i}]"
-        scale += label
-        parts.append(scale)
-        concat_inputs.append(label)
-
-    # Concatenate all scaled inputs
-    concat_str = "".join(concat_inputs)
-    parts.append(f"{concat_str}concat=n={n}:v=1:a=0")
-
-    return [], [], [], ";".join(parts)
-
-
-def _f_overlay_image(p):
-    """Overlay an extra input image on the main video (picture-in-picture)."""
-    position = p.get("position", "bottom-right")
-    scale = float(p.get("scale", 0.25))
-    opacity = float(p.get("opacity", 1.0))
-    margin = int(p.get("margin", 10))
-    n = int(p.get("_extra_input_count", 0))
-
-    if n < 1:
-        return [], [], [], ""
-
-    # Scale the overlay image (first extra input = [1:v])
-    scale_expr = f"[1:v]scale=iw*{scale}:ih*{scale}"
-    if opacity < 1.0:
-        scale_expr += f",format=yuva420p,colorchannelmixer=aa={opacity}"
-    scale_expr += "[_ovl]"
-
-    # Position mapping
-    pos_map = {
-        "top-left": f"{margin}:{margin}",
-        "top-right": f"W-w-{margin}:{margin}",
-        "bottom-left": f"{margin}:H-h-{margin}",
-        "bottom-right": f"W-w-{margin}:H-h-{margin}",
-        "center": "(W-w)/2:(H-h)/2",
-    }
-    xy = pos_map.get(position, pos_map["bottom-right"])
-
-    fc = f"{scale_expr};[0:v][_ovl]overlay={xy}"
-    return [], [], [], fc
-
-
-# Register multi-input skills in dispatch
-_SKILL_DISPATCH["grid"] = _f_grid
-_SKILL_DISPATCH["slideshow"] = _f_slideshow
-_SKILL_DISPATCH["overlay_image"] = _f_overlay_image

@@ -22,7 +22,7 @@ def register_skills(registry: SkillRegistry) -> None:
             ),
         ],
         pipeline=[
-            "crop:width=iw,height=iw*16/9",
+            "crop:width=ih*9/16,height=ih",
             "resize:width=1080,height=1920",
             "compress:preset=medium",
         ],
@@ -40,7 +40,7 @@ def register_skills(registry: SkillRegistry) -> None:
         description="Optimize for square social media posts",
         parameters=[],
         pipeline=[
-            "crop:width=min(iw\\,ih),height=min(iw\\,ih)",
+            "crop:width=ih,height=ih",
             "resize:width=1080,height=1080",
             "compress:preset=medium",
         ],

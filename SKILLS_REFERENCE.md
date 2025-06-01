@@ -276,6 +276,94 @@ Remove color banding artifacts.
 
 ---
 
+### chroma_key_simple
+Simplified green/blue screen removal with automatic black background compositing.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------|
+| `color` | choice | green | green, blue, red |
+| `similarity` | float | 0.3 | 0.01 to 0.5 |
+| `blend` | float | 0.1 | 0.0 to 1.0 |
+
+**Example prompts:**
+- "Simple green screen removal"
+- "Quick chroma key with blue screen"
+
+---
+
+### colorkey
+Key out an arbitrary color (general-purpose version of chromakey).
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `color` | string | 0x00FF00 | hex color |
+| `similarity` | float | 0.3 | 0.01 to 0.5 |
+| `blend` | float | 0.1 | 0.0 to 1.0 |
+| `background` | string | black | color name or "transparent" |
+
+**Example prompts:**
+- "Key out the red background"
+- "Remove the blue color and replace with black"
+
+---
+
+### lumakey
+Key out regions based on brightness (luma).
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `threshold` | float | 0.0 | 0.0 to 1.0 |
+| `tolerance` | float | 0.1 | 0.0 to 1.0 |
+| `softness` | float | 0.0 | 0.0 to 1.0 |
+| `background` | string | black | color name or "transparent" |
+
+**Example prompts:**
+- "Key out the dark areas based on brightness"
+- "Remove bright white regions with luma keying"
+
+---
+
+### colorhold
+Keep only a selected color, desaturate everything else (sin-city effect).
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `color` | string | 0xFF0000 | hex color |
+| `similarity` | float | 0.3 | 0.01 to 0.5 |
+| `blend` | float | 0.1 | 0.0 to 1.0 |
+
+**Example prompts:**
+- "Keep only the red and make everything else black and white"
+- "Isolate blue tones and grayscale the rest"
+
+---
+
+### despill
+Remove green/blue color spill from chroma-keyed footage.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------|
+| `type` | choice | green | green, blue |
+| `mix` | float | 0.5 | 0.0 to 1.0 |
+| `expand` | float | 0.0 | 0.0 to 1.0 |
+| `brightness` | float | 0.0 | -1.0 to 1.0 |
+
+**Example prompts:**
+- "Clean up the green spill on the actor"
+- "Remove blue bleeding from chroma key edges"
+
+---
+
+### remove_background
+Remove background using AI (requires `rembg` optional dependency).
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------|
+| `model` | string | silueta | silueta, u2net, isnet |
+
+> [!NOTE]
+> Requires `pip install 'comfyui-ffmpega[masking]'` for the `rembg` dependency.
+
+**Example prompts:**
+- "Remove the background automatically"
+- "Cut out the subject from the background"
+
+---
+
 ## ⏱️ Temporal (Time)
 
 ### trim
@@ -487,16 +575,39 @@ Extract audio only.
 
 ---
 
-### bass / treble
-Boost or cut bass/treble frequencies.
+### bass
+Boost or reduce bass frequencies.
 | Parameter | Type | Default | Range |
 |-----------|------|---------|-------|
-| `gain` | float | 6 / 4 | -20 to 20 dB |
+| `gain` | float | 6 | -20 to 20 dB |
 
 **Example prompts:**
 - "Boost the bass"
+- "Add more low-end punch"
+- "Cut the bass frequencies"
+
+---
+
+### treble
+Boost or reduce treble frequencies.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `gain` | float | 4 | -20 to 20 dB |
+
+**Example prompts:**
 - "Add more treble"
-- "Cut the low frequencies"
+- "Make it sound brighter"
+- "Reduce the highs"
+
+---
+
+### replace_audio
+Replace the original audio track with a new one.
+*No parameters.*
+
+**Example prompts:**
+- "Replace the audio with this track"
+- "Swap out the audio"
 
 ---
 
@@ -747,6 +858,44 @@ Set audio codec.
 
 ---
 
+
+### frame_interpolation
+Smooth slow motion or frame rate conversion using motion interpolation.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `fps` | int | 60 | 24 to 120 |
+
+**Example prompts:**
+- "Interpolate to 60fps for smooth motion"
+- "Create smooth slow motion with frame interpolation"
+
+---
+
+### two_pass
+Enable two-pass encoding for better quality at a target bitrate.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `target_bitrate` | string | — | e.g. 5M, 10M |
+
+**Example prompts:**
+- "Encode with two-pass at 5M bitrate"
+- "Use two-pass encoding for best quality"
+
+---
+
+### hls_package
+Package video as HLS (HTTP Live Streaming) segments for adaptive streaming.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `segment_duration` | int | 6 | 2 to 30 seconds |
+| `playlist_type` | string | vod | vod, event |
+
+**Example prompts:**
+- "Package for HLS streaming"
+- "Create HLS segments for adaptive playback"
+
+---
+
 ## 🎬 Cinematic Presets
 
 ### cinematic
@@ -778,6 +927,47 @@ Cool blue sci-fi atmosphere.
 
 ### dark_moody
 Dark, atmospheric, moody feel.
+
+
+### color_grade
+Apply cinematic color grading.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `style` | choice | — | teal_orange, warm, cool, bleach_bypass, film |
+
+**Example prompts:**
+- "Apply teal and orange color grading"
+- "Add warm cinematic color grade"
+
+### color_temperature
+Adjust overall color temperature (warm/cool).
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `temperature` | float | 5500 | 2000 to 12000 K |
+
+**Example prompts:**
+- "Make it warmer"
+- "Cool down the color temperature"
+
+### letterbox
+Add cinematic letterbox bars for widescreen look.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `ratio` | choice | 2.35:1 | 2.35:1, 2.39:1, 1.85:1 |
+
+**Example prompts:**
+- "Add cinematic letterbox bars"
+- "Add widescreen black bars"
+
+### film_grain
+Add authentic film grain texture.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `intensity` | choice | medium | light, medium, heavy |
+
+**Example prompts:**
+- "Add film grain"
+- "Apply subtle film grain texture"
 
 ---
 
@@ -846,7 +1036,11 @@ Add intro and/or outro video segments.
 ## ✨ Creative Effects
 
 ### neon
-Neon glow aesthetic — vibrant colors, high contrast, sharp.
+Neon glow aesthetic — real edge-glow using `edgedetect` + high-saturation screen blend.
+
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------|
+| `intensity` | choice | medium | subtle, medium, strong |
 
 ### horror
 Horror movie atmosphere — dark, desaturated, grainy.
@@ -861,10 +1055,14 @@ Golden hour / sunset warm glow.
 Cyberpunk aesthetic — neon tones, high contrast, sharp.
 
 ### comic_book
-Comic book / pop art style — bold colors, high contrast.
+Comic book / pop art style — real edge outlines + posterized colors using `edgedetect` + `lutrgb` + `blend`.
+
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------|
+| `style` | choice | classic | classic, manga, pop_art |
 
 ### miniature
-Tilt-shift miniature effect — makes scenes look like toy models.
+Tilt-shift miniature effect — real selective blur using `gblur` + `blend` expression. Makes scenes look like toy models.
 
 ### surveillance
 Security camera / CCTV look — desaturated, grainy.
@@ -879,13 +1077,367 @@ Anime / cel-shaded cartoon style.
 Lo-fi / chill aesthetic — soft, warm, slightly degraded.
 
 ### thermal
-Thermal / heat vision camera effect.
+Thermal / heat vision camera effect — real pseudocolor heat-map gradient using `pseudocolor` filter.
 
 ### posterize
 Reduce color palette for a poster/screen-print look.
 
 ### emboss
 Emboss / relief effect — raised surface look.
+
+---
+
+## 🔮 Enhanced Effects (Advanced Filters)
+
+These effects use powerful FFMPEG filters for results that look genuinely different from basic color adjustments.
+
+### chromatic_aberration
+RGB channel offset for color fringing / glitch aesthetic using `rgbashift`.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `amount` | int | 4 | 1 to 20 |
+
+**Example prompts:**
+- "Add chromatic aberration"
+- "Apply strong RGB split"
+- "Add color fringing like a cheap lens"
+
+---
+
+### sketch
+Pencil drawing / ink line art using `edgedetect` filter.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------|
+| `mode` | choice | pencil | pencil, ink, color |
+
+**Example prompts:**
+- "Turn it into a pencil sketch"
+- "Apply ink outline effect"
+- "Show colored edges only"
+
+---
+
+### glow
+Bloom / soft glow using `split` → `gblur` → `blend` (screen mode). Uses filter_complex.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `radius` | float | 30 | 5 to 60 |
+| `strength` | float | 0.4 | 0.1 to 0.8 |
+
+**Example prompts:**
+- "Add a soft bloom glow"
+- "Make it glow like a dream"
+- "Apply subtle halo light effect"
+
+---
+
+### ghost_trail
+Temporal trailing / afterimage using `lagfun` filter. Great for motion-heavy footage.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `decay` | float | 0.97 | 0.9 to 0.995 |
+
+**Example prompts:**
+- "Add ghostly motion trails"
+- "Apply afterimage echo effect"
+- "Make moving objects leave trails"
+
+---
+
+### color_channel_swap
+Dramatic color remapping by swapping/mixing color channels using `colorchannelmixer`.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------|
+| `preset` | choice | swap_rb | swap_rb, swap_rg, swap_gb, nightvision, matrix |
+
+**Example prompts:**
+- "Swap the red and blue channels for a surreal look"
+- "Apply matrix green effect"
+- "Make it look like night vision"
+
+---
+
+### tilt_shift
+Real tilt-shift miniature with selective blur using `gblur` + `blend` expression.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `focus_position` | float | 0.5 | 0.1 to 0.9 |
+| `blur_amount` | float | 8 | 2 to 20 |
+
+**Example prompts:**
+- "Apply tilt-shift to make it look like a toy"
+- "Add selective blur with focus on the top third"
+- "Make the scene look miniature"
+
+---
+
+### frame_blend
+Temporal frame blending for dreamy motion blur using `tmix` filter.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `frames` | int | 5 | 2 to 10 |
+
+**Example prompts:**
+- "Blend frames for motion blur"
+- "Apply long-exposure look"
+- "Make it dreamy with frame blending"
+
+---
+
+### false_color
+Pseudocolor / false-color mapping (heat map, rainbow, etc.) using `pseudocolor` filter.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------|
+| `palette` | choice | heat | heat, rainbow, blues, electric |
+
+**Example prompts:**
+- "Apply heat map false color"
+- "Make it look like a thermal scanner"
+- "Apply rainbow pseudocolor"
+
+---
+
+### halftone
+Newspaper/screen-print halftone dot pattern using `geq` filter.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `dot_size` | float | 0.3 | 0.1 to 1.0 |
+
+**Example prompts:**
+- "Apply halftone newspaper dots"
+- "Make it look like a print"
+- "Apply Ben Day dot pattern"
+
+---
+
+
+### spin
+Continuous animated rotation.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `speed` | float | 1.0 | 0.1 to 5.0 |
+
+**Example prompts:**
+- "Spin the video clockwise"
+- "Add a continuous slow rotation"
+
+---
+
+### shake
+Add camera shake / earthquake effect.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `intensity` | choice | medium | light, medium, heavy |
+
+**Example prompts:**
+- "Add camera shake"
+- "Apply earthquake effect"
+
+---
+
+### pulse
+Rhythmic breathing zoom effect.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `speed` | float | 1.0 | 0.5 to 3.0 |
+| `amount` | float | 0.05 | 0.01 to 0.2 |
+
+**Example prompts:**
+- "Make it pulse like a heartbeat"
+- "Add a rhythmic zoom pulse"
+
+---
+
+### bounce
+Bouncing vertical animation effect.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `height` | int | 30 | 5 to 100 px |
+
+**Example prompts:**
+- "Make the video bounce"
+- "Add a bouncing animation"
+
+---
+
+### drift
+Slow cinematic drift/pan across the frame.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `direction` | choice | right | left, right, up, down |
+
+**Example prompts:**
+- "Pan slowly to the right"
+- "Cinematic drift leftward"
+
+---
+
+### fade_to_black
+Fade in from black at start and/or fade out to black at end.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `in_duration` | float | 1.0 | 0.1 to 5.0 sec |
+| `out_duration` | float | 1.0 | 0.1 to 5.0 sec |
+
+**Example prompts:**
+- "Fade in from black"
+- "Fade out to black at the end"
+
+---
+
+### fade_to_white
+Fade in from white at start and/or fade out to white at end.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `in_duration` | float | 1.0 | 0.1 to 5.0 sec |
+| `out_duration` | float | 1.0 | 0.1 to 5.0 sec |
+
+**Example prompts:**
+- "Fade in from white"
+- "Fade out to white at the end"
+
+---
+
+### flash
+Camera flash effect at a specific timestamp.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `time` | float | 1.0 | seconds |
+| `duration` | float | 0.3 | 0.1 to 1.0 sec |
+
+**Example prompts:**
+- "Add a camera flash at 2 seconds"
+- "Flash transition midway through"
+
+---
+
+### iris_reveal
+Circular reveal expanding from the center of the frame.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `duration` | float | 2.0 | 0.5 to 5.0 sec |
+
+**Example prompts:**
+- "Add an iris reveal from center"
+- "Circle wipe opening from the middle"
+
+---
+
+### wipe
+Reveal the video with a directional wipe from black.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `direction` | choice | left | left, right, up, down |
+
+**Example prompts:**
+- "Wipe reveal from the left"
+- "Add a wipe from the right"
+
+---
+
+### slide_in
+Slide the video in from an edge of the frame.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `direction` | choice | left | left, right, top, bottom |
+
+**Example prompts:**
+- "Slide the video in from the left"
+- "Slide in from the bottom"
+
+---
+
+### deinterlace
+Remove interlacing from old or TV footage.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `mode` | choice | send_frame | send_frame, send_field |
+
+**Example prompts:**
+- "Deinterlace the footage"
+- "Remove interlacing artifacts"
+
+---
+
+### deshake
+Simple video stabilization to reduce shakiness.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `rx` | int | 16 | 0 to 64 |
+| `ry` | int | 16 | 0 to 64 |
+
+**Example prompts:**
+- "Deshake the camera movement"
+- "Quick stabilization for handheld footage"
+
+---
+
+### fill_borders
+Fill black borders with mirrored/blurred content.
+*No parameters.*
+
+**Example prompts:**
+- "Fill the black borders"
+- "Mirror-fill the blank edges"
+
+---
+
+### lens_correction
+Correct barrel or pincushion lens distortion.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `k1` | float | -0.3 | -1 to 1 |
+| `k2` | float | 0 | -1 to 1 |
+
+**Example prompts:**
+- "Fix the barrel distortion"
+- "Apply lens correction"
+
+---
+
+### lut_apply
+Apply a LUT (Look-Up Table) file for color grading.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `path` | string | — | .cube or .3dl file path |
+
+**Example prompts:**
+- "Apply this LUT file"
+- "Load a .cube LUT for color grading"
+
+---
+
+### perspective
+Apply perspective transform / keystoning.
+*No parameters.*
+
+**Example prompts:**
+- "Add perspective tilt"
+- "Apply keystoning effect"
+
+---
+
+### selective_color
+Isolate and adjust a specific color range.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `color` | choice | red | red, green, blue, yellow, cyan, magenta |
+
+**Example prompts:**
+- "Make only the red pop"
+- "Desaturate everything except blue"
+
+---
+
+### burn_subtitles
+Hardcode/burn subtitles from .srt or .ass file into the video.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `path` | string | — | .srt or .ass file path |
+
+**Example prompts:**
+- "Burn these subtitles into the video"
+- "Hardcode the SRT file"
 
 ---
 
@@ -915,6 +1467,85 @@ Soft, ethereal, dreamy look.
 ### hdr_look
 Simulated HDR dynamic range.
 
+
+### boomerang
+Create looping boomerang effect (forward + reverse).
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `loops` | int | 3 | 1 to 10 |
+
+**Example prompts:**
+- "Make it a boomerang loop"
+- "Play forward then backward"
+
+### ken_burns
+Ken Burns slow zoom pan effect for photos.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `direction` | choice | in | in, out |
+| `duration` | float | 5.0 | 1 to 30 sec |
+
+### slowmo
+Smooth slow motion effect.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `factor` | float | 0.5 | 0.1 to 0.9 |
+
+**Example prompts:**
+- "Make it slow motion"
+- "Apply 50% speed slow-mo"
+
+### stabilize
+Remove camera shake and stabilize footage.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `strength` | choice | medium | light, medium, strong |
+
+**Example prompts:**
+- "Stabilize the shaky footage"
+- "Remove camera shake"
+
+### timelapse
+Speed up footage dramatically for timelapse effect.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `factor` | float | 10.0 | 2 to 100 |
+
+**Example prompts:**
+- "Create a timelapse at 10x speed"
+- "Speed up for timelapse"
+
+### zoom
+Apply zoom effect.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `factor` | float | 1.5 | 1.1 to 4.0 |
+
+**Example prompts:**
+- "Zoom in 2x"
+- "Crop and zoom to center"
+
+### scroll
+Scroll the video vertically or horizontally.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `direction` | choice | up | up, down, left, right |
+| `speed` | float | 1.0 | 0.1 to 5.0 |
+
+**Example prompts:**
+- "Scroll the video upward"
+- "Add a horizontal scroll"
+
+### monochrome
+Convert to monochrome with optional color tint.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `preset` | choice | neutral | neutral, warm, cool, green, sepia |
+
+**Example prompts:**
+- "Make it black and white"
+- "Warm monochrome look"
+
 ---
 
 ## 🎵 Audio Visualization
@@ -936,47 +1567,55 @@ Visualize audio as a waveform overlay on the video (uses filter_complex with `sh
 
 ---
 
-## 🖼️ Multi-Input (Images → Video)
+## 🔗 Multi-Input & Composition
 
 > [!NOTE]
-> These skills require multiple input images from the IMAGE tensor.
-> The node automatically extracts individual frames as separate files.
+> These skills use multiple inputs from `image_a`, `image_b`, etc. (auto-expanding).
+> **Dynamic slots**: Connect `image_a` → `image_b` appears → `image_c` appears, and so on.
+> **Standalone mode**: Slideshow and grid work without a main video — just connect extra images.
+> When a video IS connected, it's automatically included as the first cell/slide.
 
 ### grid
-Arrange multiple input images in a grid layout (uses `xstack` filter).
+Arrange video + images in a grid layout (uses `xstack` filter). Auto-includes the main video as the first cell.
 | Parameter | Type | Default | Range |
 |-----------|------|---------|-------|
 | `columns` | int | 2 | 1 to 6 |
 | `gap` | int | 4 | 0 to 20 px |
 | `duration` | float | 5.0 | 1 to 60 seconds |
 | `background` | string | black | color name or hex |
+| `include_video` | bool | true | include main video as first cell |
+| `cell_width` | int | 640 | cell width in pixels |
+| `cell_height` | int | 480 | cell height in pixels |
 
 **Example prompts:**
 - "Arrange images in a 2-column grid"
-- "Create a 3-column mosaic with gaps"
+- "Create a side-by-side comparison"
+- "Make a 3-column mosaic with gaps"
 - "Make a collage on a white background"
 
 ---
 
 ### slideshow
-Create a slideshow from multiple input images (uses `concat` filter).
+Create a slideshow from images with fade transitions. Optionally starts with the main video.
 | Parameter | Type | Default | Choices/Range |
 |-----------|------|---------|---------------|
 | `duration_per_image` | float | 3.0 | 0.5 to 30 seconds |
 | `transition` | choice | fade | none, fade |
 | `transition_duration` | float | 0.5 | 0.1 to 3.0 seconds |
-| `width` | int | 1920 | -1 to 3840 |
-| `height` | int | 1080 | -1 to 2160 |
+| `width` | int | *(input)* | output width (defaults to input resolution) |
+| `height` | int | *(input)* | output height (defaults to input resolution) |
+| `include_video` | bool | false | include main video as first segment |
 
 **Example prompts:**
 - "Create a slideshow with fade transitions"
+- "Create a slideshow starting with the video"
 - "Make a photo slideshow, 5 seconds per image"
 - "Create a presentation with 1-second transitions"
 
 ---
 
 ### overlay_image
-Overlay a second image on the video (picture-in-picture / watermark).
+Overlay images on the video (picture-in-picture / watermark). Supports multiple overlays — each auto-placed at a different corner.
 | Parameter | Type | Default | Choices/Range |
 |-----------|------|---------|---------------|
 | `position` | choice | bottom-right | top-left, top-right, bottom-left, bottom-right, center |
@@ -988,6 +1627,73 @@ Overlay a second image on the video (picture-in-picture / watermark).
 - "Add a logo watermark in the bottom-right"
 - "Overlay an image at 15% in the top-left"
 - "Put a semi-transparent image in the center"
+- "Overlay images in the corners at 20% scale" *(multi-overlay — connect image_a + image_b)*
+
+---
+
+### concat
+Concatenate (join) the main video with extra video/image inputs sequentially.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `width` | int | *(input)* | output width (defaults to input resolution) |
+| `height` | int | *(input)* | output height (defaults to input resolution) |
+| `still_duration` | float | 5.0 | seconds per still image |
+
+**Example prompts:**
+- "Concatenate these videos together"
+- "Join the clips into one continuous video"
+- "Append all video inputs sequentially"
+
+---
+
+### xfade
+Concatenate segments with smooth transitions. Supports 18+ transition types.
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `transition` | choice | fade | fade, fadeblack, fadewhite, wipeleft, wiperight, wipeup, wipedown, slideleft, slideright, dissolve, pixelize, radial, circlecrop, smoothleft, smoothright, squeezev, squeezeh |
+| `duration` | float | 1.0 | 0.1 to 5.0 seconds |
+| `still_duration` | float | 4.0 | seconds per segment |
+| `width` | int | *(input)* | output width (defaults to input resolution) |
+| `height` | int | *(input)* | output height (defaults to input resolution) |
+
+**Example prompts:**
+- "Join clips with a dissolve transition"
+- "Add a wipe left transition between each segment"
+- "Concatenate with a pixelize transition lasting 2 seconds"
+- "Add radial transitions between segments"
+
+---
+
+### split_screen
+Show videos/images side-by-side (horizontal) or stacked (vertical).
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `layout` | choice | horizontal | horizontal, vertical |
+| `width` | int | 960 | per-cell width |
+| `height` | int | 540 | per-cell height |
+| `duration` | float | 10.0 | output duration |
+
+**Example prompts:**
+- "Show both videos side by side"
+- "Create a vertical split screen"
+- "Make a horizontal comparison view"
+
+---
+
+### animated_overlay
+Overlay an image with animated motion. Requires `image_a` as the overlay.
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `animation` | choice | scroll_right | scroll_right, scroll_left, scroll_up, scroll_down, float, bounce, slide_in, slide_in_top |
+| `speed` | float | 1.0 | 0.1 to 10.0 |
+| `scale` | float | 0.2 | 0.05 to 1.0 (relative to video) |
+| `opacity` | float | 1.0 | 0.0 to 1.0 |
+
+**Example prompts:**
+- "Add a scrolling logo across the bottom"
+- "Make the overlay image float around slowly"
+- "Add a bouncing overlay animation"
+- "Slide the overlay in from the left"
 
 ---
 
@@ -1014,6 +1720,696 @@ Here are some multi-skill prompt ideas you can try:
 | Dreamy timelapse | "Speed up 4x, apply dreamy effect, add fade in and out" |
 | Music visualizer | "Show audio waveform at the bottom with cyan color" |
 | Photo collage | "Arrange these images in a 3-column grid with gaps" |
+| Side by side | "Create a side-by-side comparison" |
 | Photo slideshow | "Create a slideshow with 4 seconds per image and fade transitions" |
+| Video + slides | "Create a slideshow starting with the video" |
 | Branded video | "Overlay the logo image in the bottom-right corner at 20% scale" |
+| Multi-watermark | "Overlay images in the corners at 15% scale" |
+| Ghost music video | "Ghost trail effect, slow motion, chromatic aberration" |
+| Sketch art | "Pencil sketch with glow overlay" |
+| Retro print | "Halftone dots, sepia tone, add film grain" |
+| Dreamy bloom | "Glow effect with frame blending and slow zoom" |
+| Glitch art | "Chromatic aberration, color channel swap, pixelate" |
+| Night ops | "Night vision color swap, add noise, surveillance text" |
+| Thermal cam | "False color heat map with timestamp text" |
+| Miniature city | "Tilt-shift with high saturation and timelapse" |
+| Video mashup | "Concatenate all clips with dissolve transitions" |
+| Split compare | "Show both videos side by side for comparison" |
+| Animated bug | "Add a scrolling logo that bounces around the video" |
+| News style | "Add 'Breaking News' text as lower third with red background" |
+| Branded content | "Add a semi-transparent watermark, title text, and fade in" |
+| Green screen | "Remove the green screen and replace with blue" |
+| Loudness fix | "Normalize loudness to -14 LUFS, set audio to 320k" |
+| Smooth slow-mo | "Frame rate interpolation to 60fps, then slow to 0.5x" |
+| Clean podcast | "Remove silence, denoise audio, normalize loudness" |
+| Privacy blur | "Blur the face region at x=300,y=200 for privacy" |
+| News broadcast | "Add lower third, ticker bar, and countdown overlay" |
+| Glitch art | "Datamosh effect with chromatic aberration and radial blur" |
+| Film texture | "Grain overlay, split tone warm highlights, add vignette" |
+| Upscale & sharpen | "Scale 2x with Lanczos, then unsharp mask" |
+| Sin city effect | "Colorhold red, boost contrast, add vignette" |
+| VFX compositing | "Chroma key green screen, despill green, color match" |
+| Luma matte | "Lumakey dark areas, add glow, fade in from black" |
+| Auto subtitles | "Auto-transcribe and burn subtitles with white text" |
+| Karaoke lyrics | "Add karaoke-style word-by-word subtitles with yellow fill" |
+| Captioned cinematic | "Auto-transcribe, add letterbox bars, fade in" |
+
+---
+
+## 🕐 Temporal (New Skills)
+
+### scene_detect
+Auto-detect scene changes / cuts in the video.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `threshold` | float | 0.3 | 0.1 to 0.9 |
+
+**Example prompts:**
+- "Detect scene changes in the video"
+- "Split at every cut point"
+
+---
+
+### silence_remove
+Automatically remove silent segments from audio/video.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `threshold` | float | -30 | -60 to 0 dB |
+| `min_duration` | float | 0.5 | 0.1 to 10.0 sec |
+
+**Example prompts:**
+- "Remove all the silent parts from this podcast"
+- "Strip dead air from the recording"
+
+---
+
+### time_remap
+Gradually change speed from one value to another.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `start_speed` | float | 1.0 | 0.1 to 10.0 |
+| `end_speed` | float | 0.5 | 0.1 to 10.0 |
+
+**Example prompts:**
+- "Gradually slow down from normal to half speed"
+- "Ramp up from slow to fast"
+
+---
+
+### freeze_frame
+Freeze a frame at a specific timestamp.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `time` | float | 2.0 | seconds |
+| `duration` | float | 3.0 | seconds to hold |
+
+**Example prompts:**
+- "Freeze the frame at 5 seconds for 3 seconds"
+- "Hold on that moment at the 10 second mark"
+
+---
+
+## 🔊 Audio (New Skills)
+
+### noise_reduction
+Remove background noise from audio.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `amount` | float | 0.5 | 0.0 to 1.0 |
+
+**Example prompts:**
+- "Clean up the background noise"
+- "Reduce the hiss and hum"
+
+---
+
+### audio_crossfade
+Apply smooth audio crossfade transition.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `duration` | float | 2.0 | 0.1 to 10.0 sec |
+
+**Example prompts:**
+- "Add an audio crossfade"
+- "Smooth audio transition"
+
+---
+
+### audio_delay
+Add delay/offset to the audio track.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `delay_ms` | int | 500 | 0 to 5000 ms |
+
+**Example prompts:**
+- "Delay the audio by half a second"
+- "Offset the audio 200ms"
+
+---
+
+### ducking
+Compress audio dynamics (single-input ducking).
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `threshold` | float | 0.05 | 0.0 to 1.0 |
+
+**Example prompts:**
+- "Apply audio ducking"
+- "Compress the dynamic range"
+
+---
+
+### dereverb
+Remove room echo and reverb from audio.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `amount` | float | 0.5 | 0.0 to 1.0 |
+
+**Example prompts:**
+- "Remove the room echo"
+- "Clean up the reverb from this voice recording"
+
+---
+
+### split_audio
+Extract a specific audio channel from stereo.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------|
+| `channel` | choice | left | left, right |
+
+**Example prompts:**
+- "Extract just the left channel"
+- "Isolate the right audio channel"
+
+---
+
+### audio_normalize_loudness
+Normalize audio to EBU R128 / LUFS standard.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `target` | float | -14 | -30 to -5 LUFS |
+| `tp` | float | -1.0 | -5.0 to 0.0 dBTP |
+
+**Example prompts:**
+- "Normalize loudness to streaming standard"
+- "Set loudness to broadcast standard (-24 LUFS)"
+
+---
+
+## 🎨 Visual (New Skills)
+
+### white_balance
+Adjust white balance / color temperature.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `temperature` | int | 6500 | 2000 to 12000 K |
+
+**Example prompts:**
+- "Make it warmer like candlelight"
+- "Cool down the color temperature"
+
+---
+
+### shadows_highlights
+Separately adjust shadows and highlights.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `shadows` | float | 0.2 | -1.0 to 1.0 |
+| `highlights` | float | -0.1 | -1.0 to 1.0 |
+
+**Example prompts:**
+- "Lift the shadows and pull down the highlights"
+- "Brighten the dark areas"
+
+---
+
+### split_tone
+Apply split toning (warm highlights, cool shadows).
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `intensity` | float | 0.3 | 0.0 to 1.0 |
+
+**Example prompts:**
+- "Add split toning with warm highlights"
+- "Apply teal and orange color grading"
+
+---
+
+### deflicker
+Remove flickering (fluorescent lights, timelapse).
+| Parameter | Type | Default | Range/Choices |
+|-----------|------|---------|---------------|
+| `size` | int | 5 | 2 to 20 |
+| `mode` | choice | pm | am, gm, pm |
+
+**Example prompts:**
+- "Fix the flickering from fluorescent lights"
+- "Remove timelapse flicker"
+
+---
+
+### unsharp_mask
+Fine-grained sharpening with luma/chroma control.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `luma_amount` | float | 1.5 | -2.0 to 5.0 |
+| `chroma_amount` | float | 0.0 | -2.0 to 5.0 |
+| `luma_size` | int | 5 | 3 to 13 |
+
+**Example prompts:**
+- "Apply precise unsharp mask sharpening"
+- "Sharpen only the luma channel"
+- "Soften the image slightly with negative unsharp"
+
+---
+
+## 📐 Spatial (New Skills)
+
+### auto_crop
+Automatically detect and remove black borders.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `threshold` | int | 24 | 0 to 255 |
+
+**Example prompts:**
+- "Remove the black letterbox borders"
+- "Auto-crop the black bars"
+
+---
+
+### scale_2x
+Quick upscale with quality algorithm selection.
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `factor` | int | 2 | 1 to 4 |
+| `algorithm` | choice | lanczos | lanczos, bicubic, bilinear, spline |
+
+**Example prompts:**
+- "Upscale the video 2x"
+- "Double the resolution with Lanczos"
+- "4x upscale with bicubic"
+
+---
+
+## 📦 Encoding (New Skills)
+
+### audio_bitrate
+Set audio encoding bitrate independently.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `kbps` | int | 192 | 32 to 512 |
+
+**Example prompts:**
+- "Set audio to 320kbps high quality"
+- "Lower audio bitrate to 128k"
+
+---
+
+### frame_rate_interpolation
+Motion-interpolated frame rate conversion (smoother than fps).
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `fps` | int | 60 | 12 to 120 |
+| `mode` | choice | mci | mci, blend, dup |
+
+**Example prompts:**
+- "Smoothly interpolate to 60fps"
+- "Motion-interpolate to 120fps for slow-mo"
+- "Convert to 24fps with frame blending"
+
+---
+
+## ✏️ Text & Graphics (New Skills)
+
+### animated_text
+Add animated text overlay.
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `text` | string | Hello World | any text |
+| `size` | int | 72 | 12 to 200 |
+| `color` | string | white | color name or hex |
+
+**Example prompts:**
+- "Add animated 'Hello World' text"
+- "Show animated title text"
+
+---
+
+### scrolling_text
+Add scrolling credits-style text.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `text` | string | Credits | any text |
+| `speed` | float | 1.0 | 0.1 to 5.0 |
+
+**Example prompts:**
+- "Add scrolling end credits"
+- "Scroll text across the bottom"
+
+---
+
+### ticker
+Add news-style scrolling ticker bar.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `text` | string | BREAKING NEWS | any text |
+| `speed` | float | 1.0 | 0.1 to 5.0 |
+
+**Example prompts:**
+- "Add a news ticker at the bottom"
+- "Show a scrolling headline bar"
+
+---
+
+### lower_third
+Add professional broadcast lower third overlay.
+| Parameter | Type | Default |
+|-----------|------|---------|
+| `name` | string | John Doe |
+| `title` | string | CEO |
+
+**Example prompts:**
+- "Add a lower third with name and title"
+- "Show the speaker's name at the bottom"
+
+---
+
+### countdown
+Add countdown timer overlay.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `from_num` | int | 5 | 1 to 60 |
+| `size` | int | 120 | 24 to 300 |
+
+**Example prompts:**
+- "Add a 5-second countdown at the start"
+- "Show a countdown timer"
+
+---
+
+### typewriter_text
+Typewriter reveal effect for text.
+| Parameter | Type | Default |
+|-----------|------|---------|
+| `text` | string | Hello World |
+| `speed` | float | 0.1 |
+
+**Example prompts:**
+- "Add typewriter text that reveals letter by letter"
+- "Show 'Coming Soon' with typewriter effect"
+
+---
+
+### bounce_text
+Bouncing animated text.
+| Parameter | Type | Default |
+|-----------|------|---------|
+| `text` | string | Hello |
+| `size` | int | 72 |
+
+**Example prompts:**
+- "Add bouncing 'NEW!' text at the top"
+- "Show bouncing title text"
+
+---
+
+### fade_text
+Text that fades in and out.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `text` | string | Title |
+| `fade_duration` | float | 1.0 | 0.1 to 5.0 |
+
+**Example prompts:**
+- "Fade in the title over 2 seconds then fade out"
+- "Show text briefly with fade effect"
+
+---
+
+### karaoke_text
+Karaoke-style fill text for music.
+| Parameter | Type | Default |
+|-----------|------|---------|
+| `text` | string | ♪ Lyrics |
+| `speed` | float | 0.5 |
+
+**Example prompts:**
+- "Add karaoke-style text that fills in"
+- "Show lyrics with karaoke highlight"
+
+---
+
+## ✂️ Editing & Composition (New Skills)
+
+### picture_in_picture
+Add a picture-in-picture overlay window.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `x` | int | 20 | position |
+| `y` | int | 20 | position |
+| `scale` | float | 0.25 | 0.1 to 0.5 |
+
+**Example prompts:**
+- "Add a PiP window in the bottom right"
+- "Show a small inset in the corner"
+
+---
+
+### blend
+Blend two video inputs together.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------|
+| `mode` | choice | overlay | overlay, addition, multiply, screen |
+| `opacity` | float | 0.5 | 0.0 to 1.0 |
+
+**Example prompts:**
+- "Blend videos with overlay mode"
+- "Mix the two videos together"
+
+---
+
+### delogo
+Remove a logo/watermark from a region.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `x` | int | 10 | position |
+| `y` | int | 10 | position |
+| `w` | int | 100 | width |
+| `h` | int | 40 | height |
+
+**Example prompts:**
+- "Remove the logo from the top-left corner"
+- "Clean up the watermark"
+
+---
+
+### remove_dup_frames
+Strip duplicate/stuttered frames.
+| Parameter | Type | Default |
+|-----------|------|---------|
+| `max_drop` | int | 0 |
+
+**Example prompts:**
+- "Remove duplicate frames"
+- "Fix the stuttering"
+
+---
+
+### mask_blur
+Blur a rectangular region for privacy.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `x` | int | 0 | position |
+| `y` | int | 0 | position |
+| `w` | int | 200 | width |
+| `h` | int | 200 | height |
+| `strength` | int | 20 | 1 to 50 |
+
+**Example prompts:**
+- "Blur the face region for privacy"
+- "Censor the license plate area"
+
+---
+
+### extract_frames
+Export frames as image sequence.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `rate` | float | 1.0 | 0.1 to 30.0 fps |
+
+**Example prompts:**
+- "Extract one frame per second as PNG"
+- "Export frames at 0.5fps"
+
+---
+
+### jump_cut
+Auto-cut to high-energy moments.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `threshold` | float | 0.3 | 0.1 to 0.9 |
+
+**Example prompts:**
+- "Auto-detect and cut to the action"
+- "Make jump cuts at scene changes"
+
+---
+
+### beat_sync
+Cut video in sync with a beat interval.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `bpm` | float | 120 | 60 to 200 |
+| `threshold` | float | 0.3 | 0.1 to 0.9 |
+
+**Example prompts:**
+- "Sync the cuts to the beat at 120 BPM"
+- "Cut on every beat"
+
+---
+
+### color_match
+Auto-match colors via histogram equalization.
+*No parameters.*
+
+**Example prompts:**
+- "Auto-match the colors and brightness"
+- "Equalize the histogram"
+
+---
+
+## 🎆 Creative Effects (New Skills)
+
+### datamosh
+Glitch art via motion vector visualization.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------|
+| `mode` | choice | mv_type | mv_type, mv_color, qp_table |
+
+**Example prompts:**
+- "Apply a datamosh glitch effect"
+- "Show the motion vectors as art"
+
+---
+
+### radial_blur
+Radial / zoom blur effect.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `angle` | float | 5.0 | 0.5 to 45.0 |
+
+**Example prompts:**
+- "Add a radial blur zoom effect"
+- "Apply strong zoom blur"
+
+---
+
+### grain_overlay
+Cinematic film grain with intensity control.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `intensity` | int | 15 | 1 to 80 |
+| `seed` | int | -1 | -1 to 99999 |
+
+**Example prompts:**
+- "Add subtle cinematic grain"
+- "Apply heavy gritty film grain"
+- "Add organic grain texture"
+
+---
+
+## 📦 Delivery
+
+### extract_subtitles
+Extract subtitle track from video container to a separate .srt file.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `track` | int | 0 | subtitle track index |
+
+**Example prompts:**
+- "Extract the subtitles"
+- "Save the subtitle track as SRT"
+
+---
+
+### preview_strip
+Generate a filmstrip preview showing key frames side by side.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `count` | int | 6 | 3 to 20 |
+| `tile_width` | int | 320 | 100 to 640 |
+
+**Example prompts:**
+- "Create a filmstrip preview"
+- "Generate a thumbnail strip"
+
+---
+
+### sprite_sheet
+Generate a sprite sheet of evenly-spaced frames.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `columns` | int | 5 | 2 to 10 |
+| `rows` | int | 5 | 2 to 10 |
+
+**Example prompts:**
+- "Create a sprite sheet"
+- "Generate a contact sheet of frames"
+
+---
+
+## 🤖 AI-Powered Skills
+
+### auto_mask
+Apply an effect only to specific objects using SAM3 AI segmentation. Describe the target with a text prompt and SAM3 generates pixel-level masks.
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `target` | string | *(required)* | text describing what to segment (e.g. "the dog", "face", "background") |
+| `effect` | choice | blur | blur, pixelate, remove, grayscale, highlight, greenscreen, transparent |
+| `strength` | int | 50 | 1 to 100 |
+| `invert` | bool | false | apply effect to everything EXCEPT the target |
+
+**Example prompts:**
+- "Blur all faces for privacy using auto_mask"
+- "Keep the subject in color and grayscale everything else"
+- "Pixelate the license plates"
+- "Remove the watermark"
+- "Isolate the person on a green screen"
+- "Make the background transparent (WebM output)"
+
+---
+
+### mix_audio
+Mix/blend audio tracks from two video inputs together (both audible simultaneously).
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `duration` | choice | longest | longest, shortest, first |
+| `weights` | string | 1 1 | volume weights per input (e.g. "1 0.5" to keep main louder) |
+| `dropout_transition` | float | 2.0 | 0.0 to 10.0 seconds |
+
+**Example prompts:**
+- "Mix audio from both video inputs equally"
+- "Blend the two audio tracks, keeping the main louder"
+- "Combine audio — stop when the shortest input ends"
+
+---
+
+## 🎙️ Transcription & Subtitles (Whisper AI)
+
+> [!NOTE]
+> These skills use OpenAI Whisper to auto-transcribe video audio and burn subtitles.
+> **First run** downloads the selected Whisper model (~70MB for `tiny`, ~1.5GB for `large-v3`) to `ComfyUI/models/whisper/`.
+> **Node settings**: `whisper_device` (`gpu`/`cpu`) and `whisper_model` (`tiny`, `base`, `small`, `medium`, `large-v3`) control transcription behavior.
+> **Multi-video support**: When used with `concat`/`xfade`, timestamps are automatically offset to account for concatenated segments.
+
+### auto_transcribe
+Transcribe video audio with Whisper AI and burn SRT subtitles into the output.
+| Parameter | Type | Default | Range/Choices |
+|-----------|------|---------|---------------|
+| `fontsize` | int | 24 | 8 to 72 |
+| `fontcolor` | string | white | color name, hex (`#RRGGBB`), or ASS color (`&H00FFFFFF`) |
+
+**Example prompts:**
+- "Auto-transcribe and burn subtitles"
+- "Transcribe the speech and add white subtitles"
+- "Add auto-generated captions with large blue text"
+- "Burn subtitles with yellow text at 32px"
+
+**Aliases:** `transcribe`, `auto_subtitle`, `auto_caption`, `whisper`, `speech_to_text`, `burn_subtitles`, `stt`
+
+---
+
+### karaoke_subtitles
+Word-by-word progressive-fill karaoke effect using Whisper word-level timestamps and ASS `\kf` tags.
+| Parameter | Type | Default | Range/Choices |
+|-----------|------|---------|---------------|
+| `fontsize` | int | 48 | 8 to 72 |
+| `base_color` | string | white | color for unfilled words |
+| `fill_color` | string | yellow | color that fills in as words are spoken |
+
+**Example prompts:**
+- "Add karaoke-style lyrics"
+- "Add word-by-word karaoke subtitles with yellow fill"
+- "Karaoke captions with large pink fill on a white base"
+- "Auto-transcribe with progressive word highlight"
 

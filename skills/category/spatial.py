@@ -71,10 +71,9 @@ def register_skills(registry: SkillRegistry) -> None:
         ],
         examples=[
             "crop:width=1280,height=720 - Crop to 1280x720 from center",
-            "crop:width=iw,height=iw*9/16 - Crop to 9:16 vertical",
             "crop:width=in_w-100,height=in_h-100 - Remove 50px from each edge",
         ],
-        tags=["cut", "frame", "trim", "aspect"],
+        tags=["cut", "frame", "trim"],
     ))
 
     # Pad skill
@@ -199,8 +198,67 @@ def register_skills(registry: SkillRegistry) -> None:
         ],
         examples=[
             "aspect:ratio=16:9,mode=pad - Letterbox to 16:9",
-            "aspect:ratio=9:16,mode=crop - Crop to vertical 9:16",
+            "aspect:ratio=9:16,mode=crop - Crop to vertical 9:16 for TikTok/Reels",
+            "aspect:ratio=1:1,mode=crop - Crop to square for Instagram",
             "aspect:ratio=2.35:1 - Cinematic widescreen",
         ],
-        tags=["widescreen", "letterbox", "format"],
+        tags=["widescreen", "letterbox", "format", "vertical", "portrait",
+              "landscape", "tiktok", "reels", "shorts", "instagram", "9:16",
+              "16:9", "4:3", "1:1", "square", "aspect"],
+    ))
+
+    # Auto crop — detect and remove black borders
+    registry.register(Skill(
+        name="auto_crop",
+        category=SkillCategory.SPATIAL,
+        description="Automatically detect and remove black borders/letterboxing from video",
+        parameters=[
+            SkillParameter(
+                name="threshold",
+                type=ParameterType.INT,
+                description="Black detection threshold (higher = more aggressive, 0-255)",
+                required=False,
+                default=24,
+                min_value=0,
+                max_value=255,
+            ),
+        ],
+        ffmpeg_template="cropdetect=limit={threshold}:round=2:reset=0,crop",
+        examples=[
+            "auto_crop - Remove black borders automatically",
+            "auto_crop:threshold=40 - More aggressive border detection",
+        ],
+        tags=["crop", "black", "borders", "letterbox", "detect", "auto", "remove"],
+    ))
+
+    # Scale 2x — quick upscale with quality algorithm
+    registry.register(Skill(
+        name="scale_2x",
+        category=SkillCategory.SPATIAL,
+        description="Upscale video by 2x (or custom factor) with high-quality scaling algorithm",
+        parameters=[
+            SkillParameter(
+                name="factor",
+                type=ParameterType.INT,
+                description="Scale factor (2 = double, 4 = quadruple)",
+                required=False,
+                default=2,
+                min_value=1,
+                max_value=4,
+            ),
+            SkillParameter(
+                name="algorithm",
+                type=ParameterType.CHOICE,
+                description="Scaling algorithm (lanczos = sharpest, bicubic = smooth)",
+                required=False,
+                default="lanczos",
+                choices=["lanczos", "bicubic", "bilinear", "spline"],
+            ),
+        ],
+        ffmpeg_template="scale=iw*{factor}:ih*{factor}:flags={algorithm}",
+        examples=[
+            "scale_2x - Double resolution with Lanczos",
+            "scale_2x:factor=4,algorithm=bicubic - 4x upscale with bicubic",
+        ],
+        tags=["upscale", "enlarge", "double", "super", "resolution", "enhance", "2x", "4x"],
     ))

@@ -56,7 +56,7 @@ class TestAutoMaskRegistration:
         """auto_mask should have the simplified SAM3 parameters."""
         skill = registry.get("auto_mask")
         param_names = {p.name for p in skill.parameters}
-        expected = {"target", "effect", "strength", "invert", "edit_prompt"}
+        expected = {"target", "effect", "strength", "invert"}
         assert expected == param_names
 
     def test_no_box_params(self, registry):
@@ -80,7 +80,7 @@ class TestAutoMaskRegistration:
         skill = registry.get("auto_mask")
         effect_param = next(p for p in skill.parameters if p.name == "effect")
         assert set(effect_param.choices) == {
-            "blur", "pixelate", "remove", "edit", "grayscale", "highlight",
+            "blur", "pixelate", "remove", "grayscale", "highlight",
             "greenscreen", "transparent",
         }
 

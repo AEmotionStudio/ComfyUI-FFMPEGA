@@ -5,7 +5,7 @@ dispatch table wiring, and alias resolution.
 """
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from skills.handler_contract import HandlerResult
 from skills.registry import get_registry, SkillCategory

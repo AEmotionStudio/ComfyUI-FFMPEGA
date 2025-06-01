@@ -9,6 +9,7 @@ import os
 import sys
 import types
 
+import pytest
 
 # Ensure conftest.py has run for mocking, then add additional mocks
 # that these specific node imports need.

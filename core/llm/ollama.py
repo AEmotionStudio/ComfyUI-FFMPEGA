@@ -5,6 +5,7 @@ from typing import Optional, AsyncIterator
 import httpx  # type: ignore[import-not-found]
 
 from .base import LLMConnector, LLMConfig, LLMResponse, LLMProvider  # type: ignore[import-not-found]
+from ..sanitize import sanitize_api_key
 
 
 class OllamaConnector(LLMConnector):
@@ -38,8 +39,13 @@ class OllamaConnector(LLMConnector):
     def client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
         if self._client is None:
+            headers = {}
+            if self.config.api_key:
+                headers["Authorization"] = f"Bearer {self.config.api_key}"
+
             self._client = httpx.AsyncClient(
                 base_url=self.config.base_url,
+                headers=headers,
                 timeout=httpx.Timeout(
                     connect=30.0,
                     read=self.config.timeout,
@@ -54,6 +60,11 @@ class OllamaConnector(LLMConnector):
         if self._client is not None:
             await self._client.aclose()  # type: ignore[union-attr]
             self._client = None
+
+    @property
+    def supports_vision(self) -> bool:
+        """Ollama supports vision via multimodal models (llava, etc.)."""
+        return True
 
     async def generate(
         self,
@@ -87,8 +98,17 @@ class OllamaConnector(LLMConnector):
             options: dict = payload["options"]  # type: ignore[assignment]
             options.update(self.config.extra_options)
 
-        response = await self.client.post("/api/generate", json=payload)
-        response.raise_for_status()
+        try:
+            response = await self.client.post("/api/generate", json=payload)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            msg = sanitize_api_key(str(e), self.config.api_key or "")
+            raise httpx.HTTPStatusError(
+                msg, request=e.request, response=e.response
+            ) from None
+        except httpx.HTTPError as e:
+            msg = sanitize_api_key(str(e), self.config.api_key or "")
+            raise RuntimeError(f"Ollama API error: {msg}") from None
 
         data = response.json()
 
@@ -137,13 +157,22 @@ class OllamaConnector(LLMConnector):
             options: dict = payload["options"]  # type: ignore[assignment]
             options.update(self.config.extra_options)
 
-        async with self.client.stream("POST", "/api/generate", json=payload) as response:
-            response.raise_for_status()
-            async for line in response.aiter_lines():
-                if line:
-                    data = json.loads(line)
-                    if "response" in data:
-                        yield data["response"]
+        try:
+            async with self.client.stream("POST", "/api/generate", json=payload) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if line:
+                        data = json.loads(line)
+                        if "response" in data:
+                            yield data["response"]
+        except httpx.HTTPStatusError as e:
+            msg = sanitize_api_key(str(e), self.config.api_key or "")
+            raise httpx.HTTPStatusError(
+                msg, request=e.request, response=e.response
+            ) from None
+        except httpx.HTTPError as e:
+            msg = sanitize_api_key(str(e), self.config.api_key or "")
+            raise RuntimeError(f"Ollama API error: {msg}") from None
 
     async def chat(
         self,
@@ -171,8 +200,17 @@ class OllamaConnector(LLMConnector):
             options: dict = payload["options"]  # type: ignore[assignment]
             options.update(self.config.extra_options)
 
-        response = await self.client.post("/api/chat", json=payload)
-        response.raise_for_status()
+        try:
+            response = await self.client.post("/api/chat", json=payload)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            msg = sanitize_api_key(str(e), self.config.api_key or "")
+            raise httpx.HTTPStatusError(
+                msg, request=e.request, response=e.response
+            ) from None
+        except httpx.HTTPError as e:
+            msg = sanitize_api_key(str(e), self.config.api_key or "")
+            raise RuntimeError(f"Ollama API error: {msg}") from None
 
         data = response.json()
         message = data.get("message", {})
@@ -223,8 +261,17 @@ class OllamaConnector(LLMConnector):
             options: dict = payload["options"]  # type: ignore[assignment]
             options.update(self.config.extra_options)
 
-        response = await self.client.post("/api/chat", json=payload)
-        response.raise_for_status()
+        try:
+            response = await self.client.post("/api/chat", json=payload)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            msg = sanitize_api_key(str(e), self.config.api_key or "")
+            raise httpx.HTTPStatusError(
+                msg, request=e.request, response=e.response
+            ) from None
+        except httpx.HTTPError as e:
+            msg = sanitize_api_key(str(e), self.config.api_key or "")
+            raise RuntimeError(f"Ollama API error: {msg}") from None
 
         data = response.json()
         message = data.get("message", {})

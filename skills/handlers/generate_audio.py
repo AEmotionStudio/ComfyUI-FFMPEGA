@@ -114,7 +114,7 @@ def _f_generate_audio(p):
             f"[0:v]null[_vpass]"
         )
         if mode == "mix" and p.get("_has_embedded_audio"):
-            fc += ";[0:a][_gen_audio]amix=inputs=2:duration=shortest[_aout]"
+            fc += f";[0:a][_gen_audio]amix=inputs=2:duration=shortest[_aout]"
             return _mr(
                 fc=fc,
                 opts=["-map", "[_vpass]", "-map", "[_aout]"],

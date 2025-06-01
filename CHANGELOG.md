@@ -5,6 +5,427 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.0] - 2026-02-28
+
+### Added
+- **FFMPEGA Effects Builder Node**: New companion node for manual effect composition — select up to 3 skills with params, combine with raw FFmpeg filters, and use presets. No LLM required. Purple-themed UI with dynamic widget visibility and auto-fill defaults.
+- **Effects Builder Context Menu Presets**: Right-click the Effects Builder for quick access to all 18 built-in presets, plus save/load/delete custom presets. Includes a "Clear All Effects" reset option.
+- **Text Node Presets**: Right-click the FFMPEGA Text node for 10 built-in presets (SRT Subtitle Example, Cinematic Subtitles, Bold Watermark, Title Card, Social Caption, Meme Text, Lower Third, Copyright Notice, Credits Roll, Chapter Marker) with example text content. Save/load/delete custom presets. "Clear Text" resets to defaults.
+- **No-LLM Text Support**: Connect a Text node to the Agent in no-LLM manual mode (without an Effects Builder) and it auto-generates a text overlay or subtitle pipeline from the Text node's settings.
+- **Manual No-LLM Mode**: New `manual` option in `no_llm_mode` dropdown (now the default) — set `llm_model` to `none` and use the Effects Builder to edit videos without any AI. Shows a clear error if no Effects Builder node is connected.
+- **SAM3-Only Mode**: New no-LLM mode that uses the prompt as a SAM3 text target for object masking/removal without an LLM.
+- **Whisper No-LLM Modes**: `transcribe` and `karaoke_subtitles` options in `no_llm_mode` — run Whisper speech-to-text and burn subtitles directly without an LLM. Also available as Effects Builder presets ("Auto Subtitles", "Karaoke Subtitles").
+- **Effects Builder Multi-Input Support**: The Effects Builder pipeline now calls `_inject_extra_inputs()` to populate `pipeline.extra_inputs`, enabling concat, grid, split screen, xfade, overlay, and all other multi-input skills to work correctly with `video_b`, `image_b`, etc.
+- **SAM3 Point Prompts**: Support for geometric point prompts passed as SAM3 boxes for precise segmentation guidance. Two-phase prompting: text VG detection + native point refinement.
+- **SAM3 Progress Streaming**: Real-time SAM3 subprocess progress display in the console.
+- **Save Video Overlay Button**: Accessible overlay button on video previews for quick save actions.
+- **Drag-and-Drop Feedback**: Visual feedback during file drag-and-drop uploads with proper state restoration.
+
+### Fixed
+- **SAM3 Subprocess Isolation**: SAM3 video masking now runs in a separate subprocess to prevent CUDA memory leaks and improve VRAM management. Fixes persistent OOM errors on long videos.
+- **SAM3 OOM Fixes**: Multiple fixes for out-of-memory errors during SAM3 processing — CPU offloading between propagation passes, frame 0 cache retention for point prompts, VG propagation scoping.
+- **SAM3 Point Prompt Fixes**: Cap `max_num_objects` to 2 for point prompt mode, validate coordinates with float/int coercion, forward `mask_points` to batch mode metadata, use source image dims for coordinate mapping.
+- **SAM3 Bad File Descriptor**: Fixed `Popen` bad file descriptor error in SAM3 subprocess communication.
+- **SAM3 `_postprocess_output` KeyError**: Fixed KeyError when `max_num_objects` is active and fewer objects are detected than expected.
+- **MCP Path Traversal** *(security)*: Fixed path traversal vulnerabilities in MCP tools — added input and output path validation.
+- **Template Placeholder Crash**: Fixed unsubstituted template placeholders (e.g. `{ratio}`) causing ffmpeg crashes when parameters are dropped by validation. Now falls back to skill defaults.
+- **Effects Builder Multi-Input**: Fixed concat, grid, split screen, xfade, and all multi-input skills not working in the Effects Builder. The Effects Builder path was missing the `_inject_extra_inputs()` call, so `_extra_input_count` was always 0.
+- **Concat/Xfade/Slideshow Resolution**: Fixed output resolution defaulting to 1920×1080 regardless of input. Handlers now use the input video's actual resolution.
+- **Dynamic Slot Root Cause**: Fixed `video_b` disappearing on page refresh — `video_path` and `video_folder` static widget inputs were polluting the `video_` dynamic slot group.
+- **Effects Builder Stale Params**: Switching effects now clears the params widget, preventing stale params from leaking between effects.
+- **Effects Builder Temp Cleanup**: Added cleanup for temp files created by `_inject_extra_inputs()` in the Effects Builder pipeline.
+- **Drag-and-Drop State Restoration**: Correctly restores original text and border states after drag-and-drop feedback.
+- **Vision Frames Cleanup**: Clear `_vision_frames` on startup and correct SAM3 import check.
+- **`text_overlay` Position**: Removed position default from `text_overlay` to preserve preset positioning.
+- **Tool Prompt Builder**: Filter `None` from `available_names` in tool prompt builder.
+- **SaveVideo Preview Mode**: Fixed `preview_only` mode causing 404 errors — preview segments now correctly copied to ComfyUI's temp directory.
+- **Frame Extractor Duration Default**: Changed default `duration` from 10s to 0 (full video), raised max to 3600s.
+
+### Security
+- **MCP Path Validation**: Input and output paths in MCP tools are now validated against path traversal attacks.
+- **SkillComposer Parameter Hardening**: Secure parameter handling and updated skill schemas to prevent injection.
+- **`validate_path` Directory Checks**: Enforced sensitive directory checks in `validate_path`.
+
+### Performance
+- **SAM3 VRAM Optimization**: CPU offloading, auto-stride selection, and object limits for SAM3 video masker. Suppressed noisy console output.
+- **FFMPEG Pipe Buffer**: Optimized pipe buffer size for video conversion.
+- **Ultrafast Temp Videos**: Temp video generation now uses `ultrafast` FFMPEG preset.
+- **Frame Tensor Allocation**: Optimized video frame tensor allocation.
+
+### Changed
+- **`no_llm_mode` Default → `manual`**: Default changed from `sam3_masking` to `manual`. Users who set `llm_model=none` now get the Effects Builder path by default.
+- **Empty Prompt Allowed for Manual Mode**: `manual` mode no longer requires a prompt.
+- **SAM3 Last-Frame Anchoring Removed**: Simplified point prompts by removing last-frame point anchoring from SAM masker and its UI.
+- **SAM3 `mask_output_type` Default**: Changed default mask output type from `colored_overlay` to `black_white`.
+- **UI Focus Tracking**: Refactored focus tracking to use explicit state; enhanced focus visibility for interactive elements.
+
+---
+
+## [2.7.1] - 2026-02-24
+
+### Added
+- **Advanced Options Toggle**: New `advanced_options` input (default: Simple) — hides `preview_mode`, `crf`, `encoding_preset`, `video_path`, `subtitle_path`, and `batch_mode` (+ sub-widgets) behind a toggle for a cleaner node layout. Power users can enable Advanced mode to access all settings.
+- **SAM3 Checkpoint Warnings**: Added format mismatch detection — logs a warning with reconversion instructions when >50% of checkpoint keys are missing (e.g. HuggingFace Transformers format vs expected original `.pt` key structure).
+- **Token Log Rotation**: `usage_log.jsonl` now auto-rotates when exceeding 10 MB, trimming the oldest 50% of entries to prevent unbounded disk growth.
+
+### Fixed
+- **Dynamic Input Persistence**: Fixed dynamic input slots (e.g. `video_b` appearing when `video_a` is connected) not restoring on workflow load. Pre-creates saved slots from serialized data in `onConfigure` and uses `setTimeout` instead of `requestAnimationFrame` for reliable link restoration timing.
+- **Default Value Mismatches**: Synced `process()` signature defaults with `INPUT_TYPES` for `whisper_device` and `track_tokens`.
+
+### Changed
+- **Removed `ptc_mode` Input**: PTC mode hidden from UI (not ready for public use). Defaults to `"off"` internally. Code preserved for future re-enablement.
+- **Removed `sam3_device` Input**: SAM3 CPU mode hidden from UI (SAM3 does not support CPU inference). Defaults to `"gpu"` internally.
+- **Whisper Default → CPU**: `whisper_device` now defaults to `"cpu"` to avoid VRAM pressure on most setups.
+- **Token Tracking Default → On**: `track_tokens` now defaults to `True` so users see token usage by default.
+- **Dead Code Cleanup**: Removed ~1100 lines of unreachable inlined `process` method after `return` statement in `agent_node.py`.
+- **`ValidationError`**: Path validation functions in `core/sanitize.py` now raise `ValidationError` instead of `ValueError` for more specific error handling.
+
+---
+
+## [2.7.0] - 2026-02-24
+
+### Added
+- **SAM3 Auto-Mask & Greenscreen**: New `remove` skill powered by SAM3 (Segment Anything Model 3) for automatic object segmentation. Generates per-frame binary masks from text prompts (e.g. *"remove the person"*), then applies LaMa inpainting or black fill. New `greenscreen` skill uses SAM3 masks to replace backgrounds with solid colors or transparency (WebM output). *(PR #71)*
+- **LaMa Inpainting**: New `core/lama_inpainter.py` — per-frame LaMa (Large Mask Inpainting) for AI-powered video object removal. Uses `simple-lama-inpainting` (Apache-2.0). Includes temporal Gaussian smoothing to reduce frame-to-frame flickering, and automatic temp directory cleanup. *(PR #71)*
+- **Programmatic Tool Calling (PTC)**: New `execute_code` tool with sandboxed Python executor (`core/ptc_executor.py`). LLMs can write a single Python script that orchestrates multiple tool calls (search → details → build) in one pass, reducing round-trips from ~6 to 1. Three modes: `off` (classic), `auto` (both available), `on` (forced PTC only). *(PR #72)*
+- **PTC Sandbox Security**: Static code analysis blocks 25+ escape vectors — dunder introspection (`__class__`, `__globals__`, `__getattribute__`), module access (`os.`, `subprocess.`), traceback frame traversal (`__traceback__`, `tb_frame`, `f_back`), dangerous builtins (`eval`, `exec`, `open`, `chr`), and dynamic attribute access. All builtins except safe ones are removed. *(PR #72)*
+- **Tool Use Examples**: `input_examples` field added to all tool definitions, giving LLMs concrete usage patterns. Examples are stripped from API schemas (OpenAI, Anthropic) to avoid 400 errors but preserved for CLI connectors that embed tools as text. *(PR #72)*
+- **PTC Test Suite**: New `tests/test_ptc_executor.py` with 34 tests covering sandbox security (15 escape vector tests), safe builtins, tool access, end-to-end orchestration, and vision integration. *(PR #72)*
+
+### Security
+- **Path Validation Hardening**: Case-insensitive path validation on all platforms, improved robustness of output path blocking for system directories. *(PR #69)*
+- **Input Sanitization**: Expanded input sanitization for edge cases in text parameters and API key handling. *(PR #69)*
+- **PTC Sandbox Hardening**: Blocked `__getattribute__`/`__setattr__`/`__delattr__` for dynamic attribute access, `chr()` for string construction bypasses, and traceback frame traversal escapes. Deep-copied tool schemas prevent mutation of global definitions. *(PR #72)*
+
+### Performance
+- **CHOICE Validation O(1)**: `SkillParameter` caches a normalized `_choice_map` in `__post_init__` — O(1) dictionary lookup instead of O(N) list iteration. *(PR #70)*
+- **FFMPEG Path Escape**: Optimized `ffmpeg_escape_path` performance for common-case clean paths. *(PR #73)*
+
+### Fixed
+- **SAM3 Mask Cleanup**: Guarded `rmtree` against `None` temp directory, wrapped FPS parsing in try/except, fixed torch.cuda calls on CPU-only systems, and resolved mask dimension validation issues. *(PR #71)*
+- **LaMa Import Path**: Added relative import fallback and corrected `remove_object` function import (was incorrectly `inpaint_video`). *(PR #71)*
+- **PTC API Keys**: System prompt and test mocks now use correct return keys (`matches`/`match_count` instead of `skills`/`count`). *(PR #72)*
+- **Regex False Positives**: PTC blocked-patterns regex uses word boundaries so strings like `"videos.mp4"` are not flagged by the `os.` pattern. *(PR #72)*
+- **Forced PTC Mode**: When `ptc_mode == "on"`, tool_defs now only exposes `execute_code` — model can no longer bypass forced-PTC with classic per-tool calls. *(PR #72)*
+- **CLI Tool Instructions**: Tool usage instructions now adapt to available tools — prevents contradictory "ALWAYS call search_skills" when only `execute_code` is exposed. *(PR #72)*
+- **Sentinel Overlay Validation**: Added validation for `ParameterType.COLOR` and hidden `text_overlay` parameters.
+
+### Changed
+- **Shared Effect Filter Map**: Extracted duplicate effect filter mapping into a shared constant to eliminate duplication between handlers. *(PR #71)*
+- **Upload Button UX**: Enhanced upload button accessibility with improved label casing and ARIA attributes. *(PR #74)*
+- **Tool Schema Stripping**: `strip_nonstandard_fields()` now uses `copy.deepcopy` for nested parameters, preventing mutation of global `TOOL_DEFINITIONS`. Only applied to non-CLI connectors. *(PR #72)*
+- **Test Suite**: Expanded from 516 to **656 passing tests**, 0 failures. New PTC executor tests (34), security hardening tests, and updated mock return shapes to match real API contracts.
+
+---
+
+
+## [2.6.6] - 2026-02-22
+
+### Changed
+- **Metadata Updates**: Updated author to `Æmotion Studio` in `pyproject.toml` and `__init__.py`.
+- **Dependencies**: Removed `pydantic` from requirements since it's already provided by ComfyUI core.
+
+---
+
+## [2.6.5] - 2026-02-22
+
+### Added
+- **Whisper Auto-Transcription**: New `auto_transcribe` skill — transcribes video audio with OpenAI Whisper and burns SRT subtitles into the output. Supports single and multi-video (concat) workflows with correct cross-clip timing. *(PR #67)*
+- **Karaoke Subtitles**: New `karaoke_subtitles` skill — word-by-word progressive-fill karaoke effect using Whisper word-level timestamps and ASS `\kf` tags. Configurable font size, base color, and fill color. *(PR #67)*
+- **Whisper Device Control**: New `whisper_device` node setting (`gpu`/`cpu`) — allows running Whisper on CPU to avoid VRAM pressure on low-memory GPUs. *(PR #67)*
+- **Whisper Model Selection**: New `whisper_model` node setting (`tiny`, `base`, `small`, `medium`, `large-v3`) — choose the model size for speed vs. accuracy tradeoff. *(PR #67)*
+- **Transcription Test Suite**: New `tests/test_transcribe.py` with 18 tests covering SRT generation, ASS karaoke output, handler dispatch, skill registry entries, and model path resolution. *(PR #67)*
+
+### Fixed
+- **Publish Action Failure**: Fixed PEP 8 E702 semicolon error in `agent_node.py` that caused the Comfy Registry publish action to fail.
+- **Letterbox Content Preservation**: Replaced `crop+pad` with `drawbox` for letterboxing to preserve video content instead of cropping. Correctly handles both letterbox (horizontal bars) and pillarbox (vertical bars) cases. *(PR #67)*
+- **Whisper Memory Leak**: `_load_model` now frees the previous model before loading a new one, preventing GPU memory accumulation when switching model sizes. *(PR #67)*
+- **Multi-Video Timestamp Desync**: Fixed `transcribe_multi_video` not advancing `time_offset` for skipped (non-existent) videos, which caused subtitle desync. *(PR #67)*
+- **Xfade Transition Timing**: `transcribe_multi_video` now accepts `transition_duration` to subtract xfade overlap from timestamp offsets, keeping subtitles in sync with xfade-shortened output. *(PR #67)*
+- **ASS Subtitle Escaping**: Transcribed words containing `{`, `}`, or `\` are now stripped before embedding in karaoke ASS tags, preventing rendering failures. *(PR #67)*
+- **Primary Input Validation**: `_collect_video_paths` now validates the primary input's file extension, matching the check already applied to extra inputs. *(PR #67)*
+- **Invalid Hex Color Rejection**: `color_to_ass_bgr` now validates hex digits before conversion — malformed colors like `#GGGGGG` fall back to the default instead of producing broken ASS strings. *(PR #67)*
+- **Aspect Ratio Division by Zero**: Added validation to prevent `ZeroDivisionError` when parsing aspect ratios with zero denominators. *(PR #67)*
+
+### Changed
+- **Shared `ffmpeg_escape_path`**: Extracted duplicate `_ffmpeg_escape` functions from `subtitles.py` and `transcribe.py` into a shared `ffmpeg_escape_path()` in `core/sanitize.py`. *(PR #67)*
+- **Shared `color_to_ass_bgr`**: Extracted duplicate color-to-ASS conversion from `subtitles.py`, `transcribe.py`, and `whisper_transcriber.py` into a shared `color_to_ass_bgr()` in `core/sanitize.py`. Supports named colors, 6/8-digit hex, and native ASS pass-through. *(PR #67)*
+- **Shared `_run_transcription`**: Extracted duplicated transcription dispatch logic from `_f_auto_transcribe` and `_f_karaoke_subtitles` into a shared `_run_transcription()` helper. *(PR #67)*
+- **Subtitle Filter Ordering**: Subtitle filters now always render last via a filter reordering pass, ensuring subtitles appear on top of letterbox bars and other effects. *(PR #67)*
+
+---
+
+## [2.6.4] - 2026-02-22
+
+### Security
+- **Typewriter Text DoS Prevention**: Enforced string length validation in `SkillRegistry` and added a `max_value=200` limit to the `typewriter_text` skill's text parameter to prevent resource exhaustion. *(PR #66)*
+
+### Performance
+- **PNG Compression Optimization**: `MediaConverter.save_frames_as_images` now uses `compress_level=1` (fastest) instead of the default level (6) when saving temporary frames for FFMPEG concatenation or overlays. Yields a ~25% speedup with minimal file size impact. *(PR #64)*
+
+### Changed
+- **Aria Live Status Updates**: Added `role="status"` and `aria-live="polite"` regions to UI elements in `ffmpega_ui.js` ensuring screen readers announce status changes during video uploads, processing, and color copying. Dynamically updates `aria-label` to "Copied successfully" on hex code copy. *(PR #65)*
+
+---
+
+## [2.6.3] - 2026-02-21
+
+### Security
+- **FFMPEG Stream Specifier Injection Fix**: `sanitize_text_param` in `core/sanitize.py` now escapes square brackets (`[` → `\[`, `]` → `\]`). Unescaped brackets in user-supplied text parameters could be interpreted as FFMPEG stream specifiers (e.g. `[0:v]`), enabling filter graph injection or causing syntax errors. Added `test_escapes_brackets` regression test. *(PR #62)*
+
+### Performance
+- **Sanitize "Check First" Optimization**: `sanitize_text_param` and `sanitize_api_key` now guard each `str.replace()` call with an `if char in text` check. Avoids unnecessary string allocations in the common case (clean text). ~2.5x speedup for `sanitize_text_param` on clean input; `sanitize_api_key` skips `redact_secret()` entirely when the key is absent. *(PR #63)*
+
+### Changed
+- **Color Picker Accessibility**: `FFMPEGATextInput` hex color label in `ffmpega_ui.js` is now keyboard-accessible — added `tabindex="0"`, `role="button"`, and `aria-label` attributes; Enter/Space trigger copy; focus indicator via `box-shadow`. `aria-label="Select font color"` added to the color input itself. *(PR #61)*
+
+---
+
+## [2.6.2] - 2026-02-20
+
+### Security
+- **Block Writes to System Directories**: Updated `validate_output_path` and `validate_output_file_path` in `core/sanitize.py` to block writes to critical system directories (e.g., `/usr`, `/bin`, `/etc`, `C:\Windows`). Prevents path traversal / arbitrary file overwrite targeting sensitive system files. *(PR #59)*
+
+### Changed
+- **CHOICE Validation O(1) Lookup**: `SkillParameter` now caches a `_choice_map` of normalized choices (exact, lowercase, underscore-to-hyphen variants) in `__post_init__`. `validate()` uses O(1) dictionary lookup instead of O(N) list iteration — ~15% faster for CHOICE parameters. *(PR #60)*
+- **Video Upload Loading Feedback**: Refactored `FFMPEGALoadVideoPath` upload logic in `ffmpega_ui.js` — added `setUploadState` helper to toggle "Uploading…" label, consolidated click and drag-drop into a shared `handleUpload` handler, improved error handling with `try/finally` to ensure UI reset, and hides video preview during upload. *(PR #58)*
+
+---
+
+## [2.6.1] - 2026-02-19
+
+### Added
+- **README Hero Image**: Added a showcase screenshot to the README header, displayed below badges and above the tagline.
+- **README Examples Section**: 10 before/after video examples showcasing various editing capabilities (bouncing logo, crossfade, color grading, PiP, vintage film, datamosh, cinematic teal & orange, neon glow, colorhold noir, green screen removal). Uses animated `.webp` files in HTML tables.
+- **NotebookLM Overview**: Added YouTube video embed section with clickable thumbnail linking to the NotebookLM-generated overview video.
+- **Traffic Stats Badges**: Added dynamic Downloads, Visitors, and Clones badges powered by `shields.io/badge/dynamic/json` — data sourced from the `badges` branch via GitHub Actions.
+- **Traffic Stats Workflow**: New `.github/workflows/git_clones.yml` — runs daily, fetches clone/view/download stats via GitHub API, and pushes `traffic_stats.json` to the `badges` branch.
+- **Comfy Registry Publishing**: New `.github/workflows/publish_action.yml` — auto-publishes to the Comfy Registry when `pyproject.toml` changes on `main`. Added `[tool.comfy]` section to `pyproject.toml` with `PublisherId = "aemotionstudio"`.
+
+---
+
+## [2.6.0] - 2026-02-18
+
+### Added
+- **TextInput Node**: New `TextInputNode` for subtitle and text overlay workflows. Auto-detects SRT vs. plain text, supports `watermark` and `subtitle` modes, and generates valid SRT from plain text with duration-aware timing splits.
+- **Audio Mixing for PiP**: `picture_in_picture` skill now supports `audio_mix` parameter — blend both audio tracks together using ffmpeg's `amix` filter instead of keeping only the main video's audio.
+- **CLI Retry with Backoff**: CLI connectors (Gemini CLI, Claude CLI, Cursor Agent, Qwen CLI) now retry on transient failures with exponential backoff (3 attempts, 1s → 4s delays). Covers timeout, rate-limit, and connection errors.
+- **HandlerResult Contract**: New `skills/handler_contract.py` introduces a formal `HandlerResult` dataclass for all handler return types, replacing ad-hoc 3/4/5-tuples. Backward-compatible via `__iter__`, `__getitem__`, `__len__`, and `__add__` methods.
+- **Orchestration Unit Tests**: 5 pure static methods extracted from `compose()` now have dedicated unit tests: `_resolve_audio_conflicts`, `_chain_filter_complex`, `_dedup_output_options`, `_resolve_overlay_inputs`, `_fold_audio_into_fc`.
+- **Skill Combination Tests**: New `tests/test_skill_combinations.py` with 33 integration and unit tests covering known-fragile multi-skill pipelines (concat+volume, xfade+fade, remove_audio+volume) and orchestration helpers.
+- **Handler Unit Tests**: New `tests/test_handlers_unit.py` with 58 isolated handler tests covering all handler families (spatial, temporal, audio, visual, multi-input, encoding, presets, text, subtitles).
+
+### Fixed
+- **Text Overlay Injection** *(security)*: Sanitized `enable` parameter in `text_overlay` to prevent filter injection via crafted enable expressions.
+- **Path Traversal** *(security)*: Enforced `validate_output_path` check on directory-based output paths in `FFMPEGAgentNode` to prevent path traversal attacks.
+- **UUID Entropy** *(security)*: Fixed weak randomness in vision frame directory IDs — now uses `uuid.uuid4()` instead of predictable naming.
+- **Odd Dimension Scaling**: `resize` handler now uses `scale=-2` instead of `scale=-1` to ensure even dimensions, preventing `libx264` encoding failures with portrait videos.
+- **LUT Path Escaping**: Special characters in LUT file paths are now properly escaped for ffmpeg filter usage.
+- **Test Mock Leak**: Fixed `test_skills_registry_perf.py` permanently poisoning `sys.modules["skills.composer"]` with `MagicMock()`, causing `test_pipeline_has_text_inputs_field` to fail when tests ran in sequence.
+- **Cursor Agent Test**: Updated `test_build_cmd` assertion to match `--trust` flag added to Cursor Agent connector.
+- **Orphaned Seed Parameter**: Removed stale `seed` parameter from `grain_overlay` skill registration.
+- **Subtitle Filter Escaping**: Fixed subtitle filter using shell quotes that broke `subprocess` execution.
+- **amix Map Flags**: Fixed `amix` audio filter producing incorrect `-map` flags when chaining filter graphs.
+
+### Changed
+- **Compose Decomposition**: Extracted 5 orchestration methods from the 600+ line `compose()` method into testable pure static methods, reducing cyclomatic complexity.
+- **All 9 Handlers → HandlerResult**: Every handler module (`audio`, `encoding`, `multi_input`, `presets`, `spatial`, `subtitles`, `temporal`, `text_handlers`, `visual`) now returns `HandlerResult` via `make_result()`.
+- **Non-Blocking UX**: Replaced all blocking `alert()` / `confirm()` calls in the UI with non-blocking node status feedback.
+- **Frame Extraction Optimization**: Optimized `frames_to_tensor` memory allocation and video encoding pipelines.
+- **Skill Cache Optimization**: `Skill` objects now cache parameter maps for O(1) `_normalize_params` lookups.
+- **Test Suite**: Expanded from 481 to **516 passing tests**, 0 failures.
+
+---
+
+## [2.5.0] - 2026-02-16
+
+### Added
+- **PiP Border Support**: `picture_in_picture` skill now accepts `border` (0–20px) and `border_color` (e.g. white, black, 0x333333) parameters. Uses ffmpeg's `pad` filter to frame the overlay with a colored border.
+- **Ollama VL Auto-Embedding**: When using an Ollama vision-language model (e.g. `qwen3-vl`), the first 3 video frames are automatically embedded into the initial user message so the model "sees" the video from the start — no need for the agent to call `extract_frames` first.
+- **PiP Skill Selection Guidance**: Agentic system prompt now includes explicit guidance for PiP/webcam overlay requests, directing models to use `picture_in_picture`.
+
+### Fixed
+- **PiP Alias Resolution**: Models using `pip`, `picture-in-picture`, or `pictureinpicture` as the skill name now correctly resolve to `picture_in_picture` via `SKILL_ALIASES`. Previously these were skipped as "Unknown skill", producing no overlay.
+- **PiP/Blend Missing Input**: Added `picture_in_picture`, `pip`, and `blend` to `MULTI_INPUT_SKILLS` gate in `agent_node.py`. Without this, extra video inputs (`video_a`) were never collected, causing ffmpeg `Error binding filtergraph inputs/outputs` because `[1:v]` referenced a non-existent input.
+- **Ollama VL Verification 400 Error**: Fixed Ollama VL verification sending OpenAI-format multimodal content blocks. Now correctly sends raw base64 strings in the `images` field per Ollama's API.
+- **`extract_frames` Guidance**: Changed from "optional" to "STRONGLY RECOMMENDED" for visual requests in the agentic system prompt, improving VL model behavior.
+
+---
+
+## [2.4.0] - 2026-02-15
+
+### Added
+- **Zero-Memory Image Path Inputs**: Image paths from `image_path_a/b/c` inputs are now passed directly as file paths via `pipeline.metadata['_image_paths']` instead of being decoded into tensors. Overlay and watermark handlers reference the correct ffmpeg input index via `_image_input_indices`, keeping multi-GB images out of GPU memory.
+- **Overlay Animation Support**: `overlay_image` now accepts `animation` and `animation_speed` parameters. When `animation=bounce` (or `float`, `scroll_*`, `slide_in`) is specified, the handler auto-delegates to `animated_overlay` for proper motion using `eval=frame` expressions. This catches the common LLM pattern of choosing `overlay_image` with animation params instead of `animated_overlay`.
+- **Custom X/Y Expression Passthrough**: `overlay_image` detects when the LLM passes custom `x`/`y` ffmpeg expressions (e.g. time-based bounce math) and uses them directly with `eval=frame` instead of the static position map.
+- **Output Format Auto-Adjustment**: Output file extensions and quality preset application are now automatically adjusted based on the skills in the pipeline.
+- **UX: Paste & Replace Feedback**: Improved paste options and visual feedback in the ComfyUI node interface.
+
+### Fixed
+- **Pipeline Chaining (Xfade + Overlay)**: Fixed filter graph chaining bug where xfade's labeled outputs (`[_vout]`, `[_aout]`) were being appended instead of replaced with chaining labels (`[_pipe_0_v]`, `[_pipe_0_a]`), causing triple-label errors. Duplicate `-map` flags from handlers are now stripped when the composer manages chained graphs.
+- **Image/Video Input Separation**: Image paths are no longer added to `all_frame_paths` (which feeds xfade/concat segment lists), preventing images from being incorrectly treated as video segments. Images now get their own `-i` entries after video extra inputs.
+- **Overlay Input Indexing**: `overlay_image` and `animated_overlay` handlers now use `_image_input_indices` for correct ffmpeg input references instead of hardcoded indices, which broke when xfade/concat clips occupied indices 1–4.
+- **FFMPEG Parameter Injection** *(security)*: Extended parameter sanitization to width/height and text/spatial skill parameters to prevent filter injection.
+- **Path Validation** *(security)*: Restored path validation dropped during handler extraction refactoring.
+- **Colorkey/Chromakey Deduplication**: Removed duplicate handler registrations for chroma key skills.
+- **Pydantic Dependency**: Restored pydantic dependency dropped during refactoring.
+
+### Changed
+- **Handler Module Extraction**: Skill handlers extracted from monolithic `composer.py` into dedicated modules under `skills/handlers/` (composite, delivery, presets, etc.) for better maintainability.
+- **Skill Alias Resolution**: Refactored alias resolution to use a class constant (`SKILL_ALIASES`) instead of inline dictionaries.
+- **Performance**: `frames_to_tensor` pre-allocates memory instead of concatenating tensors incrementally.
+
+---
+
+## [2.3.0] - 2026-02-13
+
+### Added
+- **Token Usage Tracking**: New opt-in `track_tokens` and `log_usage` toggles on the FFMPEG Agent node. Tracks prompt tokens, completion tokens, LLM calls, tool calls, and elapsed time per run.
+  - **Console summary**: When `track_tokens` is enabled, prints a formatted usage box to the console after each run.
+  - **Persistent log**: When `log_usage` is enabled, appends a JSON entry to `usage_log.jsonl` for cumulative tracking across sessions.
+  - **Real token stats**: Gemini CLI (`-o json`) and Claude CLI (`--output-format json`) now return native token counts instead of estimates.
+  - **Fallback estimation**: Other CLI connectors (Cursor, Qwen) use character-based estimation (~4 chars/token), clearly labeled as `(estimated)`.
+  - **Core module**: New `core/token_tracker.py` — `TokenTracker` class accumulates per-call usage across the agentic loop.
+- **LUT Color Grading System**: 8 bundled `.cube` LUT files for cinematic color grading (`cinematic_teal_orange`, `warm_vintage`, `cool_scifi`, `film_noir`, `golden_hour`, `cross_process`, `bleach_bypass`, `neutral_clean`). Agent discovers via `list_luts` tool and applies with `lut_apply` skill. Drop custom `.cube`/`.3dl` files into `luts/` for automatic discovery.
+- **Audio Analysis Tool**: New `analyze_audio` agentic tool — analyzes volume (dB), EBU R128 loudness (LUFS), and silence detection from input video. Guides audio effect decisions without manual inspection.
+- **Vision System**: New `mcp/vision.py` — frame extraction and base64 encoding for multimodal LLM analysis. Supports both full image embedding (API/CLI connectors) and raw base64 strings (Ollama).
+- **Agentic Tools Documentation**: New README section documenting all autonomous tools the agent uses (analyze_video, extract_frames, analyze_colors, analyze_audio, search_skills, list_luts).
+- **Verification Loop Documentation**: New README section explaining the output verification loop (extract → analyze → assess → auto-correct).
+- **Custom Skills Documentation**: New README section with inline YAML example for creating custom skills.
+
+### Changed
+- **Gemini CLI Connector**: Switched from `-o text` to `-o json` output format — enables structured token usage parsing alongside text content.
+- **Claude CLI Connector**: Switched from `--output-format text` to `--output-format json` — enables structured token usage parsing alongside text content.
+- **CLI Base Connector**: `generate()` method now populates `prompt_tokens` and `completion_tokens` via character-based estimation when native token counts are unavailable.
+- **Pipeline Generator**: Agentic loop now initializes a `TokenTracker`, records usage after each LLM call, and stores the summary as `last_token_usage` on the generator instance.
+
+---
+
+## [2.2.1] - 2026-02-13
+
+### Security
+- **CLI Agent Sandbox**: CLI agents (Gemini, Claude, Cursor, Qwen) are now sandboxed to the custom node directory via `cwd=` in `create_subprocess_exec()`. Previously, agents inherited ComfyUI's working directory, potentially exposing the user's home directory (SSH keys, configs, other projects).
+
+### Fixed
+- **Vision Frame Accessibility**: Removed `_vision_frames/` from `.gitignore` so CLI agents can read extracted frames. CLI agents (especially Gemini CLI) respect both `.gitignore` and `.git/info/exclude` ignore patterns, which previously blocked frame access. The `cleanup_vision_frames()` function handles deletion after use.
+
+### Added
+- **Sandbox Test**: New `test_generate_sandboxes_cwd_to_node_dir` test verifying that `create_subprocess_exec` is called with `cwd=` pointing to the node directory.
+- **README: CLI Vision Support**: Added documentation showing which CLI agents support vision (Gemini ✅, Claude ✅, Cursor ✅, Qwen ❌) and guidelines for `_vision_frames/` accessibility.
+- **README: Gemini CLI Plans & Limits**: Added detailed free/paid tier comparison table, available models, and rate limits for Gemini CLI users.
+
+---
+
+## [2.2.0] - 2026-02-12
+
+### Added
+- **200 Skills**: Expanded from 152 to **200 skills** — 48 new skills across all categories:
+  - **Audio** (8): `noise_reduction`, `audio_crossfade`, `audio_delay`, `ducking`, `dereverb`, `split_audio`, `audio_normalize_loudness`
+  - **Temporal** (3): `scene_detect`, `silence_remove`, `time_remap`
+  - **Visual** (5): `white_balance`, `shadows_highlights`, `split_tone`, `deflicker`, `unsharp_mask`
+  - **Spatial** (2): `auto_crop`, `scale_2x`
+  - **Encoding** (2): `audio_bitrate`, `frame_rate_interpolation`
+  - **Text & Graphics** (9): `animated_text`, `scrolling_text`, `ticker`, `lower_third`, `countdown`, `typewriter_text`, `bounce_text`, `fade_text`, `karaoke_text`
+  - **Editing & Composition** (9): `picture_in_picture`, `blend`, `delogo`, `remove_dup_frames`, `mask_blur`, `extract_frames`, `jump_cut`, `beat_sync`, `color_match`
+  - **Effects** (4): `datamosh`, `radial_blur`, `grain_overlay`, `freeze_frame`
+  - **Delivery** (2): `thumbnail` (handler-based), `extract_frames` (handler-based)
+- **New `delivery.py`**: Delivery-focused skills extracted into their own outcome file.
+- **New Test Files**: `test_connectors_tools.py`, `test_pipeline_generator.py`, `test_yaml_loader.py`.
+
+### Fixed
+- **10 Broken Templates**: Fixed template errors discovered during FFmpeg execution testing:
+  - `silence_remove` — changed category from TEMPORAL to AUDIO for correct `-af` routing
+  - `time_remap` — removed nested quotes from `setpts` expression
+  - `shadows_highlights` — removed dual template+pipeline conflict
+  - `mask_blur` — fixed invalid filter syntax
+  - `jump_cut` — fixed `select` expression for FFmpeg compatibility
+  - `beat_sync` — fixed `select` expression rounding
+  - `audio_crossfade` / `ducking` — converted from multi-input to single-input templates
+  - `thumbnail` / `extract_frames` — converted to handler-based for proper `-frames:v 1` and `-an` output options
+  - `datamosh` — converted to handler-based, added `-flags2 +export_mvs` input flag for `codecview`
+
+### Changed
+- **Documentation**: Updated `SKILLS_REFERENCE.md` and `SKILL_TEST_PROMPTS.md` with entries for all 48 new skills.
+
+---
+
+## [2.1.0] - 2026-02-12
+
+### Added
+- **Input Awareness**: The LLM agent now receives a connected inputs summary showing all available video tensors, audio tracks, and images with details (frame count, duration, sample rate, FPS). Enables smarter multi-input decisions.
+- **Audio Source Selection**: New `audio_source` parameter in the LLM response JSON — the agent can select a specific audio track (`audio_a`, `audio_b`, etc.) or blend all tracks (`mix`). Users can control this via prompt: *"use audio_b"*, *"mix both audio tracks"*.
+- **Audio Mix Mode**: When `audio_source` is `mix` and multiple audio inputs are connected, all tracks are blended together using ffmpeg's `amix` filter. Default behavior for split screen and other multi-input skills with multiple audio sources.
+- **Xfade Audio Crossfade**: Xfade transitions now include `acrossfade` for seamless audio blending between segments.
+
+### Fixed
+- **Audio Mux Replacement**: `mux_audio` now uses explicit `-map 0:v -map 1:a` flags, ensuring the selected audio track replaces any existing audio instead of adding a duplicate stream.
+- **Split Screen Audio**: Fixed `_has_embedded_audio` flag being set for all multi-input skills. Now only set for concat/xfade where the filter chain reads audio directly. Split screen, grid, overlay, and similar skills now correctly receive post-render audio mux.
+- **Xfade Transition Offset**: Fixed xfade not applying transitions because `offset` was hardcoded to 0 instead of being calculated from input durations.
+- **Concat Audio Sync**: Improved concat audio handling — each audio track is pre-muxed into its paired video segment so the concat filter reads synchronized audio from each input.
+
+### Changed
+- **Prompt Templates**: Both single-shot and agentic system prompts now include a `## Connected Inputs` section with guidance on `audio_source` usage.
+- **Skill Count**: Updated to **152 skills** across all categories.
+
+---
+
+## [2.0.0] - 2026-02-11
+
+### ⚠️ Breaking Changes
+- **Input Renames**: `images` → `images_a`, `audio_input` → `audio_a`. Existing workflows referencing these inputs will need reconnecting.
+- **Removed Inputs**: `image_b` and `extra_images` removed — replaced by dynamic auto-expanding slots.
+
+### Added
+- **Dynamic Input Slots**: Image, video, and audio inputs now auto-expand — connect `image_a` and `image_b` appears, connect that and `image_c` appears, etc. Same for `images_a/b/c...` (video inputs) and `audio_a/b/c...`. Powered by JS `onConnectionsChange` hook.
+- **Concat Skill**: Concatenate multiple video/image segments sequentially with `concat` filter. Aliases: `concatenate`, `join`.
+- **Xfade Transitions**: Smooth transitions between segments with 18 effects — `fade`, `fadeblack`, `dissolve`, `wipeleft`, `wiperight`, `pixelize`, `radial`, `circlecrop`, and more. Aliases: `transition`.
+- **Split Screen**: Side-by-side (`hstack`) or top-bottom (`vstack`) layout with `split_screen`. Aliases: `splitscreen`, `side_by_side`.
+- **Animated Overlay**: Moving overlay image with 8 motion presets — `scroll_right`, `scroll_left`, `float`, `bounce`, `slide_in`, and more. Uses `eval=frame` expressions.
+- **Text Overlay**: Draw text with `drawtext` filter and 5 style presets — `title` (centered), `subtitle`, `lower_third`, `caption`, `top`. Supports timed display, background boxes, and custom fonts.
+- **Watermark Skill**: Quick watermark overlay with defaults for corner placement, low opacity, and small scale. Alias for `overlay_image`.
+- **Chroma Key Skill**: Green/blue screen removal via ffmpeg `colorkey` filter with configurable similarity, blend, and background replacement. Aliases: `chroma_key`, `green_screen`.
+
+### Changed
+- **Multi-Input Collection**: Extra images/audio are now collected from `**kwargs` in alphabetical order. Video-length tensors (>10 frames) are saved as temp video instead of individual PNGs for better performance.
+- **Skill Count**: **146 skills** across all categories.
+
+---
+
+## [1.9.0] - 2026-02-11
+
+### Added
+- **Claude Code CLI Connector**: New `claude-cli` model option — uses the locally installed Claude Code CLI (`claude -p`) for inference without an API key. Auto-detected on PATH.
+- **Cursor Agent CLI Connector**: New `cursor-agent` model option — uses Cursor's `agent` binary in non-interactive mode (`agent -p`). Auto-detected on PATH.
+- **Qwen Code CLI Connector**: New `qwen-cli` model option — uses the Qwen Code CLI (`qwen -p`) with free OAuth auth (2,000 requests/day). Auto-detected on PATH.
+- **Expanded Context Menu Presets**: Right-click presets expanded from 4 categories / 12 items to **9 categories / 50+ items** with emoji icons — Cinematic, Vintage & Retro, Color & Look, Effects & Overlays, Transitions, Motion & Animation, Format & Social, Time & Speed, and Audio.
+- **Save Output Toggle**: New `save_output` boolean input (default: off) — when disabled, output is written to a temp directory instead of ComfyUI's output folder.
+- **Workflow PNG Embedding**: When `save_output` is enabled, a first-frame PNG with embedded ComfyUI workflow metadata is saved alongside the video, enabling drag-to-reload.
+- **Dynamic Widget Visibility**: `custom_model`, `api_key`, and `output_path` fields now show/hide based on the selected model and save toggle.
+
+### Changed
+- **CLI Model Detection**: All CLI-based models (gemini-cli, claude-cli, cursor-agent, qwen-cli) are auto-detected at startup and only appear in the dropdown if the binary is found on PATH.
+- **API Key Visibility**: CLI-based models correctly hide the `api_key` field since they use their own authentication.
+
+---
+
+## [1.8.0] - 2026-02-10
+
+### Added
+- **Grid Video Integration**: `grid` skill now includes the main video as the first cell (`include_video=true` by default). Creates side-by-side comparisons with video + extra images.
+- **Slideshow Video Integration**: `slideshow` skill supports `include_video` param to play the main video as the first segment before image slides.
+- **Multi-Overlay Support**: `overlay_image` skill now chains multiple overlays — connect `image_a` + `image_b` and each gets placed at a different corner automatically.
+- **Standalone Slideshow/Grid Mode**: Slideshow and grid work without a main video — connect only `extra_images` / `image_a` / `image_b` with no video input.
+- **LLM Skill Alias Resolution**: Common LLM shorthand names auto-resolve (`overlay` → `overlay_image`, `grayscale` → `monochrome`, `stabilize` → `deshake`, etc.).
+- **Slideshow & Grid Prompt Examples**: Added few-shot examples and selection rules to the system prompt so LLMs pick `slideshow`/`grid` instead of `ken_burns` or other effects.
+
+### Fixed
+- **Grid xstack Resolution Mismatch**: All grid cells are now scaled to uniform cell dimensions (640×480 default) with aspect ratio preservation, fixing "Invalid argument" errors when video and images had different resolutions.
+- **Grid xstack Layout Expressions**: xstack layout now uses pre-computed literal pixel values instead of arithmetic expressions, which ffmpeg doesn't support.
+- **Auto-Include Video**: When a real video is connected, `include_video=true` is auto-injected into slideshow/grid steps regardless of LLM output.
+- **ParameterType.BOOLEAN → BOOL**: Fixed incorrect enum value that silently prevented `grid`, `slideshow`, and `overlay_image` from registering in the skill registry.
+
+---
+
 ## [1.7.1] - 2026-02-09
 
 ### Security

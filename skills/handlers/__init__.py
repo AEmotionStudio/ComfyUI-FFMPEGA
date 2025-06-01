@@ -15,10 +15,6 @@ from .generate_audio import (  # noqa: F401
     _f_generate_audio,
 )
 
-from .lip_sync import (  # noqa: F401
-    _f_lip_sync,
-)
-
 from .multi_input import (  # noqa: F401
     _f_grid,
     _f_slideshow,
