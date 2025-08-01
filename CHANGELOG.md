@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.0] - 2026-03-01
+
+### Added
+- **AI Audio Generation (`generate_audio`)**: New skill powered by MMAudio (CVPR 2025) — synthesizes synchronized audio/foley from video content and/or text descriptions. Supports video-to-audio, text-to-audio, and long video handling with automatic chunking and crossfade. 11 natural language aliases (`foley`, `sound_effects`, `mmaudio`, `v2a`, etc.).
+- **MMAudio Subprocess Isolation**: Audio generation runs in a subprocess to prevent CUDA memory leaks — same pattern as SAM3. Falls back to in-process generation with proper VRAM offloading if subprocess fails.
+- **Native Safetensors Loading**: MMAudio synthesizer uses `comfy.utils.load_torch_file` for direct `.safetensors` loading — no more `.pth` conversion round-trip. Falls back to `safetensors.torch.load_file` or `torch.load` if ComfyUI API unavailable.
+- **Memory-Efficient Model Init**: Uses `accelerate`'s `init_empty_weights()` and `set_module_tensor_to_device()` to load MMAudio, Synchformer, and CLIP models with zero-copy initialization — avoids the 3× memory spike of standard `model.load_state_dict()`.
+- **Model Auto-Detection**: Detects MMAudio model variant (small/large, v1/v2) from state dict tensor shapes instead of hardcoding, enabling seamless support for multiple model versions.
+- **CLIP & BigVGAN Component Loading**: Loads CLIP vision encoder (DFN5B-ViT-H-14-384) and BigVGAN v2 vocoder as separate components with controlled download paths, instead of relying on MMAudio's internal download.
+- **Model Mirror Repository**: All 5 MMAudio model components hosted on `AEmotionStudio/mmaudio-models` as fp16 `.safetensors` (~5.5 GB total, 50% smaller than original fp32). Mirror-first download with upstream HuggingFace fallback.
+- **Mask Points Chaining**: `SaveVideoNode` now has optional `mask_points` input/output for passing segmentation point data through the node chain. `LoadVideoPathNode` accepts upstream `mask_points` to override locally generated points.
+- **LoadImagePath Node Styling**: Consistent color styling applied to `LoadImagePath` to match other FFMPEGA nodes.
+- **Node Chaining Tests**: New `tests/test_node_chaining.py` with comprehensive tests for mask_points pass-through, save/load node wiring, and metadata propagation.
+- **Model Manager Tests**: New `tests/test_model_manager.py` with tests for mirror download, download guards, and safetensors conversion.
+- **Audio Generation Tests**: New `tests/test_generate_audio.py` with 20 tests covering skill registration, handler dispatch, aliases, subprocess wiring, and model manager integration.
+
+### Fixed
+- **LaMa Cache Check Mismatch**: Added check for the `torch.hub` cache directory when verifying LaMa model availability, fixing false "not found" when model existed in the hub cache.
+- **Mirror Download Test Robustness**: Mocked `require_downloads_allowed` in mirror download tests to prevent spurious failures when download guard settings differ.
+- **`no_llm_mode` Default Revert**: Reverted unintentional default change in an unrelated PR to keep focused scope.
+- **Audio Extraction Buffer**: Fixed buffer size bug in audio extraction pipeline.
+
+### Security
+- **CC-BY-NC 4.0 License Warnings**: Prominent license warnings for MMAudio model weights in 5 locations — skill description (visible to LLM agents), handler docstring, handler runtime log, model registry, and README. MMAudio model checkpoints are CC-BY-NC 4.0 (non-commercial); users must accept the license when downloading.
+
+### Changed
+- **Model Registry Updated**: `mmaudio` entry updated with accurate size (~5.5 GB), `license` field, mirror URL, and ⚠️ warning in manual instructions.
+- **Safetensors Model Conversion**: Whisper models on HuggingFace mirror converted from `.pt` to `.safetensors` to avoid being flagged. LaMa kept as `.pt` (TorchScript JIT). `try_mirror_download` updated to handle per-model conversion strategy.
+- **AI-Powered Skills Count**: Updated from 3 to 4 in README (added `generate_audio`).
+
+---
+
 ## [2.8.0] - 2026-02-28
 
 ### Added

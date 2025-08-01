@@ -5,7 +5,7 @@
 **The ultimate video editing suite for ComfyUI — edit with natural language or hands-on manual controls.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-2.8.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-2.9.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-2-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 [![Downloads](https://img.shields.io/badge/dynamic/json?color=blueviolet&label=Downloads&query=downloads.smart_count&url=https://raw.githubusercontent.com/AEmotionStudio/ComfyUI-FFMPEGA/refs/heads/badges/traffic_stats.json&style=for-the-badge&logo=github)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
@@ -24,9 +24,22 @@
 
 ---
 
-## 🚀 What's New in v2.8.0 (February 28, 2026)
+## 🚀 What's New in v2.9.0 (March 1, 2026)
 
-**Effects Builder, Manual Mode, SAM3 Hardening & 15+ Bug Fixes**
+**AI Audio Generation (MMAudio), Model Mirroring & Mask Points Chaining**
+
+*   **🔊 AI Audio Generation (`generate_audio`)**: New skill powered by [MMAudio](https://github.com/hkchengrex/MMAudio) — synthesizes synchronized audio/foley from video and/or text descriptions. Supports video-to-audio, text-to-audio, and automatic long video chunking with crossfade. 11 natural language aliases (`foley`, `sound_effects`, `v2a`, etc.).
+*   **🧠 Subprocess Isolation**: Audio generation runs in a subprocess to prevent CUDA memory leaks — same proven pattern as SAM3. Falls back to in-process with VRAM offloading.
+*   **⚡ Native Safetensors & Memory-Efficient Loading**: Uses `comfy.utils.load_torch_file` for direct `.safetensors` loading, plus `accelerate`'s zero-copy model init — no 3× memory spike during model loading.
+*   **🪞 Model Mirror Repository**: All 5 MMAudio components hosted on `AEmotionStudio/mmaudio-models` as fp16 `.safetensors` (~5.5 GB, 50% smaller than fp32). Mirror-first download with upstream HuggingFace fallback.
+*   **🔗 Mask Points Chaining**: `SaveVideoNode` and `LoadVideoPathNode` now pass `mask_points` data through the node chain — upstream segmentation points propagate to downstream processing.
+*   **🎨 LoadImagePath Styling**: Consistent FFMPEGA color styling applied to the `LoadImagePath` node.
+*   **🔧 LaMa Cache Fix**: Fixed false "not found" when LaMa model existed in `torch.hub` cache.
+*   **⚠️ License Warnings**: Prominent CC-BY-NC 4.0 warnings for MMAudio model weights across skill description, handler runtime log, model registry, and README.
+*   **🧪 New Tests**: 20 generate_audio tests, model manager tests, node chaining tests.
+
+<details>
+<summary><b>Previous: v2.8.0 — Effects Builder, Manual Mode, SAM3 Hardening & 15+ Bug Fixes</b></summary>
 
 *   **🏗️ Effects Builder Node**: New companion node for manual effect composition — select up to 3 skills with params, combine with raw FFmpeg filters, and use presets. No LLM required.
 *   **🎬 Effects Builder Presets**: Right-click the Effects Builder for quick access to all 18 built-in presets, plus save/load/delete custom presets and a "Clear All Effects" reset.
@@ -41,6 +54,8 @@
 *   **🔧 Dynamic Slot Root Cause Fix**: `video_b` no longer disappears on page refresh.
 *   **⚡ Performance**: Ultrafast temp video encoding, optimized pipe buffers, SAM3 VRAM offloading.
 *   **🐛 Template Placeholder Fix**: Unsubstituted template placeholders no longer crash ffmpeg.
+
+</details>
 
 <details>
 <summary><b>Previous: v2.7.1 — Advanced Options Toggle, Dynamic Input Fix & Default Refinements</b></summary>
