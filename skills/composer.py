@@ -975,16 +975,30 @@ class SkillComposer:
         # If skill has a template, use it
         if skill.ffmpeg_template:
             template = skill.ffmpeg_template
-            for key, value in params.items():
-                val_str = str(value)
-                if isinstance(value, str):
-                    val_str = sanitize_text_param(val_str)
-                template = template.replace(f"{{{key}}}", val_str)
 
-            # Resolve any remaining {placeholder} with skill defaults
-            for sp in (skill.parameters or []):
-                if sp.default is not None:
-                    template = template.replace(f"{{{sp.name}}}", str(sp.default))
+            # Optimization: Skip replacements entirely if there are no placeholders
+            if "{" in template:
+                for key, value in params.items():
+                    val_str = str(value)
+                    if isinstance(value, str):
+                        val_str = sanitize_text_param(val_str)
+
+                    # Unconditional replace is fast here because user params are few
+                    # and likely present in the template.
+                    template = template.replace(f"{{{key}}}", val_str)
+
+                # Resolve any remaining {placeholder} with skill defaults
+                if "{" in template:
+                    for sp in (skill.parameters or []):
+                        if sp.default is not None:
+                            # Optimization: "Check First" pattern. Skills often have
+                            # many default parameters that aren't in the template.
+                            placeholder = f"{{{sp.name}}}"
+                            if placeholder in template:
+                                template = template.replace(placeholder, str(sp.default))
+                                # Optimization: Early break if all placeholders are resolved
+                                if "{" not in template:
+                                    break
 
             # Determine if it's a video filter, audio filter, or output option
             if template.startswith("-"):
@@ -1005,14 +1019,23 @@ class SkillComposer:
                     _defaults[sp.name] = str(sp.default)
 
             for step_str in skill.pipeline:
-                # Substitute {placeholder} values from parent params
-                for key, value in params.items():
-                    step_str = step_str.replace(f"{{{key}}}", str(value))
+                # Optimization: Skip replacements entirely if there are no placeholders
+                if "{" in step_str:
+                    # Substitute {placeholder} values from parent params
+                    for key, value in params.items():
+                        step_str = step_str.replace(f"{{{key}}}", str(value))
 
-                # Resolve any remaining {placeholder} with skill defaults
-                # to prevent literal "{ratio}" from reaching handlers.
-                for key, default_val in _defaults.items():
-                    step_str = step_str.replace(f"{{{key}}}", default_val)
+                    # Resolve any remaining {placeholder} with skill defaults
+                    # to prevent literal "{ratio}" from reaching handlers.
+                    if "{" in step_str:
+                        for key, default_val in _defaults.items():
+                            # Optimization: "Check First" pattern
+                            placeholder = f"{{{key}}}"
+                            if placeholder in step_str:
+                                step_str = step_str.replace(placeholder, default_val)
+                                # Optimization: Early break if all placeholders are resolved
+                                if "{" not in step_str:
+                                    break
 
                 # Parse step string (format: "skill_name:param1=val1,param2=val2")
                 if ":" in step_str:
