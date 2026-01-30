@@ -5,19 +5,14 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
+import torch
 from PIL import Image
 
-from ..core.executor.preview import PreviewGenerator
-from ..core.video.analyzer import VideoAnalyzer
+import folder_paths
 
 
 class VideoPreviewNode:
     """Node for generating video previews and thumbnails."""
-
-    CATEGORY = "FFMPEGA/Utils"
-    FUNCTION = "generate_preview"
-    RETURN_TYPES = ("VIDEO", "IMAGE")
-    RETURN_NAMES = ("preview", "thumbnail")
 
     RESOLUTIONS = ["360p", "480p", "720p"]
 
@@ -53,15 +48,33 @@ class VideoPreviewNode:
                     "min": 0.0,
                     "max": 300.0,
                     "step": 1.0,
-                    "placeholder": "0 = full video",
                 }),
             },
         }
 
+    RETURN_TYPES = ("STRING", "IMAGE")
+    RETURN_NAMES = ("preview_path", "thumbnail")
+    FUNCTION = "generate_preview"
+    CATEGORY = "FFMPEGA"
+
     def __init__(self):
         """Initialize the preview node."""
-        self.preview_generator = PreviewGenerator()
-        self.analyzer = VideoAnalyzer()
+        self._preview_generator = None
+        self._analyzer = None
+
+    @property
+    def preview_generator(self):
+        if self._preview_generator is None:
+            from ..core.executor.preview import PreviewGenerator
+            self._preview_generator = PreviewGenerator()
+        return self._preview_generator
+
+    @property
+    def analyzer(self):
+        if self._analyzer is None:
+            from ..core.video.analyzer import VideoAnalyzer
+            self._analyzer = VideoAnalyzer()
+        return self._analyzer
 
     def generate_preview(
         self,
@@ -70,7 +83,7 @@ class VideoPreviewNode:
         frame_skip: int,
         thumbnail_time: float = 0.0,
         max_duration: float = 0.0,
-    ) -> tuple[str, np.ndarray]:
+    ) -> tuple[str, torch.Tensor]:
         """Generate a preview video and thumbnail.
 
         Args:
@@ -81,14 +94,14 @@ class VideoPreviewNode:
             max_duration: Maximum preview duration (0 = full).
 
         Returns:
-            Tuple of (preview_video_path, thumbnail_image).
+            Tuple of (preview_video_path, thumbnail_tensor).
         """
         # Validate input
         if not video_path or not Path(video_path).exists():
             raise ValueError(f"Video file not found: {video_path}")
 
         # Generate preview video
-        output_dir = Path(tempfile.gettempdir()) / "ffmpega_previews"
+        output_dir = Path(folder_paths.get_temp_directory()) / "ffmpega_previews"
         output_dir.mkdir(exist_ok=True)
 
         preview_path = output_dir / f"{Path(video_path).stem}_preview.mp4"
@@ -113,32 +126,27 @@ class VideoPreviewNode:
             width=640,
         )
 
-        # Load thumbnail as numpy array for ComfyUI
+        # Load thumbnail as tensor for ComfyUI
         img = Image.open(thumbnail_path)
-        thumbnail_array = np.array(img).astype(np.float32) / 255.0
+        img_array = np.array(img).astype(np.float32) / 255.0
 
         # Ensure correct shape for ComfyUI (batch, height, width, channels)
-        if len(thumbnail_array.shape) == 2:
+        if len(img_array.shape) == 2:
             # Grayscale, add channel dimension
-            thumbnail_array = np.expand_dims(thumbnail_array, axis=-1)
-            thumbnail_array = np.repeat(thumbnail_array, 3, axis=-1)
-        elif thumbnail_array.shape[-1] == 4:
+            img_array = np.expand_dims(img_array, axis=-1)
+            img_array = np.repeat(img_array, 3, axis=-1)
+        elif img_array.shape[-1] == 4:
             # RGBA, convert to RGB
-            thumbnail_array = thumbnail_array[:, :, :3]
+            img_array = img_array[:, :, :3]
 
-        # Add batch dimension
-        thumbnail_array = np.expand_dims(thumbnail_array, axis=0)
+        # Add batch dimension and convert to tensor
+        thumbnail_tensor = torch.from_numpy(img_array).unsqueeze(0)
 
-        return (str(preview_path), thumbnail_array)
+        return (str(preview_path), thumbnail_tensor)
 
 
 class VideoInfoNode:
     """Node for displaying video information."""
-
-    CATEGORY = "FFMPEGA/Utils"
-    FUNCTION = "get_info"
-    RETURN_TYPES = ("STRING", "INT", "INT", "FLOAT", "FLOAT")
-    RETURN_NAMES = ("info_text", "width", "height", "duration", "fps")
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -153,9 +161,21 @@ class VideoInfoNode:
             },
         }
 
+    RETURN_TYPES = ("STRING", "INT", "INT", "FLOAT", "FLOAT")
+    RETURN_NAMES = ("info_text", "width", "height", "duration", "fps")
+    FUNCTION = "get_info"
+    CATEGORY = "FFMPEGA"
+
     def __init__(self):
         """Initialize the info node."""
-        self.analyzer = VideoAnalyzer()
+        self._analyzer = None
+
+    @property
+    def analyzer(self):
+        if self._analyzer is None:
+            from ..core.video.analyzer import VideoAnalyzer
+            self._analyzer = VideoAnalyzer()
+        return self._analyzer
 
     def get_info(self, video_path: str) -> tuple[str, int, int, float, float]:
         """Get video information.
@@ -173,7 +193,7 @@ class VideoInfoNode:
 
         width = metadata.primary_video.width if metadata.primary_video else 0
         height = metadata.primary_video.height if metadata.primary_video else 0
-        fps = metadata.primary_video.frame_rate if metadata.primary_video else 0.0
+        fps = metadata.primary_video.frame_rate if metadata.primary_video and metadata.primary_video.frame_rate else 0.0
 
         return (
             metadata.to_analysis_string(),
@@ -186,11 +206,6 @@ class VideoInfoNode:
 
 class FrameExtractNode:
     """Node for extracting frames from video."""
-
-    CATEGORY = "FFMPEGA/Utils"
-    FUNCTION = "extract_frames"
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("frames",)
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -227,9 +242,21 @@ class FrameExtractNode:
             },
         }
 
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("frames",)
+    FUNCTION = "extract_frames"
+    CATEGORY = "FFMPEGA"
+
     def __init__(self):
         """Initialize the frame extract node."""
-        self.preview_generator = PreviewGenerator()
+        self._preview_generator = None
+
+    @property
+    def preview_generator(self):
+        if self._preview_generator is None:
+            from ..core.executor.preview import PreviewGenerator
+            self._preview_generator = PreviewGenerator()
+        return self._preview_generator
 
     def extract_frames(
         self,
@@ -238,7 +265,7 @@ class FrameExtractNode:
         start_time: float = 0.0,
         duration: float = 10.0,
         max_frames: int = 100,
-    ) -> tuple[np.ndarray]:
+    ) -> tuple[torch.Tensor]:
         """Extract frames from video.
 
         Args:
@@ -249,12 +276,12 @@ class FrameExtractNode:
             max_frames: Maximum number of frames.
 
         Returns:
-            Tuple containing frames as numpy array.
+            Tuple containing frames as tensor.
         """
         if not video_path or not Path(video_path).exists():
             raise ValueError(f"Video file not found: {video_path}")
 
-        output_dir = Path(tempfile.gettempdir()) / "ffmpega_frames"
+        output_dir = Path(folder_paths.get_temp_directory()) / "ffmpega_frames"
         output_dir.mkdir(exist_ok=True)
 
         frame_paths = self.preview_generator.extract_frames(
@@ -282,11 +309,12 @@ class FrameExtractNode:
 
             frames.append(arr)
 
-        # Stack into batch
+        # Stack into batch tensor
         if frames:
             frames_array = np.stack(frames, axis=0)
+            frames_tensor = torch.from_numpy(frames_array)
         else:
-            # Return empty array with correct shape
-            frames_array = np.zeros((1, 480, 640, 3), dtype=np.float32)
+            # Return empty tensor with correct shape
+            frames_tensor = torch.zeros((1, 480, 640, 3), dtype=torch.float32)
 
-        return (frames_array,)
+        return (frames_tensor,)

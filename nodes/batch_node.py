@@ -7,24 +7,11 @@ from pathlib import Path
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from ..core.llm.base import LLMConfig, LLMProvider
-from ..core.llm.ollama import OllamaConnector
-from ..core.llm.api import APIConnector
-from ..core.video.analyzer import VideoAnalyzer
-from ..core.executor.process_manager import ProcessManager
-from ..skills.registry import get_registry
-from ..skills.composer import SkillComposer, Pipeline, PipelineStep
-from ..prompts.system import get_system_prompt
-from ..prompts.generation import get_batch_prompt
+import folder_paths
 
 
 class BatchProcessorNode:
     """Node for batch processing multiple videos with the same prompt."""
-
-    CATEGORY = "FFMPEGA/Batch"
-    FUNCTION = "process_batch"
-    RETURN_TYPES = ("INT", "STRING", "STRING")
-    RETURN_NAMES = ("processed_count", "output_paths", "error_log")
 
     OLLAMA_MODELS = [
         "llama3.1:8b",
@@ -47,18 +34,17 @@ class BatchProcessorNode:
                     "multiline": True,
                     "placeholder": "Editing instruction for all videos...",
                 }),
+                "file_pattern": ("STRING", {
+                    "default": "*.mp4",
+                    "multiline": False,
+                }),
+            },
+            "optional": {
                 "output_folder": ("STRING", {
                     "default": "",
                     "multiline": False,
                     "placeholder": "Output folder (optional)",
                 }),
-                "file_pattern": ("STRING", {
-                    "default": "*.mp4",
-                    "multiline": False,
-                    "placeholder": "File pattern (e.g., *.mp4, *.mov)",
-                }),
-            },
-            "optional": {
                 "llm_model": (cls.OLLAMA_MODELS, {
                     "default": "llama3.1:8b",
                 }),
@@ -81,19 +67,53 @@ class BatchProcessorNode:
             },
         }
 
+    RETURN_TYPES = ("INT", "STRING", "STRING")
+    RETURN_NAMES = ("processed_count", "output_paths", "error_log")
+    FUNCTION = "process_batch"
+    CATEGORY = "FFMPEGA"
+    OUTPUT_NODE = True
+
     def __init__(self):
         """Initialize the batch processor node."""
-        self.analyzer = VideoAnalyzer()
-        self.process_manager = ProcessManager()
-        self.registry = get_registry()
-        self.composer = SkillComposer(self.registry)
+        self._analyzer = None
+        self._process_manager = None
+        self._registry = None
+        self._composer = None
+
+    @property
+    def analyzer(self):
+        if self._analyzer is None:
+            from ..core.video.analyzer import VideoAnalyzer
+            self._analyzer = VideoAnalyzer()
+        return self._analyzer
+
+    @property
+    def process_manager(self):
+        if self._process_manager is None:
+            from ..core.executor.process_manager import ProcessManager
+            self._process_manager = ProcessManager()
+        return self._process_manager
+
+    @property
+    def registry(self):
+        if self._registry is None:
+            from ..skills.registry import get_registry
+            self._registry = get_registry()
+        return self._registry
+
+    @property
+    def composer(self):
+        if self._composer is None:
+            from ..skills.composer import SkillComposer
+            self._composer = SkillComposer(self.registry)
+        return self._composer
 
     def process_batch(
         self,
         video_folder: str,
         prompt: str,
-        output_folder: str,
         file_pattern: str,
+        output_folder: str = "",
         llm_model: str = "llama3.1:8b",
         max_concurrent: int = 4,
         continue_on_error: bool = True,
@@ -105,8 +125,8 @@ class BatchProcessorNode:
         Args:
             video_folder: Path to folder containing videos.
             prompt: Editing instruction for all videos.
-            output_folder: Output destination folder.
             file_pattern: Glob pattern for video files.
+            output_folder: Output destination folder.
             llm_model: LLM model to use.
             max_concurrent: Maximum concurrent processes.
             continue_on_error: Whether to continue on errors.
@@ -116,6 +136,10 @@ class BatchProcessorNode:
         Returns:
             Tuple of (processed_count, output_paths_json, error_log).
         """
+        from ..core.llm.base import LLMConfig, LLMProvider
+        from ..core.llm.ollama import OllamaConnector
+        from ..skills.composer import Pipeline
+
         # Validate input folder
         video_folder_path = Path(video_folder)
         if not video_folder_path.exists():
@@ -133,7 +157,7 @@ class BatchProcessorNode:
             output_folder_path = Path(output_folder)
             output_folder_path.mkdir(parents=True, exist_ok=True)
         else:
-            output_folder_path = video_folder_path / "output"
+            output_folder_path = Path(folder_paths.get_output_directory()) / "ffmpega_batch"
             output_folder_path.mkdir(exist_ok=True)
 
         # Generate pipeline once using sample video
@@ -150,15 +174,20 @@ class BatchProcessorNode:
         connector = OllamaConnector(config)
 
         # Generate pipeline spec
-        pipeline_spec = asyncio.get_event_loop().run_until_complete(
-            self._generate_batch_pipeline(
-                connector,
-                prompt,
-                sample_metadata.to_analysis_string(),
-                len(video_files),
-                file_pattern,
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            pipeline_spec = loop.run_until_complete(
+                self._generate_batch_pipeline(
+                    connector,
+                    prompt,
+                    sample_metadata.to_analysis_string(),
+                    len(video_files),
+                    file_pattern,
+                )
             )
-        )
+        finally:
+            loop.close()
 
         # Parse pipeline
         try:
@@ -256,6 +285,9 @@ class BatchProcessorNode:
         Returns:
             JSON string with pipeline specification.
         """
+        from ..prompts.system import get_system_prompt
+        from ..prompts.generation import get_batch_prompt
+
         system_prompt = get_system_prompt(
             video_metadata=sample_metadata,
             include_full_registry=False,
@@ -295,11 +327,6 @@ class BatchProcessorNode:
 class BatchStatusNode:
     """Node for monitoring batch processing status."""
 
-    CATEGORY = "FFMPEGA/Batch"
-    FUNCTION = "get_status"
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("status",)
-
     @classmethod
     def INPUT_TYPES(cls):
         """Define input types for the node."""
@@ -315,6 +342,11 @@ class BatchStatusNode:
                 }),
             },
         }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("status",)
+    FUNCTION = "get_status"
+    CATEGORY = "FFMPEGA"
 
     def get_status(
         self,

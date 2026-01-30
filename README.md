@@ -190,17 +190,24 @@ pytest tests/
 ### Project Structure
 ```
 ComfyUI-FFMPEGA/
-├── nodes/           # ComfyUI node definitions
-├── core/            # Core functionality
-│   ├── llm/         # LLM connectors
-│   ├── executor/    # FFMPEG execution
-│   └── video/       # Video analysis
-├── skills/          # Skill system
-│   ├── category/    # Low-level skills
-│   └── outcome/     # High-level skills
-├── mcp/             # MCP server
-├── prompts/         # LLM prompts
-└── tests/           # Test suite
+├── __init__.py          # ComfyUI entry point (NODE_CLASS_MAPPINGS)
+├── nodes/               # ComfyUI node definitions
+│   ├── agent_node.py    # FFMPEGAgent main node
+│   ├── preview_node.py  # Preview and info nodes
+│   └── batch_node.py    # Batch processing nodes
+├── core/                # Core functionality
+│   ├── llm/             # LLM connectors (Ollama, OpenAI, Anthropic)
+│   ├── executor/        # FFMPEG command building & execution
+│   └── video/           # Video analysis & formats
+├── skills/              # Skill system
+│   ├── registry.py      # Skill registration
+│   ├── composer.py      # Pipeline composition
+│   ├── category/        # Low-level skills (temporal, spatial, visual, audio, encoding)
+│   └── outcome/         # High-level skills (cinematic, vintage, social, effects)
+├── mcp/                 # MCP server for programmatic access
+├── prompts/             # LLM prompt templates
+├── js/                  # Custom ComfyUI UI widgets
+└── tests/               # Test suite
 ```
 
 ## Troubleshooting
