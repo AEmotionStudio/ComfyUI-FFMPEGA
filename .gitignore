@@ -1,0 +1,77 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Logs
+*.log
+logs/
+
+# Local config and secrets
+.env
+.env.local
+config.local.yaml
+*.secret
+api_keys.txt
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
+
+# Test fixtures (large video files)
+tests/fixtures/sample_videos/*.mp4
+tests/fixtures/sample_videos/*.mov
+tests/fixtures/sample_videos/*.avi
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Output files (generated during testing)
+output/
+*.output.mp4
