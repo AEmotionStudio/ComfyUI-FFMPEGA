@@ -548,14 +548,15 @@ class SkillComposer:
         elif skill_name == "pulse":
             rate = float(params.get("rate", 1.0))
             amount = float(params.get("amount", 0.05))
-            # Zoompan with sine-wave zoom for pulsing effect
-            # zoom = 1 + amount*sin(2*pi*rate*t)
-            zoom_expr = f"1+{amount}*sin(2*PI*{rate}*in_time)"
+            # Use setpts+scale with expression-based zoom for pulsing effect
+            # Scale up slightly then crop to original size with sine modulation
+            margin = int(amount * 100) + 10  # extra pixels for zoom headroom
             video_filters.append(
-                f"zoompan=z='{zoom_expr}'"
-                f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-                f":d=1:s=iw*2:ih*2:fps=30,"
-                f"scale=-2:ih"
+                f"pad=iw+{margin*2}:ih+{margin*2}:{margin}:{margin}:color=black"
+            )
+            offset_expr = f"{margin}+{margin}*{amount}*10*sin(2*PI*{rate}*t)"
+            video_filters.append(
+                f"crop=iw-{margin*2}:ih-{margin*2}:'{offset_expr}':'{offset_expr}'"
             )
 
         elif skill_name == "bounce":
