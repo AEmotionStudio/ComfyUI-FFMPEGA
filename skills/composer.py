@@ -149,10 +149,13 @@ class SkillComposer:
                             if param.max_value is not None and val > param.max_value:
                                 step.params[param.name] = type(val)(param.max_value)
 
-            # Validate parameters
+            # Validate parameters (warn but don't fail — LLMs are imprecise)
             is_valid, errors = skill.validate_params(step.params)
             if not is_valid:
-                raise ValueError(f"Invalid params for {step.skill_name}: {errors}")
+                import logging
+                logger = logging.getLogger("ffmpega")
+                for err in errors:
+                    logger.warning(f"Skill '{step.skill_name}': {err} (continuing anyway)")
 
             # Get filters/options for this skill
             vf, af, opts = self._skill_to_filters(skill, step.params)

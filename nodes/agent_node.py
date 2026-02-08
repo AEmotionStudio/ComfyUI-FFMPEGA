@@ -263,10 +263,13 @@ class FFMPEGAgentNode:
                 "preset": preset_map.get(quality_preset, "medium"),
             })
 
-        # Validate and compose pipeline
+        # Validate pipeline (warn but don't block — LLMs are imprecise)
         is_valid, errors = self.composer.validate_pipeline(pipeline)
         if not is_valid:
-            raise ValueError(f"Invalid pipeline: {errors}")
+            import logging
+            logger = logging.getLogger("ffmpega")
+            for err in errors:
+                logger.warning(f"Pipeline validation: {err} (continuing anyway)")
 
         command = self.composer.compose(pipeline)
 
