@@ -554,7 +554,7 @@ class SkillComposer:
             video_filters.append(
                 f"zoompan=z='{zoom_expr}'"
                 f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-                f":d=1:s=iw*2xih*2:fps=30,"
+                f":d=1:s=iw*2:ih*2:fps=30,"
                 f"scale=-2:ih"
             )
 
