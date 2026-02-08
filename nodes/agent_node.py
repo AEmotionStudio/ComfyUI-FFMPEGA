@@ -519,8 +519,16 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
         if not ffmpeg_bin:
             return
 
-        waveform = audio["waveform"]       # (1, channels, samples)
-        sample_rate = audio["sample_rate"]
+        try:
+            waveform = audio["waveform"]       # (1, channels, samples)
+            sample_rate = audio["sample_rate"]
+        except Exception as e:
+            # Audio extraction failed — video may have no audio stream
+            import logging
+            logging.getLogger("ffmpega").warning(
+                f"Skipping audio mux — could not extract audio: {e}"
+            )
+            return
         channels = waveform.size(1)
 
         # Write raw PCM to a temp WAV file
