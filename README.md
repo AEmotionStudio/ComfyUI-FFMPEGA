@@ -5,7 +5,7 @@
 **An AI-powered FFMPEG agent node for ComfyUI — edit videos with natural language.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-1.5.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-1.6.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-4-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 
@@ -20,14 +20,16 @@
 
 ---
 
-## 🚀 What's New in v1.5.0 (February 8, 2026)
+## 🚀 What's New in v1.6.0 (February 8, 2026)
 
-**Image & Audio I/O + Tooltips**
+**New Effects + Smarter AI Agent**
 
-*   **🖼️ Image Input**: Connect frames from Load Video Upload (or any image node) directly into the FFMPEG Agent — no file path needed.
-*   **🔊 Audio Input & Output**: Pass audio from upstream nodes into the agent and receive it on the output. Original audio is preserved through the pipeline.
-*   **💬 Tooltips Everywhere**: Every input and output across all 6 nodes now has a descriptive tooltip. Hover for instant docs.
-*   **📝 Node Descriptions**: All nodes show a summary in the ComfyUI node browser.
+*   **🌀 Motion Effects**: `spin`, `shake`, `pulse`, `bounce`, `drift` — animated rotation, camera shake, breathing zoom, and cinematic panning.
+*   **🎬 Transition Effects**: `fade_to_black`, `fade_to_white`, `flash` — smooth intro/outro transitions and camera flash.
+*   **🔮 Reveal Effects**: `iris_reveal`, `wipe`, `slide_in` — circle reveal, directional wipe, and edge entrance animations.
+*   **✨ Enhanced Fade**: The `fade` skill now supports `type=both` for simultaneous fade-in + fade-out.
+*   **🧠 Smarter AI Agent**: Expanded system prompt with few-shot examples, FFMPEG domain knowledge, and explicit rules for better skill selection.
+*   **📄 AI-Ready Docs**: Added `LLMS.md` (llms.txt convention) and `.agent/skills/` for AI coding agents.
 
 > 📄 **See [CHANGELOG.md](CHANGELOG.md) for the complete version history.**
 
@@ -153,7 +155,7 @@ The main node — translates natural language into FFMPEG commands.
 
 ## 🎯 Skill System
 
-FFMPEGA includes a comprehensive skill system with **100+ operations** organized into categories. The AI agent selects the right skills based on your prompt.
+FFMPEGA includes a comprehensive skill system with **115+ operations** organized into categories. The AI agent selects the right skills based on your prompt.
 
 > 📄 **See [SKILLS_REFERENCE.md](SKILLS_REFERENCE.md) for the complete skill reference with all parameters and example prompts.**
 
@@ -341,6 +343,41 @@ FFMPEGA includes a comprehensive skill system with **100+ operations** organized
 | `day_for_night` | Simulate nighttime from daytime |
 | `dreamy` | Soft, ethereal dream look |
 | `hdr_look` | Simulated HDR dynamic range |
+
+</details>
+
+<details>
+<summary><b>🎬 Transitions (3 skills)</b></summary>
+
+| Skill | Description |
+| :--- | :--- |
+| `fade_to_black` | Fade in from + fade out to black |
+| `fade_to_white` | Fade in from + fade out to white |
+| `flash` | Camera flash at a specific timestamp |
+
+</details>
+
+<details>
+<summary><b>🌀 Motion (5 skills)</b></summary>
+
+| Skill | Description |
+| :--- | :--- |
+| `spin` | Continuous animated rotation |
+| `shake` | Camera shake / earthquake (light, medium, heavy) |
+| `pulse` | Rhythmic breathing zoom effect |
+| `bounce` | Vertical bouncing animation |
+| `drift` | Slow cinematic pan (left, right, up, down) |
+
+</details>
+
+<details>
+<summary><b>🔮 Reveal Effects (3 skills)</b></summary>
+
+| Skill | Description |
+| :--- | :--- |
+| `iris_reveal` | Circle expanding from center |
+| `wipe` | Directional wipe from black |
+| `slide_in` | Slide video in from edge |
 
 </details>
 

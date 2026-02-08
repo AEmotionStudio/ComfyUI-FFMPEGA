@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-02-08
+
+### Added
+- **Transition Effects**: New `fade_to_black`, `fade_to_white`, and `flash` skills for smooth intro/outro transitions and camera flash effects.
+- **Motion Effects**: New `spin` (animated rotation), `shake` (camera shake), `pulse` (breathing zoom), `bounce` (vertical bounce), and `drift` (cinematic pan) skills.
+- **Reveal Effects**: New `iris_reveal` (circle expanding from center), `wipe` (directional wipe), and `slide_in` (edge entrance) skills.
+- **LLMS.md**: AI-readable project summary following the `llms.txt` convention for AI coding agents.
+- **Agent Skills**: Added `.agent/skills/adding-skills.md` for coding agents (Claude Code, Codex, Cursor) with step-by-step guide to adding new skills.
+
+### Changed
+- **Enhanced Fade**: The `fade` skill now supports `type=both` for simultaneous fade-in at start + fade-out at end.
+- **Smarter AI Agent**: Expanded agentic system prompt from ~300 to ~800 words with:
+  - 3 complete few-shot examples showing tool-call flows
+  - Skill categories quick reference
+  - FFMPEG domain knowledge (filter chaining rules, parameter ranges)
+  - Explicit DO NOT rules to prevent common mistakes
+
+---
+
 ## [1.5.0] - 2026-02-08
 
 ### Added
