@@ -324,7 +324,7 @@ def register_skills(registry: SkillRegistry) -> None:
         tags=["thermal", "heat", "infrared", "vision", "night"],
     ))
 
-    # Posterize skill
+    # Posterize skill (handled by builtin composer handler using lutrgb)
     registry.register(Skill(
         name="posterize",
         category=SkillCategory.OUTCOME,
@@ -340,13 +340,8 @@ def register_skills(registry: SkillRegistry) -> None:
                 max_value=8,
             ),
         ],
-        pipeline=[
-            "contrast:value=1.8",
-            "saturation:value=1.5",
-            "curves:preset=strong_contrast",
-        ],
         examples=[
-            "posterize - Standard posterization",
+            "posterize - Standard posterization (4 levels)",
             "posterize:levels=2 - Extreme posterization",
         ],
         tags=["poster", "print", "limited", "palette", "pop_art"],

@@ -468,6 +468,15 @@ class SkillComposer:
                 f"scale=iw*{factor}:ih*{factor}:flags=neighbor"
             )
 
+        # Posterize skill (quantize colors using lutrgb)
+        elif skill_name == "posterize":
+            levels = int(params.get("levels", 4))
+            step = max(1, 256 // levels)
+            lut_expr = f"trunc(val/{step})*{step}"
+            video_filters.append(
+                f"lutrgb=r='{lut_expr}':g='{lut_expr}':b='{lut_expr}'"
+            )
+
         return video_filters, audio_filters, output_options
 
     def validate_pipeline(self, pipeline: Pipeline) -> tuple[bool, list[str]]:
