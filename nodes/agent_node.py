@@ -199,12 +199,25 @@ class FFMPEGAgentNode:
 
         # Parse LLM response
         try:
+            if not pipeline_spec or not pipeline_spec.strip():
+                raise ValueError(
+                    "LLM returned an empty response. This usually means the model "
+                    "is overloaded, the prompt was too long, or the model couldn't "
+                    "understand the request. Try again or use a different model."
+                )
             spec = json.loads(pipeline_spec)
         except json.JSONDecodeError as e:
-            # Try to extract JSON from response
+            # Try to extract JSON from response (LLM may wrap in markdown)
             spec = self._extract_json(pipeline_spec)
             if not spec:
-                raise ValueError(f"Failed to parse LLM response: {e}")
+                # Show a snippet of what the LLM actually returned for debugging
+                preview = pipeline_spec[:300] if pipeline_spec else "(empty)"
+                raise ValueError(
+                    f"Failed to parse LLM response as JSON.\n"
+                    f"LLM returned: {preview}\n"
+                    f"Parse error: {e}\n"
+                    f"Tip: Try running the prompt again or use a different model."
+                )
 
         interpretation = spec.get("interpretation", "")
         warnings = spec.get("warnings", [])
