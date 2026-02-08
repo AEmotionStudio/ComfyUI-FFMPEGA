@@ -115,6 +115,11 @@ Restart ComfyUI after installation.
 | `"Add 'Subscribe!' text at the bottom"` | Text overlay with positioning |
 | `"Cyberpunk style with neon glow"` | High-contrast neon aesthetic |
 | `"Normalize audio, compress for web"` | Loudness normalization + web optimization |
+| `"Spin the video clockwise"` | Continuous animated rotation |
+| `"Add camera shake"` | Random shake/earthquake effect |
+| `"Fade in from black and out at the end"` | Smooth intro/outro transitions |
+| `"Wipe reveal from the left"` | Directional wipe reveal animation |
+| `"Make it pulse like a heartbeat"` | Rhythmic zoom breathing effect |
 
 ---
 
