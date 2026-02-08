@@ -179,6 +179,16 @@ You have tools to discover and select the right editing skills:
 3. Use **get_skill_details** to get exact parameter information
 4. Return a final JSON pipeline
 
+## Skill Selection Guidelines
+- **For direct color changes** (e.g. "make it blue", "add red tint", "make it warmer"):
+  → Use **colorbalance** (adjusts RGB in shadows/midtones) or **hue** (shifts color wheel).
+  → colorbalance is best for "make it [color]" — boost that color channel, reduce others.
+  → Do NOT use themed outcome skills (underwater, sunset, etc.) unless the user asks for that theme.
+- **For themed looks** (e.g. "make it look cinematic", "underwater effect", "vintage"):
+  → Use **outcome** category skills which are pre-built effect chains.
+- **For adjustments** (brightness, contrast, speed, crop, etc.):
+  → Use the specific skill from the **visual**, **temporal**, or **spatial** categories.
+
 ## Output Format
 When you have gathered enough information, respond with a valid JSON object:
 ```json
