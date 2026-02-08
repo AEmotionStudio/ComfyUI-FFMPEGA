@@ -526,7 +526,7 @@ def register_skills(registry: SkillRegistry) -> None:
                 max_value=3.0,
             ),
         ],
-        ffmpeg_template="exposure=exposure={value}",
+        ffmpeg_template="eq=gamma={value}:gamma_weight=0.5",
         examples=[
             "exposure:value=1.0 - One stop brighter",
             "exposure:value=-0.5 - Half stop darker",

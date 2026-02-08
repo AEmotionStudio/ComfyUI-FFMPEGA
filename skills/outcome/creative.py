@@ -340,9 +340,13 @@ def register_skills(registry: SkillRegistry) -> None:
                 max_value=8,
             ),
         ],
-        ffmpeg_template="posterize={levels}",
+        pipeline=[
+            "contrast:value=1.8",
+            "saturation:value=1.5",
+            "curves:preset=strong_contrast",
+        ],
         examples=[
-            "posterize - Standard posterization (4 levels)",
+            "posterize - Standard posterization",
             "posterize:levels=2 - Extreme posterization",
         ],
         tags=["poster", "print", "limited", "palette", "pop_art"],
@@ -354,7 +358,7 @@ def register_skills(registry: SkillRegistry) -> None:
         category=SkillCategory.OUTCOME,
         description="Emboss / relief effect (raised surface look)",
         parameters=[],
-        ffmpeg_template="convolution='-2 -1 0 -1 1 1 0 1 2:-2 -1 0 -1 1 1 0 1 2:-2 -1 0 -1 1 1 0 1 2:-2 -1 0 -1 1 1 0 1 2'",
+        ffmpeg_template="convolution=-2 -1 0 -1 1 1 0 1 2:-2 -1 0 -1 1 1 0 1 2:-2 -1 0 -1 1 1 0 1 2:-2 -1 0 -1 1 1 0 1 2",
         examples=[
             "emboss - Embossed relief effect",
         ],
