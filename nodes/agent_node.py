@@ -749,8 +749,34 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
             response = await connector.chat_with_tools(messages, TOOL_DEFINITIONS)
 
             if not response.tool_calls:
-                # Model returned a final answer — return it
-                return response.content
+                # Model returned a final answer — check if it's valid JSON
+                parsed = self._parse_pipeline_response(response.content)
+                if parsed is not None:
+                    return response.content
+
+                # Not valid JSON — tell the model to fix it and continue the loop
+                logger.warning(
+                    f"Agentic iteration {iteration+1}: model returned "
+                    f"non-JSON, requesting correction..."
+                )
+                messages.append({
+                    "role": "assistant",
+                    "content": response.content or "",
+                })
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "That response was not valid JSON. You MUST respond with "
+                        "ONLY a JSON object like: "
+                        '{\"interpretation\": \"...\", \"pipeline\": '
+                        '[{\"skill\": \"skill_name\", \"params\": {}}], '
+                        '\"warnings\": [], \"estimated_changes\": \"...\"}\n'
+                        "Use get_skill_details to confirm exact skill names "
+                        "before outputting the pipeline. Do NOT explain — "
+                        "just output the JSON."
+                    ),
+                })
+                continue
 
             # Process tool calls
             # Append the assistant's message with tool calls
