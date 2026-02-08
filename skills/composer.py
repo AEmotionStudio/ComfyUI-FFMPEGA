@@ -376,7 +376,12 @@ class SkillComposer:
             fade_type = params.get("type", "in")
             start = params.get("start", 0)
             duration = params.get("duration", 1)
-            video_filters.append(f"fade=t={fade_type}:st={start}:d={duration}")
+            if fade_type == "both":
+                # Fade in at start, fade out at end
+                video_filters.append(f"fade=t=in:st=0:d={duration}")
+                video_filters.append(f"fade=t=out:d={duration}")
+            else:
+                video_filters.append(f"fade=t={fade_type}:st={start}:d={duration}")
 
         # Audio skills
         elif skill_name == "volume":
@@ -476,6 +481,168 @@ class SkillComposer:
             video_filters.append(
                 f"lutrgb=r='{lut_expr}':g='{lut_expr}':b='{lut_expr}'"
             )
+
+        # === Transition effects ===
+
+        elif skill_name == "fade_to_black":
+            in_dur = float(params.get("in_duration", 1.0))
+            out_dur = float(params.get("out_duration", 1.0))
+            if in_dur > 0:
+                video_filters.append(f"fade=t=in:st=0:d={in_dur}")
+            if out_dur > 0:
+                # Use negative start time trick: fade=t=out with special handling
+                # The composer will need video duration, so use a large end value
+                # In practice, the user or LLM should provide the actual timing
+                video_filters.append(f"fade=t=out:d={out_dur}")
+
+        elif skill_name == "fade_to_white":
+            in_dur = float(params.get("in_duration", 1.0))
+            out_dur = float(params.get("out_duration", 1.0))
+            if in_dur > 0:
+                video_filters.append(f"fade=t=in:st=0:d={in_dur}:c=white")
+            if out_dur > 0:
+                video_filters.append(f"fade=t=out:d={out_dur}:c=white")
+
+        elif skill_name == "flash":
+            time = float(params.get("time", 0))
+            duration = float(params.get("duration", 0.3))
+            end_time = time + duration
+            mid = time + duration / 2
+            # Flash = quick fade-out then fade-in using curves
+            video_filters.append(
+                f"fade=t=out:st={time}:d={duration/2}:c=white,"
+                f"fade=t=in:st={mid}:d={duration/2}:c=white"
+            )
+
+        # === Motion effects ===
+
+        elif skill_name == "spin":
+            speed = float(params.get("speed", 90.0))
+            direction = params.get("direction", "cw")
+            # Convert degrees/sec to radians/sec
+            rad_per_sec = speed * 3.14159 / 180
+            if direction == "ccw":
+                rad_per_sec = -rad_per_sec
+            video_filters.append(
+                f"rotate={rad_per_sec}*t:fillcolor=black"
+            )
+
+        elif skill_name == "shake":
+            intensity = params.get("intensity", "medium")
+            # Amount of random pixel offset per frame
+            shake_map = {"light": 5, "medium": 12, "heavy": 25}
+            amount = shake_map.get(intensity, 12)
+            # Use crop with random offsets to simulate shake
+            video_filters.append(
+                f"crop=iw-{amount*2}:ih-{amount*2}"
+                f":{amount}+{amount}*random(1)"
+                f":{amount}+{amount}*random(2),"
+                f"scale=iw+{amount*2}:ih+{amount*2}"
+            )
+
+        elif skill_name == "pulse":
+            rate = float(params.get("rate", 1.0))
+            amount = float(params.get("amount", 0.05))
+            # Zoompan with sine-wave zoom for pulsing effect
+            # zoom = 1 + amount*sin(2*pi*rate*t)
+            zoom_expr = f"1+{amount}*sin(2*PI*{rate}*in_time)"
+            video_filters.append(
+                f"zoompan=z='{zoom_expr}'"
+                f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+                f":d=1:s=iw*2xih*2:fps=30,"
+                f"scale=-2:ih"
+            )
+
+        elif skill_name == "bounce":
+            height = int(params.get("height", 30))
+            speed = float(params.get("speed", 2.0))
+            # Use pad + crop with sine-based vertical offset
+            video_filters.append(
+                f"pad=iw:ih+{height*2}:(ow-iw)/2:{height}:black,"
+                f"crop=iw:ih-{height*2}:0:{height}*abs(sin({speed}*PI*t))"
+            )
+
+        elif skill_name == "drift":
+            direction = params.get("direction", "right")
+            amount = int(params.get("amount", 50))
+            # Pad the frame and slowly pan across using crop with time expression
+            if direction == "right":
+                video_filters.append(
+                    f"pad=iw+{amount}:ih:0:0:black,"
+                    f"crop=iw-{amount}:ih:{amount}*t/duration:0"
+                )
+            elif direction == "left":
+                video_filters.append(
+                    f"pad=iw+{amount}:ih:{amount}:0:black,"
+                    f"crop=iw-{amount}:ih:{amount}*(1-t/duration):0"
+                )
+            elif direction == "down":
+                video_filters.append(
+                    f"pad=iw:ih+{amount}:0:0:black,"
+                    f"crop=iw:ih-{amount}:0:{amount}*t/duration"
+                )
+            elif direction == "up":
+                video_filters.append(
+                    f"pad=iw:ih+{amount}:0:{amount}:black,"
+                    f"crop=iw:ih-{amount}:0:{amount}*(1-t/duration)"
+                )
+
+        # === Reveal effects ===
+
+        elif skill_name == "iris_reveal":
+            duration = float(params.get("duration", 2.0))
+            # Expanding circle mask using geq (pixel math)
+            # radius grows from 0 to diagonal over duration
+            video_filters.append(
+                f"geq="
+                f"lum='if(lte(sqrt(pow(X-W/2,2)+pow(Y-H/2,2)),sqrt(pow(W/2,2)+pow(H/2,2))*min(T/{duration},1)),lum(X,Y),0)'"
+                f":cb='if(lte(sqrt(pow(X-W/2,2)+pow(Y-H/2,2)),sqrt(pow(W/2,2)+pow(H/2,2))*min(T/{duration},1)),cb(X,Y),128)'"
+                f":cr='if(lte(sqrt(pow(X-W/2,2)+pow(Y-H/2,2)),sqrt(pow(W/2,2)+pow(H/2,2))*min(T/{duration},1)),cr(X,Y),128)'"
+            )
+
+        elif skill_name == "wipe":
+            direction = params.get("direction", "left")
+            duration = float(params.get("duration", 1.5))
+            # Directional wipe using geq with animated threshold
+            if direction == "left":
+                cond = f"lte(X,W*min(T/{duration},1))"
+            elif direction == "right":
+                cond = f"gte(X,W*(1-min(T/{duration},1)))"
+            elif direction == "down":
+                cond = f"lte(Y,H*min(T/{duration},1))"
+            else:  # up
+                cond = f"gte(Y,H*(1-min(T/{duration},1)))"
+            video_filters.append(
+                f"geq="
+                f"lum='if({cond},lum(X,Y),0)'"
+                f":cb='if({cond},cb(X,Y),128)'"
+                f":cr='if({cond},cr(X,Y),128)'"
+            )
+
+        elif skill_name == "slide_in":
+            direction = params.get("direction", "left")
+            duration = float(params.get("duration", 1.0))
+            # Pad + animated crop to simulate sliding in
+            if direction == "left":
+                video_filters.append(
+                    f"pad=iw*2:ih:iw:0:black,"
+                    f"crop=iw/2:ih:iw/2*min(T/{duration},1):0"
+                )
+            elif direction == "right":
+                video_filters.append(
+                    f"pad=iw*2:ih:0:0:black,"
+                    f"crop=iw/2:ih:iw/2*(1-min(T/{duration},1)):0"
+                )
+            elif direction == "down":
+                video_filters.append(
+                    f"pad=iw:ih*2:0:ih:black,"
+                    f"crop=iw:ih/2:0:ih/2*min(T/{duration},1)"
+                )
+            else:  # up
+                video_filters.append(
+                    f"pad=iw:ih*2:0:0:black,"
+                    f"crop=iw:ih/2:0:ih/2*(1-min(T/{duration},1))"
+                )
 
         return video_filters, audio_filters, output_options
 

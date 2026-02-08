@@ -317,3 +317,89 @@ def register_skills(registry: SkillRegistry) -> None:
         ],
         tags=["loop", "reverse", "instagram", "bounce"],
     ))
+
+    # Iris reveal — circular reveal from center
+    registry.register(Skill(
+        name="iris_reveal",
+        category=SkillCategory.OUTCOME,
+        description="Circular reveal expanding from the center of the frame",
+        parameters=[
+            SkillParameter(
+                name="duration",
+                type=ParameterType.FLOAT,
+                description="Duration of the reveal in seconds",
+                required=False,
+                default=2.0,
+                min_value=0.5,
+                max_value=10.0,
+            ),
+        ],
+        examples=[
+            "iris_reveal - 2 second circular reveal",
+            "iris_reveal:duration=4 - Slow 4 second iris reveal",
+        ],
+        tags=["circle", "reveal", "iris", "mask", "opening", "transition"],
+    ))
+
+    # Wipe — directional wipe reveal
+    registry.register(Skill(
+        name="wipe",
+        category=SkillCategory.OUTCOME,
+        description="Reveal the video with a directional wipe from black",
+        parameters=[
+            SkillParameter(
+                name="direction",
+                type=ParameterType.CHOICE,
+                description="Wipe direction",
+                required=False,
+                default="left",
+                choices=["left", "right", "up", "down"],
+            ),
+            SkillParameter(
+                name="duration",
+                type=ParameterType.FLOAT,
+                description="Wipe duration in seconds",
+                required=False,
+                default=1.5,
+                min_value=0.3,
+                max_value=10.0,
+            ),
+        ],
+        examples=[
+            "wipe - Left-to-right wipe reveal",
+            "wipe:direction=down,duration=2 - Top-to-bottom wipe",
+        ],
+        tags=["wipe", "reveal", "transition", "slide", "curtain"],
+    ))
+
+    # Slide in — video slides in from edge
+    registry.register(Skill(
+        name="slide_in",
+        category=SkillCategory.OUTCOME,
+        description="Slide the video in from an edge of the frame",
+        parameters=[
+            SkillParameter(
+                name="direction",
+                type=ParameterType.CHOICE,
+                description="Direction the video slides from",
+                required=False,
+                default="left",
+                choices=["left", "right", "up", "down"],
+            ),
+            SkillParameter(
+                name="duration",
+                type=ParameterType.FLOAT,
+                description="Slide animation duration in seconds",
+                required=False,
+                default=1.0,
+                min_value=0.3,
+                max_value=5.0,
+            ),
+        ],
+        examples=[
+            "slide_in - Slide in from the left",
+            "slide_in:direction=down,duration=2 - Slide down from top",
+        ],
+        tags=["slide", "entrance", "animation", "motion", "transition"],
+    ))
+

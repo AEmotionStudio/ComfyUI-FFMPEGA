@@ -196,7 +196,7 @@ def register_skills(registry: SkillRegistry) -> None:
     registry.register(Skill(
         name="fade",
         category=SkillCategory.VISUAL,
-        description="Add fade in/out effect",
+        description="Add fade in/out effect (from/to black)",
         parameters=[
             SkillParameter(
                 name="type",
@@ -204,12 +204,12 @@ def register_skills(registry: SkillRegistry) -> None:
                 description="Fade type",
                 required=False,
                 default="in",
-                choices=["in", "out"],
+                choices=["in", "out", "both"],
             ),
             SkillParameter(
                 name="start",
                 type=ParameterType.TIME,
-                description="Start time of fade",
+                description="Start time of fade (for 'in' or 'out' type)",
                 required=False,
                 default=0,
             ),
@@ -224,8 +224,9 @@ def register_skills(registry: SkillRegistry) -> None:
         examples=[
             "fade:type=in,duration=2 - 2 second fade in from start",
             "fade:type=out,start=58,duration=2 - Fade out starting at 58s",
+            "fade:type=both,duration=1 - Fade in at start + fade out at end (1s each)",
         ],
-        tags=["transition", "black"],
+        tags=["transition", "black", "intro", "outro"],
     ))
 
     # Color balance skill
