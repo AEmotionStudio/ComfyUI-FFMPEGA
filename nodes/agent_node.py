@@ -617,6 +617,39 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
     ) -> str:
         """Generate pipeline specification using LLM.
 
+        Uses agentic tool-calling if the connector supports it,
+        otherwise falls back to single-shot generation.
+
+        Args:
+            connector: LLM connector to use.
+            prompt: User's editing prompt.
+            video_metadata: Video analysis string.
+
+        Returns:
+            JSON string with pipeline specification.
+        """
+        # Try agentic mode first (tool-calling)
+        try:
+            return await self._generate_pipeline_agentic(
+                connector, prompt, video_metadata
+            )
+        except NotImplementedError:
+            # Connector doesn't support tool calling — use single-shot
+            return await self._generate_pipeline_single_shot(
+                connector, prompt, video_metadata
+            )
+
+    async def _generate_pipeline_single_shot(
+        self,
+        connector,
+        prompt: str,
+        video_metadata: str,
+    ) -> str:
+        """Single-shot pipeline generation (original approach).
+
+        Sends the full skill registry in the system prompt and expects
+        a complete pipeline JSON in one response.
+
         Args:
             connector: LLM connector to use.
             prompt: User's editing prompt.
@@ -636,6 +669,117 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
         user_prompt = get_generation_prompt(prompt, video_metadata)
 
         response = await connector.generate(user_prompt, system_prompt)
+        return response.content
+
+    async def _generate_pipeline_agentic(
+        self,
+        connector,
+        prompt: str,
+        video_metadata: str,
+        max_iterations: int = 10,
+    ) -> str:
+        """Agentic pipeline generation with tool calling.
+
+        The LLM dynamically discovers skills using MCP tools,
+        iterating until it produces a final pipeline.
+
+        Args:
+            connector: LLM connector to use (must support chat_with_tools).
+            prompt: User's editing prompt.
+            video_metadata: Video analysis string.
+            max_iterations: Maximum tool-calling rounds.
+
+        Returns:
+            JSON string with pipeline specification.
+
+        Raises:
+            NotImplementedError: If connector doesn't support tool calling.
+        """
+        from ..prompts.system import get_agentic_system_prompt  # type: ignore[import-not-found]
+        from ..prompts.generation import get_generation_prompt  # type: ignore[import-not-found]
+        from ..mcp.tool_defs import TOOL_DEFINITIONS  # type: ignore[import-not-found]
+        from ..mcp.tools import (  # type: ignore[import-not-found]
+            analyze_video,
+            list_skills,
+            search_skills,
+            get_skill_details,
+        )
+
+        system_prompt = get_agentic_system_prompt(video_metadata=video_metadata)
+        user_prompt = get_generation_prompt(prompt, video_metadata)
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+        # Tool dispatch map
+        tool_handlers = {
+            "list_skills": lambda args: list_skills(args.get("category")),
+            "search_skills": lambda args: search_skills(args.get("query", "")),
+            "get_skill_details": lambda args: get_skill_details(args.get("skill_name", "")),
+            "analyze_video": lambda args: analyze_video(args.get("video_path", "")),
+        }
+
+        import logging
+        logger = logging.getLogger("ffmpega")
+
+        for iteration in range(max_iterations):
+            response = await connector.chat_with_tools(messages, TOOL_DEFINITIONS)
+
+            if not response.tool_calls:
+                # Model returned a final answer — return it
+                return response.content
+
+            # Process tool calls
+            # Append the assistant's message with tool calls
+            assistant_msg = {"role": "assistant", "content": response.content or ""}
+            assistant_msg["tool_calls"] = [
+                {
+                    "function": {
+                        "name": tc["function"]["name"],
+                        "arguments": tc["function"]["arguments"],
+                    }
+                }
+                for tc in response.tool_calls
+            ]
+            messages.append(assistant_msg)
+
+            for tool_call in response.tool_calls:
+                func_name = tool_call["function"]["name"]
+                func_args = tool_call["function"]["arguments"]
+
+                logger.info(f"Tool call [{iteration+1}]: {func_name}({func_args})")
+
+                handler = tool_handlers.get(func_name)
+                if handler:
+                    try:
+                        result = handler(func_args)
+                        result_str = json.dumps(result, indent=2)
+                    except Exception as e:
+                        result_str = json.dumps({"error": str(e)})
+                        logger.warning(f"Tool error: {func_name} -> {e}")
+                else:
+                    result_str = json.dumps({"error": f"Unknown tool: {func_name}"})
+
+                # Add tool result to conversation
+                messages.append({
+                    "role": "tool",
+                    "content": result_str,
+                })
+
+        # If we exhausted iterations, try to get a final answer
+        logger.warning(f"Agentic loop hit max iterations ({max_iterations})")
+        # Send one more message asking for the final pipeline
+        messages.append({
+            "role": "user",
+            "content": (
+                "You have used all available tool calls. Based on "
+                "what you've learned, please output the final JSON "
+                "pipeline now."
+            ),
+        })
+        response = await connector.chat_with_tools(messages, [])
         return response.content
 
     def _extract_json(self, text: str) -> Optional[dict]:

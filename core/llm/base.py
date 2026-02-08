@@ -39,6 +39,7 @@ class LLMResponse:
     total_tokens: Optional[int] = None
     finish_reason: Optional[str] = None
     raw_response: Optional[dict] = None
+    tool_calls: Optional[list[dict]] = None
 
 
 class LLMConnector(ABC):
@@ -85,6 +86,31 @@ class LLMConnector(ABC):
             Response content chunks.
         """
         ...
+
+    async def chat_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+    ) -> LLMResponse:
+        """Chat with tool/function-calling support.
+
+        Models that support tool calling can request tool invocations.
+        The response will contain tool_calls if the model wants to call tools,
+        or content if it's providing a final answer.
+
+        Args:
+            messages: Conversation history (role/content dicts).
+            tools: Tool definitions in OpenAI-compatible format.
+
+        Returns:
+            LLMResponse with content and/or tool_calls.
+
+        Raises:
+            NotImplementedError: If the provider doesn't support tool calling.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support tool calling"
+        )
 
     @abstractmethod
     async def list_models(self) -> list[str]:

@@ -12,12 +12,11 @@ class OllamaConnector(LLMConnector):
 
     # Recommended models for video editing tasks
     RECOMMENDED_MODELS = [
+        "qwen3:8b",
+        "qwen2.5:7b",
         "llama3.1:8b",
         "llama3.1:70b",
         "mistral:7b",
-        "codellama:13b",
-        "deepseek-coder:6.7b",
-        "qwen2.5:7b",
     ]
 
     def __init__(self, config: Optional[LLMConfig] = None):
@@ -190,6 +189,73 @@ class OllamaConnector(LLMConnector):
             ) or None,
             finish_reason="stop" if data.get("done") else None,
             raw_response=data,
+        )
+
+    async def chat_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+    ) -> LLMResponse:
+        """Chat with tool/function-calling support.
+
+        Sends tool definitions to Ollama's /api/chat endpoint.
+        The model may respond with tool_calls requesting function invocations.
+
+        Args:
+            messages: Conversation history.
+            tools: Tool definitions in OpenAI-compatible format.
+
+        Returns:
+            LLMResponse with content and/or tool_calls.
+        """
+        payload = {
+            "model": self.config.model,
+            "messages": messages,
+            "tools": tools,
+            "stream": False,
+            "options": {
+                "temperature": self.config.temperature,
+                "num_predict": self.config.max_tokens,
+            },
+        }
+
+        if self.config.extra_options:
+            options: dict = payload["options"]  # type: ignore[assignment]
+            options.update(self.config.extra_options)
+
+        response = await self.client.post("/api/chat", json=payload)
+        response.raise_for_status()
+
+        data = response.json()
+        message = data.get("message", {})
+
+        # Extract tool calls if present
+        raw_tool_calls = message.get("tool_calls")
+        tool_calls = None
+        if raw_tool_calls:
+            tool_calls = [
+                {
+                    "function": {
+                        "name": tc.get("function", {}).get("name", ""),
+                        "arguments": tc.get("function", {}).get("arguments", {}),
+                    }
+                }
+                for tc in raw_tool_calls
+            ]
+
+        return LLMResponse(
+            content=message.get("content", ""),
+            model=data.get("model", self.config.model),
+            provider=LLMProvider.OLLAMA,
+            prompt_tokens=data.get("prompt_eval_count"),
+            completion_tokens=data.get("eval_count"),
+            total_tokens=(
+                (data.get("prompt_eval_count") or 0) +
+                (data.get("eval_count") or 0)
+            ) or None,
+            finish_reason="stop" if data.get("done") else None,
+            raw_response=data,
+            tool_calls=tool_calls,
         )
 
     async def list_models(self) -> list[str]:
