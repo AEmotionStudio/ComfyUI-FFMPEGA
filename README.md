@@ -5,7 +5,7 @@
 **An AI-powered FFMPEG agent node for ComfyUI — edit videos with natural language.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-1.0.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-1.5.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-4-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 
@@ -14,9 +14,22 @@
 
 *Describe what you want in plain English — the AI translates your words into precise FFMPEG commands.*
 
-[Features](#-features) • [Installation](#-installation) • [Quick Start](#-quick-start) • [Skills](#-skill-system) • [LLM Setup](#-llm-configuration) • [Troubleshooting](#-troubleshooting) • [Contributing](#-contributing)
+[Features](#-features) • [Installation](#-installation) • [Quick Start](#-quick-start) • [Skills](#-skill-system) • [LLM Setup](#-llm-configuration) • [Troubleshooting](#-troubleshooting) • [Contributing](#-contributing) • [Changelog](CHANGELOG.md)
 
 </div>
+
+---
+
+## 🚀 What's New in v1.5.0 (February 8, 2026)
+
+**Image & Audio I/O + Tooltips**
+
+*   **🖼️ Image Input**: Connect frames from Load Video Upload (or any image node) directly into the FFMPEG Agent — no file path needed.
+*   **🔊 Audio Input & Output**: Pass audio from upstream nodes into the agent and receive it on the output. Original audio is preserved through the pipeline.
+*   **💬 Tooltips Everywhere**: Every input and output across all 6 nodes now has a descriptive tooltip. Hover for instant docs.
+*   **📝 Node Descriptions**: All nodes show a summary in the ComfyUI node browser.
+
+> 📄 **See [CHANGELOG.md](CHANGELOG.md) for the complete version history.**
 
 ---
 
@@ -112,10 +125,12 @@ The main node — translates natural language into FFMPEG commands.
 
 | Input | Description |
 | :--- | :--- |
-| `video_path` | Path to input video |
+| `video_path` | Path to input video (used unless `images` is connected) |
 | `prompt` | Natural language editing instruction |
-| `llm_model` | Model selection (Ollama / OpenAI / Anthropic) |
+| `llm_model` | Model selection (Ollama / OpenAI / Anthropic / Gemini) |
 | `quality_preset` | Output quality: draft, standard, high, lossless |
+| `images` | *(optional)* Image frames from an upstream node |
+| `audio_input` | *(optional)* Audio from an upstream node |
 | `preview_mode` | Quick preview instead of full render |
 | `output_path` | Custom output path (optional) |
 | `ollama_url` | Ollama server URL (default: `http://localhost:11434`) |
@@ -124,6 +139,7 @@ The main node — translates natural language into FFMPEG commands.
 | Output | Description |
 | :--- | :--- |
 | `images` | Video frames as image tensor |
+| `audio` | Audio extracted or passed through |
 | `video_path` | Path to processed video |
 | `command_log` | FFMPEG commands that were executed |
 | `analysis` | Agent's interpretation of your prompt |
