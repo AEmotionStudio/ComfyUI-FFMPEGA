@@ -28,15 +28,18 @@ class BatchProcessorNode:
                     "default": "",
                     "multiline": False,
                     "placeholder": "Path to folder with videos",
+                    "tooltip": "Absolute path to the folder containing the video files to process.",
                 }),
                 "prompt": ("STRING", {
                     "default": "",
                     "multiline": True,
                     "placeholder": "Editing instruction for all videos...",
+                    "tooltip": "Natural language editing instruction applied to every video in the batch.",
                 }),
                 "file_pattern": ("STRING", {
                     "default": "*.mp4",
                     "multiline": False,
+                    "tooltip": "Glob pattern to match video files in the folder. Examples: '*.mp4', '*.avi', 'clip_*.mov'.",
                 }),
             },
             "optional": {
@@ -44,33 +47,45 @@ class BatchProcessorNode:
                     "default": "",
                     "multiline": False,
                     "placeholder": "Output folder (optional)",
+                    "tooltip": "Folder to save edited videos. Leave empty to use ComfyUI's default output directory.",
                 }),
                 "llm_model": (cls.OLLAMA_MODELS, {
                     "default": "llama3.1:8b",
+                    "tooltip": "Ollama model used to interpret the editing prompt.",
                 }),
                 "max_concurrent": ("INT", {
                     "default": 4,
                     "min": 1,
                     "max": 16,
                     "step": 1,
+                    "tooltip": "Maximum number of videos to process simultaneously. Higher values use more CPU/GPU.",
                 }),
                 "continue_on_error": ("BOOLEAN", {
                     "default": True,
+                    "tooltip": "When enabled, the batch continues processing remaining videos even if one fails.",
                 }),
                 "output_suffix": ("STRING", {
                     "default": "_edited",
                     "multiline": False,
+                    "tooltip": "Suffix appended to each output filename. E.g. 'clip.mp4' becomes 'clip_edited.mp4'.",
                 }),
                 "ollama_url": ("STRING", {
                     "default": "http://localhost:11434",
+                    "tooltip": "URL of the Ollama server for local LLM inference.",
                 }),
             },
         }
 
     RETURN_TYPES = ("INT", "STRING", "STRING")
     RETURN_NAMES = ("processed_count", "output_paths", "error_log")
+    OUTPUT_TOOLTIPS = (
+        "Number of videos successfully processed.",
+        "JSON array of output file paths for all processed videos.",
+        "Log of any errors encountered during batch processing.",
+    )
     FUNCTION = "process_batch"
     CATEGORY = "FFMPEGA"
+    DESCRIPTION = "Process multiple videos in a folder with the same editing instruction. Uses a single LLM call and applies the pipeline to all matching files."
     OUTPUT_NODE = True
 
     def __init__(self):
@@ -335,18 +350,22 @@ class BatchStatusNode:
                 "output_folder": ("STRING", {
                     "default": "",
                     "multiline": False,
+                    "tooltip": "Path to the batch output folder to monitor.",
                 }),
                 "expected_count": ("INT", {
                     "default": 0,
                     "min": 0,
+                    "tooltip": "Expected total number of output files. Set to 0 if unknown.",
                 }),
             },
         }
 
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("status",)
+    OUTPUT_TOOLTIPS = ("Summary of batch progress: completed count and list of finished files.",)
     FUNCTION = "get_status"
     CATEGORY = "FFMPEGA"
+    DESCRIPTION = "Monitor the progress of a batch processing job by checking the output folder."
 
     def get_status(
         self,

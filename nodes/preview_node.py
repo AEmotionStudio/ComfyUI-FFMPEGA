@@ -25,15 +25,18 @@ class VideoPreviewNode:
                     "default": "",
                     "multiline": False,
                     "placeholder": "Path to input video file",
+                    "tooltip": "Absolute path to the video file to generate a preview from.",
                 }),
                 "preview_resolution": (cls.RESOLUTIONS, {
                     "default": "480p",
+                    "tooltip": "Resolution of the preview video. Lower resolutions generate faster.",
                 }),
                 "frame_skip": ("INT", {
                     "default": 2,
                     "min": 1,
                     "max": 10,
                     "step": 1,
+                    "tooltip": "Process every Nth frame. Higher values produce smaller/faster previews but choppier playback.",
                 }),
             },
             "optional": {
@@ -42,20 +45,27 @@ class VideoPreviewNode:
                     "min": 0.0,
                     "max": 3600.0,
                     "step": 0.1,
+                    "tooltip": "Timestamp in seconds for the thumbnail snapshot. 0 = first frame.",
                 }),
                 "max_duration": ("FLOAT", {
                     "default": 0.0,
                     "min": 0.0,
                     "max": 300.0,
                     "step": 1.0,
+                    "tooltip": "Maximum preview duration in seconds. Set to 0 to preview the full video.",
                 }),
             },
         }
 
     RETURN_TYPES = ("STRING", "IMAGE")
     RETURN_NAMES = ("preview_path", "thumbnail")
+    OUTPUT_TOOLTIPS = (
+        "Path to the generated low-res preview video file.",
+        "Single-frame thumbnail image extracted at the specified timestamp.",
+    )
     FUNCTION = "generate_preview"
     CATEGORY = "FFMPEGA"
+    DESCRIPTION = "Generate a quick low-resolution preview video and a thumbnail snapshot from a source video."
 
     def __init__(self):
         """Initialize the preview node."""
@@ -157,14 +167,23 @@ class VideoInfoNode:
                     "default": "",
                     "multiline": False,
                     "placeholder": "Path to video file",
+                    "tooltip": "Absolute path to the video file to analyze.",
                 }),
             },
         }
 
     RETURN_TYPES = ("STRING", "INT", "INT", "FLOAT", "FLOAT")
     RETURN_NAMES = ("info_text", "width", "height", "duration", "fps")
+    OUTPUT_TOOLTIPS = (
+        "Full text summary of the video's metadata (codecs, resolution, duration, etc.).",
+        "Video width in pixels.",
+        "Video height in pixels.",
+        "Video duration in seconds.",
+        "Video frame rate (frames per second).",
+    )
     FUNCTION = "get_info"
     CATEGORY = "FFMPEGA"
+    DESCRIPTION = "Analyze a video file and output its metadata: resolution, duration, frame rate, codecs, and more."
 
     def __init__(self):
         """Initialize the info node."""
@@ -215,12 +234,14 @@ class FrameExtractNode:
                 "video_path": ("STRING", {
                     "default": "",
                     "multiline": False,
+                    "tooltip": "Absolute path to the video file to extract frames from.",
                 }),
                 "fps": ("FLOAT", {
                     "default": 1.0,
                     "min": 0.1,
                     "max": 60.0,
                     "step": 0.1,
+                    "tooltip": "Frames per second to extract. 1.0 = one frame every second, higher values extract more frames.",
                 }),
             },
             "optional": {
@@ -228,24 +249,29 @@ class FrameExtractNode:
                     "default": 0.0,
                     "min": 0.0,
                     "max": 3600.0,
+                    "tooltip": "Start time in seconds for frame extraction.",
                 }),
                 "duration": ("FLOAT", {
                     "default": 10.0,
                     "min": 0.1,
                     "max": 300.0,
+                    "tooltip": "Duration in seconds to extract frames from, starting at start_time.",
                 }),
                 "max_frames": ("INT", {
                     "default": 100,
                     "min": 1,
                     "max": 1000,
+                    "tooltip": "Maximum number of frames to return. Limits output to prevent memory issues with long videos.",
                 }),
             },
         }
 
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("frames",)
+    OUTPUT_TOOLTIPS = ("Extracted video frames as a batched image tensor.",)
     FUNCTION = "extract_frames"
     CATEGORY = "FFMPEGA"
+    DESCRIPTION = "Extract individual frames from a video at a specified frame rate, time range, and frame limit."
 
     def __init__(self):
         """Initialize the frame extract node."""

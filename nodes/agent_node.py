@@ -2,6 +2,9 @@
 
 import json
 import os
+import re
+import shutil
+import subprocess
 import tempfile
 import asyncio
 from pathlib import Path
@@ -64,46 +67,68 @@ class FFMPEGAgentNode:
                     "default": "",
                     "multiline": False,
                     "placeholder": "Path to input video file",
+                    "tooltip": "Absolute path to the source video file. Used as the ffmpeg input unless images are connected.",
                 }),
                 "prompt": ("STRING", {
                     "default": "",
                     "multiline": True,
                     "placeholder": "Describe how you want to edit the video...",
+                    "tooltip": "Natural language instruction describing the desired edit. Examples: 'Add a cinematic letterbox', 'Speed up 2x', 'Apply a vintage VHS look'.",
                 }),
                 "llm_model": (all_models, {
                     "default": all_models[0],
+                    "tooltip": "AI model used to interpret your prompt. Local Ollama models appear first, followed by cloud API models (require api_key).",
                 }),
                 "quality_preset": (cls.QUALITY_PRESETS, {
                     "default": "standard",
+                    "tooltip": "Output quality level. 'draft' is fast/low quality, 'standard' is balanced, 'high' is slow/best quality, 'lossless' preserves full quality.",
                 }),
             },
             "optional": {
+                "images": ("IMAGE", {
+                    "tooltip": "Optional image frames from an upstream node (e.g. Load Video Upload). When connected, these frames are used as the video input instead of video_path.",
+                }),
+                "audio_input": ("AUDIO", {
+                    "tooltip": "Optional audio from an upstream node (e.g. Load Video Upload). When connected, this audio is muxed into the output video and passed through on the audio output.",
+                }),
                 "preview_mode": ("BOOLEAN", {
                     "default": False,
                     "label_on": "Preview",
                     "label_off": "Full Render",
+                    "tooltip": "When enabled, generates a quick low-res preview (480p, first 10 seconds) instead of a full render.",
                 }),
                 "output_path": ("STRING", {
                     "default": "",
                     "multiline": False,
                     "placeholder": "Output path (optional)",
+                    "tooltip": "Custom output file or folder path. Leave empty to save to ComfyUI's default output directory.",
                 }),
                 "ollama_url": ("STRING", {
                     "default": "http://localhost:11434",
                     "multiline": False,
+                    "tooltip": "URL of the Ollama server for local LLM inference. Default: http://localhost:11434.",
                 }),
                 "api_key": ("STRING", {
                     "default": "",
                     "multiline": False,
                     "placeholder": "API key for OpenAI/Anthropic",
+                    "tooltip": "API key required when using cloud models (GPT, Claude, Gemini). Not needed for local Ollama models.",
                 }),
             },
         }
 
-    RETURN_TYPES = ("IMAGE", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("images", "video_path", "command_log", "analysis")
+    RETURN_TYPES = ("IMAGE", "AUDIO", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("images", "audio", "video_path", "command_log", "analysis")
+    OUTPUT_TOOLTIPS = (
+        "All frames from the output video as a batched image tensor.",
+        "Audio extracted from the output video (or passed through from audio_input) in ComfyUI AUDIO format.",
+        "Absolute path to the rendered output video file.",
+        "The ffmpeg command that was executed.",
+        "LLM interpretation, estimated changes, pipeline steps, and any warnings.",
+    )
     FUNCTION = "process"
     CATEGORY = "FFMPEGA"
+    DESCRIPTION = "AI-powered video editor: describe edits in natural language and the agent generates and runs the ffmpeg pipeline automatically."
     OUTPUT_NODE = True
 
     def __init__(self):
@@ -155,11 +180,13 @@ class FFMPEGAgentNode:
         prompt: str,
         llm_model: str,
         quality_preset: str,
+        images: Optional[torch.Tensor] = None,
+        audio_input: Optional[dict] = None,
         preview_mode: bool = False,
         output_path: str = "",
         ollama_url: str = "http://localhost:11434",
         api_key: str = "",
-    ) -> tuple[torch.Tensor, str, str, str]:
+    ) -> tuple[torch.Tensor, dict, str, str, str]:
         """Process the video based on the natural language prompt.
 
         Args:
@@ -167,25 +194,36 @@ class FFMPEGAgentNode:
             prompt: Natural language editing instruction.
             llm_model: LLM model to use.
             quality_preset: Output quality preset.
+            images: Optional input IMAGE tensor from upstream nodes.
+            audio_input: Optional input AUDIO dict from upstream nodes.
             preview_mode: Generate preview instead of full render.
             output_path: Custom output path.
             ollama_url: Ollama server URL.
             api_key: API key for cloud providers.
 
         Returns:
-            Tuple of (images_tensor, output_video_path, command_log, analysis).
+            Tuple of (images_tensor, audio, output_video_path, command_log, analysis).
         """
         from ..skills.composer import Pipeline  # type: ignore[import-not-found]
 
+        # If images are provided, write them to a temporary video file
+        # so the ffmpeg pipeline can use them as input
+        temp_video_from_images = None
+        if images is not None:
+            temp_video_from_images = self._images_to_temp_video(images)
+            effective_video_path = temp_video_from_images
+        else:
+            effective_video_path = video_path
+
         # Validate input
-        if not video_path or not Path(video_path).exists():
-            raise ValueError(f"Video file not found: {video_path}")
+        if not effective_video_path or not Path(effective_video_path).exists():
+            raise ValueError(f"Video file not found: {effective_video_path}")
 
         if not prompt.strip():
             raise ValueError("Prompt cannot be empty")
 
         # Analyze input video
-        video_metadata = self.analyzer.analyze(video_path)
+        video_metadata = self.analyzer.analyze(effective_video_path)
         metadata_str = video_metadata.to_analysis_string()
 
         # Create LLM connector
@@ -228,7 +266,7 @@ class FFMPEGAgentNode:
         pipeline_steps = spec.get("pipeline", [])
 
         # Build output path
-        stem = Path(video_path).stem
+        stem = Path(effective_video_path).stem
         suffix = "_preview" if preview_mode else "_edited"
 
         if not output_path:
@@ -247,7 +285,7 @@ class FFMPEGAgentNode:
         os.makedirs(Path(output_path).parent, exist_ok=True)
 
         pipeline = Pipeline(
-            input_path=video_path,
+            input_path=effective_video_path,
             output_path=output_path,
         )
 
@@ -300,10 +338,24 @@ Pipeline Steps:
 
 Warnings: {', '.join(warnings) if warnings else 'None'}"""
 
+        # If audio_input was provided, mux it into the output video
+        if audio_input is not None:
+            self._mux_audio_into_video(output_path, audio_input)
+
         # Extract frames from output video as IMAGE tensor
         images_tensor = self._extract_frames_as_tensor(output_path)
 
-        return (images_tensor, output_path, command.to_string(), analysis)
+        # For audio output: prefer the audio_input passthrough, else extract from output
+        if audio_input is not None:
+            audio_out = audio_input
+        else:
+            audio_out = self._extract_audio(output_path)
+
+        # Clean up temp video if we created one
+        if temp_video_from_images and os.path.exists(temp_video_from_images):
+            os.remove(temp_video_from_images)
+
+        return (images_tensor, audio_out, output_path, command.to_string(), analysis)
 
     def _extract_frames_as_tensor(self, video_path: str) -> torch.Tensor:
         """Extract all frames from a video and return as a batched IMAGE tensor.
@@ -334,6 +386,171 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
         except Exception:
             # Fallback: return a single black frame
             return torch.zeros(1, 64, 64, 3, dtype=torch.float32)
+
+    def _extract_audio(self, video_path: str) -> dict:
+        """Extract audio from a video and return as ComfyUI AUDIO dict.
+
+        Returns a dict with 'waveform' (Tensor of shape [1, channels, samples])
+        and 'sample_rate' (int), compatible with ComfyUI's standard AUDIO type.
+
+        If the video has no audio stream, returns a short silent mono buffer.
+        """
+        ffmpeg_bin = shutil.which("ffmpeg")
+        ffprobe_bin = shutil.which("ffprobe")
+        if not ffmpeg_bin or not ffprobe_bin:
+            # No ffmpeg/ffprobe — return silence
+            return {"waveform": torch.zeros(1, 1, 1, dtype=torch.float32), "sample_rate": 44100}
+
+        # Check whether the video actually contains an audio stream
+        try:
+            probe = subprocess.run(
+                [ffprobe_bin, "-v", "error", "-select_streams", "a",
+                 "-show_entries", "stream=codec_type", "-of", "csv=p=0", video_path],
+                capture_output=True, check=True,
+            )
+            if not probe.stdout.decode("utf-8", "backslashreplace").strip():
+                # No audio stream
+                return {"waveform": torch.zeros(1, 1, 1, dtype=torch.float32), "sample_rate": 44100}
+        except subprocess.CalledProcessError:
+            return {"waveform": torch.zeros(1, 1, 1, dtype=torch.float32), "sample_rate": 44100}
+
+        # Extract raw PCM audio via ffmpeg
+        try:
+            res = subprocess.run(
+                [ffmpeg_bin, "-i", video_path, "-f", "f32le", "-"],
+                capture_output=True, check=True,
+            )
+            audio = torch.frombuffer(bytearray(res.stdout), dtype=torch.float32)
+            # Parse sample rate and channel layout from stderr
+            match = re.search(r", (\d+) Hz, (\w+), ", res.stderr.decode("utf-8", "backslashreplace"))
+            if match:
+                ar = int(match.group(1))
+                ac = {"mono": 1, "stereo": 2}.get(match.group(2), 2)
+            else:
+                ar = 44100
+                ac = 2
+            audio = audio.reshape((-1, ac)).transpose(0, 1).unsqueeze(0)
+            return {"waveform": audio, "sample_rate": ar}
+        except Exception:
+            return {"waveform": torch.zeros(1, 1, 1, dtype=torch.float32), "sample_rate": 44100}
+
+    def _images_to_temp_video(
+        self, images: torch.Tensor, fps: int = 24
+    ) -> str:
+        """Convert an IMAGE tensor (B, H, W, 3) to a temporary video file.
+
+        Args:
+            images: Batched image tensor with float32 values in [0, 1].
+            fps: Frame rate for the output video.
+
+        Returns:
+            Path to the created temporary video file.
+        """
+        ffmpeg_bin = shutil.which("ffmpeg")
+        if not ffmpeg_bin:
+            raise RuntimeError("ffmpeg not found in PATH")
+
+        # Convert tensor to uint8 numpy frames
+        frames = (images.cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
+        h, w = frames.shape[1], frames.shape[2]
+
+        # Write to a temp file via ffmpeg rawvideo pipe
+        tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+        tmp.close()
+
+        proc = subprocess.Popen(
+            [
+                ffmpeg_bin, "-y",
+                "-f", "rawvideo",
+                "-vcodec", "rawvideo",
+                "-s", f"{w}x{h}",
+                "-pix_fmt", "rgb24",
+                "-r", str(fps),
+                "-i", "-",
+                "-c:v", "libx264",
+                "-pix_fmt", "yuv420p",
+                "-preset", "fast",
+                "-crf", "18",
+                tmp.name,
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        proc.stdin.write(frames.tobytes())
+        proc.stdin.close()
+        proc.wait()
+
+        if proc.returncode != 0:
+            stderr = proc.stderr.read().decode("utf-8", "backslashreplace")
+            os.remove(tmp.name)
+            raise RuntimeError(f"Failed to create temp video from images: {stderr}")
+
+        return tmp.name
+
+    def _mux_audio_into_video(self, video_path: str, audio: dict) -> None:
+        """Mux a ComfyUI AUDIO dict into an existing video file.
+
+        Writes the audio waveform to a temp WAV, then combines it with
+        the video using ffmpeg, replacing the file in-place.
+        """
+        ffmpeg_bin = shutil.which("ffmpeg")
+        if not ffmpeg_bin:
+            return
+
+        waveform = audio["waveform"]       # (1, channels, samples)
+        sample_rate = audio["sample_rate"]
+        channels = waveform.size(1)
+
+        # Write raw PCM to a temp WAV file
+        audio_data = waveform.squeeze(0).transpose(0, 1).contiguous()  # (samples, channels)
+        audio_bytes = (audio_data * 32767.0).clamp(-32768, 32767).to(torch.int16).numpy().tobytes()
+
+        tmp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        tmp_wav.close()
+        tmp_out = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+        tmp_out.close()
+
+        try:
+            # Create WAV via ffmpeg
+            proc = subprocess.run(
+                [
+                    ffmpeg_bin, "-y",
+                    "-f", "s16le",
+                    "-ar", str(sample_rate),
+                    "-ac", str(channels),
+                    "-i", "-",
+                    tmp_wav.name,
+                ],
+                input=audio_bytes,
+                capture_output=True,
+            )
+
+            # Mux video + audio
+            subprocess.run(
+                [
+                    ffmpeg_bin, "-y",
+                    "-i", video_path,
+                    "-i", tmp_wav.name,
+                    "-c:v", "copy",
+                    "-c:a", "aac",
+                    "-shortest",
+                    tmp_out.name,
+                ],
+                capture_output=True, check=True,
+            )
+
+            # Replace original with muxed version
+            shutil.move(tmp_out.name, video_path)
+        except Exception:
+            pass  # If muxing fails, keep the original video without audio
+        finally:
+            for f in [tmp_wav.name, tmp_out.name]:
+                if os.path.exists(f):
+                    try:
+                        os.remove(f)
+                    except OSError:
+                        pass
 
     def _create_connector(
         self,
