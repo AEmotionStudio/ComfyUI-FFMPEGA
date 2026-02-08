@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Any
 from pathlib import Path
 
-from .registry import SkillRegistry, Skill, get_registry
+from .registry import SkillRegistry, Skill, ParameterType, get_registry
 from ..core.executor.command_builder import CommandBuilder, FFMPEGCommand
 
 
@@ -119,6 +119,24 @@ class SkillComposer:
             for param in skill.parameters:
                 if param.name not in step.params and param.default is not None:
                     step.params[param.name] = param.default
+
+            # Auto-coerce types from LLM (e.g. float 2.0 → int 2)
+            for param in skill.parameters:
+                if param.name in step.params:
+                    val = step.params[param.name]
+                    if param.type == ParameterType.INT:
+                        try:
+                            step.params[param.name] = int(float(val))
+                        except (ValueError, TypeError):
+                            pass
+                    elif param.type == ParameterType.FLOAT:
+                        try:
+                            step.params[param.name] = float(val)
+                        except (ValueError, TypeError):
+                            pass
+                    elif param.type == ParameterType.BOOL:
+                        if isinstance(val, str):
+                            step.params[param.name] = val.lower() in ("true", "1", "yes")
 
             # Validate parameters
             is_valid, errors = skill.validate_params(step.params)
