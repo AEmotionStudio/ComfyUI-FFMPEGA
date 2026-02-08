@@ -113,7 +113,12 @@ class SkillComposer:
 
             skill = self.registry.get(step.skill_name)
             if not skill:
-                raise ValueError(f"Unknown skill: {step.skill_name}")
+                import logging
+                logging.getLogger("ffmpega").warning(
+                    f"Skipping unknown skill '{step.skill_name}' — "
+                    "not found in registry"
+                )
+                continue
 
             # Auto-fill missing params with defaults from skill definition
             for param in skill.parameters:

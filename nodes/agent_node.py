@@ -246,18 +246,25 @@ class FFMPEGAgentNode:
             logger = logging.getLogger("ffmpega")
             logger.warning("LLM returned non-JSON, attempting correction retry...")
             try:
+                # Get available skill names so the retry doesn't invent skills
+                from ..skills.registry import get_registry
+                registry = get_registry()
+                skill_names = sorted([s.name for s in registry.list_all()])
+                skill_list = ", ".join(skill_names)
+
                 correction_prompt = (
                     "Your previous response was not valid JSON. Please respond with "
                     "ONLY a JSON object in this exact format, nothing else:\n"
                     '{"interpretation": "...", "pipeline": [{"skill": "name", "params": {}}], '
                     '"warnings": [], "estimated_changes": "..."}\n\n'
+                    f"Available skills (use ONLY these names): {skill_list}\n\n"
                     f"Original request: {prompt}"
                 )
                 retry_connector = self._create_connector(llm_model, ollama_url, api_key)
                 try:
                     retry_response = await retry_connector.generate(
                         correction_prompt,
-                        "You are a JSON-only assistant. Respond with ONLY valid JSON, no markdown, no explanation.",
+                        "You are a JSON-only assistant. Respond with ONLY valid JSON, no markdown, no explanation. Use ONLY skill names from the provided list.",
                     )
                     spec = self._parse_pipeline_response(retry_response.content)
                 finally:
