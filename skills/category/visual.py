@@ -93,10 +93,12 @@ def register_skills(registry: SkillRegistry) -> None:
             ),
         ],
         examples=[
-            "hue:value=30 - Warm shift",
-            "hue:value=-30 - Cool shift",
+            "hue:value=30 - Warm/orange shift",
+            "hue:value=-30 - Cool/blue shift",
+            "hue:value=90 - Shift towards green",
+            "hue:value=-90 - Shift towards purple/blue",
         ],
-        tags=["color", "tint", "shift"],
+        tags=["color", "tint", "shift", "blue", "red", "green", "warm", "cool"],
     ))
 
     # Sharpen skill
@@ -279,8 +281,11 @@ def register_skills(registry: SkillRegistry) -> None:
         examples=[
             "colorbalance:rs=0.1,rm=0.05 - Warm tones",
             "colorbalance:bs=0.1,bm=0.05 - Cool tones",
+            "colorbalance:rs=-0.3,gs=-0.3,bs=0.5,rm=-0.3,gm=-0.3,bm=0.5 - Strong blue tint",
+            "colorbalance:rs=0.5,gs=-0.3,bs=-0.3,rm=0.5,gm=-0.3,bm=-0.3 - Strong red tint",
+            "colorbalance:rs=-0.3,gs=0.5,bs=-0.3,rm=-0.3,gm=0.5,bm=-0.3 - Strong green tint",
         ],
-        tags=["color", "grade", "warm", "cool", "tint"],
+        tags=["color", "grade", "warm", "cool", "tint", "blue", "red", "green", "orange", "teal"],
     ))
 
     # Noise/grain skill

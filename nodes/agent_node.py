@@ -630,7 +630,7 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
 
         system_prompt = get_system_prompt(
             video_metadata=video_metadata,
-            include_full_registry=False,  # Use abbreviated to save tokens
+            include_full_registry=True,
         )
 
         user_prompt = get_generation_prompt(prompt, video_metadata)

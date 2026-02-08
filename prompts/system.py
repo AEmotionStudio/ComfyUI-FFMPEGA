@@ -106,6 +106,20 @@ Response:
   "estimated_changes": "Video duration halved, audio pitch preserved"
 }}
 ```
+
+User: "Make it all blue"
+Response:
+```json
+{{
+  "interpretation": "Apply a strong blue color tint using color balance adjustments",
+  "pipeline": [
+    {{"skill": "colorbalance", "params": {{"rs": -0.3, "gs": -0.3, "bs": 0.5, "rm": -0.3, "gm": -0.3, "bm": 0.5}}}},
+    {{"skill": "saturation", "params": {{"value": 1.5}}}}
+  ],
+  "warnings": [],
+  "estimated_changes": "Video will have a strong blue color cast"
+}}
+```
 """
 
 
