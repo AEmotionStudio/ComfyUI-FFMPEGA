@@ -6,8 +6,8 @@
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
 [![Version](https://img.shields.io/badge/Version-1.0.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
-[![License](https://img.shields.io/badge/License-MIT-red?style=for-the-badge)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.10+-blue?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
+[![Dependencies](https://img.shields.io/badge/dependencies-13-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 
 [![Last Commit](https://img.shields.io/github/last-commit/AEmotionStudio/ComfyUI-FFMPEGA?style=for-the-badge&label=Last%20Update&color=orange)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/commits)
 [![Activity](https://img.shields.io/github/commit-activity/m/AEmotionStudio/ComfyUI-FFMPEGA?style=for-the-badge&label=Activity&color=yellow)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/commits)
@@ -352,6 +352,14 @@ llm_model: gpt-4o-mini
 api_key: your-openai-key
 ```
 
+### Gemini (Google)
+```
+llm_model: gemini-2.0-flash
+api_key: your-google-ai-key
+```
+
+Available models: `gemini-2.0-flash`, `gemini-2.0-flash-lite`, `gemini-1.5-flash`
+
 ### Anthropic
 ```
 llm_model: claude-3-5-haiku-20241022
@@ -465,7 +473,7 @@ Contributions are welcome! Whether it's bug reports, new skills, or improvements
 
 ## 📝 License
 
-This project is licensed under the [MIT License](LICENSE) — see the [LICENSE](LICENSE) file for details.
+This project is licensed under the [GPL-3.0 License](LICENSE) — see the [LICENSE](LICENSE) file for details.
 
 ---
 

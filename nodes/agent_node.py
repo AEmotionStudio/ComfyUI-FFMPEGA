@@ -28,6 +28,9 @@ class FFMPEGAgentNode:
         "gpt-4o-mini",
         "claude-sonnet-4-20250514",
         "claude-3-5-haiku-20241022",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+        "gemini-1.5-flash",
     ]
 
     QUALITY_PRESETS = ["draft", "standard", "high", "lossless"]
@@ -343,7 +346,7 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
         from ..core.llm.ollama import OllamaConnector  # type: ignore[import-not-found]
         from ..core.llm.api import APIConnector  # type: ignore[import-not-found]
 
-        if model not in self.API_MODELS and not model.startswith(("gpt", "claude")):
+        if model not in self.API_MODELS and not model.startswith(("gpt", "claude", "gemini")):
             config = LLMConfig(
                 provider=LLMProvider.OLLAMA,
                 model=model,
@@ -364,6 +367,15 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
         elif model.startswith("claude"):
             config = LLMConfig(
                 provider=LLMProvider.ANTHROPIC,
+                model=model,
+                api_key=api_key,
+                temperature=0.3,
+            )
+            return APIConnector(config)
+
+        elif model.startswith("gemini"):
+            config = LLMConfig(
+                provider=LLMProvider.GEMINI,
                 model=model,
                 api_key=api_key,
                 temperature=0.3,

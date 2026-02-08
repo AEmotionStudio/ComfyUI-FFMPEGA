@@ -26,6 +26,13 @@ class APIConnector(LLMConnector):
             "auth_header": "x-api-key",
             "auth_prefix": "",
         },
+        LLMProvider.GEMINI: {
+            "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+            "models": ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash"],
+            "chat_endpoint": "/chat/completions",
+            "auth_header": "Authorization",
+            "auth_prefix": "Bearer",
+        },
     }
 
     def __init__(self, config: LLMConfig):
@@ -91,6 +98,7 @@ class APIConnector(LLMConnector):
         if self.config.provider == LLMProvider.ANTHROPIC:
             return await self._generate_anthropic(prompt, system_prompt)
         else:
+            # OpenAI, Gemini, and other compatible APIs
             return await self._generate_openai(prompt, system_prompt)
 
     async def _generate_openai(
