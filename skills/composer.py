@@ -138,6 +138,17 @@ class SkillComposer:
                         if isinstance(val, str):
                             step.params[param.name] = val.lower() in ("true", "1", "yes")
 
+            # Auto-clamp numeric values to valid range
+            for param in skill.parameters:
+                if param.name in step.params:
+                    val = step.params[param.name]
+                    if param.type in (ParameterType.INT, ParameterType.FLOAT):
+                        if isinstance(val, (int, float)):
+                            if param.min_value is not None and val < param.min_value:
+                                step.params[param.name] = type(val)(param.min_value)
+                            if param.max_value is not None and val > param.max_value:
+                                step.params[param.name] = type(val)(param.max_value)
+
             # Validate parameters
             is_valid, errors = skill.validate_params(step.params)
             if not is_valid:
