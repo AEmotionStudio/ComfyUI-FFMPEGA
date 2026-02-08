@@ -239,24 +239,38 @@ class FFMPEGAgentNode:
                 await connector.close()
 
         # Parse LLM response
-        try:
-            if not pipeline_spec or not pipeline_spec.strip():
-                raise ValueError(
-                    "LLM returned an empty response. This usually means the model "
-                    "is overloaded, the prompt was too long, or the model couldn't "
-                    "understand the request. Try again or use a different model."
+        spec = self._parse_pipeline_response(pipeline_spec)
+        if spec is None:
+            # Auto-retry: send the bad response back asking for JSON only
+            import logging
+            logger = logging.getLogger("ffmpega")
+            logger.warning("LLM returned non-JSON, attempting correction retry...")
+            try:
+                correction_prompt = (
+                    "Your previous response was not valid JSON. Please respond with "
+                    "ONLY a JSON object in this exact format, nothing else:\n"
+                    '{"interpretation": "...", "pipeline": [{"skill": "name", "params": {}}], '
+                    '"warnings": [], "estimated_changes": "..."}\n\n'
+                    f"Original request: {prompt}"
                 )
-            spec = json.loads(pipeline_spec)
-        except json.JSONDecodeError as e:
-            # Try to extract JSON from response (LLM may wrap in markdown)
-            spec = self._extract_json(pipeline_spec)
-            if not spec:
-                # Show a snippet of what the LLM actually returned for debugging
+                retry_connector = self._create_connector(llm_model, ollama_url, api_key)
+                try:
+                    retry_response = await retry_connector.generate(
+                        correction_prompt,
+                        "You are a JSON-only assistant. Respond with ONLY valid JSON, no markdown, no explanation.",
+                    )
+                    spec = self._parse_pipeline_response(retry_response.content)
+                finally:
+                    if hasattr(retry_connector, 'close'):
+                        await retry_connector.close()
+            except Exception:
+                pass  # Retry failed, fall through to error
+
+            if spec is None:
                 preview = pipeline_spec[:300] if pipeline_spec else "(empty)"
                 raise ValueError(
                     f"Failed to parse LLM response as JSON.\n"
                     f"LLM returned: {preview}\n"
-                    f"Parse error: {e}\n"
                     f"Tip: Try running the prompt again or use a different model."
                 )
 
@@ -782,24 +796,58 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
         response = await connector.chat_with_tools(messages, [])
         return response.content
 
+    def _parse_pipeline_response(self, text: str) -> Optional[dict]:
+        """Parse a pipeline response, trying direct JSON then extraction."""
+        if not text or not text.strip():
+            return None
+        try:
+            return json.loads(text)
+        except (json.JSONDecodeError, ValueError):
+            return self._extract_json(text)
+
     def _extract_json(self, text: str) -> Optional[dict]:
         """Try to extract JSON from text that may contain other content."""
         import re
 
-        # Try to find JSON block
-        patterns = [
-            r'```json\s*(.*?)\s*```',
-            r'```\s*(.*?)\s*```',
-            r'\{[\s\S]*\}',
-        ]
-
-        for pattern in patterns:
+        # 1. Try fenced JSON blocks first
+        for pattern in [
+            r'```json\s*(\{.*?\})\s*```',
+            r'```\s*(\{.*?\})\s*```',
+        ]:
             matches = re.findall(pattern, text, re.DOTALL)
             for match in matches:
                 try:
-                    return json.loads(match)
+                    result = json.loads(match)
+                    if isinstance(result, dict):
+                        return result
                 except json.JSONDecodeError:
                     continue
+
+        # 2. Try to find a JSON object containing "pipeline"
+        pipeline_match = re.search(
+            r'(\{[^{}]*"pipeline"[^{}]*\[.*?\][^{}]*\})',
+            text, re.DOTALL
+        )
+        if pipeline_match:
+            try:
+                return json.loads(pipeline_match.group(1))
+            except json.JSONDecodeError:
+                pass
+
+        # 3. Find the outermost {...} using brace matching
+        start = text.find('{')
+        if start != -1:
+            depth = 0
+            for i in range(start, len(text)):
+                if text[i] == '{':
+                    depth += 1
+                elif text[i] == '}':
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            return json.loads(text[start:i+1])
+                        except json.JSONDecodeError:
+                            break
 
         return None
 
