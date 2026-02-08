@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, Callable, Any
+from typing import Optional, Callable, Any, Union
 
 
 class SkillCategory(str, Enum):
@@ -34,9 +34,9 @@ class SkillParameter:
     description: str
     required: bool = True
     default: Any = None
-    min_value: Optional[float] = None
-    max_value: Optional[float] = None
-    choices: Optional[list[str]] = None
+    min_value: float | None = None
+    max_value: float | None = None
+    choices: list[str] | None = None
 
     def validate(self, value: Any) -> tuple[bool, Optional[str]]:
         """Validate a parameter value.
@@ -55,18 +55,22 @@ class SkillParameter:
         if self.type == ParameterType.INT:
             if not isinstance(value, int):
                 return False, f"Parameter '{self.name}' must be an integer"
-            if self.min_value is not None and value < self.min_value:
-                return False, f"Parameter '{self.name}' must be >= {self.min_value}"
-            if self.max_value is not None and value > self.max_value:
-                return False, f"Parameter '{self.name}' must be <= {self.max_value}"
+            min_val = self.min_value
+            max_val = self.max_value
+            if min_val is not None and value < min_val:
+                return False, f"Parameter '{self.name}' must be >= {min_val}"
+            if max_val is not None and value > max_val:
+                return False, f"Parameter '{self.name}' must be <= {max_val}"
 
         elif self.type == ParameterType.FLOAT:
             if not isinstance(value, (int, float)):
                 return False, f"Parameter '{self.name}' must be a number"
-            if self.min_value is not None and value < self.min_value:
-                return False, f"Parameter '{self.name}' must be >= {self.min_value}"
-            if self.max_value is not None and value > self.max_value:
-                return False, f"Parameter '{self.name}' must be <= {self.max_value}"
+            min_val = self.min_value
+            max_val = self.max_value
+            if min_val is not None and value < min_val:
+                return False, f"Parameter '{self.name}' must be >= {min_val}"
+            if max_val is not None and value > max_val:
+                return False, f"Parameter '{self.name}' must be <= {max_val}"
 
         elif self.type == ParameterType.STRING:
             if not isinstance(value, str):
@@ -77,8 +81,30 @@ class SkillParameter:
                 return False, f"Parameter '{self.name}' must be a boolean"
 
         elif self.type == ParameterType.CHOICE:
-            if self.choices and value not in self.choices:
-                return False, f"Parameter '{self.name}' must be one of {self.choices}"
+            choices = self.choices
+            if choices is not None and value not in choices:
+                # Try case-insensitive match
+                lower_val = str(value).lower().strip()
+                match: str | None = None
+                for choice in choices:
+                    if choice.lower() == lower_val:
+                        match = choice
+                        break
+                # Try prefix match
+                if not match:
+                    prefix_matches = [c for c in choices if c.lower().startswith(lower_val)]
+                    if len(prefix_matches) == 1:
+                        match = prefix_matches[0]
+                # Try substring match
+                if not match:
+                    sub_matches = [c for c in choices if lower_val in c.lower()]
+                    if len(sub_matches) == 1:
+                        match = sub_matches[0]
+                if match:
+                    # Auto-correct to valid value — return valid with the corrected value
+                    # Caller should check and update the value
+                    return True, f"__autocorrect__:{self.name}={match}"
+                return False, f"Parameter '{self.name}' must be one of {choices}"
 
         return True, None
 
@@ -104,12 +130,17 @@ class Skill:
         Returns:
             Tuple of (is_valid, list of error messages).
         """
-        errors = []
+        errors: list[str] = []
         for param in self.parameters:
             value = params.get(param.name, param.default)
             is_valid, error = param.validate(value)
-            if not is_valid:
+            if not is_valid and error is not None:
                 errors.append(error)
+            elif error and isinstance(error, str) and error.startswith("__autocorrect__:"):
+                # Apply auto-corrected value back to params
+                correction = error.split(":", 1)[1]
+                name, corrected_value = correction.split("=", 1)
+                params[name] = corrected_value
         return len(errors) == 0, errors
 
     def get_param(self, name: str) -> Optional[SkillParameter]:
@@ -213,7 +244,7 @@ class SkillRegistry:
         """
         lines = ["# Available Skills\n"]
 
-        for category in SkillCategory:
+        for category in list(SkillCategory):
             skills = self.list_by_category(category)
             if not skills:
                 continue
@@ -252,22 +283,26 @@ class SkillRegistry:
             required = []
 
             for param in skill.parameters:
-                prop = {
+                prop: dict[str, Any] = {
                     "description": param.description,
                 }
 
                 if param.type == ParameterType.INT:
                     prop["type"] = "integer"
-                    if param.min_value is not None:
-                        prop["minimum"] = int(param.min_value)
-                    if param.max_value is not None:
-                        prop["maximum"] = int(param.max_value)
+                    min_v = param.min_value
+                    max_v = param.max_value
+                    if min_v is not None:
+                        prop["minimum"] = int(min_v)
+                    if max_v is not None:
+                        prop["maximum"] = int(max_v)
                 elif param.type == ParameterType.FLOAT:
                     prop["type"] = "number"
-                    if param.min_value is not None:
-                        prop["minimum"] = param.min_value
-                    if param.max_value is not None:
-                        prop["maximum"] = param.max_value
+                    min_v = param.min_value
+                    max_v = param.max_value
+                    if min_v is not None:
+                        prop["minimum"] = min_v
+                    if max_v is not None:
+                        prop["maximum"] = max_v
                 elif param.type == ParameterType.STRING:
                     prop["type"] = "string"
                 elif param.type == ParameterType.BOOL:

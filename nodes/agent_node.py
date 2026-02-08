@@ -7,19 +7,19 @@ import asyncio
 from pathlib import Path
 from typing import Optional, Any
 
-import folder_paths
+import numpy as np  # type: ignore[import-not-found]
+import torch  # type: ignore[import-not-found]
+
+import folder_paths  # type: ignore[import-not-found]
 
 
 class FFMPEGAgentNode:
     """Main FFMPEG Agent node that transforms natural language prompts into video edits."""
 
-    # Available LLM models
-    OLLAMA_MODELS = [
+    # Fallback models if Ollama is unreachable
+    FALLBACK_OLLAMA_MODELS = [
         "llama3.1:8b",
-        "llama3.1:70b",
         "mistral:7b",
-        "codellama:13b",
-        "deepseek-coder:6.7b",
         "qwen2.5:7b",
     ]
 
@@ -33,9 +33,27 @@ class FFMPEGAgentNode:
     QUALITY_PRESETS = ["draft", "standard", "high", "lossless"]
 
     @classmethod
+    def _fetch_ollama_models(cls, base_url: str = "http://localhost:11434") -> list[str]:
+        """Fetch available models from a running Ollama instance.
+
+        Returns locally installed model names, or the fallback list
+        if Ollama is unreachable.
+        """
+        try:
+            import httpx  # type: ignore[import-not-found]
+            with httpx.Client(timeout=3.0) as client:
+                resp = client.get(f"{base_url}/api/tags")
+                resp.raise_for_status()
+                models = [m["name"] for m in resp.json().get("models", [])]
+                return sorted(models) if models else cls.FALLBACK_OLLAMA_MODELS
+        except Exception:
+            return cls.FALLBACK_OLLAMA_MODELS
+
+    @classmethod
     def INPUT_TYPES(cls):
         """Define input types for the node."""
-        all_models = cls.OLLAMA_MODELS + cls.API_MODELS + ["custom"]
+        ollama_models = cls._fetch_ollama_models()
+        all_models = ollama_models + cls.API_MODELS + ["custom"]
 
         return {
             "required": {
@@ -50,7 +68,7 @@ class FFMPEGAgentNode:
                     "placeholder": "Describe how you want to edit the video...",
                 }),
                 "llm_model": (all_models, {
-                    "default": "llama3.1:8b",
+                    "default": all_models[0],
                 }),
                 "quality_preset": (cls.QUALITY_PRESETS, {
                     "default": "standard",
@@ -79,8 +97,8 @@ class FFMPEGAgentNode:
             },
         }
 
-    RETURN_TYPES = ("STRING", "STRING", "STRING")
-    RETURN_NAMES = ("video_path", "command_log", "analysis")
+    RETURN_TYPES = ("IMAGE", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("images", "video_path", "command_log", "analysis")
     FUNCTION = "process"
     CATEGORY = "FFMPEGA"
     OUTPUT_NODE = True
@@ -91,36 +109,44 @@ class FFMPEGAgentNode:
         self._process_manager = None
         self._registry = None
         self._composer = None
+        self._preview_generator = None
 
     @property
     def analyzer(self):
         if self._analyzer is None:
-            from ..core.video.analyzer import VideoAnalyzer
+            from ..core.video.analyzer import VideoAnalyzer  # type: ignore[import-not-found]
             self._analyzer = VideoAnalyzer()
         return self._analyzer
 
     @property
     def process_manager(self):
         if self._process_manager is None:
-            from ..core.executor.process_manager import ProcessManager
+            from ..core.executor.process_manager import ProcessManager  # type: ignore[import-not-found]
             self._process_manager = ProcessManager()
         return self._process_manager
 
     @property
     def registry(self):
         if self._registry is None:
-            from ..skills.registry import get_registry
+            from ..skills.registry import get_registry  # type: ignore[import-not-found]
             self._registry = get_registry()
         return self._registry
 
     @property
     def composer(self):
         if self._composer is None:
-            from ..skills.composer import SkillComposer
+            from ..skills.composer import SkillComposer  # type: ignore[import-not-found]
             self._composer = SkillComposer(self.registry)
         return self._composer
 
-    def process(
+    @property
+    def preview_generator(self):
+        if self._preview_generator is None:
+            from ..core.executor.preview import PreviewGenerator  # type: ignore[import-not-found]
+            self._preview_generator = PreviewGenerator()
+        return self._preview_generator
+
+    async def process(
         self,
         video_path: str,
         prompt: str,
@@ -130,7 +156,7 @@ class FFMPEGAgentNode:
         output_path: str = "",
         ollama_url: str = "http://localhost:11434",
         api_key: str = "",
-    ) -> tuple[str, str, str]:
+    ) -> tuple[torch.Tensor, str, str, str]:
         """Process the video based on the natural language prompt.
 
         Args:
@@ -144,9 +170,9 @@ class FFMPEGAgentNode:
             api_key: API key for cloud providers.
 
         Returns:
-            Tuple of (output_video_path, command_log, analysis).
+            Tuple of (images_tensor, output_video_path, command_log, analysis).
         """
-        from ..skills.composer import Pipeline
+        from ..skills.composer import Pipeline  # type: ignore[import-not-found]
 
         # Validate input
         if not video_path or not Path(video_path).exists():
@@ -163,14 +189,13 @@ class FFMPEGAgentNode:
         connector = self._create_connector(llm_model, ollama_url, api_key)
 
         # Generate pipeline using LLM
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
         try:
-            pipeline_spec = loop.run_until_complete(
-                self._generate_pipeline(connector, prompt, metadata_str)
+            pipeline_spec = await self._generate_pipeline(
+                connector, prompt, metadata_str
             )
         finally:
-            loop.close()
+            if hasattr(connector, 'close'):
+                await connector.close()
 
         # Parse LLM response
         try:
@@ -186,12 +211,24 @@ class FFMPEGAgentNode:
         estimated_changes = spec.get("estimated_changes", "")
         pipeline_steps = spec.get("pipeline", [])
 
-        # Build pipeline
+        # Build output path
+        stem = Path(video_path).stem
+        suffix = "_preview" if preview_mode else "_edited"
+
         if not output_path:
             output_dir = folder_paths.get_output_directory()
-            stem = Path(video_path).stem
-            suffix = "_preview" if preview_mode else "_edited"
             output_path = str(Path(output_dir) / f"{stem}{suffix}.mp4")
+        elif Path(output_path).is_dir() or output_path.endswith(os.sep):
+            # User gave a directory — generate a filename inside it
+            output_dir = output_path.rstrip(os.sep)
+            output_path = str(Path(output_dir) / f"{stem}{suffix}.mp4")
+        elif not Path(output_path).suffix:
+            # No extension — treat as directory and append filename
+            os.makedirs(output_path, exist_ok=True)
+            output_path = str(Path(output_path) / f"{stem}{suffix}.mp4")
+
+        # Ensure output directory exists
+        os.makedirs(Path(output_path).parent, exist_ok=True)
 
         pipeline = Pipeline(
             input_path=video_path,
@@ -229,7 +266,10 @@ class FFMPEGAgentNode:
         result = self.process_manager.execute(command, timeout=600)
 
         if not result.success:
-            raise RuntimeError(f"FFMPEG execution failed: {result.error_message}")
+            raise RuntimeError(
+                f"FFMPEG execution failed: {result.error_message}\n"
+                f"Command: {command.to_string()}"
+            )
 
         # Build analysis string
         analysis = f"""Interpretation: {interpretation}
@@ -241,7 +281,40 @@ Pipeline Steps:
 
 Warnings: {', '.join(warnings) if warnings else 'None'}"""
 
-        return (output_path, command.to_string(), analysis)
+        # Extract frames from output video as IMAGE tensor
+        images_tensor = self._extract_frames_as_tensor(output_path)
+
+        return (images_tensor, output_path, command.to_string(), analysis)
+
+    def _extract_frames_as_tensor(self, video_path: str) -> torch.Tensor:
+        """Extract all frames from a video and return as a batched IMAGE tensor.
+
+        Args:
+            video_path: Path to the video file.
+
+        Returns:
+            Tensor of shape (B, H, W, 3) with float32 values in [0, 1].
+        """
+        import imageio.v3 as iio  # type: ignore[import-not-found]
+
+        try:
+            # Read all frames from the video
+            frames_raw = iio.imread(video_path, plugin="pyav")
+
+            # frames_raw: (B, H, W, C) uint8 numpy array
+            frames = frames_raw.astype(np.float32) / 255.0
+
+            # Ensure RGB (drop alpha if present)
+            if frames.shape[-1] == 4:
+                frames = frames[:, :, :, :3]
+            elif frames.shape[-1] == 1:
+                frames = np.repeat(frames, 3, axis=-1)
+
+            return torch.from_numpy(frames)
+
+        except Exception:
+            # Fallback: return a single black frame
+            return torch.zeros(1, 64, 64, 3, dtype=torch.float32)
 
     def _create_connector(
         self,
@@ -250,11 +323,11 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
         api_key: str,
     ):
         """Create appropriate LLM connector based on model selection."""
-        from ..core.llm.base import LLMConfig, LLMProvider
-        from ..core.llm.ollama import OllamaConnector
-        from ..core.llm.api import APIConnector
+        from ..core.llm.base import LLMConfig, LLMProvider  # type: ignore[import-not-found]
+        from ..core.llm.ollama import OllamaConnector  # type: ignore[import-not-found]
+        from ..core.llm.api import APIConnector  # type: ignore[import-not-found]
 
-        if model in self.OLLAMA_MODELS:
+        if model not in self.API_MODELS and not model.startswith(("gpt", "claude")):
             config = LLMConfig(
                 provider=LLMProvider.OLLAMA,
                 model=model,
@@ -307,8 +380,8 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
         Returns:
             JSON string with pipeline specification.
         """
-        from ..prompts.system import get_system_prompt
-        from ..prompts.generation import get_generation_prompt
+        from ..prompts.system import get_system_prompt  # type: ignore[import-not-found]
+        from ..prompts.generation import get_generation_prompt  # type: ignore[import-not-found]
 
         system_prompt = get_system_prompt(
             video_metadata=video_metadata,

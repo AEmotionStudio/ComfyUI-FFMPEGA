@@ -23,7 +23,7 @@ class LLMConfig:
     api_key: Optional[str] = None
     temperature: float = 0.3
     max_tokens: int = 4096
-    timeout: float = 30.0
+    timeout: float = 300.0
     extra_options: dict = field(default_factory=dict)
 
 
@@ -66,7 +66,7 @@ class LLMConnector(ABC):
         Returns:
             LLMResponse with generated content.
         """
-        pass
+        ...
 
     @abstractmethod
     async def generate_stream(
@@ -83,7 +83,7 @@ class LLMConnector(ABC):
         Yields:
             Response content chunks.
         """
-        pass
+        ...
 
     @abstractmethod
     async def list_models(self) -> list[str]:
@@ -92,7 +92,7 @@ class LLMConnector(ABC):
         Returns:
             List of model names.
         """
-        pass
+        ...
 
     @abstractmethod
     async def is_available(self) -> bool:
@@ -101,7 +101,7 @@ class LLMConnector(ABC):
         Returns:
             True if available, False otherwise.
         """
-        pass
+        ...
 
     def format_messages(
         self,

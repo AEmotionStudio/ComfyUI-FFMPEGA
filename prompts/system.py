@@ -45,6 +45,7 @@ ALWAYS respond with a valid JSON object in this exact format:
 
 ## Important Guidelines
 - Always use skills from the registry - do not invent new operations
+- **ALWAYS include parameter values** - every skill parameter must have an explicit value in the params object. Check the skill definition for required and optional parameters. If unsure of a value, use a moderate/subtle one.
 - Be conservative with parameters - prefer subtle adjustments unless explicitly requested
 - Consider the order of operations (trim first to avoid processing unnecessary frames)
 - If a request is ambiguous, interpret it reasonably and note your interpretation
@@ -52,6 +53,19 @@ ALWAYS respond with a valid JSON object in this exact format:
 - Keep the pipeline minimal - only add skills that are explicitly or clearly implicitly requested
 
 ## Examples
+
+User: "Make it brighter"
+Response:
+```json
+{{
+  "interpretation": "Increase video brightness slightly",
+  "pipeline": [
+    {{"skill": "brightness", "params": {{"value": 0.15}}}}
+  ],
+  "warnings": [],
+  "estimated_changes": "Video will appear slightly brighter"
+}}
+```
 
 User: "Make it 720p and trim the first 5 seconds"
 Response:

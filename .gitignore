@@ -75,3 +75,15 @@ temp/
 # Output files (generated during testing)
 output/
 *.output.mp4
+
+# Debug/error notes
+Errors.md
+
+# Package manager lock files
+uv.lock
+
+# Type checker config
+.pyre_configuration
+
+# Gemini
+.gemini/

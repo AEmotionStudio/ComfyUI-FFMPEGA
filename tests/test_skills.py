@@ -359,3 +359,177 @@ class TestSkillComposer:
 
         with pytest.raises(ValueError):
             composer.compose(pipeline)
+
+    # ---- Template option splitting tests (regression for the -movflags bug) ----
+
+    def test_template_output_opts_are_split(self):
+        """web_optimize template '-movflags +faststart' must become two separate args."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("web_optimize", {})
+
+        command = composer.compose(pipeline)
+        args = command.to_args()
+
+        assert "-movflags" in args, f"-movflags missing from args: {args}"
+        assert "+faststart" in args, f"+faststart missing from args: {args}"
+        # They must NOT be merged into a single element
+        for arg in args:
+            assert " " not in arg, f"Arg contains space (not split): '{arg}'"
+
+    def test_template_output_opts_with_param_substitution(self):
+        """pixel_format template '-pix_fmt {format}' must split after substitution."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("pixel_format", {"format": "yuv420p"})
+
+        command = composer.compose(pipeline)
+        args = command.to_args()
+
+        assert "-pix_fmt" in args
+        assert "yuv420p" in args
+        for arg in args:
+            assert " " not in arg, f"Arg contains space (not split): '{arg}'"
+
+    def test_template_video_filter_not_split(self):
+        """Video filter templates like 'curves=preset=vintage' should stay as one filter."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("curves", {"preset": "vintage"})
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        assert "curves=preset=vintage" in cmd_str
+
+    def test_template_video_filter_colorbalance(self):
+        """colorbalance template should produce a valid video filter string."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("colorbalance", {
+            "rs": 0.1, "gs": 0, "bs": 0,
+            "rm": 0.05, "gm": 0, "bm": 0,
+        })
+
+        command = composer.compose(pipeline)
+        args = command.to_args()
+
+        # colorbalance is a video filter, so -vf should be present
+        assert "-vf" in args
+        vf_idx = args.index("-vf")
+        vf_val = args[vf_idx + 1]
+        assert "colorbalance" in vf_val
+        assert "rs=0.1" in vf_val
+
+    # ---- Pipeline-based (composite) skill tests ----
+
+    def test_pipeline_based_skill_cinematic(self):
+        """Cinematic skill uses a pipeline of sub-skills; all should compose."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("cinematic", {})
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        # cinematic pipeline includes contrast, saturation, vignette
+        assert "-vf" in cmd_str
+        assert "eq=" in cmd_str or "vignette" in cmd_str
+
+    def test_pipeline_based_skill_dreamy(self):
+        """Dreamy skill should produce blur + brightness + saturation filters."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("dreamy", {})
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        assert "boxblur" in cmd_str or "blur" in cmd_str.lower()
+
+    # ---- Mixed pipeline tests ----
+
+    def test_mixed_builtin_and_template_skills(self):
+        """A pipeline mixing builtin and template skills should produce valid args."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("resize", {"width": 1280, "height": 720})
+        pipeline.add_step("brightness", {"value": 0.1})
+        pipeline.add_step("web_optimize", {})
+        pipeline.add_step("pixel_format", {"format": "yuv420p"})
+
+        command = composer.compose(pipeline)
+        args = command.to_args()
+
+        # No arg should contain a space (the core invariant)
+        for arg in args:
+            assert " " not in arg, f"Arg contains space: '{arg}'"
+
+        # Video filters should be present
+        assert "-vf" in args
+
+        # Output options from templates should be present as separate args
+        assert "-movflags" in args
+        assert "+faststart" in args
+        assert "-pix_fmt" in args
+        assert "yuv420p" in args
+
+    def test_quality_preset_injection(self):
+        """Quality preset (always added by agent_node) should produce valid args."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("resize", {"width": 1280, "height": 720})
+
+        # Simulate the quality preset injection from agent_node.py lines 219-225
+        pipeline.add_step("quality", {"crf": 23, "preset": "medium"})
+
+        command = composer.compose(pipeline)
+        args = command.to_args()
+
+        assert "-c:v" in args
+        assert "libx264" in args
+        assert "-crf" in args
+        assert "23" in args
+        assert "-preset" in args
+        assert "medium" in args
+
+    def test_full_pipeline_no_spaces_in_args(self):
+        """End-to-end: a realistic pipeline should never produce args with spaces."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("trim", {"start": 5, "duration": 30})
+        pipeline.add_step("resize", {"width": 1920, "height": 1080})
+        pipeline.add_step("brightness", {"value": 0.05})
+        pipeline.add_step("curves", {"preset": "vintage"})
+        pipeline.add_step("web_optimize", {})
+        pipeline.add_step("quality", {"crf": 18, "preset": "slow"})
+
+        command = composer.compose(pipeline)
+        args = command.to_args()
+
+        for arg in args:
+            assert " " not in arg, (
+                f"FFMPEG arg contains embedded space and will cause "
+                f"'Invalid argument' error: '{arg}'"
+            )
+
+        # Verify key elements are present
+        assert "-ss" in args  # trim start
+        assert "-t" in args   # trim duration
+        assert "-vf" in args  # video filters
+        assert "-movflags" in args
+        assert "-c:v" in args
+
+    def test_disabled_steps_are_skipped(self):
+        """Disabled pipeline steps should not affect the command."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("resize", {"width": 1280, "height": 720})
+
+        # Manually disable the step
+        pipeline.steps[0].enabled = False
+
+        command = composer.compose(pipeline)
+        args = command.to_args()
+
+        assert "-vf" not in args  # no filter since step is disabled

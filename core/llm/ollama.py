@@ -2,9 +2,9 @@
 
 import json
 from typing import Optional, AsyncIterator
-import httpx
+import httpx  # type: ignore[import-not-found]
 
-from .base import LLMConnector, LLMConfig, LLMResponse, LLMProvider
+from .base import LLMConnector, LLMConfig, LLMResponse, LLMProvider  # type: ignore[import-not-found]
 
 
 class OllamaConnector(LLMConnector):
@@ -32,8 +32,8 @@ class OllamaConnector(LLMConnector):
                 model="llama3.1:8b",
                 base_url="http://localhost:11434",
             )
-        super().__init__(config)
-        self._client = None
+        super().__init__(config)  # type: ignore[misc]
+        self._client: Optional[httpx.AsyncClient] = None
 
     @property
     def client(self) -> httpx.AsyncClient:
@@ -41,14 +41,19 @@ class OllamaConnector(LLMConnector):
         if self._client is None:
             self._client = httpx.AsyncClient(
                 base_url=self.config.base_url,
-                timeout=self.config.timeout,
+                timeout=httpx.Timeout(
+                    connect=30.0,
+                    read=self.config.timeout,
+                    write=30.0,
+                    pool=30.0,
+                ),
             )
         return self._client
 
     async def close(self):
         """Close the HTTP client."""
-        if self._client:
-            await self._client.aclose()
+        if self._client is not None:
+            await self._client.aclose()  # type: ignore[union-attr]
             self._client = None
 
     async def generate(
@@ -80,7 +85,8 @@ class OllamaConnector(LLMConnector):
 
         # Merge extra options
         if self.config.extra_options:
-            payload["options"].update(self.config.extra_options)
+            options: dict = payload["options"]  # type: ignore[assignment]
+            options.update(self.config.extra_options)
 
         response = await self.client.post("/api/generate", json=payload)
         response.raise_for_status()
@@ -129,7 +135,8 @@ class OllamaConnector(LLMConnector):
             payload["system"] = system_prompt
 
         if self.config.extra_options:
-            payload["options"].update(self.config.extra_options)
+            options: dict = payload["options"]  # type: ignore[assignment]
+            options.update(self.config.extra_options)
 
         async with self.client.stream("POST", "/api/generate", json=payload) as response:
             response.raise_for_status()
@@ -162,7 +169,8 @@ class OllamaConnector(LLMConnector):
         }
 
         if self.config.extra_options:
-            payload["options"].update(self.config.extra_options)
+            options: dict = payload["options"]  # type: ignore[assignment]
+            options.update(self.config.extra_options)
 
         response = await self.client.post("/api/chat", json=payload)
         response.raise_for_status()

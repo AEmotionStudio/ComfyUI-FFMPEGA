@@ -115,6 +115,11 @@ class SkillComposer:
             if not skill:
                 raise ValueError(f"Unknown skill: {step.skill_name}")
 
+            # Auto-fill missing params with defaults from skill definition
+            for param in skill.parameters:
+                if param.name not in step.params and param.default is not None:
+                    step.params[param.name] = param.default
+
             # Validate parameters
             is_valid, errors = skill.validate_params(step.params)
             if not is_valid:
@@ -164,7 +169,7 @@ class SkillComposer:
 
             # Determine if it's a video filter, audio filter, or output option
             if template.startswith("-"):
-                output_options.append(template)
+                output_options.extend(template.split())
             elif any(af in template for af in ["atempo", "volume", "aecho", "afade"]):
                 audio_filters.append(template)
             else:
