@@ -267,3 +267,250 @@ def register_skills(registry: SkillRegistry) -> None:
         ],
         tags=["dynamics", "limiter"],
     ))
+
+    # Echo/reverb skill
+    registry.register(Skill(
+        name="echo",
+        category=SkillCategory.AUDIO,
+        description="Add echo/reverb effect to audio",
+        parameters=[
+            SkillParameter(
+                name="delay",
+                type=ParameterType.INT,
+                description="Echo delay in milliseconds",
+                required=False,
+                default=500,
+                min_value=50,
+                max_value=5000,
+            ),
+            SkillParameter(
+                name="decay",
+                type=ParameterType.FLOAT,
+                description="Echo decay (0 = no echo, 1 = full echo)",
+                required=False,
+                default=0.5,
+                min_value=0.1,
+                max_value=0.9,
+            ),
+        ],
+        ffmpeg_template="aecho=0.8:0.88:{delay}:{decay}",
+        examples=[
+            "echo - Standard echo",
+            "echo:delay=1000,decay=0.3 - Long subtle echo",
+            "echo:delay=200,decay=0.7 - Short strong echo",
+        ],
+        tags=["reverb", "echo", "delay", "space", "room"],
+    ))
+
+    # Equalizer skill
+    registry.register(Skill(
+        name="equalizer",
+        category=SkillCategory.AUDIO,
+        description="Apply equalizer band adjustment",
+        parameters=[
+            SkillParameter(
+                name="freq",
+                type=ParameterType.INT,
+                description="Center frequency in Hz",
+                required=False,
+                default=1000,
+                min_value=20,
+                max_value=20000,
+            ),
+            SkillParameter(
+                name="width",
+                type=ParameterType.INT,
+                description="Band width in Hz",
+                required=False,
+                default=200,
+                min_value=10,
+                max_value=5000,
+            ),
+            SkillParameter(
+                name="gain",
+                type=ParameterType.FLOAT,
+                description="Gain in dB (-20 to 20)",
+                required=False,
+                default=5.0,
+                min_value=-20.0,
+                max_value=20.0,
+            ),
+        ],
+        ffmpeg_template="equalizer=f={freq}:width_type=h:width={width}:g={gain}",
+        examples=[
+            "equalizer:freq=100,gain=6 - Boost bass frequencies",
+            "equalizer:freq=8000,gain=-3 - Reduce treble",
+        ],
+        tags=["eq", "frequency", "band", "boost", "cut"],
+    ))
+
+    # Stereo swap skill
+    registry.register(Skill(
+        name="stereo_swap",
+        category=SkillCategory.AUDIO,
+        description="Swap left and right audio channels",
+        parameters=[],
+        ffmpeg_template="channelmap=1|0",
+        examples=[
+            "stereo_swap - Swap left and right channels",
+        ],
+        tags=["stereo", "channels", "swap", "left", "right"],
+    ))
+
+    # Mono conversion skill
+    registry.register(Skill(
+        name="mono",
+        category=SkillCategory.AUDIO,
+        description="Convert audio to mono (single channel)",
+        parameters=[],
+        ffmpeg_template="pan=mono|c0=0.5*c0+0.5*c1",
+        examples=[
+            "mono - Convert stereo to mono",
+        ],
+        tags=["mono", "single", "channel", "downmix"],
+    ))
+
+    # Audio speed skill (audio only, no video change)
+    registry.register(Skill(
+        name="audio_speed",
+        category=SkillCategory.AUDIO,
+        description="Change audio speed/tempo without affecting video",
+        parameters=[
+            SkillParameter(
+                name="factor",
+                type=ParameterType.FLOAT,
+                description="Speed factor (0.5 = half, 2.0 = double)",
+                required=False,
+                default=1.5,
+                min_value=0.5,
+                max_value=2.0,
+            ),
+        ],
+        ffmpeg_template="atempo={factor}",
+        examples=[
+            "audio_speed:factor=1.5 - Speed up audio 1.5x",
+            "audio_speed:factor=0.75 - Slow down audio",
+        ],
+        tags=["tempo", "speed", "fast", "slow", "pitch"],
+    ))
+
+    # Chorus effect skill
+    registry.register(Skill(
+        name="chorus",
+        category=SkillCategory.AUDIO,
+        description="Add chorus effect to audio (thickens/enriches sound)",
+        parameters=[
+            SkillParameter(
+                name="depth",
+                type=ParameterType.FLOAT,
+                description="Chorus depth (modulation amount)",
+                required=False,
+                default=0.4,
+                min_value=0.1,
+                max_value=1.0,
+            ),
+        ],
+        ffmpeg_template="chorus=0.7:0.9:55:{depth}:0.25:2",
+        examples=[
+            "chorus - Standard chorus effect",
+            "chorus:depth=0.8 - Deep chorus",
+        ],
+        tags=["chorus", "thick", "rich", "vocal", "wide"],
+    ))
+
+    # Flanger effect skill
+    registry.register(Skill(
+        name="flanger",
+        category=SkillCategory.AUDIO,
+        description="Add flanger effect to audio (sweeping jet sound)",
+        parameters=[
+            SkillParameter(
+                name="speed",
+                type=ParameterType.FLOAT,
+                description="Flanger speed in Hz",
+                required=False,
+                default=0.5,
+                min_value=0.1,
+                max_value=10.0,
+            ),
+            SkillParameter(
+                name="depth",
+                type=ParameterType.FLOAT,
+                description="Flanger depth",
+                required=False,
+                default=2.0,
+                min_value=0.1,
+                max_value=10.0,
+            ),
+        ],
+        ffmpeg_template="flanger=speed={speed}:depth={depth}",
+        examples=[
+            "flanger - Standard flanger",
+            "flanger:speed=1.0,depth=5 - Intense flanger",
+        ],
+        tags=["flanger", "sweep", "jet", "modulation", "psychedelic"],
+    ))
+
+    # Low pass filter skill
+    registry.register(Skill(
+        name="lowpass",
+        category=SkillCategory.AUDIO,
+        description="Apply low pass filter (removes high frequencies, muffled sound)",
+        parameters=[
+            SkillParameter(
+                name="freq",
+                type=ParameterType.INT,
+                description="Cutoff frequency in Hz",
+                required=False,
+                default=1000,
+                min_value=100,
+                max_value=20000,
+            ),
+        ],
+        ffmpeg_template="lowpass=f={freq}",
+        examples=[
+            "lowpass - Muffle audio (1kHz cutoff)",
+            "lowpass:freq=500 - Very muffled (behind wall effect)",
+            "lowpass:freq=3000 - Slight warmth",
+        ],
+        tags=["filter", "muffle", "warm", "telephone", "lo-fi"],
+    ))
+
+    # High pass filter skill
+    registry.register(Skill(
+        name="highpass",
+        category=SkillCategory.AUDIO,
+        description="Apply high pass filter (removes low frequencies, thin sound)",
+        parameters=[
+            SkillParameter(
+                name="freq",
+                type=ParameterType.INT,
+                description="Cutoff frequency in Hz",
+                required=False,
+                default=300,
+                min_value=20,
+                max_value=10000,
+            ),
+        ],
+        ffmpeg_template="highpass=f={freq}",
+        examples=[
+            "highpass - Remove rumble (300Hz cutoff)",
+            "highpass:freq=1000 - Tinny/telephone effect",
+            "highpass:freq=80 - Subtle rumble removal",
+        ],
+        tags=["filter", "thin", "rumble", "clean", "telephone"],
+    ))
+
+    # Audio reverse skill
+    registry.register(Skill(
+        name="audio_reverse",
+        category=SkillCategory.AUDIO,
+        description="Reverse the audio track",
+        parameters=[],
+        ffmpeg_template="areverse",
+        examples=[
+            "audio_reverse - Reverse audio playback",
+        ],
+        tags=["reverse", "backwards", "creepy"],
+    ))
+

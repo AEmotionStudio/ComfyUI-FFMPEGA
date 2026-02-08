@@ -349,3 +349,251 @@ def register_skills(registry: SkillRegistry) -> None:
         ],
         tags=["color", "grade", "look", "lut"],
     ))
+
+    # Text overlay skill
+    registry.register(Skill(
+        name="text_overlay",
+        category=SkillCategory.VISUAL,
+        description="Add text overlay on video",
+        parameters=[
+            SkillParameter(
+                name="text",
+                type=ParameterType.STRING,
+                description="Text to display",
+                required=True,
+            ),
+            SkillParameter(
+                name="size",
+                type=ParameterType.INT,
+                description="Font size",
+                required=False,
+                default=48,
+                min_value=8,
+                max_value=200,
+            ),
+            SkillParameter(
+                name="color",
+                type=ParameterType.STRING,
+                description="Text color (name or hex)",
+                required=False,
+                default="white",
+            ),
+            SkillParameter(
+                name="position",
+                type=ParameterType.CHOICE,
+                description="Text position",
+                required=False,
+                default="center",
+                choices=["center", "top", "bottom", "top_left", "top_right", "bottom_left", "bottom_right"],
+            ),
+            SkillParameter(
+                name="font",
+                type=ParameterType.STRING,
+                description="Font name or path",
+                required=False,
+                default="Sans",
+            ),
+            SkillParameter(
+                name="border",
+                type=ParameterType.BOOL,
+                description="Add black border/shadow around text",
+                required=False,
+                default=True,
+            ),
+        ],
+        examples=[
+            "text_overlay:text=Hello World - Center text",
+            "text_overlay:text=Subscribe!,position=bottom,color=yellow,size=72 - Large yellow text at bottom",
+        ],
+        tags=["text", "title", "caption", "subtitle", "watermark", "label"],
+    ))
+
+    # Invert/negative skill
+    registry.register(Skill(
+        name="invert",
+        category=SkillCategory.VISUAL,
+        description="Invert colors (photo negative effect)",
+        parameters=[],
+        ffmpeg_template="negate",
+        examples=[
+            "invert - Invert all colors",
+        ],
+        tags=["negative", "negate", "reverse", "invert"],
+    ))
+
+    # Edge detection skill
+    registry.register(Skill(
+        name="edge_detect",
+        category=SkillCategory.VISUAL,
+        description="Apply edge detection effect",
+        parameters=[
+            SkillParameter(
+                name="mode",
+                type=ParameterType.CHOICE,
+                description="Edge detection mode",
+                required=False,
+                default="canny",
+                choices=["canny", "colormix"],
+            ),
+            SkillParameter(
+                name="low",
+                type=ParameterType.FLOAT,
+                description="Low threshold (canny mode)",
+                required=False,
+                default=0.1,
+                min_value=0.0,
+                max_value=1.0,
+            ),
+            SkillParameter(
+                name="high",
+                type=ParameterType.FLOAT,
+                description="High threshold (canny mode)",
+                required=False,
+                default=0.4,
+                min_value=0.0,
+                max_value=1.0,
+            ),
+        ],
+        ffmpeg_template="edgedetect=low={low}:high={high}:mode={mode}",
+        examples=[
+            "edge_detect - Standard edge detection",
+            "edge_detect:mode=colormix - Colorful edges",
+        ],
+        tags=["edge", "outline", "sketch", "line", "cartoon"],
+    ))
+
+    # Pixelate/mosaic skill
+    registry.register(Skill(
+        name="pixelate",
+        category=SkillCategory.VISUAL,
+        description="Pixelate video (mosaic/pixel art effect)",
+        parameters=[
+            SkillParameter(
+                name="factor",
+                type=ParameterType.INT,
+                description="Pixelation factor (higher = more pixelated)",
+                required=False,
+                default=10,
+                min_value=2,
+                max_value=50,
+            ),
+        ],
+        examples=[
+            "pixelate - Standard pixelation",
+            "pixelate:factor=20 - Heavy pixelation",
+            "pixelate:factor=4 - Subtle pixelation",
+        ],
+        tags=["mosaic", "pixel", "censor", "blur", "8bit", "retro"],
+    ))
+
+    # Gamma correction skill
+    registry.register(Skill(
+        name="gamma",
+        category=SkillCategory.VISUAL,
+        description="Adjust gamma correction",
+        parameters=[
+            SkillParameter(
+                name="value",
+                type=ParameterType.FLOAT,
+                description="Gamma value (< 1.0 = darker, > 1.0 = brighter)",
+                required=False,
+                default=1.2,
+                min_value=0.1,
+                max_value=4.0,
+            ),
+        ],
+        ffmpeg_template="eq=gamma={value}",
+        examples=[
+            "gamma:value=1.5 - Brighter midtones",
+            "gamma:value=0.7 - Darker midtones",
+        ],
+        tags=["gamma", "midtones", "exposure", "light"],
+    ))
+
+    # Exposure adjustment skill
+    registry.register(Skill(
+        name="exposure",
+        category=SkillCategory.VISUAL,
+        description="Adjust video exposure",
+        parameters=[
+            SkillParameter(
+                name="value",
+                type=ParameterType.FLOAT,
+                description="Exposure adjustment (-3 to 3 stops)",
+                required=False,
+                default=0.5,
+                min_value=-3.0,
+                max_value=3.0,
+            ),
+        ],
+        ffmpeg_template="exposure=exposure={value}",
+        examples=[
+            "exposure:value=1.0 - One stop brighter",
+            "exposure:value=-0.5 - Half stop darker",
+        ],
+        tags=["light", "bright", "dark", "ev", "stops"],
+    ))
+
+    # Chroma key (green screen) skill
+    registry.register(Skill(
+        name="chromakey",
+        category=SkillCategory.VISUAL,
+        description="Remove a color background (green screen / chroma key)",
+        parameters=[
+            SkillParameter(
+                name="color",
+                type=ParameterType.STRING,
+                description="Color to remove (hex or name, e.g. '0x00FF00' for green)",
+                required=False,
+                default="0x00FF00",
+            ),
+            SkillParameter(
+                name="similarity",
+                type=ParameterType.FLOAT,
+                description="Color match tolerance (0.01 = exact, 0.5 = loose)",
+                required=False,
+                default=0.15,
+                min_value=0.01,
+                max_value=0.5,
+            ),
+            SkillParameter(
+                name="blend",
+                type=ParameterType.FLOAT,
+                description="Edge blend amount",
+                required=False,
+                default=0.1,
+                min_value=0.0,
+                max_value=1.0,
+            ),
+        ],
+        ffmpeg_template="chromakey=color={color}:similarity={similarity}:blend={blend}",
+        examples=[
+            "chromakey - Remove green screen",
+            "chromakey:color=0x0000FF,similarity=0.2 - Remove blue screen",
+        ],
+        tags=["greenscreen", "bluescreen", "key", "remove", "background", "transparent"],
+    ))
+
+    # Deband skill
+    registry.register(Skill(
+        name="deband",
+        category=SkillCategory.VISUAL,
+        description="Remove color banding artifacts",
+        parameters=[
+            SkillParameter(
+                name="threshold",
+                type=ParameterType.FLOAT,
+                description="Deband threshold (higher = more aggressive)",
+                required=False,
+                default=0.02,
+                min_value=0.0,
+                max_value=0.1,
+            ),
+        ],
+        ffmpeg_template="deband=1thr={threshold}:2thr={threshold}:3thr={threshold}:4thr={threshold}",
+        examples=[
+            "deband - Remove color banding",
+            "deband:threshold=0.05 - Aggressive debanding",
+        ],
+        tags=["banding", "gradient", "smooth", "quality"],
+    ))

@@ -396,6 +396,46 @@ class SkillComposer:
             preset = params.get("preset", "medium")
             output_options.extend(["-c:v", "libx264", "-crf", str(crf), "-preset", preset])
 
+        # Text overlay skill (needs special escaping)
+        elif skill_name == "text_overlay":
+            text = str(params.get("text", "")).replace("'", "\\'").replace(":", "\\:")
+            size = params.get("size", 48)
+            color = params.get("color", "white")
+            font = params.get("font", "Sans")
+            border = params.get("border", True)
+            position = params.get("position", "center")
+
+            # Map position to x:y coordinates
+            pos_map = {
+                "center": "x=(w-text_w)/2:y=(h-text_h)/2",
+                "top": "x=(w-text_w)/2:y=text_h",
+                "bottom": "x=(w-text_w)/2:y=h-text_h*2",
+                "top_left": "x=text_h:y=text_h",
+                "top_right": "x=w-text_w-text_h:y=text_h",
+                "bottom_left": "x=text_h:y=h-text_h*2",
+                "bottom_right": "x=w-text_w-text_h:y=h-text_h*2",
+            }
+            xy = pos_map.get(position, pos_map["center"])
+
+            border_style = ""
+            if border:
+                border_style = ":borderw=3:bordercolor=black"
+
+            drawtext = (
+                f"drawtext=text='{text}':fontsize={size}"
+                f":fontcolor={color}:font='{font}'"
+                f":{xy}{border_style}"
+            )
+            video_filters.append(drawtext)
+
+        # Pixelate skill (scale down then scale back up with nearest neighbor)
+        elif skill_name == "pixelate":
+            factor = params.get("factor", 10)
+            video_filters.append(
+                f"scale=iw/{factor}:ih/{factor},"
+                f"scale=iw*{factor}:ih*{factor}:flags=neighbor"
+            )
+
         return video_filters, audio_filters, output_options
 
     def validate_pipeline(self, pipeline: Pipeline) -> tuple[bool, list[str]]:

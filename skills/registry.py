@@ -372,7 +372,7 @@ def get_registry() -> SkillRegistry:
 def _register_default_skills(registry: SkillRegistry) -> None:
     """Register all default skills."""
     from .category import temporal, spatial, visual, audio, encoding
-    from .outcome import cinematic, vintage, social, effects
+    from .outcome import cinematic, vintage, social, effects, creative
 
     # Register category skills
     temporal.register_skills(registry)
@@ -386,3 +386,4 @@ def _register_default_skills(registry: SkillRegistry) -> None:
     vintage.register_skills(registry)
     social.register_skills(registry)
     effects.register_skills(registry)
+    creative.register_skills(registry)
