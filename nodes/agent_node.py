@@ -359,26 +359,19 @@ Pipeline Steps:
 
 Warnings: {', '.join(warnings) if warnings else 'None'}"""
 
-        # Check if pipeline contains any audio skills
-        from ..skills.registry import SkillCategory  # type: ignore[import-not-found]
-        has_audio_skills = any(
-            self.registry.get(s.skill_name)
-            and self.registry.get(s.skill_name).category == SkillCategory.AUDIO
-            for s in pipeline.steps if s.enabled
-        )
-
-        # Only mux upstream audio when the pipeline has no audio skills.
-        # If audio skills are present, ffmpeg already processed the audio
-        # via -af filters and muxing would overwrite those changes.
-        if audio_input is not None and not has_audio_skills:
+        # If audio_input was provided, mux it into the output video.
+        # Note: audio skills (-af filters) process the input VIDEO's audio,
+        # not audio_input. audio_input is muxed in separately after ffmpeg.
+        if audio_input is not None:
             self._mux_audio_into_video(output_path, audio_input)
 
         # Extract frames from output video as IMAGE tensor
         images_tensor = self._extract_frames_as_tensor(output_path)
 
-        # For audio output: if audio skills were applied, extract the
-        # processed audio from the output; otherwise pass through input.
-        if audio_input is not None and not has_audio_skills:
+        # For audio output: pass through audio_input if connected,
+        # otherwise extract from output (which may have been processed
+        # by audio skills like normalize, bass, etc.)
+        if audio_input is not None:
             audio_out = audio_input
         else:
             audio_out = self._extract_audio(output_path)
