@@ -10,11 +10,16 @@ Example usage:
     - "Create a vintage VHS look with grain and color shift"
 """
 
-__version__ = "1.0.0"
+__version__ = "1.6.1"
 __author__ = "FFMPEGA Team"
 
 # Import node mappings for ComfyUI
-from .nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
+# Guarded so the package can be imported standalone (e.g. during pytest)
+try:
+    from .nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
+except ImportError:
+    NODE_CLASS_MAPPINGS = {}
+    NODE_DISPLAY_NAME_MAPPINGS = {}
 
 # Web directory for custom JavaScript (relative to this module)
 WEB_DIRECTORY = "./js"

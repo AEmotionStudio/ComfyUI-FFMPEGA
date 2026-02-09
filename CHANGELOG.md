@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2026-02-09
+
+### Fixed
+- **Audio Pipeline**: Fixed audio mux re-adding audio after `remove_audio` skill; fixed audio muxing overwriting processed audio when `audio_input` is connected; fixed audio template skills being misrouted to video filters.
+- **Audio Mux**: Handle audio mux gracefully when input video has no audio stream.
+- **Pulse Effect**: Rewrite `pulse` zoompan filter to avoid parsing issues (`iw*2xih*2` → `iw*2:ih*2`).
+- **LLM JSON Parsing**: Auto-retry JSON parsing failures with a correction prompt; agentic self-correction loop for non-JSON responses; prevent unknown skill crashes during retry.
+
+### Added
+- **Test Infrastructure**: Root `conftest.py` for standalone pytest, import-safe `__init__.py` with try/except guard, `dev` extras in `pyproject.toml` (pytest, pytest-asyncio).
+- **Skill Test Prompts**: Added `SKILL_TEST_PROMPTS.md` with copy-friendly code blocks for manual testing.
+
+### Changed
+- **Pipeline Composer**: Refactored `skills/composer.py` for improved audio template handling and skill routing.
+- **Agent Node**: Streamlined `nodes/agent_node.py` with cleaner model selection and processing flow.
+
+---
+
 ## [1.6.0] - 2026-02-08
 
 ### Added

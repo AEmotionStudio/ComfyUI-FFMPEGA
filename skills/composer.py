@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Any
 from pathlib import Path
 
-from .registry import SkillRegistry, Skill, ParameterType, get_registry
+from .registry import SkillRegistry, Skill, SkillCategory, ParameterType, get_registry
 from ..core.executor.command_builder import CommandBuilder, FFMPEGCommand
 
 
@@ -168,6 +168,11 @@ class SkillComposer:
             audio_filters.extend(af)
             output_options.extend(opts)
 
+        # If the pipeline strips audio (-an), discard any audio filters to
+        # avoid the -af/-an conflict that causes ffmpeg to include audio.
+        if "-an" in output_options:
+            audio_filters.clear()
+
         # Apply filters
         for vf in video_filters:
             builder.vf(vf)
@@ -207,7 +212,7 @@ class SkillComposer:
             # Determine if it's a video filter, audio filter, or output option
             if template.startswith("-"):
                 output_options.extend(template.split())
-            elif any(af in template for af in ["atempo", "volume", "aecho", "afade"]):
+            elif skill.category == SkillCategory.AUDIO:
                 audio_filters.append(template)
             else:
                 video_filters.append(template)
@@ -240,415 +245,6 @@ class SkillComposer:
             video_filters.extend(vf)
             audio_filters.extend(af)
             output_options.extend(opts)
-
-        return video_filters, audio_filters, output_options
-
-    def _builtin_skill_filters(
-        self,
-        skill_name: str,
-        params: dict,
-    ) -> tuple[list[str], list[str], list[str]]:
-        """Generate filters for built-in skills.
-
-        Args:
-            skill_name: Name of the skill.
-            params: Parameters.
-
-        Returns:
-            Tuple of (video_filters, audio_filters, output_options).
-        """
-        video_filters = []
-        audio_filters = []
-        output_options = []
-
-        # Temporal skills
-        if skill_name == "trim":
-            if params.get("start"):
-                output_options.extend(["-ss", str(params["start"])])
-            if params.get("end"):
-                output_options.extend(["-to", str(params["end"])])
-            if params.get("duration"):
-                output_options.extend(["-t", str(params["duration"])])
-
-        elif skill_name == "speed":
-            factor = params.get("factor", 1.0)
-            pts_factor = 1.0 / factor
-            video_filters.append(f"setpts={pts_factor}*PTS")
-
-            # Audio tempo adjustment
-            if 0.5 <= factor <= 2.0:
-                audio_filters.append(f"atempo={factor}")
-            elif factor < 0.5:
-                remaining = factor
-                while remaining < 0.5:
-                    audio_filters.append("atempo=0.5")
-                    remaining *= 2
-                audio_filters.append(f"atempo={remaining}")
-            else:
-                remaining = factor
-                while remaining > 2.0:
-                    audio_filters.append("atempo=2.0")
-                    remaining /= 2
-                audio_filters.append(f"atempo={remaining}")
-
-        elif skill_name == "reverse":
-            video_filters.append("reverse")
-            audio_filters.append("areverse")
-
-        elif skill_name == "loop":
-            count = params.get("count", 2)
-            video_filters.append(f"loop=loop={count}:size=32767")
-
-        # Spatial skills
-        elif skill_name == "resize":
-            width = params.get("width", -1)
-            height = params.get("height", -1)
-            video_filters.append(f"scale={width}:{height}")
-
-        elif skill_name == "crop":
-            w = params.get("width", "iw")
-            h = params.get("height", "ih")
-            x = params.get("x", "(in_w-out_w)/2")
-            y = params.get("y", "(in_h-out_h)/2")
-            video_filters.append(f"crop={w}:{h}:{x}:{y}")
-
-        elif skill_name == "pad":
-            w = params.get("width", "iw")
-            h = params.get("height", "ih")
-            x = params.get("x", "(ow-iw)/2")
-            y = params.get("y", "(oh-ih)/2")
-            color = params.get("color", "black")
-            video_filters.append(f"pad={w}:{h}:{x}:{y}:{color}")
-
-        elif skill_name == "rotate":
-            angle = params.get("angle", 0)
-            if angle == 90:
-                video_filters.append("transpose=1")
-            elif angle == -90 or angle == 270:
-                video_filters.append("transpose=2")
-            elif angle == 180:
-                video_filters.append("transpose=1,transpose=1")
-            else:
-                radians = angle * 3.14159 / 180
-                video_filters.append(f"rotate={radians}")
-
-        elif skill_name == "flip":
-            direction = params.get("direction", "horizontal")
-            if direction == "horizontal":
-                video_filters.append("hflip")
-            else:
-                video_filters.append("vflip")
-
-        # Visual skills
-        elif skill_name == "brightness":
-            value = params.get("value", 0)
-            video_filters.append(f"eq=brightness={value}")
-
-        elif skill_name == "contrast":
-            value = params.get("value", 1.0)
-            video_filters.append(f"eq=contrast={value}")
-
-        elif skill_name == "saturation":
-            value = params.get("value", 1.0)
-            video_filters.append(f"eq=saturation={value}")
-
-        elif skill_name == "hue":
-            value = params.get("value", 0)
-            video_filters.append(f"hue=h={value}")
-
-        elif skill_name == "sharpen":
-            amount = params.get("amount", 1.0)
-            video_filters.append(f"unsharp=5:5:{amount}:5:5:0")
-
-        elif skill_name == "blur":
-            radius = params.get("radius", 5)
-            video_filters.append(f"boxblur={radius}:{radius}")
-
-        elif skill_name == "denoise":
-            strength = params.get("strength", "medium")
-            if strength == "light":
-                video_filters.append("hqdn3d=2:2:3:3")
-            elif strength == "medium":
-                video_filters.append("hqdn3d=4:3:6:4")
-            else:  # strong
-                video_filters.append("hqdn3d=6:4:9:6")
-
-        elif skill_name == "vignette":
-            intensity = params.get("intensity", 0.3)
-            video_filters.append(f"vignette=PI/4*{intensity}")
-
-        elif skill_name == "fade":
-            fade_type = params.get("type", "in")
-            start = params.get("start", 0)
-            duration = params.get("duration", 1)
-            if fade_type == "both":
-                # Fade in at start, fade out at end
-                video_filters.append(f"fade=t=in:st=0:d={duration}")
-                video_filters.append(f"fade=t=out:d={duration}")
-            else:
-                video_filters.append(f"fade=t={fade_type}:st={start}:d={duration}")
-
-        # Audio skills
-        elif skill_name == "volume":
-            level = params.get("level", 1.0)
-            audio_filters.append(f"volume={level}")
-
-        elif skill_name == "normalize":
-            audio_filters.append("loudnorm")
-
-        elif skill_name == "fade_audio":
-            fade_type = params.get("type", "in")
-            start = params.get("start", 0)
-            duration = params.get("duration", 1)
-            audio_filters.append(f"afade=t={fade_type}:st={start}:d={duration}")
-
-        elif skill_name == "remove_audio":
-            output_options.append("-an")
-
-        elif skill_name == "extract_audio":
-            output_options.extend(["-vn", "-c:a", "copy"])
-
-        # Encoding skills
-        elif skill_name == "compress":
-            preset = params.get("preset", "medium")
-            crf_map = {"light": 20, "medium": 23, "heavy": 28}
-            crf = crf_map.get(preset, 23)
-            output_options.extend(["-c:v", "libx264", "-crf", str(crf), "-preset", "medium"])
-
-        elif skill_name == "convert":
-            codec = params.get("codec", "h264")
-            codec_map = {
-                "h264": "libx264",
-                "h265": "libx265",
-                "vp9": "libvpx-vp9",
-                "av1": "libaom-av1",
-            }
-            output_options.extend(["-c:v", codec_map.get(codec, "libx264")])
-
-        elif skill_name == "bitrate":
-            video_br = params.get("video")
-            audio_br = params.get("audio")
-            if video_br:
-                output_options.extend(["-b:v", video_br])
-            if audio_br:
-                output_options.extend(["-b:a", audio_br])
-
-        elif skill_name == "quality":
-            crf = params.get("crf", 23)
-            preset = params.get("preset", "medium")
-            output_options.extend(["-c:v", "libx264", "-crf", str(crf), "-preset", preset])
-
-        # Text overlay skill (needs special escaping)
-        elif skill_name == "text_overlay":
-            text = str(params.get("text", "")).replace("'", "\\'").replace(":", "\\:")
-            size = params.get("size", 48)
-            color = params.get("color", "white")
-            font = params.get("font", "Sans")
-            border = params.get("border", True)
-            position = params.get("position", "center")
-
-            # Map position to x:y coordinates
-            pos_map = {
-                "center": "x=(w-text_w)/2:y=(h-text_h)/2",
-                "top": "x=(w-text_w)/2:y=text_h",
-                "bottom": "x=(w-text_w)/2:y=h-text_h*2",
-                "top_left": "x=text_h:y=text_h",
-                "top_right": "x=w-text_w-text_h:y=text_h",
-                "bottom_left": "x=text_h:y=h-text_h*2",
-                "bottom_right": "x=w-text_w-text_h:y=h-text_h*2",
-            }
-            xy = pos_map.get(position, pos_map["center"])
-
-            border_style = ""
-            if border:
-                border_style = ":borderw=3:bordercolor=black"
-
-            drawtext = (
-                f"drawtext=text='{text}':fontsize={size}"
-                f":fontcolor={color}:font='{font}'"
-                f":{xy}{border_style}"
-            )
-            video_filters.append(drawtext)
-
-        # Pixelate skill (scale down then scale back up with nearest neighbor)
-        elif skill_name == "pixelate":
-            factor = params.get("factor", 10)
-            video_filters.append(
-                f"scale=iw/{factor}:ih/{factor},"
-                f"scale=iw*{factor}:ih*{factor}:flags=neighbor"
-            )
-
-        # Posterize skill (quantize colors using lutrgb)
-        elif skill_name == "posterize":
-            levels = int(params.get("levels", 4))
-            step = max(1, 256 // levels)
-            lut_expr = f"trunc(val/{step})*{step}"
-            video_filters.append(
-                f"lutrgb=r='{lut_expr}':g='{lut_expr}':b='{lut_expr}'"
-            )
-
-        # === Transition effects ===
-
-        elif skill_name == "fade_to_black":
-            in_dur = float(params.get("in_duration", 1.0))
-            out_dur = float(params.get("out_duration", 1.0))
-            if in_dur > 0:
-                video_filters.append(f"fade=t=in:st=0:d={in_dur}")
-            if out_dur > 0:
-                # Use negative start time trick: fade=t=out with special handling
-                # The composer will need video duration, so use a large end value
-                # In practice, the user or LLM should provide the actual timing
-                video_filters.append(f"fade=t=out:d={out_dur}")
-
-        elif skill_name == "fade_to_white":
-            in_dur = float(params.get("in_duration", 1.0))
-            out_dur = float(params.get("out_duration", 1.0))
-            if in_dur > 0:
-                video_filters.append(f"fade=t=in:st=0:d={in_dur}:c=white")
-            if out_dur > 0:
-                video_filters.append(f"fade=t=out:d={out_dur}:c=white")
-
-        elif skill_name == "flash":
-            time = float(params.get("time", 0))
-            duration = float(params.get("duration", 0.3))
-            end_time = time + duration
-            mid = time + duration / 2
-            # Flash = quick fade-out then fade-in using curves
-            video_filters.append(
-                f"fade=t=out:st={time}:d={duration/2}:c=white,"
-                f"fade=t=in:st={mid}:d={duration/2}:c=white"
-            )
-
-        # === Motion effects ===
-
-        elif skill_name == "spin":
-            speed = float(params.get("speed", 90.0))
-            direction = params.get("direction", "cw")
-            # Convert degrees/sec to radians/sec
-            rad_per_sec = speed * 3.14159 / 180
-            if direction == "ccw":
-                rad_per_sec = -rad_per_sec
-            video_filters.append(
-                f"rotate={rad_per_sec}*t:fillcolor=black"
-            )
-
-        elif skill_name == "shake":
-            intensity = params.get("intensity", "medium")
-            # Amount of random pixel offset per frame
-            shake_map = {"light": 5, "medium": 12, "heavy": 25}
-            amount = shake_map.get(intensity, 12)
-            # Use crop with random offsets to simulate shake
-            video_filters.append(
-                f"crop=iw-{amount*2}:ih-{amount*2}"
-                f":{amount}+{amount}*random(1)"
-                f":{amount}+{amount}*random(2),"
-                f"scale=iw+{amount*2}:ih+{amount*2}"
-            )
-
-        elif skill_name == "pulse":
-            rate = float(params.get("rate", 1.0))
-            amount = float(params.get("amount", 0.05))
-            # Use setpts+scale with expression-based zoom for pulsing effect
-            # Scale up slightly then crop to original size with sine modulation
-            margin = int(amount * 100) + 10  # extra pixels for zoom headroom
-            video_filters.append(
-                f"pad=iw+{margin*2}:ih+{margin*2}:{margin}:{margin}:color=black"
-            )
-            offset_expr = f"{margin}+{margin}*{amount}*10*sin(2*PI*{rate}*t)"
-            video_filters.append(
-                f"crop=iw-{margin*2}:ih-{margin*2}:'{offset_expr}':'{offset_expr}'"
-            )
-
-        elif skill_name == "bounce":
-            height = int(params.get("height", 30))
-            speed = float(params.get("speed", 2.0))
-            # Use pad + crop with sine-based vertical offset
-            video_filters.append(
-                f"pad=iw:ih+{height*2}:(ow-iw)/2:{height}:black,"
-                f"crop=iw:ih-{height*2}:0:{height}*abs(sin({speed}*PI*t))"
-            )
-
-        elif skill_name == "drift":
-            direction = params.get("direction", "right")
-            amount = int(params.get("amount", 50))
-            # Pad the frame and slowly pan across using crop with time expression
-            if direction == "right":
-                video_filters.append(
-                    f"pad=iw+{amount}:ih:0:0:black,"
-                    f"crop=iw-{amount}:ih:{amount}*t/duration:0"
-                )
-            elif direction == "left":
-                video_filters.append(
-                    f"pad=iw+{amount}:ih:{amount}:0:black,"
-                    f"crop=iw-{amount}:ih:{amount}*(1-t/duration):0"
-                )
-            elif direction == "down":
-                video_filters.append(
-                    f"pad=iw:ih+{amount}:0:0:black,"
-                    f"crop=iw:ih-{amount}:0:{amount}*t/duration"
-                )
-            elif direction == "up":
-                video_filters.append(
-                    f"pad=iw:ih+{amount}:0:{amount}:black,"
-                    f"crop=iw:ih-{amount}:0:{amount}*(1-t/duration)"
-                )
-
-        # === Reveal effects ===
-
-        elif skill_name == "iris_reveal":
-            duration = float(params.get("duration", 2.0))
-            # Expanding circle mask using geq (pixel math)
-            # radius grows from 0 to diagonal over duration
-            video_filters.append(
-                f"geq="
-                f"lum='if(lte(sqrt(pow(X-W/2,2)+pow(Y-H/2,2)),sqrt(pow(W/2,2)+pow(H/2,2))*min(T/{duration},1)),lum(X,Y),0)'"
-                f":cb='if(lte(sqrt(pow(X-W/2,2)+pow(Y-H/2,2)),sqrt(pow(W/2,2)+pow(H/2,2))*min(T/{duration},1)),cb(X,Y),128)'"
-                f":cr='if(lte(sqrt(pow(X-W/2,2)+pow(Y-H/2,2)),sqrt(pow(W/2,2)+pow(H/2,2))*min(T/{duration},1)),cr(X,Y),128)'"
-            )
-
-        elif skill_name == "wipe":
-            direction = params.get("direction", "left")
-            duration = float(params.get("duration", 1.5))
-            # Directional wipe using geq with animated threshold
-            if direction == "left":
-                cond = f"lte(X,W*min(T/{duration},1))"
-            elif direction == "right":
-                cond = f"gte(X,W*(1-min(T/{duration},1)))"
-            elif direction == "down":
-                cond = f"lte(Y,H*min(T/{duration},1))"
-            else:  # up
-                cond = f"gte(Y,H*(1-min(T/{duration},1)))"
-            video_filters.append(
-                f"geq="
-                f"lum='if({cond},lum(X,Y),0)'"
-                f":cb='if({cond},cb(X,Y),128)'"
-                f":cr='if({cond},cr(X,Y),128)'"
-            )
-
-        elif skill_name == "slide_in":
-            direction = params.get("direction", "left")
-            duration = float(params.get("duration", 1.0))
-            # Pad + animated crop to simulate sliding in
-            if direction == "left":
-                video_filters.append(
-                    f"pad=iw*2:ih:iw:0:black,"
-                    f"crop=iw/2:ih:iw/2*min(T/{duration},1):0"
-                )
-            elif direction == "right":
-                video_filters.append(
-                    f"pad=iw*2:ih:0:0:black,"
-                    f"crop=iw/2:ih:iw/2*(1-min(T/{duration},1)):0"
-                )
-            elif direction == "down":
-                video_filters.append(
-                    f"pad=iw:ih*2:0:ih:black,"
-                    f"crop=iw:ih/2:0:ih/2*min(T/{duration},1)"
-                )
-            else:  # up
-                video_filters.append(
-                    f"pad=iw:ih*2:0:0:black,"
-                    f"crop=iw:ih/2:0:ih/2*(1-min(T/{duration},1))"
-                )
 
         return video_filters, audio_filters, output_options
 
@@ -718,3 +314,436 @@ class SkillComposer:
             lines.append("")
 
         return "\n".join(lines)
+
+    # ------------------------------------------------------------------ #
+    #  Dispatch table for built-in skill filters                           #
+    # ------------------------------------------------------------------ #
+
+    def _builtin_skill_filters(
+        self,
+        skill_name: str,
+        params: dict,
+    ) -> tuple[list[str], list[str], list[str]]:
+        """Generate filters for built-in skills using dispatch table.
+
+        Args:
+            skill_name: Name of the skill.
+            params: Parameters.
+
+        Returns:
+            Tuple of (video_filters, audio_filters, output_options).
+        """
+        handler = _SKILL_DISPATCH.get(skill_name)
+        if handler is None:
+            return [], [], []
+        return handler(params)
+
+
+# ====================================================================== #
+#  Per-skill filter handlers                                               #
+#  Each returns (video_filters: list, audio_filters: list, opts: list)     #
+# ====================================================================== #
+
+def _f_trim(p):
+    opts = []
+    if p.get("start"):
+        opts.extend(["-ss", str(p["start"])])
+    if p.get("end"):
+        opts.extend(["-to", str(p["end"])])
+    if p.get("duration"):
+        opts.extend(["-t", str(p["duration"])])
+    return [], [], opts
+
+
+def _f_speed(p):
+    factor = p.get("factor", 1.0)
+    vf = [f"setpts={1.0 / factor}*PTS"]
+    af = []
+    if 0.5 <= factor <= 2.0:
+        af.append(f"atempo={factor}")
+    elif factor < 0.5:
+        remaining = factor
+        while remaining < 0.5:
+            af.append("atempo=0.5")
+            remaining *= 2
+        af.append(f"atempo={remaining}")
+    else:
+        remaining = factor
+        while remaining > 2.0:
+            af.append("atempo=2.0")
+            remaining /= 2
+        af.append(f"atempo={remaining}")
+    return vf, af, []
+
+
+def _f_reverse(p):
+    return ["reverse"], ["areverse"], []
+
+
+def _f_loop(p):
+    count = p.get("count", 2)
+    return [f"loop=loop={count}:size=32767"], [], []
+
+
+def _f_resize(p):
+    return [f"scale={p.get('width', -1)}:{p.get('height', -1)}"], [], []
+
+
+def _f_crop(p):
+    w = p.get("width", "iw")
+    h = p.get("height", "ih")
+    x = p.get("x", "(in_w-out_w)/2")
+    y = p.get("y", "(in_h-out_h)/2")
+    return [f"crop={w}:{h}:{x}:{y}"], [], []
+
+
+def _f_pad(p):
+    w = p.get("width", "iw")
+    h = p.get("height", "ih")
+    x = p.get("x", "(ow-iw)/2")
+    y = p.get("y", "(oh-ih)/2")
+    color = p.get("color", "black")
+    return [f"pad={w}:{h}:{x}:{y}:{color}"], [], []
+
+
+def _f_rotate(p):
+    angle = p.get("angle", 0)
+    if angle == 90:
+        return ["transpose=1"], [], []
+    elif angle == -90 or angle == 270:
+        return ["transpose=2"], [], []
+    elif angle == 180:
+        return ["transpose=1,transpose=1"], [], []
+    else:
+        radians = angle * 3.14159 / 180
+        return [f"rotate={radians}"], [], []
+
+
+def _f_flip(p):
+    d = p.get("direction", "horizontal")
+    return ["hflip" if d == "horizontal" else "vflip"], [], []
+
+
+def _f_brightness(p):
+    return [f"eq=brightness={p.get('value', 0)}"], [], []
+
+
+def _f_contrast(p):
+    return [f"eq=contrast={p.get('value', 1.0)}"], [], []
+
+
+def _f_saturation(p):
+    return [f"eq=saturation={p.get('value', 1.0)}"], [], []
+
+
+def _f_hue(p):
+    return [f"hue=h={p.get('value', 0)}"], [], []
+
+
+def _f_sharpen(p):
+    amount = p.get("amount", 1.0)
+    return [f"unsharp=5:5:{amount}:5:5:0"], [], []
+
+
+def _f_blur(p):
+    radius = p.get("radius", 5)
+    return [f"boxblur={radius}:{radius}"], [], []
+
+
+def _f_denoise(p):
+    strength = p.get("strength", "medium")
+    m = {"light": "hqdn3d=2:2:3:3", "medium": "hqdn3d=4:3:6:4"}
+    return [m.get(strength, "hqdn3d=6:4:9:6")], [], []
+
+
+def _f_vignette(p):
+    intensity = p.get("intensity", 0.3)
+    return [f"vignette=PI/4*{intensity}"], [], []
+
+
+def _f_fade(p):
+    fade_type = p.get("type", "in")
+    start = p.get("start", 0)
+    duration = p.get("duration", 1)
+    vf = []
+    if fade_type == "both":
+        vf.append(f"fade=t=in:st=0:d={duration}")
+        vf.append(f"fade=t=out:d={duration}")
+    else:
+        vf.append(f"fade=t={fade_type}:st={start}:d={duration}")
+    return vf, [], []
+
+
+def _f_volume(p):
+    return [], [f"volume={p.get('level', 1.0)}"], []
+
+
+def _f_normalize(p):
+    return [], ["loudnorm"], []
+
+
+def _f_fade_audio(p):
+    fade_type = p.get("type", "in")
+    start = p.get("start", 0)
+    duration = p.get("duration", 1)
+    return [], [f"afade=t={fade_type}:st={start}:d={duration}"], []
+
+
+def _f_remove_audio(p):
+    return [], [], ["-an"]
+
+
+def _f_extract_audio(p):
+    return [], [], ["-vn", "-c:a", "copy"]
+
+
+def _f_compress(p):
+    preset = p.get("preset", "medium")
+    crf_map = {"light": 20, "medium": 23, "heavy": 28}
+    crf = crf_map.get(preset, 23)
+    return [], [], ["-c:v", "libx264", "-crf", str(crf), "-preset", "medium"]
+
+
+def _f_convert(p):
+    codec = p.get("codec", "h264")
+    codec_map = {"h264": "libx264", "h265": "libx265", "vp9": "libvpx-vp9", "av1": "libaom-av1"}
+    return [], [], ["-c:v", codec_map.get(codec, "libx264")]
+
+
+def _f_bitrate(p):
+    opts = []
+    if p.get("video"):
+        opts.extend(["-b:v", p["video"]])
+    if p.get("audio"):
+        opts.extend(["-b:a", p["audio"]])
+    return [], [], opts
+
+
+def _f_quality(p):
+    crf = p.get("crf", 23)
+    preset = p.get("preset", "medium")
+    return [], [], ["-c:v", "libx264", "-crf", str(crf), "-preset", preset]
+
+
+def _f_text_overlay(p):
+    from ..core.sanitize import sanitize_text_param
+    text = sanitize_text_param(str(p.get("text", "")))
+    size = p.get("size", 48)
+    color = p.get("color", "white")
+    font = p.get("font", "Sans")
+    border = p.get("border", True)
+    position = p.get("position", "center")
+
+    pos_map = {
+        "center": "x=(w-text_w)/2:y=(h-text_h)/2",
+        "top": "x=(w-text_w)/2:y=text_h",
+        "bottom": "x=(w-text_w)/2:y=h-text_h*2",
+        "top_left": "x=text_h:y=text_h",
+        "top_right": "x=w-text_w-text_h:y=text_h",
+        "bottom_left": "x=text_h:y=h-text_h*2",
+        "bottom_right": "x=w-text_w-text_h:y=h-text_h*2",
+    }
+    xy = pos_map.get(position, pos_map["center"])
+    border_style = ":borderw=3:bordercolor=black" if border else ""
+
+    drawtext = (
+        f"drawtext=text='{text}':fontsize={size}"
+        f":fontcolor={color}:font='{font}'"
+        f":{xy}{border_style}"
+    )
+    return [drawtext], [], []
+
+
+def _f_pixelate(p):
+    factor = p.get("factor", 10)
+    return [
+        f"scale=iw/{factor}:ih/{factor},"
+        f"scale=iw*{factor}:ih*{factor}:flags=neighbor"
+    ], [], []
+
+
+def _f_posterize(p):
+    levels = int(p.get("levels", 4))
+    step = max(1, 256 // levels)
+    lut_expr = f"trunc(val/{step})*{step}"
+    return [f"lutrgb=r='{lut_expr}':g='{lut_expr}':b='{lut_expr}'"], [], []
+
+
+def _f_fade_to_black(p):
+    in_dur = float(p.get("in_duration", 1.0))
+    out_dur = float(p.get("out_duration", 1.0))
+    vf = []
+    if in_dur > 0:
+        vf.append(f"fade=t=in:st=0:d={in_dur}")
+    if out_dur > 0:
+        vf.append(f"fade=t=out:d={out_dur}")
+    return vf, [], []
+
+
+def _f_fade_to_white(p):
+    in_dur = float(p.get("in_duration", 1.0))
+    out_dur = float(p.get("out_duration", 1.0))
+    vf = []
+    if in_dur > 0:
+        vf.append(f"fade=t=in:st=0:d={in_dur}:c=white")
+    if out_dur > 0:
+        vf.append(f"fade=t=out:d={out_dur}:c=white")
+    return vf, [], []
+
+
+def _f_flash(p):
+    t = float(p.get("time", 0))
+    duration = float(p.get("duration", 0.3))
+    mid = t + duration / 2
+    return [
+        f"fade=t=out:st={t}:d={duration/2}:c=white,"
+        f"fade=t=in:st={mid}:d={duration/2}:c=white"
+    ], [], []
+
+
+def _f_spin(p):
+    speed = float(p.get("speed", 90.0))
+    direction = p.get("direction", "cw")
+    rad_per_sec = speed * 3.14159 / 180
+    if direction == "ccw":
+        rad_per_sec = -rad_per_sec
+    return [f"rotate={rad_per_sec}*t:fillcolor=black"], [], []
+
+
+def _f_shake(p):
+    intensity = p.get("intensity", "medium")
+    shake_map = {"light": 5, "medium": 12, "heavy": 25}
+    amount = shake_map.get(intensity, 12)
+    return [
+        f"crop=iw-{amount*2}:ih-{amount*2}"
+        f":{amount}+{amount}*random(1)"
+        f":{amount}+{amount}*random(2),"
+        f"scale=iw+{amount*2}:ih+{amount*2}"
+    ], [], []
+
+
+def _f_pulse(p):
+    rate = float(p.get("rate", 1.0))
+    amount = float(p.get("amount", 0.05))
+    margin = int(amount * 100) + 10
+    offset_expr = f"{margin}+{margin}*{amount}*10*sin(2*PI*{rate}*t)"
+    return [
+        f"pad=iw+{margin*2}:ih+{margin*2}:{margin}:{margin}:color=black",
+        f"crop=iw-{margin*2}:ih-{margin*2}:'{offset_expr}':'{offset_expr}'",
+    ], [], []
+
+
+def _f_bounce(p):
+    height = int(p.get("height", 30))
+    speed = float(p.get("speed", 2.0))
+    return [
+        f"pad=iw:ih+{height*2}:(ow-iw)/2:{height}:black,"
+        f"crop=iw:ih-{height*2}:0:{height}*abs(sin({speed}*PI*t))"
+    ], [], []
+
+
+def _f_drift(p):
+    direction = p.get("direction", "right")
+    amount = int(p.get("amount", 50))
+    d = {
+        "right": f"pad=iw+{amount}:ih:0:0:black,crop=iw-{amount}:ih:{amount}*t/duration:0",
+        "left": f"pad=iw+{amount}:ih:{amount}:0:black,crop=iw-{amount}:ih:{amount}*(1-t/duration):0",
+        "down": f"pad=iw:ih+{amount}:0:0:black,crop=iw:ih-{amount}:0:{amount}*t/duration",
+        "up": f"pad=iw:ih+{amount}:0:{amount}:black,crop=iw:ih-{amount}:0:{amount}*(1-t/duration)",
+    }
+    return [d.get(direction, d["right"])], [], []
+
+
+def _f_iris_reveal(p):
+    duration = float(p.get("duration", 2.0))
+    return [
+        f"geq="
+        f"lum='if(lte(sqrt(pow(X-W/2,2)+pow(Y-H/2,2)),sqrt(pow(W/2,2)+pow(H/2,2))*min(T/{duration},1)),lum(X,Y),0)'"
+        f":cb='if(lte(sqrt(pow(X-W/2,2)+pow(Y-H/2,2)),sqrt(pow(W/2,2)+pow(H/2,2))*min(T/{duration},1)),cb(X,Y),128)'"
+        f":cr='if(lte(sqrt(pow(X-W/2,2)+pow(Y-H/2,2)),sqrt(pow(W/2,2)+pow(H/2,2))*min(T/{duration},1)),cr(X,Y),128)'"
+    ], [], []
+
+
+def _f_wipe(p):
+    direction = p.get("direction", "left")
+    duration = float(p.get("duration", 1.5))
+    cond_map = {
+        "left": f"lte(X,W*min(T/{duration},1))",
+        "right": f"gte(X,W*(1-min(T/{duration},1)))",
+        "down": f"lte(Y,H*min(T/{duration},1))",
+        "up": f"gte(Y,H*(1-min(T/{duration},1)))",
+    }
+    cond = cond_map.get(direction, cond_map["left"])
+    return [
+        f"geq="
+        f"lum='if({cond},lum(X,Y),0)'"
+        f":cb='if({cond},cb(X,Y),128)'"
+        f":cr='if({cond},cr(X,Y),128)'"
+    ], [], []
+
+
+def _f_slide_in(p):
+    direction = p.get("direction", "left")
+    duration = float(p.get("duration", 1.0))
+    d = {
+        "left": f"pad=iw*2:ih:iw:0:black,crop=iw/2:ih:iw/2*min(T/{duration},1):0",
+        "right": f"pad=iw*2:ih:0:0:black,crop=iw/2:ih:iw/2*(1-min(T/{duration},1)):0",
+        "down": f"pad=iw:ih*2:0:ih:black,crop=iw:ih/2:0:ih/2*min(T/{duration},1)",
+        "up": f"pad=iw:ih*2:0:0:black,crop=iw:ih/2:0:ih/2*(1-min(T/{duration},1))",
+    }
+    return [d.get(direction, d["left"])], [], []
+
+
+# Dispatch table: skill_name → handler(params) → (vf, af, opts)
+_SKILL_DISPATCH: dict[str, callable] = {
+    # Temporal
+    "trim": _f_trim,
+    "speed": _f_speed,
+    "reverse": _f_reverse,
+    "loop": _f_loop,
+    # Spatial
+    "resize": _f_resize,
+    "crop": _f_crop,
+    "pad": _f_pad,
+    "rotate": _f_rotate,
+    "flip": _f_flip,
+    # Visual
+    "brightness": _f_brightness,
+    "contrast": _f_contrast,
+    "saturation": _f_saturation,
+    "hue": _f_hue,
+    "sharpen": _f_sharpen,
+    "blur": _f_blur,
+    "denoise": _f_denoise,
+    "vignette": _f_vignette,
+    "fade": _f_fade,
+    # Audio
+    "volume": _f_volume,
+    "normalize": _f_normalize,
+    "fade_audio": _f_fade_audio,
+    "remove_audio": _f_remove_audio,
+    "extract_audio": _f_extract_audio,
+    # Encoding
+    "compress": _f_compress,
+    "convert": _f_convert,
+    "bitrate": _f_bitrate,
+    "quality": _f_quality,
+    # Overlay
+    "text_overlay": _f_text_overlay,
+    "pixelate": _f_pixelate,
+    "posterize": _f_posterize,
+    # Transitions
+    "fade_to_black": _f_fade_to_black,
+    "fade_to_white": _f_fade_to_white,
+    "flash": _f_flash,
+    # Motion
+    "spin": _f_spin,
+    "shake": _f_shake,
+    "pulse": _f_pulse,
+    "bounce": _f_bounce,
+    "drift": _f_drift,
+    # Reveals
+    "iris_reveal": _f_iris_reveal,
+    "wipe": _f_wipe,
+    "slide_in": _f_slide_in,
+}

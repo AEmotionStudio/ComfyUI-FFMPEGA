@@ -95,4 +95,51 @@ TOOL_DEFINITIONS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "build_pipeline",
+            "description": (
+                "Build and validate an FFMPEG pipeline from a list of skills. "
+                "Returns the composed ffmpeg command string and any validation "
+                "errors. Use this to verify your pipeline before outputting "
+                "the final JSON response."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "skills": {
+                        "type": "array",
+                        "description": (
+                            "List of skill steps. Each item must have a "
+                            "'name' (string) and optional 'params' (object)."
+                        ),
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {
+                                    "type": "string",
+                                    "description": "Skill name",
+                                },
+                                "params": {
+                                    "type": "object",
+                                    "description": "Skill parameters",
+                                },
+                            },
+                            "required": ["name"],
+                        },
+                    },
+                    "input_path": {
+                        "type": "string",
+                        "description": "Input video path (use placeholder if unknown)",
+                    },
+                    "output_path": {
+                        "type": "string",
+                        "description": "Output video path (use placeholder if unknown)",
+                    },
+                },
+                "required": ["skills"],
+            },
+        },
+    },
 ]

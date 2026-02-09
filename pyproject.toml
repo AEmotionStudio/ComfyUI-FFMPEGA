@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "comfyui-ffmpega"
-version = "1.0.0"
+version = "1.6.1"
 description = "Intelligent FFMPEG agent node for ComfyUI with natural language video editing"
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "GPL-3.0"}
 authors = [
     {name = "FFMPEGA Team"}
 ]
@@ -15,7 +15,7 @@ keywords = ["comfyui", "ffmpeg", "video-editing", "ai-agent", "llm"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -52,3 +52,4 @@ include = ["nodes*", "core*", "skills*", "mcp*", "prompts*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
