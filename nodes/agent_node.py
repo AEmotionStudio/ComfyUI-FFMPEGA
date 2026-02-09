@@ -281,7 +281,12 @@ class FFMPEGAgentNode:
 
         # --- Generate pipeline via LLM ---
         connector = self.pipeline_generator.create_connector(llm_model, ollama_url, api_key)
-        spec = await self.pipeline_generator.generate(connector, prompt, metadata_str)
+        try:
+            spec = await self.pipeline_generator.generate(connector, prompt, metadata_str)
+        except Exception:
+            if hasattr(connector, 'close'):
+                await connector.close()
+            raise
 
         interpretation = spec.get("interpretation", "")
         warnings = spec.get("warnings", [])
@@ -372,7 +377,11 @@ class FFMPEGAgentNode:
 
         # --- Execute with error-feedback retry ---
         if preview_mode:
-            command.video_filters.add_filter("scale", {"w": 480, "h": -1})
+            if command.complex_filter:
+                # Append scale to filter_complex so it isn't silently dropped
+                command.complex_filter += ",scale=480:-1"
+            else:
+                command.video_filters.add_filter("scale", {"w": 480, "h": -1})
             command.output_options.extend(["-t", "10"])
 
         max_attempts = 2
@@ -446,7 +455,7 @@ class FFMPEGAgentNode:
                 f"Command: {command.to_string()}"
             )
 
-        # Close LLM connector now that retries are done
+        # Close LLM connector now that all retries are done
         if hasattr(connector, 'close'):
             await connector.close()
 

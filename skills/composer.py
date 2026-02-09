@@ -187,15 +187,29 @@ class SkillComposer:
 
         # Apply filter_complex if any skill needs multi-stream processing
         if complex_filters:
-            # Merge any simple vf filters into the filter_complex graph
-            # by prepending them as a chain on the [0:v] stream
             fc_graph = ";".join(complex_filters)
+
+            # Merge simple video filters into the filter_complex graph
+            # only when the graph actually references [0:v]
             if video_filters:
                 vf_chain = ",".join(video_filters)
-                # Prepend simple filters before the complex graph
-                fc_graph = f"[0:v]{vf_chain}[_pre];" + fc_graph.replace("[0:v]", "[_pre]")
+                if "[0:v]" in fc_graph:
+                    # Prepend simple filters before the complex graph
+                    fc_graph = f"[0:v]{vf_chain}[_pre];" + fc_graph.replace("[0:v]", "[_pre]")
+                else:
+                    # Graph doesn't use [0:v] (e.g. grid/slideshow) —
+                    # apply video filters as a separate chain on the output
+                    fc_graph += f";[0:v]{vf_chain}[_vout]"
+
+            # If filter_complex consumes [0:a] (e.g. waveform), we cannot
+            # also use -af — fold audio filters into the graph instead.
+            if "[0:a]" in fc_graph and audio_filters:
+                af_chain = ",".join(audio_filters)
+                fc_graph += f";[0:a]{af_chain}[_aout]"
+                audio_filters = []  # Don't also emit -af
+
             builder.complex_filter(fc_graph)
-            # Audio filters still go via -af when not in filter_complex
+            # Audio filters go via -af when not consumed by filter_complex
             for af in audio_filters:
                 builder.af(af)
         else:
