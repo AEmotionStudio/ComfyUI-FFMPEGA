@@ -917,6 +917,80 @@ Simulated HDR dynamic range.
 
 ---
 
+## 🎵 Audio Visualization
+
+### waveform
+Visualize audio as a waveform overlay on the video (uses filter_complex with `showwaves`).
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `mode` | choice | cline | line, point, p2p, cline |
+| `height` | int | 200 | 50 to 600 px |
+| `color` | string | white | color name or hex |
+| `position` | choice | bottom | bottom, center, top |
+| `opacity` | float | 0.8 | 0.0 to 1.0 |
+
+**Example prompts:**
+- "Show audio waveform at the bottom"
+- "Add a cyan waveform in the center"
+- "Display a tall semi-transparent audio visualization"
+
+---
+
+## 🖼️ Multi-Input (Images → Video)
+
+> [!NOTE]
+> These skills require multiple input images from the IMAGE tensor.
+> The node automatically extracts individual frames as separate files.
+
+### grid
+Arrange multiple input images in a grid layout (uses `xstack` filter).
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `columns` | int | 2 | 1 to 6 |
+| `gap` | int | 4 | 0 to 20 px |
+| `duration` | float | 5.0 | 1 to 60 seconds |
+| `background` | string | black | color name or hex |
+
+**Example prompts:**
+- "Arrange images in a 2-column grid"
+- "Create a 3-column mosaic with gaps"
+- "Make a collage on a white background"
+
+---
+
+### slideshow
+Create a slideshow from multiple input images (uses `concat` filter).
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `duration_per_image` | float | 3.0 | 0.5 to 30 seconds |
+| `transition` | choice | fade | none, fade |
+| `transition_duration` | float | 0.5 | 0.1 to 3.0 seconds |
+| `width` | int | 1920 | -1 to 3840 |
+| `height` | int | 1080 | -1 to 2160 |
+
+**Example prompts:**
+- "Create a slideshow with fade transitions"
+- "Make a photo slideshow, 5 seconds per image"
+- "Create a presentation with 1-second transitions"
+
+---
+
+### overlay_image
+Overlay a second image on the video (picture-in-picture / watermark).
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `position` | choice | bottom-right | top-left, top-right, bottom-left, bottom-right, center |
+| `scale` | float | 0.25 | 0.05 to 0.8 |
+| `opacity` | float | 1.0 | 0.0 to 1.0 |
+| `margin` | int | 10 | 0 to 100 px |
+
+**Example prompts:**
+- "Add a logo watermark in the bottom-right"
+- "Overlay an image at 15% in the top-left"
+- "Put a semi-transparent image in the center"
+
+---
+
 ## 💡 Example Prompt Combos
 
 Here are some multi-skill prompt ideas you can try:
@@ -938,3 +1012,8 @@ Here are some multi-skill prompt ideas you can try:
 | Security cam | "Surveillance look, add text 'CAM 01' in top left, resize to 720p" |
 | Film noir | "Noir style, add fade in, slow zoom" |
 | Dreamy timelapse | "Speed up 4x, apply dreamy effect, add fade in and out" |
+| Music visualizer | "Show audio waveform at the bottom with cyan color" |
+| Photo collage | "Arrange these images in a 3-column grid with gaps" |
+| Photo slideshow | "Create a slideshow with 4 seconds per image and fade transitions" |
+| Branded video | "Overlay the logo image in the bottom-right corner at 20% scale" |
+

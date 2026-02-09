@@ -382,3 +382,31 @@ class ProcessManager:
             return False, "No output file specified"
 
         return True, None
+
+    def dry_run(
+        self,
+        command: FFMPEGCommand,
+        timeout: float = 30,
+    ) -> ProcessResult:
+        """Validate an FFMPEG command without producing output.
+
+        Runs the command with -f null - as output to check filter
+        validity and input accessibility without writing files.
+
+        Args:
+            command: FFMPEGCommand to validate.
+            timeout: Maximum time for the dry run.
+
+        Returns:
+            ProcessResult — success=True means filters/inputs are valid.
+        """
+        import copy
+        dry_cmd = copy.deepcopy(command)
+        # Replace outputs with null sink
+        dry_cmd.outputs = ["-"]
+        dry_cmd.output_options = [
+            opt for opt in dry_cmd.output_options
+            if opt not in ("-y",)
+        ] + ["-f", "null"]
+
+        return self.execute(dry_cmd, timeout=timeout)

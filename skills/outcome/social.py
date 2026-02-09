@@ -127,34 +127,6 @@ def register_skills(registry: SkillRegistry) -> None:
         tags=["gif", "animated", "loop", "meme"],
     ))
 
-    # Thumbnail skill
-    registry.register(Skill(
-        name="thumbnail",
-        category=SkillCategory.OUTCOME,
-        description="Generate video thumbnail",
-        parameters=[
-            SkillParameter(
-                name="time",
-                type=ParameterType.TIME,
-                description="Timestamp for thumbnail",
-                required=False,
-                default=0,
-            ),
-            SkillParameter(
-                name="width",
-                type=ParameterType.INT,
-                description="Thumbnail width",
-                required=False,
-                default=1280,
-            ),
-        ],
-        examples=[
-            "thumbnail - Extract thumbnail from start",
-            "thumbnail:time=30 - Thumbnail at 30 seconds",
-        ],
-        tags=["image", "preview", "poster", "cover"],
-    ))
-
     # Caption space skill
     registry.register(Skill(
         name="caption_space",
@@ -191,76 +163,4 @@ def register_skills(registry: SkillRegistry) -> None:
             "caption_space:position=top,height=100 - Space at top",
         ],
         tags=["text", "subtitle", "overlay", "space"],
-    ))
-
-    # Watermark skill
-    registry.register(Skill(
-        name="watermark",
-        category=SkillCategory.OUTCOME,
-        description="Add watermark/logo to video",
-        parameters=[
-            SkillParameter(
-                name="image",
-                type=ParameterType.STRING,
-                description="Path to watermark image",
-                required=True,
-            ),
-            SkillParameter(
-                name="position",
-                type=ParameterType.CHOICE,
-                description="Watermark position",
-                required=False,
-                default="bottom_right",
-                choices=["top_left", "top_right", "bottom_left", "bottom_right", "center"],
-            ),
-            SkillParameter(
-                name="opacity",
-                type=ParameterType.FLOAT,
-                description="Watermark opacity (0-1)",
-                required=False,
-                default=0.5,
-                min_value=0.1,
-                max_value=1.0,
-            ),
-            SkillParameter(
-                name="scale",
-                type=ParameterType.FLOAT,
-                description="Watermark scale factor",
-                required=False,
-                default=0.15,
-                min_value=0.05,
-                max_value=0.5,
-            ),
-        ],
-        examples=[
-            "watermark:image=logo.png - Add logo watermark",
-            "watermark:image=logo.png,position=top_left,opacity=0.3 - Subtle top-left",
-        ],
-        tags=["logo", "brand", "overlay", "copyright"],
-    ))
-
-    # Intro/outro skill
-    registry.register(Skill(
-        name="intro_outro",
-        category=SkillCategory.OUTCOME,
-        description="Add intro and/or outro segments",
-        parameters=[
-            SkillParameter(
-                name="intro",
-                type=ParameterType.STRING,
-                description="Path to intro video",
-                required=False,
-            ),
-            SkillParameter(
-                name="outro",
-                type=ParameterType.STRING,
-                description="Path to outro video",
-                required=False,
-            ),
-        ],
-        examples=[
-            "intro_outro:intro=intro.mp4 - Add intro only",
-            "intro_outro:intro=intro.mp4,outro=outro.mp4 - Add both",
-        ],
-        tags=["concat", "join", "branding"],
     ))

@@ -247,6 +247,7 @@ class FFMPEGAgentNode:
 
         # --- Resolve input video ---
         temp_video_from_images = None
+        temp_video_with_audio = None
         if images is not None:
             temp_video_from_images = self.media_converter.images_to_video(images)
             effective_video_path = temp_video_from_images
@@ -256,6 +257,20 @@ class FFMPEGAgentNode:
         # Validate input
         from ..core.sanitize import validate_video_path  # type: ignore[import-not-found]
         effective_video_path = validate_video_path(effective_video_path)
+
+        # Pre-mux audio_input into the input video so audio filters
+        # (e.g. loudnorm, echo) have an audio stream to process.
+        # Without this, images-only inputs have no audio track and
+        # audio filters silently produce no output.
+        if audio_input is not None and not self.media_converter.has_audio_stream(effective_video_path):
+            import tempfile as _tmpmod
+            tmp = _tmpmod.NamedTemporaryFile(suffix=".mp4", delete=False)
+            tmp.close()
+            import shutil as _shmod
+            _shmod.copy2(effective_video_path, tmp.name)
+            self.media_converter.mux_audio(tmp.name, audio_input)
+            temp_video_with_audio = tmp.name
+            effective_video_path = tmp.name
 
         if not prompt.strip():
             raise ValueError("Prompt cannot be empty")
@@ -268,9 +283,10 @@ class FFMPEGAgentNode:
         connector = self.pipeline_generator.create_connector(llm_model, ollama_url, api_key)
         try:
             spec = await self.pipeline_generator.generate(connector, prompt, metadata_str)
-        finally:
+        except Exception:
             if hasattr(connector, 'close'):
                 await connector.close()
+            raise
 
         interpretation = spec.get("interpretation", "")
         warnings = spec.get("warnings", [])
@@ -324,26 +340,127 @@ class FFMPEGAgentNode:
             for err in errors:
                 logger.warning(f"Pipeline validation: {err} (continuing anyway)")
 
+        # --- Multi-input frame extraction ---
+        # Skills that need individual image files as extra FFMPEG inputs
+        MULTI_INPUT_SKILLS = {"grid", "slideshow", "overlay_image"}
+        needs_multi_input = any(
+            s.skill_name in MULTI_INPUT_SKILLS for s in pipeline.steps
+        )
+        temp_frames_dir = None
+        if needs_multi_input and images is not None:
+            frame_paths = self.media_converter.save_frames_as_images(images)
+            pipeline.extra_inputs = frame_paths
+            # Track temp dir for cleanup
+            if frame_paths:
+                temp_frames_dir = os.path.dirname(frame_paths[0])
+            # Store frame count in metadata for handlers
+            pipeline.metadata["frame_count"] = len(frame_paths)
+
         command = self.composer.compose(pipeline)
 
         # Debug: print exact command to console
         print(f"[FFMPEGA DEBUG] Command: {command.to_string()}")
         print(f"[FFMPEGA DEBUG] Audio filters: '{command.audio_filters.to_string()}'")
         print(f"[FFMPEGA DEBUG] Video filters: '{command.video_filters.to_string()}'")
+        if command.complex_filter:
+            print(f"[FFMPEGA DEBUG] Complex filter: '{command.complex_filter}'")
         print(f"[FFMPEGA DEBUG] Pipeline steps: {[(s.skill_name, s.params) for s in pipeline.steps]}")
 
-        # --- Execute ---
+        # --- Dry-run validation ---
+        dry_result = self.process_manager.dry_run(command, timeout=30)
+        if not dry_result.success:
+            import logging
+            logging.getLogger("ffmpega").warning(
+                f"Dry-run failed: {dry_result.error_message} "
+                "(will attempt execution anyway)"
+            )
+
+        # --- Execute with error-feedback retry ---
         if preview_mode:
-            command.video_filters.add_filter("scale", {"w": 480, "h": -1})
+            if command.complex_filter:
+                # Use -s output option to avoid appending scale to audio chains
+                command.output_options.extend(["-s", "480x270"])
+            else:
+                command.video_filters.add_filter("scale", {"w": 480, "h": -1})
             command.output_options.extend(["-t", "10"])
 
-        result = self.process_manager.execute(command, timeout=600)
+        max_attempts = 2
+        result = None
+        for attempt in range(max_attempts):
+            result = self.process_manager.execute(command, timeout=600)
+            if result.success:
+                break
+
+            if attempt < max_attempts - 1:
+                # Feed error back to LLM for correction
+                import logging
+                logger = logging.getLogger("ffmpega")
+                logger.warning(
+                    f"FFMPEG failed (attempt {attempt + 1}), "
+                    f"feeding error back to LLM: {result.error_message}"
+                )
+                error_prompt = (
+                    f"The previous FFMPEG command failed.\n"
+                    f"Original request: {prompt}\n"
+                    f"Failed command: {command.to_string()}\n"
+                    f"Error: {result.error_message}\n"
+                    f"Stderr: {result.stderr[-500:] if result.stderr else 'N/A'}\n\n"
+                    f"Please fix the pipeline to avoid this error. "
+                    f"Return only the corrected pipeline JSON."
+                )
+                try:
+                    retry_spec = await self.pipeline_generator.generate(
+                        connector, error_prompt, metadata_str
+                    )
+                    # Rebuild pipeline from corrected spec
+                    pipeline = Pipeline(
+                        input_path=effective_video_path,
+                        output_path=output_path,
+                        extra_inputs=pipeline.extra_inputs,
+                        metadata=pipeline.metadata,
+                    )
+                    for step in retry_spec.get("pipeline", []):
+                        skill_name = step.get("skill")
+                        params = step.get("params", {})
+                        if skill_name:
+                            pipeline.add_step(skill_name, params)
+                    # Re-add quality preset
+                    if quality_preset and not any(
+                        s.skill_name in ["quality", "compress"]
+                        for s in pipeline.steps
+                    ):
+                        _crf_map = {"draft": 28, "standard": 23, "high": 18, "lossless": 0}
+                        _preset_map = {"draft": "ultrafast", "standard": "medium", "high": "slow", "lossless": "veryslow"}
+                        pipeline.add_step("quality", {
+                            "crf": crf if crf >= 0 else _crf_map.get(quality_preset, 23),
+                            "preset": encoding_preset if encoding_preset != "auto" else _preset_map.get(quality_preset, "medium"),
+                        })
+                    command = self.composer.compose(pipeline)
+                    print(f"[FFMPEGA DEBUG] Retry command: {command.to_string()}")
+                    if preview_mode:
+                        if command.complex_filter:
+                            command.output_options.extend(["-s", "480x270"])
+                        else:
+                            command.video_filters.add_filter("scale", {"w": 480, "h": -1})
+                        command.output_options.extend(["-t", "10"])
+                except Exception as retry_err:
+                    import logging
+                    logging.getLogger("ffmpega").warning(
+                        f"Error feedback retry failed: {retry_err}"
+                    )
+                    break
 
         if not result.success:
+            if hasattr(connector, 'close'):
+                await connector.close()
             raise RuntimeError(
                 f"FFMPEG execution failed: {result.error_message}\n"
                 f"Command: {command.to_string()}"
             )
+
+        # Close LLM connector now that all retries are done
+        if hasattr(connector, 'close'):
+            await connector.close()
 
         # --- Build analysis string ---
         analysis = f"""Interpretation: {interpretation}
@@ -371,9 +488,13 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
         else:
             audio_out = self.media_converter.extract_audio(output_path)
 
-        # Clean up temp video if we created one
-        if temp_video_from_images and os.path.exists(temp_video_from_images):
-            os.remove(temp_video_from_images)
+        # Clean up temp videos and frame images
+        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+            if tmp_path and os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        if temp_frames_dir and os.path.isdir(temp_frames_dir):
+            import shutil
+            shutil.rmtree(temp_frames_dir, ignore_errors=True)
 
         return (images_tensor, audio_out, output_path, command.to_string(), analysis)
 
