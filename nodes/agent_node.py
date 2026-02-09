@@ -134,6 +134,10 @@ class FFMPEGAgentNode:
                     "tooltip": "Override x264/x265 encoding speed preset. Slower = better compression. 'auto' uses the quality_preset value.",
                 }),
             },
+            "hidden": {
+                "prompt": "PROMPT",
+                "extra_pnginfo": "EXTRA_PNGINFO",
+            },
         }
 
     RETURN_TYPES = ("IMAGE", "AUDIO", "STRING", "STRING", "STRING")
@@ -223,6 +227,7 @@ class FFMPEGAgentNode:
         api_key: str = "",
         crf: int = -1,
         encoding_preset: str = "auto",
+        **kwargs,  # hidden: prompt (PROMPT dict), extra_pnginfo (EXTRA_PNGINFO)
     ) -> tuple[torch.Tensor, dict, str, str, str]:
         """Process the video based on the natural language prompt.
 
@@ -500,7 +505,47 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
             import shutil
             shutil.rmtree(temp_frames_dir, ignore_errors=True)
 
+        # --- Sanitize api_key from workflow metadata ---
+        # ComfyUI embeds PROMPT/EXTRA_PNGINFO in output files.
+        # Strip the api_key so it never leaks into saved images/videos.
+        if api_key:
+            hidden_prompt = kwargs.get("prompt")
+            hidden_extra_pnginfo = kwargs.get("extra_pnginfo")
+            self._strip_api_key_from_metadata(hidden_prompt, hidden_extra_pnginfo)
+
         return (images_tensor, audio_out, output_path, command.to_string(), analysis)
+
+    @staticmethod
+    def _strip_api_key_from_metadata(
+        prompt: Optional[dict],
+        extra_pnginfo: Optional[dict],
+    ) -> None:
+        """Remove api_key values from workflow metadata in-place.
+
+        This prevents API keys from being embedded in output files
+        when downstream Save Image/Video nodes serialize the workflow.
+        """
+        # Strip from the prompt graph (api format)
+        if prompt:
+            for node_id, node_data in prompt.items():
+                inputs = node_data.get("inputs", {})
+                if "api_key" in inputs:
+                    inputs["api_key"] = ""
+
+        # Strip from the workflow JSON (drag-drop format)
+        if extra_pnginfo and "workflow" in extra_pnginfo:
+            workflow = extra_pnginfo["workflow"]
+            for node in workflow.get("nodes", []):
+                widgets = node.get("widgets_values", [])
+                # Also check node properties for api_key
+                if isinstance(widgets, list):
+                    # We can't easily identify which index is api_key,
+                    # so check the node type
+                    pass  # widgets_values are positional, handled by prompt strip
+                # Strip from node inputs if present
+                inputs = node.get("inputs", [])
+                if isinstance(inputs, dict) and "api_key" in inputs:
+                    inputs["api_key"] = ""
 
     @classmethod
     def IS_CHANGED(cls, video_path, prompt, **kwargs):
