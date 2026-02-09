@@ -104,11 +104,13 @@ class FFMPEGCommand:
             args.extend(["-filter_complex", self.complex_filter])
         else:
             vf = self.video_filters.to_string()
-            af = self.audio_filters.to_string()
             if vf:
                 args.extend(["-vf", vf])
-            if af:
-                args.extend(["-af", af])
+
+        # Audio filters are always applied via -af (independent of filter_complex)
+        af = self.audio_filters.to_string()
+        if af:
+            args.extend(["-af", af])
 
         # Output options
         args.extend(self.output_options)

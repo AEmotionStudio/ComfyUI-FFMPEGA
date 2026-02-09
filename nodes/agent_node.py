@@ -407,6 +407,8 @@ class FFMPEGAgentNode:
                     pipeline = Pipeline(
                         input_path=effective_video_path,
                         output_path=output_path,
+                        extra_inputs=pipeline.extra_inputs,
+                        metadata=pipeline.metadata,
                     )
                     for step in retry_spec.get("pipeline", []):
                         skill_name = step.get("skill")

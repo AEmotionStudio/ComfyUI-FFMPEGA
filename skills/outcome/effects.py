@@ -804,161 +804,161 @@ def register_skills(registry: SkillRegistry) -> None:
     ))
 
 
-# ── Multi-input skills ────────────────────────────────────────────── #
+    # ── Multi-input skills ────────────────────────────────────────────── #
 
-registry.register(Skill(
-    name="grid",
-    category=SkillCategory.OUTCOME,
-    description="Arrange multiple input images in a grid layout",
-    parameters=[
-        SkillParameter(
-            name="columns",
-            type=ParameterType.INT,
-            description="Number of columns",
-            required=False,
-            default=2,
-            min_value=1,
-            max_value=6,
-        ),
-        SkillParameter(
-            name="gap",
-            type=ParameterType.INT,
-            description="Gap between images in pixels",
-            required=False,
-            default=4,
-            min_value=0,
-            max_value=20,
-        ),
-        SkillParameter(
-            name="duration",
-            type=ParameterType.FLOAT,
-            description="Output duration in seconds",
-            required=False,
-            default=5.0,
-            min_value=1.0,
-            max_value=60.0,
-        ),
-        SkillParameter(
-            name="background",
-            type=ParameterType.STRING,
-            description="Background color (hex or name)",
-            required=False,
-            default="black",
-        ),
-    ],
-    examples=[
-        "grid - Arrange images in a 2-column grid",
-        "grid:columns=3,gap=8 - 3-column grid with 8px gap",
-        "grid:columns=4,duration=10,background=white - 4-column grid, 10s",
-    ],
-    tags=["grid", "mosaic", "collage", "layout", "multi", "images", "xstack"],
-))
-
-
-registry.register(Skill(
-    name="slideshow",
-    category=SkillCategory.OUTCOME,
-    description="Create a slideshow from multiple input images",
-    parameters=[
-        SkillParameter(
-            name="duration_per_image",
-            type=ParameterType.FLOAT,
-            description="Seconds each image is displayed",
-            required=False,
-            default=3.0,
-            min_value=0.5,
-            max_value=30.0,
-        ),
-        SkillParameter(
-            name="transition",
-            type=ParameterType.CHOICE,
-            description="Transition between images",
-            required=False,
-            default="fade",
-            choices=["none", "fade"],
-        ),
-        SkillParameter(
-            name="transition_duration",
-            type=ParameterType.FLOAT,
-            description="Transition duration in seconds",
-            required=False,
-            default=0.5,
-            min_value=0.1,
-            max_value=3.0,
-        ),
-        SkillParameter(
-            name="width",
-            type=ParameterType.INT,
-            description="Output width (-1 keeps original)",
-            required=False,
-            default=1920,
-            min_value=-1,
-            max_value=3840,
-        ),
-        SkillParameter(
-            name="height",
-            type=ParameterType.INT,
-            description="Output height (-1 keeps original)",
-            required=False,
-            default=1080,
-            min_value=-1,
-            max_value=2160,
-        ),
-    ],
-    examples=[
-        "slideshow - Create slideshow with 3s per image, fade transitions",
-        "slideshow:duration_per_image=5,transition=none - 5s per image, no transition",
-        "slideshow:transition_duration=1.0 - Slow fade transitions",
-    ],
-    tags=["slideshow", "slides", "presentation", "concat", "images", "multi", "sequence"],
-))
+    registry.register(Skill(
+        name="grid",
+        category=SkillCategory.OUTCOME,
+        description="Arrange multiple input images in a grid layout",
+        parameters=[
+            SkillParameter(
+                name="columns",
+                type=ParameterType.INT,
+                description="Number of columns",
+                required=False,
+                default=2,
+                min_value=1,
+                max_value=6,
+            ),
+            SkillParameter(
+                name="gap",
+                type=ParameterType.INT,
+                description="Gap between images in pixels",
+                required=False,
+                default=4,
+                min_value=0,
+                max_value=20,
+            ),
+            SkillParameter(
+                name="duration",
+                type=ParameterType.FLOAT,
+                description="Output duration in seconds",
+                required=False,
+                default=5.0,
+                min_value=1.0,
+                max_value=60.0,
+            ),
+            SkillParameter(
+                name="background",
+                type=ParameterType.STRING,
+                description="Background color (hex or name)",
+                required=False,
+                default="black",
+            ),
+        ],
+        examples=[
+            "grid - Arrange images in a 2-column grid",
+            "grid:columns=3,gap=8 - 3-column grid with 8px gap",
+            "grid:columns=4,duration=10,background=white - 4-column grid, 10s",
+        ],
+        tags=["grid", "mosaic", "collage", "layout", "multi", "images", "xstack"],
+    ))
 
 
-registry.register(Skill(
-    name="overlay_image",
-    category=SkillCategory.OUTCOME,
-    description="Overlay a second input image on top of the video (picture-in-picture)",
-    parameters=[
-        SkillParameter(
-            name="position",
-            type=ParameterType.CHOICE,
-            description="Position of the overlay",
-            required=False,
-            default="bottom-right",
-            choices=["top-left", "top-right", "bottom-left", "bottom-right", "center"],
-        ),
-        SkillParameter(
-            name="scale",
-            type=ParameterType.FLOAT,
-            description="Scale of overlay relative to video (0.1-0.5)",
-            required=False,
-            default=0.25,
-            min_value=0.05,
-            max_value=0.8,
-        ),
-        SkillParameter(
-            name="opacity",
-            type=ParameterType.FLOAT,
-            description="Overlay opacity (0.0-1.0)",
-            required=False,
-            default=1.0,
-            min_value=0.0,
-            max_value=1.0,
-        ),
-        SkillParameter(
-            name="margin",
-            type=ParameterType.INT,
-            description="Margin from edge in pixels",
-            required=False,
-            default=10,
-            min_value=0,
-            max_value=100,
-        ),
-    ],
-    examples=[
-        "overlay_image - Overlay image in bottom-right corner at 25% scale",
-        "overlay_image:position=top-left,scale=0.15,margin=20 - Small top-left overlay",
-        "overlay_image:opacity=0.7,position=center,scale=0.5 - Semi-transparent centered overlay",
-    ],
-    tags=["overlay", "pip", "picture-in-picture", "watermark", "logo", "stamp", "multi"],
-))
+    registry.register(Skill(
+        name="slideshow",
+        category=SkillCategory.OUTCOME,
+        description="Create a slideshow from multiple input images",
+        parameters=[
+            SkillParameter(
+                name="duration_per_image",
+                type=ParameterType.FLOAT,
+                description="Seconds each image is displayed",
+                required=False,
+                default=3.0,
+                min_value=0.5,
+                max_value=30.0,
+            ),
+            SkillParameter(
+                name="transition",
+                type=ParameterType.CHOICE,
+                description="Transition between images",
+                required=False,
+                default="fade",
+                choices=["none", "fade"],
+            ),
+            SkillParameter(
+                name="transition_duration",
+                type=ParameterType.FLOAT,
+                description="Transition duration in seconds",
+                required=False,
+                default=0.5,
+                min_value=0.1,
+                max_value=3.0,
+            ),
+            SkillParameter(
+                name="width",
+                type=ParameterType.INT,
+                description="Output width (-1 keeps original)",
+                required=False,
+                default=1920,
+                min_value=-1,
+                max_value=3840,
+            ),
+            SkillParameter(
+                name="height",
+                type=ParameterType.INT,
+                description="Output height (-1 keeps original)",
+                required=False,
+                default=1080,
+                min_value=-1,
+                max_value=2160,
+            ),
+        ],
+        examples=[
+            "slideshow - Create slideshow with 3s per image, fade transitions",
+            "slideshow:duration_per_image=5,transition=none - 5s per image, no transition",
+            "slideshow:transition_duration=1.0 - Slow fade transitions",
+        ],
+        tags=["slideshow", "slides", "presentation", "concat", "images", "multi", "sequence"],
+    ))
+
+
+    registry.register(Skill(
+        name="overlay_image",
+        category=SkillCategory.OUTCOME,
+        description="Overlay a second input image on top of the video (picture-in-picture)",
+        parameters=[
+            SkillParameter(
+                name="position",
+                type=ParameterType.CHOICE,
+                description="Position of the overlay",
+                required=False,
+                default="bottom-right",
+                choices=["top-left", "top-right", "bottom-left", "bottom-right", "center"],
+            ),
+            SkillParameter(
+                name="scale",
+                type=ParameterType.FLOAT,
+                description="Scale of overlay relative to video (0.1-0.5)",
+                required=False,
+                default=0.25,
+                min_value=0.05,
+                max_value=0.8,
+            ),
+            SkillParameter(
+                name="opacity",
+                type=ParameterType.FLOAT,
+                description="Overlay opacity (0.0-1.0)",
+                required=False,
+                default=1.0,
+                min_value=0.0,
+                max_value=1.0,
+            ),
+            SkillParameter(
+                name="margin",
+                type=ParameterType.INT,
+                description="Margin from edge in pixels",
+                required=False,
+                default=10,
+                min_value=0,
+                max_value=100,
+            ),
+        ],
+        examples=[
+            "overlay_image - Overlay image in bottom-right corner at 25% scale",
+            "overlay_image:position=top-left,scale=0.15,margin=20 - Small top-left overlay",
+            "overlay_image:opacity=0.7,position=center,scale=0.5 - Semi-transparent centered overlay",
+        ],
+        tags=["overlay", "pip", "picture-in-picture", "watermark", "logo", "stamp", "multi"],
+    ))

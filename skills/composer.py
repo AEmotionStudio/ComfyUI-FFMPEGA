@@ -1127,7 +1127,7 @@ def _f_waveform(p):
     # [0:a] → showwaves → [wave]
     # [0:v][wave] → overlay → output
     fc = (
-        f"[0:a]showwaves=s=W:{height}:mode={mode}:colors={color},"
+        f"[0:a]showwaves=s=Wx{height}:mode={mode}:colors={color},"
         f"format=yuva420p,colorchannelmixer=aa={opacity}[wave];"
         f"[0:v][wave]overlay=0:{y_expr}"
     )
