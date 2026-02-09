@@ -283,9 +283,13 @@ class FFMPEGAgentNode:
         connector = self.pipeline_generator.create_connector(llm_model, ollama_url, api_key)
         try:
             spec = await self.pipeline_generator.generate(connector, prompt, metadata_str)
-        except Exception:
+        except Exception as e:
             if hasattr(connector, 'close'):
                 await connector.close()
+            # Sanitize any API key from the error before propagating
+            if api_key and api_key in str(e):
+                from core.sanitize import sanitize_api_key
+                raise RuntimeError(sanitize_api_key(str(e), api_key)) from None
             raise
 
         interpretation = spec.get("interpretation", "")

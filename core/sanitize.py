@@ -95,3 +95,35 @@ def sanitize_text_param(text: str) -> str:
     text = text.replace("%", "%%")
 
     return text
+
+
+def redact_secret(secret: str, visible_chars: int = 4) -> str:
+    """Redact a secret string, showing only the last few characters.
+
+    Args:
+        secret: The secret value to redact.
+        visible_chars: Number of trailing characters to keep visible.
+
+    Returns:
+        Redacted string like '****abcd', or '****' if too short.
+    """
+    if not secret:
+        return ""
+    if len(secret) <= visible_chars:
+        return "****"
+    return "****" + secret[-visible_chars:]
+
+
+def sanitize_api_key(text: str, api_key: str) -> str:
+    """Remove all occurrences of an API key from a text string.
+
+    Args:
+        text: The text that may contain the API key.
+        api_key: The API key to scrub.
+
+    Returns:
+        Text with all key occurrences replaced by a redacted placeholder.
+    """
+    if not text or not api_key:
+        return text or ""
+    return text.replace(api_key, redact_secret(api_key))

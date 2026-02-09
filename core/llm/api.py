@@ -5,6 +5,7 @@ from typing import Optional, AsyncIterator
 import httpx
 
 from .base import LLMConnector, LLMConfig, LLMResponse, LLMProvider
+from ..sanitize import sanitize_api_key
 
 
 class APIConnector(LLMConnector):
@@ -95,11 +96,21 @@ class APIConnector(LLMConnector):
         Returns:
             LLMResponse with generated content.
         """
-        if self.config.provider == LLMProvider.ANTHROPIC:
-            return await self._generate_anthropic(prompt, system_prompt)
-        else:
-            # OpenAI, Gemini, and other compatible APIs
-            return await self._generate_openai(prompt, system_prompt)
+        try:
+            if self.config.provider == LLMProvider.ANTHROPIC:
+                return await self._generate_anthropic(prompt, system_prompt)
+            else:
+                # OpenAI, Gemini, and other compatible APIs
+                return await self._generate_openai(prompt, system_prompt)
+        except httpx.HTTPStatusError as e:
+            # Sanitize error to prevent API key leakage via headers
+            msg = sanitize_api_key(str(e), self.config.api_key or "")
+            raise httpx.HTTPStatusError(
+                msg, request=e.request, response=e.response
+            ) from None
+        except httpx.HTTPError as e:
+            msg = sanitize_api_key(str(e), self.config.api_key or "")
+            raise RuntimeError(f"LLM API error: {msg}") from None
 
     async def _generate_openai(
         self,
