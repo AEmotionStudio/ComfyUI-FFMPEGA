@@ -335,6 +335,12 @@ class FFMPEGAgentNode:
 
         command = self.composer.compose(pipeline)
 
+        # Debug: print exact command to console
+        print(f"[FFMPEGA DEBUG] Command: {command.to_string()}")
+        print(f"[FFMPEGA DEBUG] Audio filters: '{command.audio_filters.to_string()}'")
+        print(f"[FFMPEGA DEBUG] Video filters: '{command.video_filters.to_string()}'")
+        print(f"[FFMPEGA DEBUG] Pipeline steps: {[(s.skill_name, s.params) for s in pipeline.steps]}")
+
         # Execute
         if preview_mode:
             # Add preview-specific options
@@ -359,19 +365,20 @@ Pipeline Steps:
 
 Warnings: {', '.join(warnings) if warnings else 'None'}"""
 
-        # If audio_input was provided, mux it into the output video.
-        # Note: audio skills (-af filters) process the input VIDEO's audio,
-        # not audio_input. audio_input is muxed in separately after ffmpeg.
-        if audio_input is not None:
+        # If audio_input was provided, mux it into the output video —
+        # UNLESS the pipeline explicitly strips audio (e.g. remove_audio → -an).
+        removes_audio = "-an" in command.output_options
+        if audio_input is not None and not removes_audio:
             self._mux_audio_into_video(output_path, audio_input)
 
         # Extract frames from output video as IMAGE tensor
         images_tensor = self._extract_frames_as_tensor(output_path)
 
-        # For audio output: pass through audio_input if connected,
-        # otherwise extract from output (which may have been processed
-        # by audio skills like normalize, bass, etc.)
-        if audio_input is not None:
+        # For audio output: if audio was explicitly removed, return silence.
+        # Otherwise pass through audio_input if connected, or extract from output.
+        if removes_audio:
+            audio_out = {"waveform": torch.zeros(1, 1, 1, dtype=torch.float32), "sample_rate": 44100}
+        elif audio_input is not None:
             audio_out = audio_input
         else:
             audio_out = self._extract_audio(output_path)
