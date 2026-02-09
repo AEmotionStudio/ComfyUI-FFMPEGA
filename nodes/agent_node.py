@@ -511,12 +511,13 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
         if api_key:
             hidden_prompt = kwargs.get("prompt")
             hidden_extra_pnginfo = kwargs.get("extra_pnginfo")
-            self._strip_api_key_from_metadata(hidden_prompt, hidden_extra_pnginfo)
+            self._strip_api_key_from_metadata(api_key, hidden_prompt, hidden_extra_pnginfo)
 
         return (images_tensor, audio_out, output_path, command.to_string(), analysis)
 
     @staticmethod
     def _strip_api_key_from_metadata(
+        api_key: str,
         prompt: Optional[dict],
         extra_pnginfo: Optional[dict],
     ) -> None:
@@ -525,7 +526,7 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
         This prevents API keys from being embedded in output files
         when downstream Save Image/Video nodes serialize the workflow.
         """
-        # Strip from the prompt graph (api format)
+        # Strip from the prompt graph (api format — keyed by node id)
         if prompt:
             for node_id, node_data in prompt.items():
                 inputs = node_data.get("inputs", {})
@@ -536,16 +537,13 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
         if extra_pnginfo and "workflow" in extra_pnginfo:
             workflow = extra_pnginfo["workflow"]
             for node in workflow.get("nodes", []):
+                # widgets_values is a positional array — scan for the
+                # actual key value and replace it
                 widgets = node.get("widgets_values", [])
-                # Also check node properties for api_key
                 if isinstance(widgets, list):
-                    # We can't easily identify which index is api_key,
-                    # so check the node type
-                    pass  # widgets_values are positional, handled by prompt strip
-                # Strip from node inputs if present
-                inputs = node.get("inputs", [])
-                if isinstance(inputs, dict) and "api_key" in inputs:
-                    inputs["api_key"] = ""
+                    for i, val in enumerate(widgets):
+                        if val == api_key:
+                            widgets[i] = ""
 
     @classmethod
     def IS_CHANGED(cls, video_path, prompt, **kwargs):
