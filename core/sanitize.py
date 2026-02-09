@@ -93,6 +93,8 @@ def sanitize_text_param(text: str) -> str:
     text = text.replace(";", "\\;")
     # Escape % (used for time codes in drawtext)
     text = text.replace("%", "%%")
+    # Escape comma (used for filter delimiters)
+    text = text.replace(",", "\\,")
 
     return text
 
