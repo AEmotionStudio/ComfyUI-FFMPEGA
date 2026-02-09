@@ -438,7 +438,10 @@ class FFMPEGAgentNode:
                     command = self.composer.compose(pipeline)
                     print(f"[FFMPEGA DEBUG] Retry command: {command.to_string()}")
                     if preview_mode:
-                        command.video_filters.add_filter("scale", {"w": 480, "h": -1})
+                        if command.complex_filter:
+                            command.complex_filter += ",scale=480:-1"
+                        else:
+                            command.video_filters.add_filter("scale", {"w": 480, "h": -1})
                         command.output_options.extend(["-t", "10"])
                 except Exception as retry_err:
                     import logging

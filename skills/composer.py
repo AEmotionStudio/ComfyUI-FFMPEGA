@@ -198,14 +198,14 @@ class SkillComposer:
                     fc_graph = f"[0:v]{vf_chain}[_pre];" + fc_graph.replace("[0:v]", "[_pre]")
                 else:
                     # Graph doesn't use [0:v] (e.g. grid/slideshow) —
-                    # apply video filters as a separate chain on the output
-                    fc_graph += f";[0:v]{vf_chain}[_vout]"
+                    # apply video filters as a separate unlabeled chain
+                    fc_graph += f";[0:v]{vf_chain}"
 
             # If filter_complex consumes [0:a] (e.g. waveform), we cannot
             # also use -af — fold audio filters into the graph instead.
             if "[0:a]" in fc_graph and audio_filters:
                 af_chain = ",".join(audio_filters)
-                fc_graph += f";[0:a]{af_chain}[_aout]"
+                fc_graph += f";[0:a]{af_chain}"
                 audio_filters = []  # Don't also emit -af
 
             builder.complex_filter(fc_graph)
