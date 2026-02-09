@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-02-09
+
+### Added
+- **Multi-Input Skills**: New `grid` (xstack layout), `slideshow` (concat with fade transitions), and `overlay_image` (picture-in-picture) skills — the first skills that use multiple input images.
+- **Audio Waveform**: New `waveform` skill visualizes audio as an overlay using FFMPEG's `showwaves` filter with configurable mode, height, color, position, and opacity.
+- **Dry-Run Validation**: FFMPEG commands are validated with `-f null -` before execution to catch errors early without wasting render time.
+- **Error Feedback Loop**: When FFMPEG execution fails, the error stderr is fed back to the LLM for automatic command correction (max 2 attempts).
+- **Frame Extraction**: New `save_frames_as_images()` in `media_converter.py` exports IMAGE tensor frames to individual temp PNGs for multi-input skills.
+- **Pipeline Multi-Input**: Added `extra_inputs` field to `Pipeline` dataclass; `compose()` now registers extra inputs as additional `-i` flags and passes `_extra_input_count` to skill handlers.
+- **Filter Complex Support**: Full `filter_complex` plumbing through `compose()`, `_skill_to_filters()`, and `_builtin_skill_filters()` — handlers return 4-tuples `(vf, af, opts, fc)`, backward-compatible with existing 3-tuple handlers.
+
+### Changed
+- **Agent Node**: Auto-detects multi-input skills in pipeline and saves frames as individual images; cleans up temp frame directories after execution.
+- **Pipeline Composer**: Injects `_extra_input_count` into step params for multi-input skill handlers; registers extra inputs with `CommandBuilder`.
+
+---
+
 ## [1.6.1] - 2026-02-09
 
 ### Fixed
