@@ -378,8 +378,8 @@ class FFMPEGAgentNode:
         # --- Execute with error-feedback retry ---
         if preview_mode:
             if command.complex_filter:
-                # Append scale to filter_complex so it isn't silently dropped
-                command.complex_filter += ",scale=480:-1"
+                # Use -s output option to avoid appending scale to audio chains
+                command.output_options.extend(["-s", "480x270"])
             else:
                 command.video_filters.add_filter("scale", {"w": 480, "h": -1})
             command.output_options.extend(["-t", "10"])
@@ -439,7 +439,7 @@ class FFMPEGAgentNode:
                     print(f"[FFMPEGA DEBUG] Retry command: {command.to_string()}")
                     if preview_mode:
                         if command.complex_filter:
-                            command.complex_filter += ",scale=480:-1"
+                            command.output_options.extend(["-s", "480x270"])
                         else:
                             command.video_filters.add_filter("scale", {"w": 480, "h": -1})
                         command.output_options.extend(["-t", "10"])
