@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.1] - 2026-02-09
+
+### Security
+- **API Key Sanitization**: API keys are automatically stripped from all output paths:
+  - `redact_secret()` and `sanitize_api_key()` utilities in `core/sanitize.py`
+  - `LLMConfig.__repr__` redacts the `api_key` field
+  - httpx error messages sanitized before propagation (strips headers containing keys)
+  - Exceptions in `agent_node.py` scrubbed of API keys before reaching ComfyUI UI
+  - Workflow metadata (PROMPT and EXTRA_PNGINFO) stripped of `api_key` before downstream Save Image/Video nodes embed it into output files
+
+### Added
+- **Sanitization Tests**: 9 new tests for `redact_secret()` and `sanitize_api_key()` (28 total in `test_sanitize.py`)
+
+---
+
 ## [1.7.0] - 2026-02-09
 
 ### Added

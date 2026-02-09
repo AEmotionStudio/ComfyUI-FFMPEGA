@@ -5,7 +5,7 @@
 **An AI-powered FFMPEG agent node for ComfyUI — edit videos with natural language.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-1.7.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-1.7.1-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-4-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 
@@ -20,15 +20,11 @@
 
 ---
 
-## 🚀 What's New in v1.7.0 (February 9, 2026)
+## 🚀 What's New in v1.7.1 (February 9, 2026)
 
-**Multi-Input Skills + Audio Visualization + Reliability**
+**API Key Security**
 
-*   **🖼️ Multi-Input Skills**: New `grid`, `slideshow`, and `overlay_image` skills — arrange images in grids, create slideshows with transitions, or add picture-in-picture overlays. Uses the IMAGE tensor for multiple input frames.
-*   **🎵 Audio Waveform**: New `waveform` skill visualizes audio as an overlay using FFMPEG's `showwaves` filter with configurable mode, color, position, and opacity.
-*   **🛡️ Dry-Run Validation**: FFMPEG commands are now validated before execution — catches errors early without wasting render time.
-*   **🧠 Error Feedback Loop**: If FFMPEG fails, the error is fed back to the LLM for automatic command correction (max 2 attempts).
-*   **🔧 Multi-Input Infrastructure**: New `save_frames_as_images()` for frame extraction, `Pipeline.extra_inputs` for multi-file commands, and `filter_complex` support throughout the pipeline.
+*   **🔒 API Key Sanitization**: API keys are automatically redacted from all output paths — error messages, logs, tracebacks, `LLMConfig` repr, and ComfyUI workflow metadata embedded in output images/videos. Keys never leak into saved files.
 
 > 📄 **See [CHANGELOG.md](CHANGELOG.md) for the complete version history.**
 
@@ -144,7 +140,7 @@ The main node — translates natural language into FFMPEG commands.
 | `preview_mode` | Quick preview instead of full render |
 | `output_path` | Custom output path (optional) |
 | `ollama_url` | Ollama server URL (default: `http://localhost:11434`) |
-| `api_key` | API key for cloud LLM providers |
+| `api_key` | API key for cloud LLM providers (auto-redacted from outputs) |
 
 | Output | Description |
 | :--- | :--- |
