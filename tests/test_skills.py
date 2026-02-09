@@ -533,3 +533,57 @@ class TestSkillComposer:
         args = command.to_args()
 
         assert "-vf" not in args  # no filter since step is disabled
+
+    # ---- Audio template routing tests ----
+
+    def test_audio_template_bass_routes_to_af(self):
+        """Bass skill (template-based) must produce -af, not -vf."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("bass", {"gain": 6, "frequency": 100})
+
+        command = composer.compose(pipeline)
+        args = command.to_args()
+
+        assert "-af" in args, f"bass should produce -af but got: {args}"
+        assert "-vf" not in args, f"bass should NOT produce -vf but got: {args}"
+        af_idx = args.index("-af")
+        assert "bass" in args[af_idx + 1]
+
+    def test_audio_template_lowpass_routes_to_af(self):
+        """Lowpass skill (template-based) must produce -af, not -vf."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("lowpass", {"freq": 1000})
+
+        command = composer.compose(pipeline)
+        args = command.to_args()
+
+        assert "-af" in args, f"lowpass should produce -af but got: {args}"
+        assert "-vf" not in args
+
+    def test_audio_template_echo_routes_to_af(self):
+        """Echo skill (template-based) must produce -af, not -vf."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("echo", {"delay": 500, "decay": 0.5})
+
+        command = composer.compose(pipeline)
+        args = command.to_args()
+
+        assert "-af" in args, f"echo should produce -af but got: {args}"
+        assert "-vf" not in args
+
+    def test_mixed_video_and_audio_pipeline(self):
+        """Pipeline with both video and audio skills should produce -vf and -af."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("brightness", {"value": 0.1})
+        pipeline.add_step("bass", {"gain": 6, "frequency": 100})
+
+        command = composer.compose(pipeline)
+        args = command.to_args()
+
+        assert "-vf" in args, f"brightness should produce -vf: {args}"
+        assert "-af" in args, f"bass should produce -af: {args}"
+

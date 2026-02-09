@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Any
 from pathlib import Path
 
-from .registry import SkillRegistry, Skill, ParameterType, get_registry
+from .registry import SkillRegistry, Skill, SkillCategory, ParameterType, get_registry
 from ..core.executor.command_builder import CommandBuilder, FFMPEGCommand
 
 
@@ -207,7 +207,7 @@ class SkillComposer:
             # Determine if it's a video filter, audio filter, or output option
             if template.startswith("-"):
                 output_options.extend(template.split())
-            elif any(af in template for af in ["atempo", "volume", "aecho", "afade"]):
+            elif skill.category == SkillCategory.AUDIO:
                 audio_filters.append(template)
             else:
                 video_filters.append(template)
