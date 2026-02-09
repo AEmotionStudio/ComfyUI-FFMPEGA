@@ -587,3 +587,47 @@ class TestSkillComposer:
         assert "-vf" in args, f"brightness should produce -vf: {args}"
         assert "-af" in args, f"bass should produce -af: {args}"
 
+    # ---- Remove audio tests ----
+
+    def test_remove_audio_produces_an_flag(self):
+        """remove_audio skill must produce -an and no -af."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("remove_audio", {})
+
+        command = composer.compose(pipeline)
+        args = command.to_args()
+
+        assert "-an" in args, f"remove_audio should produce -an but got: {args}"
+        assert "-af" not in args, f"remove_audio should NOT produce -af but got: {args}"
+
+    def test_remove_audio_clears_conflicting_audio_filters(self):
+        """remove_audio + volume must produce -an only, audio filters cleared."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("volume", {"level": 0.5})
+        pipeline.add_step("remove_audio", {})
+
+        command = composer.compose(pipeline)
+        args = command.to_args()
+
+        assert "-an" in args, f"-an must be present: {args}"
+        assert "-af" not in args, (
+            f"-af must NOT be present when -an is set (conflict): {args}"
+        )
+
+    def test_remove_audio_preserves_video_filters(self):
+        """remove_audio + video skill must produce -an and -vf but no -af."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("brightness", {"value": 0.1})
+        pipeline.add_step("remove_audio", {})
+
+        command = composer.compose(pipeline)
+        args = command.to_args()
+
+        assert "-an" in args, f"-an must be present: {args}"
+        assert "-vf" in args, f"-vf must be present: {args}"
+        assert "-af" not in args, f"-af must NOT be present: {args}"
+
+

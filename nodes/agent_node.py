@@ -1,16 +1,10 @@
 """FFMPEG Agent node for ComfyUI."""
 
-import json
 import os
-import re
-import shutil
-import subprocess
-import tempfile
-import asyncio
+import time
 from pathlib import Path
-from typing import Optional, Any
+from typing import Optional
 
-import numpy as np  # type: ignore[import-not-found]
 import torch  # type: ignore[import-not-found]
 
 import folder_paths  # type: ignore[import-not-found]
@@ -38,22 +32,36 @@ class FFMPEGAgentNode:
 
     QUALITY_PRESETS = ["draft", "standard", "high", "lossless"]
 
+    # Class-level TTL cache for Ollama model list
+    _ollama_cache: list[str] | None = None
+    _ollama_cache_time: float = 0.0
+    _OLLAMA_CACHE_TTL: float = 30.0  # seconds
+
     @classmethod
     def _fetch_ollama_models(cls, base_url: str = "http://localhost:11434") -> list[str]:
         """Fetch available models from a running Ollama instance.
 
         Returns locally installed model names, or the fallback list
-        if Ollama is unreachable.
+        if Ollama is unreachable.  Results are cached for 30 seconds
+        to avoid redundant API calls.
         """
+        now = time.monotonic()
+        if cls._ollama_cache is not None and (now - cls._ollama_cache_time) < cls._OLLAMA_CACHE_TTL:
+            return cls._ollama_cache
+
         try:
             import httpx  # type: ignore[import-not-found]
             with httpx.Client(timeout=3.0) as client:
                 resp = client.get(f"{base_url}/api/tags")
                 resp.raise_for_status()
                 models = [m["name"] for m in resp.json().get("models", [])]
-                return sorted(models) if models else cls.FALLBACK_OLLAMA_MODELS
+                result = sorted(models) if models else cls.FALLBACK_OLLAMA_MODELS
         except Exception:
-            return cls.FALLBACK_OLLAMA_MODELS
+            result = cls.FALLBACK_OLLAMA_MODELS
+
+        cls._ollama_cache = result
+        cls._ollama_cache_time = now
+        return result
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -114,6 +122,17 @@ class FFMPEGAgentNode:
                     "placeholder": "API key for OpenAI/Anthropic",
                     "tooltip": "API key required when using cloud models (GPT, Claude, Gemini). Not needed for local Ollama models.",
                 }),
+                "crf": ("INT", {
+                    "default": -1,
+                    "min": -1,
+                    "max": 51,
+                    "step": 1,
+                    "tooltip": "Override CRF (Constant Rate Factor) for output quality. 0 = lossless, 23 = default, 51 = worst. Set to -1 to use quality_preset value.",
+                }),
+                "encoding_preset": (["auto", "ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"], {
+                    "default": "auto",
+                    "tooltip": "Override x264/x265 encoding speed preset. Slower = better compression. 'auto' uses the quality_preset value.",
+                }),
             },
         }
 
@@ -138,6 +157,8 @@ class FFMPEGAgentNode:
         self._registry = None
         self._composer = None
         self._preview_generator = None
+        self._media_converter = None
+        self._pipeline_generator = None
 
     @property
     def analyzer(self):
@@ -174,6 +195,20 @@ class FFMPEGAgentNode:
             self._preview_generator = PreviewGenerator()
         return self._preview_generator
 
+    @property
+    def media_converter(self):
+        if self._media_converter is None:
+            from ..core.media_converter import MediaConverter  # type: ignore[import-not-found]
+            self._media_converter = MediaConverter()
+        return self._media_converter
+
+    @property
+    def pipeline_generator(self):
+        if self._pipeline_generator is None:
+            from ..core.pipeline_generator import PipelineGenerator  # type: ignore[import-not-found]
+            self._pipeline_generator = PipelineGenerator(self.registry)
+        return self._pipeline_generator
+
     async def process(
         self,
         video_path: str,
@@ -186,6 +221,8 @@ class FFMPEGAgentNode:
         output_path: str = "",
         ollama_url: str = "http://localhost:11434",
         api_key: str = "",
+        crf: int = -1,
+        encoding_preset: str = "auto",
     ) -> tuple[torch.Tensor, dict, str, str, str]:
         """Process the video based on the natural language prompt.
 
@@ -200,93 +237,47 @@ class FFMPEGAgentNode:
             output_path: Custom output path.
             ollama_url: Ollama server URL.
             api_key: API key for cloud providers.
+            crf: Override CRF value (-1 = use preset).
+            encoding_preset: Override encoding preset ("auto" = use preset).
 
         Returns:
             Tuple of (images_tensor, audio, output_video_path, command_log, analysis).
         """
         from ..skills.composer import Pipeline  # type: ignore[import-not-found]
 
-        # If images are provided, write them to a temporary video file
-        # so the ffmpeg pipeline can use them as input
+        # --- Resolve input video ---
         temp_video_from_images = None
         if images is not None:
-            temp_video_from_images = self._images_to_temp_video(images)
+            temp_video_from_images = self.media_converter.images_to_video(images)
             effective_video_path = temp_video_from_images
         else:
             effective_video_path = video_path
 
         # Validate input
-        if not effective_video_path or not Path(effective_video_path).exists():
-            raise ValueError(f"Video file not found: {effective_video_path}")
+        from ..core.sanitize import validate_video_path  # type: ignore[import-not-found]
+        effective_video_path = validate_video_path(effective_video_path)
 
         if not prompt.strip():
             raise ValueError("Prompt cannot be empty")
 
-        # Analyze input video
+        # --- Analyze input video ---
         video_metadata = self.analyzer.analyze(effective_video_path)
         metadata_str = video_metadata.to_analysis_string()
 
-        # Create LLM connector
-        connector = self._create_connector(llm_model, ollama_url, api_key)
-
-        # Generate pipeline using LLM
+        # --- Generate pipeline via LLM ---
+        connector = self.pipeline_generator.create_connector(llm_model, ollama_url, api_key)
         try:
-            pipeline_spec = await self._generate_pipeline(
-                connector, prompt, metadata_str
-            )
+            spec = await self.pipeline_generator.generate(connector, prompt, metadata_str)
         finally:
             if hasattr(connector, 'close'):
                 await connector.close()
-
-        # Parse LLM response
-        spec = self._parse_pipeline_response(pipeline_spec)
-        if spec is None:
-            # Auto-retry: send the bad response back asking for JSON only
-            import logging
-            logger = logging.getLogger("ffmpega")
-            logger.warning("LLM returned non-JSON, attempting correction retry...")
-            try:
-                # Get available skill names so the retry doesn't invent skills
-                from ..skills.registry import get_registry
-                registry = get_registry()
-                skill_names = sorted([s.name for s in registry.list_all()])
-                skill_list = ", ".join(skill_names)
-
-                correction_prompt = (
-                    "Your previous response was not valid JSON. Please respond with "
-                    "ONLY a JSON object in this exact format, nothing else:\n"
-                    '{"interpretation": "...", "pipeline": [{"skill": "name", "params": {}}], '
-                    '"warnings": [], "estimated_changes": "..."}\n\n'
-                    f"Available skills (use ONLY these names): {skill_list}\n\n"
-                    f"Original request: {prompt}"
-                )
-                retry_connector = self._create_connector(llm_model, ollama_url, api_key)
-                try:
-                    retry_response = await retry_connector.generate(
-                        correction_prompt,
-                        "You are a JSON-only assistant. Respond with ONLY valid JSON, no markdown, no explanation. Use ONLY skill names from the provided list.",
-                    )
-                    spec = self._parse_pipeline_response(retry_response.content)
-                finally:
-                    if hasattr(retry_connector, 'close'):
-                        await retry_connector.close()
-            except Exception:
-                pass  # Retry failed, fall through to error
-
-            if spec is None:
-                preview = pipeline_spec[:300] if pipeline_spec else "(empty)"
-                raise ValueError(
-                    f"Failed to parse LLM response as JSON.\n"
-                    f"LLM returned: {preview}\n"
-                    f"Tip: Try running the prompt again or use a different model."
-                )
 
         interpretation = spec.get("interpretation", "")
         warnings = spec.get("warnings", [])
         estimated_changes = spec.get("estimated_changes", "")
         pipeline_steps = spec.get("pipeline", [])
 
-        # Build output path
+        # --- Build output path ---
         stem = Path(effective_video_path).stem
         suffix = "_preview" if preview_mode else "_edited"
 
@@ -294,17 +285,15 @@ class FFMPEGAgentNode:
             output_dir = folder_paths.get_output_directory()
             output_path = str(Path(output_dir) / f"{stem}{suffix}.mp4")
         elif Path(output_path).is_dir() or output_path.endswith(os.sep):
-            # User gave a directory — generate a filename inside it
             output_dir = output_path.rstrip(os.sep)
             output_path = str(Path(output_dir) / f"{stem}{suffix}.mp4")
         elif not Path(output_path).suffix:
-            # No extension — treat as directory and append filename
             os.makedirs(output_path, exist_ok=True)
             output_path = str(Path(output_path) / f"{stem}{suffix}.mp4")
 
-        # Ensure output directory exists
         os.makedirs(Path(output_path).parent, exist_ok=True)
 
+        # --- Build pipeline ---
         pipeline = Pipeline(
             input_path=effective_video_path,
             output_path=output_path,
@@ -320,9 +309,11 @@ class FFMPEGAgentNode:
         if quality_preset and not any(s.skill_name in ["quality", "compress"] for s in pipeline.steps):
             crf_map = {"draft": 28, "standard": 23, "high": 18, "lossless": 0}
             preset_map = {"draft": "ultrafast", "standard": "medium", "high": "slow", "lossless": "veryslow"}
+            effective_crf = crf if crf >= 0 else crf_map.get(quality_preset, 23)
+            effective_preset = encoding_preset if encoding_preset != "auto" else preset_map.get(quality_preset, "medium")
             pipeline.add_step("quality", {
-                "crf": crf_map.get(quality_preset, 23),
-                "preset": preset_map.get(quality_preset, "medium"),
+                "crf": effective_crf,
+                "preset": effective_preset,
             })
 
         # Validate pipeline (warn but don't block — LLMs are imprecise)
@@ -341,11 +332,10 @@ class FFMPEGAgentNode:
         print(f"[FFMPEGA DEBUG] Video filters: '{command.video_filters.to_string()}'")
         print(f"[FFMPEGA DEBUG] Pipeline steps: {[(s.skill_name, s.params) for s in pipeline.steps]}")
 
-        # Execute
+        # --- Execute ---
         if preview_mode:
-            # Add preview-specific options
             command.video_filters.add_filter("scale", {"w": 480, "h": -1})
-            command.output_options.extend(["-t", "10"])  # First 10 seconds only
+            command.output_options.extend(["-t", "10"])
 
         result = self.process_manager.execute(command, timeout=600)
 
@@ -355,7 +345,7 @@ class FFMPEGAgentNode:
                 f"Command: {command.to_string()}"
             )
 
-        # Build analysis string
+        # --- Build analysis string ---
         analysis = f"""Interpretation: {interpretation}
 
 Estimated Changes: {estimated_changes}
@@ -365,23 +355,21 @@ Pipeline Steps:
 
 Warnings: {', '.join(warnings) if warnings else 'None'}"""
 
-        # If audio_input was provided, mux it into the output video —
-        # UNLESS the pipeline explicitly strips audio (e.g. remove_audio → -an).
+        # --- Handle audio ---
         removes_audio = "-an" in command.output_options
-        if audio_input is not None and not removes_audio:
-            self._mux_audio_into_video(output_path, audio_input)
+        has_audio_processing = removes_audio or bool(command.audio_filters.to_string())
 
-        # Extract frames from output video as IMAGE tensor
-        images_tensor = self._extract_frames_as_tensor(output_path)
+        if audio_input is not None and not has_audio_processing:
+            self.media_converter.mux_audio(output_path, audio_input)
 
-        # For audio output: if audio was explicitly removed, return silence.
-        # Otherwise pass through audio_input if connected, or extract from output.
+        # --- Extract output frames ---
+        images_tensor = self.media_converter.frames_to_tensor(output_path)
+
+        # --- Extract output audio ---
         if removes_audio:
             audio_out = {"waveform": torch.zeros(1, 1, 1, dtype=torch.float32), "sample_rate": 44100}
-        elif audio_input is not None:
-            audio_out = audio_input
         else:
-            audio_out = self._extract_audio(output_path)
+            audio_out = self.media_converter.extract_audio(output_path)
 
         # Clean up temp video if we created one
         if temp_video_from_images and os.path.exists(temp_video_from_images):
@@ -389,522 +377,7 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
 
         return (images_tensor, audio_out, output_path, command.to_string(), analysis)
 
-    def _extract_frames_as_tensor(self, video_path: str) -> torch.Tensor:
-        """Extract all frames from a video and return as a batched IMAGE tensor.
-
-        Args:
-            video_path: Path to the video file.
-
-        Returns:
-            Tensor of shape (B, H, W, 3) with float32 values in [0, 1].
-        """
-        import imageio.v3 as iio  # type: ignore[import-not-found]
-
-        try:
-            # Read all frames from the video
-            frames_raw = iio.imread(video_path, plugin="pyav")
-
-            # frames_raw: (B, H, W, C) uint8 numpy array
-            frames = frames_raw.astype(np.float32) / 255.0
-
-            # Ensure RGB (drop alpha if present)
-            if frames.shape[-1] == 4:
-                frames = frames[:, :, :, :3]
-            elif frames.shape[-1] == 1:
-                frames = np.repeat(frames, 3, axis=-1)
-
-            return torch.from_numpy(frames)
-
-        except Exception:
-            # Fallback: return a single black frame
-            return torch.zeros(1, 64, 64, 3, dtype=torch.float32)
-
-    def _extract_audio(self, video_path: str) -> dict:
-        """Extract audio from a video and return as ComfyUI AUDIO dict.
-
-        Returns a dict with 'waveform' (Tensor of shape [1, channels, samples])
-        and 'sample_rate' (int), compatible with ComfyUI's standard AUDIO type.
-
-        If the video has no audio stream, returns a short silent mono buffer.
-        """
-        ffmpeg_bin = shutil.which("ffmpeg")
-        ffprobe_bin = shutil.which("ffprobe")
-        if not ffmpeg_bin or not ffprobe_bin:
-            # No ffmpeg/ffprobe — return silence
-            return {"waveform": torch.zeros(1, 1, 1, dtype=torch.float32), "sample_rate": 44100}
-
-        # Check whether the video actually contains an audio stream
-        try:
-            probe = subprocess.run(
-                [ffprobe_bin, "-v", "error", "-select_streams", "a",
-                 "-show_entries", "stream=codec_type", "-of", "csv=p=0", video_path],
-                capture_output=True, check=True,
-            )
-            if not probe.stdout.decode("utf-8", "backslashreplace").strip():
-                # No audio stream
-                return {"waveform": torch.zeros(1, 1, 1, dtype=torch.float32), "sample_rate": 44100}
-        except subprocess.CalledProcessError:
-            return {"waveform": torch.zeros(1, 1, 1, dtype=torch.float32), "sample_rate": 44100}
-
-        # Extract raw PCM audio via ffmpeg
-        try:
-            res = subprocess.run(
-                [ffmpeg_bin, "-i", video_path, "-f", "f32le", "-"],
-                capture_output=True, check=True,
-            )
-            audio = torch.frombuffer(bytearray(res.stdout), dtype=torch.float32)
-            # Parse sample rate and channel layout from stderr
-            match = re.search(r", (\d+) Hz, (\w+), ", res.stderr.decode("utf-8", "backslashreplace"))
-            if match:
-                ar = int(match.group(1))
-                ac = {"mono": 1, "stereo": 2}.get(match.group(2), 2)
-            else:
-                ar = 44100
-                ac = 2
-            audio = audio.reshape((-1, ac)).transpose(0, 1).unsqueeze(0)
-            return {"waveform": audio, "sample_rate": ar}
-        except Exception:
-            return {"waveform": torch.zeros(1, 1, 1, dtype=torch.float32), "sample_rate": 44100}
-
-    def _images_to_temp_video(
-        self, images: torch.Tensor, fps: int = 24
-    ) -> str:
-        """Convert an IMAGE tensor (B, H, W, 3) to a temporary video file.
-
-        Args:
-            images: Batched image tensor with float32 values in [0, 1].
-            fps: Frame rate for the output video.
-
-        Returns:
-            Path to the created temporary video file.
-        """
-        ffmpeg_bin = shutil.which("ffmpeg")
-        if not ffmpeg_bin:
-            raise RuntimeError("ffmpeg not found in PATH")
-
-        # Convert tensor to uint8 numpy frames
-        frames = (images.cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
-        h, w = frames.shape[1], frames.shape[2]
-
-        # Write to a temp file via ffmpeg rawvideo pipe
-        tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
-        tmp.close()
-
-        proc = subprocess.Popen(
-            [
-                ffmpeg_bin, "-y",
-                "-f", "rawvideo",
-                "-vcodec", "rawvideo",
-                "-s", f"{w}x{h}",
-                "-pix_fmt", "rgb24",
-                "-r", str(fps),
-                "-i", "-",
-                "-c:v", "libx264",
-                "-pix_fmt", "yuv420p",
-                "-preset", "fast",
-                "-crf", "18",
-                tmp.name,
-            ],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-        )
-        proc.stdin.write(frames.tobytes())
-        proc.stdin.close()
-        proc.wait()
-
-        if proc.returncode != 0:
-            stderr = proc.stderr.read().decode("utf-8", "backslashreplace")
-            os.remove(tmp.name)
-            raise RuntimeError(f"Failed to create temp video from images: {stderr}")
-
-        return tmp.name
-
-    def _mux_audio_into_video(self, video_path: str, audio: dict) -> None:
-        """Mux a ComfyUI AUDIO dict into an existing video file.
-
-        Writes the audio waveform to a temp WAV, then combines it with
-        the video using ffmpeg, replacing the file in-place.
-        """
-        ffmpeg_bin = shutil.which("ffmpeg")
-        if not ffmpeg_bin:
-            return
-
-        try:
-            waveform = audio["waveform"]       # (1, channels, samples)
-            sample_rate = audio["sample_rate"]
-        except Exception as e:
-            # Audio extraction failed — video may have no audio stream
-            import logging
-            logging.getLogger("ffmpega").warning(
-                f"Skipping audio mux — could not extract audio: {e}"
-            )
-            return
-        channels = waveform.size(1)
-
-        # Write raw PCM to a temp WAV file
-        audio_data = waveform.squeeze(0).transpose(0, 1).contiguous()  # (samples, channels)
-        audio_bytes = (audio_data * 32767.0).clamp(-32768, 32767).to(torch.int16).numpy().tobytes()
-
-        tmp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-        tmp_wav.close()
-        tmp_out = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
-        tmp_out.close()
-
-        try:
-            # Create WAV via ffmpeg
-            proc = subprocess.run(
-                [
-                    ffmpeg_bin, "-y",
-                    "-f", "s16le",
-                    "-ar", str(sample_rate),
-                    "-ac", str(channels),
-                    "-i", "-",
-                    tmp_wav.name,
-                ],
-                input=audio_bytes,
-                capture_output=True,
-            )
-
-            # Mux video + audio
-            subprocess.run(
-                [
-                    ffmpeg_bin, "-y",
-                    "-i", video_path,
-                    "-i", tmp_wav.name,
-                    "-c:v", "copy",
-                    "-c:a", "aac",
-                    "-shortest",
-                    tmp_out.name,
-                ],
-                capture_output=True, check=True,
-            )
-
-            # Replace original with muxed version
-            shutil.move(tmp_out.name, video_path)
-        except Exception:
-            pass  # If muxing fails, keep the original video without audio
-        finally:
-            for f in [tmp_wav.name, tmp_out.name]:
-                if os.path.exists(f):
-                    try:
-                        os.remove(f)
-                    except OSError:
-                        pass
-
-    def _create_connector(
-        self,
-        model: str,
-        ollama_url: str,
-        api_key: str,
-    ):
-        """Create appropriate LLM connector based on model selection."""
-        from ..core.llm.base import LLMConfig, LLMProvider  # type: ignore[import-not-found]
-        from ..core.llm.ollama import OllamaConnector  # type: ignore[import-not-found]
-        from ..core.llm.api import APIConnector  # type: ignore[import-not-found]
-
-        if model not in self.API_MODELS and not model.startswith(("gpt", "claude", "gemini")):
-            config = LLMConfig(
-                provider=LLMProvider.OLLAMA,
-                model=model,
-                base_url=ollama_url,
-                temperature=0.3,
-            )
-            return OllamaConnector(config)
-
-        elif model.startswith("gpt"):
-            config = LLMConfig(
-                provider=LLMProvider.OPENAI,
-                model=model,
-                api_key=api_key,
-                temperature=0.3,
-            )
-            return APIConnector(config)
-
-        elif model.startswith("claude"):
-            config = LLMConfig(
-                provider=LLMProvider.ANTHROPIC,
-                model=model,
-                api_key=api_key,
-                temperature=0.3,
-            )
-            return APIConnector(config)
-
-        elif model.startswith("gemini"):
-            config = LLMConfig(
-                provider=LLMProvider.GEMINI,
-                model=model,
-                api_key=api_key,
-                temperature=0.3,
-            )
-            return APIConnector(config)
-
-        else:
-            # Default to Ollama
-            config = LLMConfig(
-                provider=LLMProvider.OLLAMA,
-                model="llama3.1:8b",
-                base_url=ollama_url,
-                temperature=0.3,
-            )
-            return OllamaConnector(config)
-
-    async def _generate_pipeline(
-        self,
-        connector,
-        prompt: str,
-        video_metadata: str,
-    ) -> str:
-        """Generate pipeline specification using LLM.
-
-        Uses agentic tool-calling if the connector supports it,
-        otherwise falls back to single-shot generation.
-
-        Args:
-            connector: LLM connector to use.
-            prompt: User's editing prompt.
-            video_metadata: Video analysis string.
-
-        Returns:
-            JSON string with pipeline specification.
-        """
-        # Try agentic mode first (tool-calling)
-        try:
-            return await self._generate_pipeline_agentic(
-                connector, prompt, video_metadata
-            )
-        except NotImplementedError:
-            # Connector doesn't support tool calling — use single-shot
-            return await self._generate_pipeline_single_shot(
-                connector, prompt, video_metadata
-            )
-
-    async def _generate_pipeline_single_shot(
-        self,
-        connector,
-        prompt: str,
-        video_metadata: str,
-    ) -> str:
-        """Single-shot pipeline generation (original approach).
-
-        Sends the full skill registry in the system prompt and expects
-        a complete pipeline JSON in one response.
-
-        Args:
-            connector: LLM connector to use.
-            prompt: User's editing prompt.
-            video_metadata: Video analysis string.
-
-        Returns:
-            JSON string with pipeline specification.
-        """
-        from ..prompts.system import get_system_prompt  # type: ignore[import-not-found]
-        from ..prompts.generation import get_generation_prompt  # type: ignore[import-not-found]
-
-        system_prompt = get_system_prompt(
-            video_metadata=video_metadata,
-            include_full_registry=True,
-        )
-
-        user_prompt = get_generation_prompt(prompt, video_metadata)
-
-        response = await connector.generate(user_prompt, system_prompt)
-        return response.content
-
-    async def _generate_pipeline_agentic(
-        self,
-        connector,
-        prompt: str,
-        video_metadata: str,
-        max_iterations: int = 10,
-    ) -> str:
-        """Agentic pipeline generation with tool calling.
-
-        The LLM dynamically discovers skills using MCP tools,
-        iterating until it produces a final pipeline.
-
-        Args:
-            connector: LLM connector to use (must support chat_with_tools).
-            prompt: User's editing prompt.
-            video_metadata: Video analysis string.
-            max_iterations: Maximum tool-calling rounds.
-
-        Returns:
-            JSON string with pipeline specification.
-
-        Raises:
-            NotImplementedError: If connector doesn't support tool calling.
-        """
-        from ..prompts.system import get_agentic_system_prompt  # type: ignore[import-not-found]
-        from ..prompts.generation import get_generation_prompt  # type: ignore[import-not-found]
-        from ..mcp.tool_defs import TOOL_DEFINITIONS  # type: ignore[import-not-found]
-        from ..mcp.tools import (  # type: ignore[import-not-found]
-            analyze_video,
-            list_skills,
-            search_skills,
-            get_skill_details,
-        )
-
-        system_prompt = get_agentic_system_prompt(video_metadata=video_metadata)
-        user_prompt = get_generation_prompt(prompt, video_metadata)
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
-
-        # Tool dispatch map
-        tool_handlers = {
-            "list_skills": lambda args: list_skills(args.get("category")),
-            "search_skills": lambda args: search_skills(args.get("query", "")),
-            "get_skill_details": lambda args: get_skill_details(args.get("skill_name", "")),
-            "analyze_video": lambda args: analyze_video(args.get("video_path", "")),
-        }
-
-        import logging
-        logger = logging.getLogger("ffmpega")
-
-        for iteration in range(max_iterations):
-            response = await connector.chat_with_tools(messages, TOOL_DEFINITIONS)
-
-            if not response.tool_calls:
-                # Model returned a final answer — check if it's valid JSON
-                parsed = self._parse_pipeline_response(response.content)
-                if parsed is not None:
-                    return response.content
-
-                # Not valid JSON — tell the model to fix it and continue the loop
-                logger.warning(
-                    f"Agentic iteration {iteration+1}: model returned "
-                    f"non-JSON, requesting correction..."
-                )
-                messages.append({
-                    "role": "assistant",
-                    "content": response.content or "",
-                })
-                messages.append({
-                    "role": "user",
-                    "content": (
-                        "That response was not valid JSON. You MUST respond with "
-                        "ONLY a JSON object like: "
-                        '{\"interpretation\": \"...\", \"pipeline\": '
-                        '[{\"skill\": \"skill_name\", \"params\": {}}], '
-                        '\"warnings\": [], \"estimated_changes\": \"...\"}\n'
-                        "Use get_skill_details to confirm exact skill names "
-                        "before outputting the pipeline. Do NOT explain — "
-                        "just output the JSON."
-                    ),
-                })
-                continue
-
-            # Process tool calls
-            # Append the assistant's message with tool calls
-            assistant_msg = {"role": "assistant", "content": response.content or ""}
-            assistant_msg["tool_calls"] = [
-                {
-                    "function": {
-                        "name": tc["function"]["name"],
-                        "arguments": tc["function"]["arguments"],
-                    }
-                }
-                for tc in response.tool_calls
-            ]
-            messages.append(assistant_msg)
-
-            for tool_call in response.tool_calls:
-                func_name = tool_call["function"]["name"]
-                func_args = tool_call["function"]["arguments"]
-
-                logger.info(f"Tool call [{iteration+1}]: {func_name}({func_args})")
-
-                handler = tool_handlers.get(func_name)
-                if handler:
-                    try:
-                        result = handler(func_args)
-                        result_str = json.dumps(result, indent=2)
-                    except Exception as e:
-                        result_str = json.dumps({"error": str(e)})
-                        logger.warning(f"Tool error: {func_name} -> {e}")
-                else:
-                    result_str = json.dumps({"error": f"Unknown tool: {func_name}"})
-
-                # Add tool result to conversation
-                messages.append({
-                    "role": "tool",
-                    "content": result_str,
-                })
-
-        # If we exhausted iterations, try to get a final answer
-        logger.warning(f"Agentic loop hit max iterations ({max_iterations})")
-        # Send one more message asking for the final pipeline
-        messages.append({
-            "role": "user",
-            "content": (
-                "You have used all available tool calls. Based on "
-                "what you've learned, please output the final JSON "
-                "pipeline now."
-            ),
-        })
-        response = await connector.chat_with_tools(messages, [])
-        return response.content
-
-    def _parse_pipeline_response(self, text: str) -> Optional[dict]:
-        """Parse a pipeline response, trying direct JSON then extraction."""
-        if not text or not text.strip():
-            return None
-        try:
-            return json.loads(text)
-        except (json.JSONDecodeError, ValueError):
-            return self._extract_json(text)
-
-    def _extract_json(self, text: str) -> Optional[dict]:
-        """Try to extract JSON from text that may contain other content."""
-        import re
-
-        # 1. Try fenced JSON blocks first
-        for pattern in [
-            r'```json\s*(\{.*?\})\s*```',
-            r'```\s*(\{.*?\})\s*```',
-        ]:
-            matches = re.findall(pattern, text, re.DOTALL)
-            for match in matches:
-                try:
-                    result = json.loads(match)
-                    if isinstance(result, dict):
-                        return result
-                except json.JSONDecodeError:
-                    continue
-
-        # 2. Try to find a JSON object containing "pipeline"
-        pipeline_match = re.search(
-            r'(\{[^{}]*"pipeline"[^{}]*\[.*?\][^{}]*\})',
-            text, re.DOTALL
-        )
-        if pipeline_match:
-            try:
-                return json.loads(pipeline_match.group(1))
-            except json.JSONDecodeError:
-                pass
-
-        # 3. Find the outermost {...} using brace matching
-        start = text.find('{')
-        if start != -1:
-            depth = 0
-            for i in range(start, len(text)):
-                if text[i] == '{':
-                    depth += 1
-                elif text[i] == '}':
-                    depth -= 1
-                    if depth == 0:
-                        try:
-                            return json.loads(text[start:i+1])
-                        except json.JSONDecodeError:
-                            break
-
-        return None
-
     @classmethod
     def IS_CHANGED(cls, video_path, prompt, **kwargs):
         """Determine if the node needs to re-execute."""
-        # Re-execute if inputs change
         return f"{video_path}:{prompt}"

@@ -5,7 +5,7 @@
 **An AI-powered FFMPEG agent node for ComfyUI — edit videos with natural language.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-1.6.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-1.6.1-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-4-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 
@@ -20,16 +20,15 @@
 
 ---
 
-## 🚀 What's New in v1.6.0 (February 8, 2026)
+## 🚀 What's New in v1.6.1 (February 9, 2026)
 
-**New Effects + Smarter AI Agent**
+**Audio Fixes + LLM Reliability + Test Suite**
 
-*   **🌀 Motion Effects**: `spin`, `shake`, `pulse`, `bounce`, `drift` — animated rotation, camera shake, breathing zoom, and cinematic panning.
-*   **🎬 Transition Effects**: `fade_to_black`, `fade_to_white`, `flash` — smooth intro/outro transitions and camera flash.
-*   **🔮 Reveal Effects**: `iris_reveal`, `wipe`, `slide_in` — circle reveal, directional wipe, and edge entrance animations.
-*   **✨ Enhanced Fade**: The `fade` skill now supports `type=both` for simultaneous fade-in + fade-out.
-*   **🧠 Smarter AI Agent**: Expanded system prompt with few-shot examples, FFMPEG domain knowledge, and explicit rules for better skill selection.
-*   **📄 AI-Ready Docs**: Added `LLMS.md` (llms.txt convention) and `.agent/skills/` for AI coding agents.
+*   **🔊 Audio Pipeline Fixes**: Fixed audio mux re-adding audio after `remove_audio`, fixed audio overwriting when `audio_input` is connected, and fixed audio template skill misrouting.
+*   **🧠 Smarter LLM Retry**: Auto-retry JSON parsing failures with a correction prompt and self-correction loop for non-JSON responses.
+*   **🧪 Test Suite**: Added test infrastructure with `conftest.py`, import-safe `__init__.py`, and `dev` extras — run with `uv run --extra dev pytest`.
+*   **🌀 Pulse Fix**: Rewrote `pulse` zoompan filter to resolve parsing issues.
+*   **📄 Skill Test Prompts**: Added `SKILL_TEST_PROMPTS.md` with copy-friendly test prompts for every skill category.
 
 > 📄 **See [CHANGELOG.md](CHANGELOG.md) for the complete version history.**
 

@@ -586,3 +586,100 @@ Apply a soft dreamy look
 ```
 Apply a simulated HDR effect
 ```
+
+---
+
+## 🔀 Transitions
+
+### fade_to_black
+```
+Fade in from black at the start and fade out to black at the end
+```
+
+### fade_to_white
+```
+Fade in from white over 2 seconds
+```
+
+### flash
+```
+Add a camera flash effect at the beginning
+```
+
+---
+
+## 🎥 Motion Effects
+
+### spin
+```
+Continuously spin the video clockwise
+```
+
+### shake
+```
+Add a heavy camera shake earthquake effect
+```
+
+### pulse
+```
+Add a rhythmic zoom pulsing effect like a heartbeat
+```
+
+### bounce
+```
+Make the video bounce up and down playfully
+```
+
+### drift
+```
+Add a slow cinematic drift panning to the right
+```
+
+---
+
+## 🎭 Reveal & Zoom Effects
+
+### iris_reveal
+```
+Add a circular iris reveal opening from the center
+```
+
+### wipe
+```
+Reveal the video with a left-to-right wipe from black
+```
+
+### slide_in
+```
+Slide the video in from the left edge
+```
+
+### ken_burns
+```
+Apply a Ken Burns slow zoom effect
+```
+
+### zoom
+```
+Zoom in 2x on the center of the frame
+```
+
+### boomerang
+```
+Create a looping boomerang effect
+```
+
+### timelapse
+```
+Speed up the footage to create a timelapse
+```
+
+### slowmo
+```
+Apply slow motion at half speed
+```
+
+### stabilize
+```
+Stabilize the shaky footage
+```
