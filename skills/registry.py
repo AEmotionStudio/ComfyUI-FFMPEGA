@@ -160,6 +160,8 @@ class SkillRegistry:
             cat: [] for cat in SkillCategory
         }
         self._by_tag: dict[str, list[str]] = {}
+        self._cached_prompt_string: Optional[str] = None
+        self._cached_json_schema: Optional[dict] = None
 
     def register(self, skill: Skill) -> None:
         """Register a skill.
@@ -174,6 +176,10 @@ class SkillRegistry:
             if tag not in self._by_tag:
                 self._by_tag[tag] = []
             self._by_tag[tag].append(skill.name)
+
+        # Invalidate cache
+        self._cached_prompt_string = None
+        self._cached_json_schema = None
 
     def get(self, name: str) -> Optional[Skill]:
         """Get a skill by name.
@@ -242,6 +248,9 @@ class SkillRegistry:
         Returns:
             Formatted string describing all skills.
         """
+        if self._cached_prompt_string is not None:
+            return self._cached_prompt_string
+
         lines = ["# Available Skills\n"]
 
         for category in list(SkillCategory):
@@ -268,7 +277,8 @@ class SkillRegistry:
 
                 lines.append("")
 
-        return "\n".join(lines)
+        self._cached_prompt_string = "\n".join(lines)
+        return self._cached_prompt_string
 
     def to_json_schema(self) -> dict:
         """Generate JSON schema for skill invocations.
@@ -276,6 +286,9 @@ class SkillRegistry:
         Returns:
             JSON schema dict for validation.
         """
+        if self._cached_json_schema is not None:
+            return self._cached_json_schema
+
         skill_schemas = {}
 
         for name, skill in self._skills.items():
@@ -333,7 +346,7 @@ class SkillRegistry:
                 "required": required,
             }
 
-        return {
+        self._cached_json_schema = {
             "type": "object",
             "properties": {
                 "skill": {
@@ -350,6 +363,7 @@ class SkillRegistry:
             "definitions": skill_schemas,
             "required": ["skill", "params"],
         }
+        return self._cached_json_schema
 
 
 # Global registry instance
