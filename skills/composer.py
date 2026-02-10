@@ -118,7 +118,19 @@ class SkillComposer:
             if not step.enabled:
                 continue
 
-            skill = self.registry.get(step.skill_name)
+            # Resolve common aliases LLMs tend to use
+            _SKILL_ALIASES = {
+                "overlay": "overlay_image",
+                "stabilize": "deshake",
+                "grayscale": "monochrome",
+                "greyscale": "monochrome",
+                "black_and_white": "monochrome",
+                "bw": "monochrome",
+            }
+            resolved_name = _SKILL_ALIASES.get(step.skill_name, step.skill_name)
+            skill = self.registry.get(resolved_name)
+            if skill:
+                step.skill_name = resolved_name  # update for debug output
             if not skill:
                 import logging
                 logging.getLogger("ffmpega").warning(
@@ -270,6 +282,10 @@ class SkillComposer:
         # If skill has a pipeline, recursively compose
         elif skill.pipeline:
             for step_str in skill.pipeline:
+                # Substitute {placeholder} values from parent params
+                for key, value in params.items():
+                    step_str = step_str.replace(f"{{{key}}}", str(value))
+
                 # Parse step string (format: "skill_name:param1=val1,param2=val2")
                 if ":" in step_str:
                     sub_skill_name, params_str = step_str.split(":", 1)
@@ -467,8 +483,9 @@ def _f_reverse(p):
 
 
 def _f_loop(p):
-    count = p.get("count", 2)
-    return [f"loop=loop={count}:size=32767"], [], []
+    count = int(p.get("count", 2))
+    # -stream_loop N repeats the input N additional times
+    return [], [], [], "", ["-stream_loop", str(count)]
 
 
 def _f_resize(p):
@@ -543,8 +560,11 @@ def _f_denoise(p):
 
 
 def _f_vignette(p):
-    intensity = p.get("intensity", 0.3)
-    return [f"vignette=PI/4*{intensity}"], [], []
+    import math
+    intensity = float(p.get("intensity", 0.3))
+    # Map intensity [0,1] to angle [PI/6, PI/2] for visible vignette
+    angle = (math.pi / 6) + intensity * (math.pi / 2 - math.pi / 6)
+    return [f"vignette=angle={angle:.4f}"], [], []
 
 
 def _f_fade(p):
@@ -826,36 +846,47 @@ def _f_zoom(p):
 def _f_ken_burns(p):
     direction = p.get("direction", "zoom_in")
     amount = float(p.get("amount", 0.2))
-    # Animated zoom/pan using crop with time-varying expressions
-    # Amount is the fraction of the frame to travel (0.2 = 20%)
-    margin = int(amount * 200)  # extra pixels to pad
-    speed = max(1, margin // 10)
+    width = int(p.get("width", 1920))
+    height = int(p.get("height", 1080))
+    fps = int(p.get("fps", 25))
+    # Use ffmpeg's zoompan filter for smooth Ken Burns effect
+    # zoom goes from 1 to 1+amount (e.g. 1.0 to 1.2 for 20% zoom)
+    # d=1 means each input frame produces 1 output frame
+    max_zoom = 1.0 + amount
+    zoom_step = amount / (fps * 10)  # gradual zoom over ~10 seconds
+    sz = f"s={width}x{height}:fps={fps}"
     if direction == "zoom_in":
-        # Start wide (padded), crop inward over time
         return [
-            f"pad=iw+{margin}:ih+{margin}:{margin//2}:{margin//2}:black,"
-            f"crop=iw-{margin}+min({speed}*t\\,{margin}):"
-            f"ih-{margin}+min({speed}*t\\,{margin}):"
-            f"max({margin//2}-{speed//2}*t\\,0):"
-            f"max({margin//2}-{speed//2}*t\\,0),"
-            f"scale=iw:ih"
+            f"zoompan=z='min(zoom+{zoom_step:.6f},{max_zoom})':"
+            f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+            f"d=1:{sz}"
         ], [], []
     elif direction == "zoom_out":
-        # Start cropped, expand outward over time
         return [
-            f"pad=iw+{margin}:ih+{margin}:{margin//2}:{margin//2}:black,"
-            f"crop=iw-min({speed}*t\\,{margin}):"
-            f"ih-min({speed}*t\\,{margin}):"
-            f"min({speed//2}*t\\,{margin//2}):"
-            f"min({speed//2}*t\\,{margin//2}),"
-            f"scale=iw:ih"
+            f"zoompan=z='if(eq(on,0),{max_zoom},max(zoom-{zoom_step:.6f},1))':"
+            f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+            f"d=1:{sz}"
         ], [], []
     elif direction == "pan_right":
-        return _f_drift({"direction": "right", "amount": margin})
+        return [
+            f"zoompan=z='{max_zoom}':"
+            f"x='if(eq(on,0),0,min(x+{amount * 2:.4f},iw-iw/zoom))':"
+            f"y='ih/2-(ih/zoom/2)':"
+            f"d=1:{sz}"
+        ], [], []
     elif direction == "pan_left":
-        return _f_drift({"direction": "left", "amount": margin})
+        return [
+            f"zoompan=z='{max_zoom}':"
+            f"x='if(eq(on,0),iw-iw/zoom,max(x-{amount * 2:.4f},0))':"
+            f"y='ih/2-(ih/zoom/2)':"
+            f"d=1:{sz}"
+        ], [], []
     else:
-        return _f_drift({"direction": "right", "amount": margin})
+        return [
+            f"zoompan=z='min(zoom+{zoom_step:.6f},{max_zoom})':"
+            f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+            f"d=1:{sz}"
+        ], [], []
 
 
 def _f_mirror(p):
@@ -1165,19 +1196,20 @@ def _f_waveform(p):
 
     # Position mapping: y-coordinate expression
     pos_map = {
-        "bottom": f"H-{height}",
-        "center": f"(H-{height})/2",
+        "bottom": f"main_h-{height}",
+        "center": f"(main_h-{height})/2",
         "top": "0",
     }
     y_expr = pos_map.get(position, pos_map["bottom"])
 
     # Build filter_complex graph:
+    # Generate waveform at 1920px wide, overlay handles positioning
     # [0:a] → showwaves → [wave]
     # [0:v][wave] → overlay → output
     fc = (
-        f"[0:a]showwaves=s=Wx{height}:mode={mode}:colors={color},"
+        f"[0:a]showwaves=s=1920x{height}:mode={mode}:colors={color},"
         f"format=yuva420p,colorchannelmixer=aa={opacity}[wave];"
-        f"[0:v][wave]overlay=0:{y_expr}"
+        f"[0:v][wave]overlay=0:{y_expr}:shortest=1"
     )
     return [], [], [], fc
 
@@ -1195,41 +1227,59 @@ def _f_grid(p):
     gap = int(p.get("gap", 4))
     duration = float(p.get("duration", 5.0))
     bg = sanitize_text_param(str(p.get("background", "black")))
-    n = int(p.get("_extra_input_count", 0))
+    include_video = str(p.get("include_video", "true")).lower() in ("true", "1", "yes")
+    cell_w = int(p.get("cell_width", 640))
+    cell_h = int(p.get("cell_height", 480))
+    n_extra = int(p.get("_extra_input_count", 0))
 
-    if n < 2:
-        # Not enough images — fall back to single input passthrough
+    # Build list of ffmpeg input indices
+    cells = []
+    if include_video:
+        cells.append(0)  # main video = [0:v]
+    for i in range(n_extra):
+        cells.append(i + 1)  # extra inputs = [1:v], [2:v], ...
+
+    total = len(cells)
+    if total < 2:
         return [], [], [], ""
 
-    rows = (n + columns - 1) // columns  # ceil division
-
-    # Scale all extra inputs to same size and pad for gap
-    # Use the first extra input's dimensions as target (scale all to match)
+    fps = 25
+    # Scale all inputs to same cell size (maintain aspect ratio + pad)
+    # Still images need loop+setpts to produce frames for the full duration.
     parts = []
-    for i in range(n):
-        idx = i + 1  # extra inputs start at [1:v]
-        parts.append(
-            f"[{idx}:v]scale=iw:ih,setsar=1[_g{i}]"
-        )
+    for i, idx in enumerate(cells):
+        if idx == 0 and include_video:
+            # Main video: just scale, it already has frames
+            parts.append(
+                f"[{idx}:v]scale={cell_w}:{cell_h}:force_original_aspect_ratio=decrease,"
+                f"pad={cell_w}:{cell_h}:(ow-iw)/2:(oh-ih)/2:{bg},setsar=1[_g{i}]"
+            )
+        else:
+            # Still image: loop to create video frames for `duration` seconds
+            n_frames = int(duration * fps)
+            parts.append(
+                f"[{idx}:v]loop=loop={n_frames}:size=1:start=0,"
+                f"setpts=N/{fps}/TB,"
+                f"scale={cell_w}:{cell_h}:force_original_aspect_ratio=decrease,"
+                f"pad={cell_w}:{cell_h}:(ow-iw)/2:(oh-ih)/2:{bg},setsar=1[_g{i}]"
+            )
 
-    # Build xstack layout string
-    # layout format: "x0_y0|x1_y1|..." where positions are expressions
+    # Build xstack layout string — must use literal pixel values (no arithmetic)
     layout_parts = []
-    for i in range(n):
+    for i in range(total):
         col = i % columns
         row = i // columns
-        x = f"{col}*(w0+{gap})" if col > 0 else "0"
-        y = f"{row}*(h0+{gap})" if row > 0 else "0"
+        x = col * (cell_w + gap)
+        y = row * (cell_h + gap)
         layout_parts.append(f"{x}_{y}")
 
-    input_labels = "".join(f"[_g{i}]" for i in range(n))
+    input_labels = "".join(f"[_g{i}]" for i in range(total))
     layout_str = "|".join(layout_parts)
 
     fc_parts = parts + [
-        f"{input_labels}xstack=inputs={n}:layout={layout_str}:fill={bg}"
+        f"{input_labels}xstack=inputs={total}:layout={layout_str}:fill={bg}"
     ]
 
-    # Add duration control via output options
     opts = ["-t", str(duration)]
     return [], [], opts, ";".join(fc_parts)
 
@@ -1241,40 +1291,65 @@ def _f_slideshow(p):
     trans_dur = float(p.get("transition_duration", 0.5))
     width = int(p.get("width", 1920))
     height = int(p.get("height", 1080))
-    n = int(p.get("_extra_input_count", 0))
+    include_video = str(p.get("include_video", "false")).lower() in ("true", "1", "yes")
+    n_extra = int(p.get("_extra_input_count", 0))
 
-    if n < 1:
+    # Build ordered list of (ffmpeg_idx, is_video) pairs
+    segments = []
+    if include_video:
+        segments.append((0, True))
+    for i in range(n_extra):
+        segments.append((i + 1, False))
+
+    total = len(segments)
+    if total < 1:
         return [], [], [], ""
 
-    # Scale each extra input to target size and set duration
     parts = []
     concat_inputs = []
-    for i in range(n):
-        idx = i + 1
-        scale = f"[{idx}:v]loop=loop={int(dur * 25)}:size=1:start=0,"
-        scale += f"setpts=N/25/TB,scale={width}:{height}:force_original_aspect_ratio=decrease,"
-        scale += f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1"
-        if transition == "fade" and n > 1:
-            # Add fade out at end (except last) and fade in at start (except first)
-            if i > 0:
-                scale += f",fade=t=in:st=0:d={trans_dur}"
-            if i < n - 1:
-                fade_st = dur - trans_dur
-                scale += f",fade=t=out:st={fade_st}:d={trans_dur}"
+    for i, (idx, is_video) in enumerate(segments):
         label = f"[_s{i}]"
-        scale += label
-        parts.append(scale)
+        if is_video:
+            # Use the main video at its natural duration, scaled to target size
+            seg = (
+                f"[{idx}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,"
+                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1"
+            )
+        else:
+            # Still image: loop to create a video segment of `dur` seconds
+            seg = (
+                f"[{idx}:v]loop=loop={int(dur * 25)}:size=1:start=0,"
+                f"setpts=N/25/TB,scale={width}:{height}:force_original_aspect_ratio=decrease,"
+                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1"
+            )
+        if transition == "fade" and total > 1:
+            if i > 0:
+                seg += f",fade=t=in:st=0:d={trans_dur}"
+            if i < total - 1:
+                if is_video:
+                    # Skip fade-out on video — we don't know its duration at
+                    # filter-build time. The next slide's fade-in handles the
+                    # visual transition. Hardcoding a time causes black frames
+                    # if the video is longer, or no effect if shorter.
+                    pass
+                else:
+                    fade_st = dur - trans_dur
+                    seg += f",fade=t=out:st={fade_st}:d={trans_dur}"
+        seg += label
+        parts.append(seg)
         concat_inputs.append(label)
 
-    # Concatenate all scaled inputs
     concat_str = "".join(concat_inputs)
-    parts.append(f"{concat_str}concat=n={n}:v=1:a=0")
+    parts.append(f"{concat_str}concat=n={total}:v=1:a=0")
 
     return [], [], [], ";".join(parts)
 
 
 def _f_overlay_image(p):
-    """Overlay an extra input image on the main video (picture-in-picture)."""
+    """Overlay extra input images on the main video (picture-in-picture).
+
+    Supports multiple overlays — each extra input gets its own position.
+    """
     position = p.get("position", "bottom-right")
     scale = float(p.get("scale", 0.25))
     opacity = float(p.get("opacity", 1.0))
@@ -1284,13 +1359,6 @@ def _f_overlay_image(p):
     if n < 1:
         return [], [], [], ""
 
-    # Scale the overlay image (first extra input = [1:v])
-    scale_expr = f"[1:v]scale=iw*{scale}:ih*{scale}"
-    if opacity < 1.0:
-        scale_expr += f",format=yuva420p,colorchannelmixer=aa={opacity}"
-    scale_expr += "[_ovl]"
-
-    # Position mapping
     pos_map = {
         "top-left": f"{margin}:{margin}",
         "top-right": f"W-w-{margin}:{margin}",
@@ -1298,13 +1366,54 @@ def _f_overlay_image(p):
         "bottom-right": f"W-w-{margin}:H-h-{margin}",
         "center": "(W-w)/2:(H-h)/2",
     }
-    xy = pos_map.get(position, pos_map["bottom-right"])
 
-    fc = f"{scale_expr};[0:v][_ovl]overlay={xy}"
-    return [], [], [], fc
+    # Auto-assign positions when multiple overlays
+    corner_cycle = ["top-left", "top-right", "bottom-right", "bottom-left"]
+    if n == 1:
+        positions = [position]
+    else:
+        # First overlay gets the requested position, rest cycle through corners
+        positions = []
+        # Start cycling from the requested position
+        try:
+            start_idx = corner_cycle.index(position)
+        except ValueError:
+            start_idx = 0
+        for i in range(n):
+            pos = corner_cycle[(start_idx + i) % len(corner_cycle)]
+            positions.append(pos)
+
+    fc_parts = []
+    for i in range(n):
+        idx = i + 1  # extra inputs: [1:v], [2:v], ...
+        ovl_label = f"[_ovl{i}]"
+
+        # Scale the overlay
+        scale_expr = f"[{idx}:v]scale=iw*{scale}:ih*{scale}"
+        if opacity < 1.0:
+            scale_expr += f",format=yuva420p,colorchannelmixer=aa={opacity}"
+        scale_expr += ovl_label
+        fc_parts.append(scale_expr)
+
+        # Chain: first overlay takes [0:v], subsequent take previous output
+        xy = pos_map.get(positions[i], pos_map["bottom-right"])
+        if i == 0:
+            src = "[0:v]"
+        else:
+            src = f"[_tmp{i - 1}]"
+
+        if i < n - 1:
+            # Intermediate: label the output for next overlay
+            fc_parts.append(f"{src}{ovl_label}overlay={xy}[_tmp{i}]")
+        else:
+            # Last overlay: no output label (becomes final output)
+            fc_parts.append(f"{src}{ovl_label}overlay={xy}")
+
+    return [], [], [], ";".join(fc_parts)
 
 
 # Register multi-input skills in dispatch
 _SKILL_DISPATCH["grid"] = _f_grid
 _SKILL_DISPATCH["slideshow"] = _f_slideshow
 _SKILL_DISPATCH["overlay_image"] = _f_overlay_image
+_SKILL_DISPATCH["overlay"] = _f_overlay_image  # alias

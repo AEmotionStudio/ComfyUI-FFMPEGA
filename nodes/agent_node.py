@@ -1,6 +1,7 @@
 """FFMPEG Agent node for ComfyUI."""
 
 import os
+import shutil
 import time
 from pathlib import Path
 from typing import Optional
@@ -91,10 +92,26 @@ class FFMPEGAgentNode:
                     "default": "standard",
                     "tooltip": "Output quality level. 'draft' is fast/low quality, 'standard' is balanced, 'high' is slow/best quality, 'lossless' preserves full quality.",
                 }),
+                "seed": ("INT", {
+                    "default": 0,
+                    "min": 0,
+                    "max": 0xffffffffffffffff,
+                    "tooltip": "Change this value to force re-execution with the same prompt. Use the randomize control to auto-increment between runs.",
+                    "control_after_generate": True,
+                }),
             },
             "optional": {
                 "images": ("IMAGE", {
                     "tooltip": "Optional image frames from an upstream node (e.g. Load Video Upload). When connected, these frames are used as the video input instead of video_path.",
+                }),
+                "image_a": ("IMAGE", {
+                    "tooltip": "First extra image input for multi-input skills (grid, slideshow, overlay_image).",
+                }),
+                "image_b": ("IMAGE", {
+                    "tooltip": "Second extra image input for multi-input skills (grid, slideshow, overlay_image).",
+                }),
+                "extra_images": ("IMAGE", {
+                    "tooltip": "Batch of extra images for multi-input skills. Connect a Load Images Batch node to provide multiple images for grid, slideshow, or overlay. Each frame in the batch becomes a separate input.",
                 }),
                 "audio_input": ("AUDIO", {
                     "tooltip": "Optional audio from an upstream node (e.g. Load Video Upload). When connected, this audio is muxed into the output video and passed through on the audio output.",
@@ -135,7 +152,7 @@ class FFMPEGAgentNode:
                 }),
             },
             "hidden": {
-                "prompt": "PROMPT",
+                "hidden_prompt": "PROMPT",
                 "extra_pnginfo": "EXTRA_PNGINFO",
             },
         }
@@ -219,7 +236,11 @@ class FFMPEGAgentNode:
         prompt: str,
         llm_model: str,
         quality_preset: str,
+        seed: int = 0,
         images: Optional[torch.Tensor] = None,
+        image_a: Optional[torch.Tensor] = None,
+        image_b: Optional[torch.Tensor] = None,
+        extra_images: Optional[torch.Tensor] = None,
         audio_input: Optional[dict] = None,
         preview_mode: bool = False,
         output_path: str = "",
@@ -253,9 +274,31 @@ class FFMPEGAgentNode:
         # --- Resolve input video ---
         temp_video_from_images = None
         temp_video_with_audio = None
+        has_extra_images = (
+            extra_images is not None or image_a is not None or image_b is not None
+        )
         if images is not None:
             temp_video_from_images = self.media_converter.images_to_video(images)
             effective_video_path = temp_video_from_images
+        elif video_path and video_path.strip():
+            effective_video_path = video_path
+        elif has_extra_images:
+            # No main video but extra images are connected (slideshow/grid mode)
+            # Generate a short dummy black video as a placeholder base input
+            import tempfile as _tmpmod
+            dummy = _tmpmod.NamedTemporaryFile(suffix=".mp4", delete=False)
+            dummy.close()
+            import subprocess
+            subprocess.run(
+                [
+                    "ffmpeg", "-y", "-f", "lavfi", "-i",
+                    "color=c=black:s=1920x1080:d=1:r=25",
+                    "-c:v", "libx264", "-t", "1", dummy.name,
+                ],
+                capture_output=True,
+            )
+            temp_video_from_images = dummy.name  # track for cleanup
+            effective_video_path = dummy.name
         else:
             effective_video_path = video_path
 
@@ -285,6 +328,8 @@ class FFMPEGAgentNode:
         metadata_str = video_metadata.to_analysis_string()
 
         # --- Generate pipeline via LLM ---
+        if not ollama_url or not ollama_url.startswith(("http://", "https://")):
+            ollama_url = "http://localhost:11434"
         connector = self.pipeline_generator.create_connector(llm_model, ollama_url, api_key)
         try:
             spec = await self.pipeline_generator.generate(connector, prompt, metadata_str)
@@ -350,20 +395,51 @@ class FFMPEGAgentNode:
                 logger.warning(f"Pipeline validation: {err} (continuing anyway)")
 
         # --- Multi-input frame extraction ---
-        # Skills that need individual image files as extra FFMPEG inputs
-        MULTI_INPUT_SKILLS = {"grid", "slideshow", "overlay_image"}
+        # Use image_a / image_b as extra FFMPEG inputs for
+        # multi-input skills (grid, slideshow, overlay_image)
+        MULTI_INPUT_SKILLS = {"grid", "slideshow", "overlay_image", "overlay"}
         needs_multi_input = any(
             s.skill_name in MULTI_INPUT_SKILLS for s in pipeline.steps
         )
-        temp_frames_dir = None
-        if needs_multi_input and images is not None:
-            frame_paths = self.media_converter.save_frames_as_images(images)
-            pipeline.extra_inputs = frame_paths
-            # Track temp dir for cleanup
-            if frame_paths:
-                temp_frames_dir = os.path.dirname(frame_paths[0])
-            # Store frame count in metadata for handlers
-            pipeline.metadata["frame_count"] = len(frame_paths)
+        temp_frames_dirs = set()
+        if needs_multi_input:
+            all_frame_paths = []
+
+            # Priority 1: extra_images batch (each frame -> separate input)
+            if extra_images is not None:
+                paths = self.media_converter.save_frames_as_images(extra_images)
+                all_frame_paths.extend(paths)
+                if paths:
+                    temp_frames_dirs.add(os.path.dirname(paths[0]))
+
+            # Priority 2: individual image_a / image_b
+            if image_a is not None:
+                paths = self.media_converter.save_frames_as_images(image_a)
+                all_frame_paths.extend(paths)
+                if paths:
+                    temp_frames_dirs.add(os.path.dirname(paths[0]))
+            if image_b is not None:
+                paths = self.media_converter.save_frames_as_images(image_b)
+                all_frame_paths.extend(paths)
+                if paths:
+                    temp_frames_dirs.add(os.path.dirname(paths[0]))
+
+            # Fallback: primary images tensor with multiple frames
+            if not all_frame_paths and images is not None and images.shape[0] > 1:
+                all_frame_paths = self.media_converter.save_frames_as_images(images)
+                if all_frame_paths:
+                    temp_frames_dirs.add(os.path.dirname(all_frame_paths[0]))
+
+            if all_frame_paths:
+                pipeline.extra_inputs = all_frame_paths
+                pipeline.metadata["frame_count"] = len(all_frame_paths)
+
+            # Auto-set include_video for slideshow/grid based on whether
+            # a real video is connected (not a dummy placeholder).
+            has_real_video = images is not None or (video_path and video_path.strip())
+            for step in pipeline.steps:
+                if step.skill_name in ("slideshow", "grid"):
+                    step.params["include_video"] = has_real_video
 
         command = self.composer.compose(pipeline)
 
@@ -501,15 +577,16 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
         for tmp_path in [temp_video_from_images, temp_video_with_audio]:
             if tmp_path and os.path.exists(tmp_path):
                 os.remove(tmp_path)
-        if temp_frames_dir and os.path.isdir(temp_frames_dir):
-            import shutil
-            shutil.rmtree(temp_frames_dir, ignore_errors=True)
+        if temp_frames_dirs:
+            for d in temp_frames_dirs:
+                if os.path.isdir(d):
+                    shutil.rmtree(d, ignore_errors=True)
 
         # --- Sanitize api_key from workflow metadata ---
         # ComfyUI embeds PROMPT/EXTRA_PNGINFO in output files.
         # Strip the api_key so it never leaks into saved images/videos.
         if api_key:
-            hidden_prompt = kwargs.get("prompt")
+            hidden_prompt = kwargs.get("hidden_prompt")
             hidden_extra_pnginfo = kwargs.get("extra_pnginfo")
             self._strip_api_key_from_metadata(api_key, hidden_prompt, hidden_extra_pnginfo)
 
@@ -546,6 +623,6 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
                             widgets[i] = ""
 
     @classmethod
-    def IS_CHANGED(cls, video_path, prompt, **kwargs):
+    def IS_CHANGED(cls, video_path, prompt, seed=0, **kwargs):
         """Determine if the node needs to re-execute."""
-        return f"{video_path}:{prompt}"
+        return f"{video_path}:{prompt}:{seed}"

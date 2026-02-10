@@ -5,7 +5,7 @@
 **An AI-powered FFMPEG agent node for ComfyUI — edit videos with natural language.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-1.7.1-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-1.8.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-4-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 
@@ -20,11 +20,14 @@
 
 ---
 
-## 🚀 What's New in v1.7.1 (February 9, 2026)
+## 🚀 What's New in v1.8.0 (February 10, 2026)
 
-**API Key Security**
+**Enhanced Multi-Input Skills**
 
-*   **🔒 API Key Sanitization**: API keys are automatically redacted from all output paths — error messages, logs, tracebacks, `LLMConfig` repr, and ComfyUI workflow metadata embedded in output images/videos. Keys never leak into saved files.
+*   **🖼️ Grid + Video**: Grid now includes the main video as the first cell — create side-by-side comparisons with `"Create a side-by-side comparison"`.
+*   **🎞️ Slideshow + Video**: Start a slideshow with the video, then cycle through image slides — `"Create a slideshow starting with the video"`.
+*   **🔲 Multi-Overlay**: Connect multiple images and they auto-distribute to different corners — logos, watermarks, and badges all at once.
+*   **📷 Standalone Mode**: Slideshow and grid work without a main video — just connect `extra_images`.
 
 > 📄 **See [CHANGELOG.md](CHANGELOG.md) for the complete version history.**
 
@@ -121,6 +124,9 @@ Restart ComfyUI after installation.
 | `"Arrange these images in a grid"` | Multi-image grid collage |
 | `"Create a slideshow with fades"` | Image slideshow with transitions |
 | `"Overlay the logo in the corner"` | Picture-in-picture / watermark |
+| `"Create a side-by-side comparison"` | Video next to image in 2-column grid |
+| `"Create a slideshow starting with the video"` | Video first, then image slides |
+| `"Overlay images in the corners"` | Multiple images auto-placed in corners |
 
 ---
 
@@ -394,9 +400,9 @@ FFMPEGA includes a comprehensive skill system with **119+ operations** organized
 
 | Skill | Description |
 | :--- | :--- |
-| `grid` | Arrange images in a grid layout (xstack) |
-| `slideshow` | Create slideshow with fade transitions (concat) |
-| `overlay_image` | Picture-in-picture / watermark overlay |
+| `grid` | Arrange video + images in a grid layout (xstack). Auto-includes video as first cell. |
+| `slideshow` | Create slideshow from images with fade transitions. Optionally starts with the main video. |
+| `overlay_image` | Picture-in-picture / watermark overlay. Supports multiple overlays auto-placed in corners. |
 
 </details>
 

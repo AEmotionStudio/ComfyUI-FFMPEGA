@@ -91,7 +91,7 @@ def register_skills(registry: SkillRegistry) -> None:
                 required=False,
                 default=2,
                 min_value=2,
-                max_value=100,
+                max_value=10000,
             ),
         ],
         examples=[

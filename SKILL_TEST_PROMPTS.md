@@ -713,6 +713,9 @@ Create a 3-column grid layout with 8px gaps on a white background
 ```
 Make a mosaic from these images lasting 10 seconds
 ```
+```
+Create a side-by-side comparison
+```
 
 ### slideshow
 ```
@@ -724,6 +727,9 @@ Make a photo slideshow with 5 seconds per image and no transitions
 ```
 Create a presentation with slow 1-second fade transitions between slides
 ```
+```
+Create a slideshow starting with the video
+```
 
 ### overlay_image
 ```
@@ -734,4 +740,7 @@ Put a transparent logo in the top-left at 15% scale
 ```
 ```
 Add a semi-transparent picture-in-picture overlay in the center
+```
+```
+Overlay images in the corners at 20% scale
 ```
