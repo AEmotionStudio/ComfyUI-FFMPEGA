@@ -8,6 +8,16 @@ import os
 import re
 from pathlib import Path
 
+# Common video, image, and audio extensions
+ALLOWED_EXTENSIONS = {
+    # Video
+    '.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv', '.wmv', '.m4v', '.mpg', '.mpeg', '.3gp', '.ts',
+    # Image (often used as input)
+    '.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif', '.tiff',
+    # Audio
+    '.mp3', '.wav', '.aac', '.flac', '.m4a', '.ogg', '.wma', '.opus'
+}
+
 
 def validate_video_path(path: str, must_exist: bool = True) -> str:
     """Validate and resolve a video file path.
@@ -21,7 +31,7 @@ def validate_video_path(path: str, must_exist: bool = True) -> str:
 
     Raises:
         ValueError: If the path is empty, contains traversal sequences,
-                     or doesn't exist (when must_exist is True).
+                     is not a supported file type, or doesn't exist (when must_exist is True).
     """
     if not path or not path.strip():
         raise ValueError("Path cannot be empty")
@@ -32,6 +42,12 @@ def validate_video_path(path: str, must_exist: bool = True) -> str:
     if ".." in Path(path).parts:
         raise ValueError(
             f"Path contains directory traversal (..): {path}"
+        )
+
+    if resolved.suffix.lower() not in ALLOWED_EXTENSIONS:
+        raise ValueError(
+            f"Invalid file extension: {resolved.suffix}. "
+            f"Allowed: {sorted(list(ALLOWED_EXTENSIONS))}"
         )
 
     if must_exist and not resolved.exists():

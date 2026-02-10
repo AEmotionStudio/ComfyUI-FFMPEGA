@@ -50,8 +50,36 @@ class TestValidateVideoPath:
         assert result.endswith("nonexistent_ok.mp4")
 
     def test_directory_path_raises(self):
-        with pytest.raises(ValueError, match="not a file"):
+        # /tmp fails extension check first
+        with pytest.raises(ValueError, match="Invalid file extension"):
             validate_video_path("/tmp")
+
+    def test_directory_masquerading_as_file_raises(self):
+        with tempfile.TemporaryDirectory(suffix=".mp4") as tmp_dir:
+            with pytest.raises(ValueError, match="not a file"):
+                validate_video_path(tmp_dir)
+
+    def test_invalid_extension_raises(self):
+        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as f:
+            f.write(b"secret data")
+            tmp_path = f.name
+        try:
+            with pytest.raises(ValueError, match="Invalid file extension"):
+                validate_video_path(tmp_path)
+        finally:
+            os.remove(tmp_path)
+
+    def test_valid_extensions(self):
+        extensions = [".mp4", ".MKV", ".png", ".WAV"]
+        for ext in extensions:
+            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as f:
+                f.write(b"fake media")
+                tmp_path = f.name
+            try:
+                # Should not raise
+                validate_video_path(tmp_path)
+            finally:
+                os.remove(tmp_path)
 
 
 class TestValidateOutputPath:

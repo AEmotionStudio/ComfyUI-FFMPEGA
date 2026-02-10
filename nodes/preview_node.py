@@ -107,8 +107,8 @@ class VideoPreviewNode:
             Tuple of (preview_video_path, thumbnail_tensor).
         """
         # Validate input
-        if not video_path or not Path(video_path).exists():
-            raise ValueError(f"Video file not found: {video_path}")
+        from ..core.sanitize import validate_video_path  # type: ignore[import-not-found]
+        validate_video_path(video_path)
 
         # Generate preview video
         output_dir = Path(folder_paths.get_temp_directory()) / "ffmpega_previews"
@@ -205,8 +205,8 @@ class VideoInfoNode:
         Returns:
             Tuple of (info_text, width, height, duration, fps).
         """
-        if not video_path or not Path(video_path).exists():
-            raise ValueError(f"Video file not found: {video_path}")
+        from ..core.sanitize import validate_video_path  # type: ignore[import-not-found]
+        validate_video_path(video_path)
 
         metadata = self.analyzer.analyze(video_path)
 
@@ -304,8 +304,8 @@ class FrameExtractNode:
         Returns:
             Tuple containing frames as tensor.
         """
-        if not video_path or not Path(video_path).exists():
-            raise ValueError(f"Video file not found: {video_path}")
+        from ..core.sanitize import validate_video_path  # type: ignore[import-not-found]
+        validate_video_path(video_path)
 
         output_dir = Path(folder_paths.get_temp_directory()) / "ffmpega_frames"
         output_dir.mkdir(exist_ok=True)
