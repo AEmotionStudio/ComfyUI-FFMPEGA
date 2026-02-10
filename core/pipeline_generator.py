@@ -40,12 +40,22 @@ class PipelineGenerator:
         from ..core.llm.base import LLMConfig, LLMProvider  # type: ignore[import-not-found]
         from ..core.llm.ollama import OllamaConnector  # type: ignore[import-not-found]
         from ..core.llm.api import APIConnector  # type: ignore[import-not-found]
+        from ..core.llm.gemini_cli import GeminiCLIConnector  # type: ignore[import-not-found]
 
         API_MODELS = [
             "gpt-4o", "gpt-4o-mini",
             "claude-sonnet-4-20250514", "claude-3-5-haiku-20241022",
             "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash",
         ]
+
+        # Gemini CLI — uses local binary, no API key needed
+        if model == "gemini-cli":
+            config = LLMConfig(
+                provider=LLMProvider.GEMINI_CLI,
+                model=model,
+                temperature=0.3,
+            )
+            return GeminiCLIConnector(config)
 
         if model not in API_MODELS and not model.startswith(("gpt", "claude", "gemini")):
             config = LLMConfig(
