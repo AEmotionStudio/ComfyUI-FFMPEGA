@@ -1,6 +1,7 @@
 """FFMPEG Agent node for ComfyUI."""
 
 import os
+import shutil
 import time
 from pathlib import Path
 from typing import Optional
@@ -400,39 +401,45 @@ class FFMPEGAgentNode:
         needs_multi_input = any(
             s.skill_name in MULTI_INPUT_SKILLS for s in pipeline.steps
         )
-        temp_frames_dir = None
+        temp_frames_dirs = set()
         if needs_multi_input:
             all_frame_paths = []
 
-            # Priority 1: extra_images batch (each frame → separate input)
+            # Priority 1: extra_images batch (each frame -> separate input)
             if extra_images is not None:
                 paths = self.media_converter.save_frames_as_images(extra_images)
                 all_frame_paths.extend(paths)
+                if paths:
+                    temp_frames_dirs.add(os.path.dirname(paths[0]))
 
             # Priority 2: individual image_a / image_b
             if image_a is not None:
                 paths = self.media_converter.save_frames_as_images(image_a)
                 all_frame_paths.extend(paths)
+                if paths:
+                    temp_frames_dirs.add(os.path.dirname(paths[0]))
             if image_b is not None:
                 paths = self.media_converter.save_frames_as_images(image_b)
                 all_frame_paths.extend(paths)
+                if paths:
+                    temp_frames_dirs.add(os.path.dirname(paths[0]))
 
             # Fallback: primary images tensor with multiple frames
             if not all_frame_paths and images is not None and images.shape[0] > 1:
                 all_frame_paths = self.media_converter.save_frames_as_images(images)
+                if all_frame_paths:
+                    temp_frames_dirs.add(os.path.dirname(all_frame_paths[0]))
 
             if all_frame_paths:
                 pipeline.extra_inputs = all_frame_paths
-                temp_frames_dir = os.path.dirname(all_frame_paths[0])
                 pipeline.metadata["frame_count"] = len(all_frame_paths)
 
-            # Auto-set include_video for slideshow/grid when a real video is connected
-            # (not a dummy placeholder). The LLM often forgets or defaults to false.
+            # Auto-set include_video for slideshow/grid based on whether
+            # a real video is connected (not a dummy placeholder).
             has_real_video = images is not None or (video_path and video_path.strip())
-            if has_real_video:
-                for step in pipeline.steps:
-                    if step.skill_name in ("slideshow", "grid"):
-                        step.params["include_video"] = True
+            for step in pipeline.steps:
+                if step.skill_name in ("slideshow", "grid"):
+                    step.params["include_video"] = has_real_video
 
         command = self.composer.compose(pipeline)
 
@@ -570,9 +577,10 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
         for tmp_path in [temp_video_from_images, temp_video_with_audio]:
             if tmp_path and os.path.exists(tmp_path):
                 os.remove(tmp_path)
-        if temp_frames_dir and os.path.isdir(temp_frames_dir):
-            import shutil
-            shutil.rmtree(temp_frames_dir, ignore_errors=True)
+        if temp_frames_dirs:
+            for d in temp_frames_dirs:
+                if os.path.isdir(d):
+                    shutil.rmtree(d, ignore_errors=True)
 
         # --- Sanitize api_key from workflow metadata ---
         # ComfyUI embeds PROMPT/EXTRA_PNGINFO in output files.
