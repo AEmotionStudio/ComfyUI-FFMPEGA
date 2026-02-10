@@ -70,6 +70,10 @@ class FFMPEGAgentNode:
         ollama_models = cls._fetch_ollama_models()
         all_models = ollama_models + cls.API_MODELS + ["custom"]
 
+        # Auto-detect Gemini CLI — only show if binary is on PATH
+        if shutil.which("gemini") or shutil.which("gemini.cmd"):
+            all_models.insert(len(ollama_models), "gemini-cli")
+
         return {
             "required": {
                 "video_path": ("STRING", {
