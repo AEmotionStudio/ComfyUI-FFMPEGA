@@ -1327,8 +1327,11 @@ def _f_slideshow(p):
                 seg += f",fade=t=in:st=0:d={trans_dur}"
             if i < total - 1:
                 if is_video:
-                    # Fade out near the end — approximate with 5s before end
-                    seg += f",fade=t=out:st=5:d={trans_dur}"
+                    # Skip fade-out on video — we don't know its duration at
+                    # filter-build time. The next slide's fade-in handles the
+                    # visual transition. Hardcoding a time causes black frames
+                    # if the video is longer, or no effect if shorter.
+                    pass
                 else:
                     fade_st = dur - trans_dur
                     seg += f",fade=t=out:st={fade_st}:d={trans_dur}"
