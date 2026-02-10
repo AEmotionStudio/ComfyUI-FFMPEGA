@@ -1,5 +1,6 @@
 """Skill registry for managing available editing skills."""
 
+import copy
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional, Callable, Any, Union
@@ -287,7 +288,7 @@ class SkillRegistry:
             JSON schema dict for validation.
         """
         if self._cached_json_schema is not None:
-            return self._cached_json_schema
+            return copy.deepcopy(self._cached_json_schema)
 
         skill_schemas = {}
 
@@ -363,7 +364,7 @@ class SkillRegistry:
             "definitions": skill_schemas,
             "required": ["skill", "params"],
         }
-        return self._cached_json_schema
+        return copy.deepcopy(self._cached_json_schema)
 
 
 # Global registry instance
