@@ -8,6 +8,7 @@ from typing import Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import folder_paths
+from ..core.sanitize import validate_video_path
 
 
 class BatchProcessorNode:
@@ -164,8 +165,23 @@ class BatchProcessorNode:
         pattern = str(video_folder_path / file_pattern)
         video_files = glob.glob(pattern)
 
+        # Filter valid video files
+        valid_video_files = []
+        validation_errors = []
+        for vf in video_files:
+            try:
+                validate_video_path(vf)
+                valid_video_files.append(vf)
+            except ValueError as e:
+                validation_errors.append(f"Skipped {Path(vf).name}: {str(e)}")
+
+        video_files = valid_video_files
+
         if not video_files:
-            return (0, "[]", f"No files matching pattern: {file_pattern}")
+            msg = f"No valid video files matching pattern: {file_pattern}"
+            if validation_errors:
+                msg += "\nValidation errors:\n" + "\n".join(validation_errors)
+            return (0, "[]", msg)
 
         # Set up output folder
         if output_folder:
