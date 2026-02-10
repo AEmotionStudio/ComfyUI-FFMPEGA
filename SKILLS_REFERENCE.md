@@ -939,27 +939,32 @@ Visualize audio as a waveform overlay on the video (uses filter_complex with `sh
 ## 🖼️ Multi-Input (Images → Video)
 
 > [!NOTE]
-> These skills require multiple input images from the IMAGE tensor.
-> The node automatically extracts individual frames as separate files.
+> These skills use multiple input images from `extra_images`, `image_a`, and/or `image_b`.
+> **Standalone mode**: Slideshow and grid work without a main video — just connect extra images.
+> When a video IS connected, it's automatically included as the first cell/slide.
 
 ### grid
-Arrange multiple input images in a grid layout (uses `xstack` filter).
+Arrange video + images in a grid layout (uses `xstack` filter). Auto-includes the main video as the first cell.
 | Parameter | Type | Default | Range |
 |-----------|------|---------|-------|
 | `columns` | int | 2 | 1 to 6 |
 | `gap` | int | 4 | 0 to 20 px |
 | `duration` | float | 5.0 | 1 to 60 seconds |
 | `background` | string | black | color name or hex |
+| `include_video` | bool | true | include main video as first cell |
+| `cell_width` | int | 640 | cell width in pixels |
+| `cell_height` | int | 480 | cell height in pixels |
 
 **Example prompts:**
 - "Arrange images in a 2-column grid"
-- "Create a 3-column mosaic with gaps"
+- "Create a side-by-side comparison"
+- "Make a 3-column mosaic with gaps"
 - "Make a collage on a white background"
 
 ---
 
 ### slideshow
-Create a slideshow from multiple input images (uses `concat` filter).
+Create a slideshow from images with fade transitions. Optionally starts with the main video.
 | Parameter | Type | Default | Choices/Range |
 |-----------|------|---------|---------------|
 | `duration_per_image` | float | 3.0 | 0.5 to 30 seconds |
@@ -967,16 +972,18 @@ Create a slideshow from multiple input images (uses `concat` filter).
 | `transition_duration` | float | 0.5 | 0.1 to 3.0 seconds |
 | `width` | int | 1920 | -1 to 3840 |
 | `height` | int | 1080 | -1 to 2160 |
+| `include_video` | bool | false | include main video as first segment |
 
 **Example prompts:**
 - "Create a slideshow with fade transitions"
+- "Create a slideshow starting with the video"
 - "Make a photo slideshow, 5 seconds per image"
 - "Create a presentation with 1-second transitions"
 
 ---
 
 ### overlay_image
-Overlay a second image on the video (picture-in-picture / watermark).
+Overlay images on the video (picture-in-picture / watermark). Supports multiple overlays — each auto-placed at a different corner.
 | Parameter | Type | Default | Choices/Range |
 |-----------|------|---------|---------------|
 | `position` | choice | bottom-right | top-left, top-right, bottom-left, bottom-right, center |
@@ -988,6 +995,7 @@ Overlay a second image on the video (picture-in-picture / watermark).
 - "Add a logo watermark in the bottom-right"
 - "Overlay an image at 15% in the top-left"
 - "Put a semi-transparent image in the center"
+- "Overlay images in the corners at 20% scale" *(multi-overlay — connect image_a + image_b)*
 
 ---
 
@@ -1014,6 +1022,9 @@ Here are some multi-skill prompt ideas you can try:
 | Dreamy timelapse | "Speed up 4x, apply dreamy effect, add fade in and out" |
 | Music visualizer | "Show audio waveform at the bottom with cyan color" |
 | Photo collage | "Arrange these images in a 3-column grid with gaps" |
+| Side by side | "Create a side-by-side comparison" |
 | Photo slideshow | "Create a slideshow with 4 seconds per image and fade transitions" |
+| Video + slides | "Create a slideshow starting with the video" |
 | Branded video | "Overlay the logo image in the bottom-right corner at 20% scale" |
+| Multi-watermark | "Overlay images in the corners at 15% scale" |
 
