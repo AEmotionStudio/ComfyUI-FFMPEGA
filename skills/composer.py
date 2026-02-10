@@ -173,12 +173,15 @@ class SkillComposer:
                 step.params["_extra_input_count"] = len(pipeline.extra_inputs)
 
             # Get filters/options for this skill
-            vf, af, opts, fc = self._skill_to_filters(skill, step.params)
+            vf, af, opts, fc, input_opts = self._skill_to_filters(skill, step.params)
             video_filters.extend(vf)
             audio_filters.extend(af)
             output_options.extend(opts)
             if fc:
                 complex_filters.append(fc)
+            if input_opts:
+                # Add input options to the main input (index 0)
+                builder.add_input_options(pipeline.input_path, input_opts)
 
         # If the pipeline strips audio (-an), discard any audio filters to
         # avoid the -af/-an conflict that causes ffmpeg to include audio.
@@ -229,7 +232,7 @@ class SkillComposer:
         self,
         skill: Skill,
         params: dict,
-    ) -> tuple[list[str], list[str], list[str], str]:
+    ) -> tuple[list[str], list[str], list[str], str, list[str]]:
         """Convert a skill invocation to FFMPEG filters.
 
         Args:
@@ -237,12 +240,13 @@ class SkillComposer:
             params: Parameters for the skill.
 
         Returns:
-            Tuple of (video_filters, audio_filters, output_options, filter_complex).
+            Tuple of (video_filters, audio_filters, output_options, filter_complex, input_options).
             filter_complex is an empty string if not needed.
         """
         video_filters = []
         audio_filters = []
         output_options = []
+        input_options = []
         filter_complex = ""
 
         # If skill has a template, use it
@@ -276,23 +280,25 @@ class SkillComposer:
 
                 sub_skill = self.registry.get(sub_skill_name)
                 if sub_skill:
-                    vf, af, opts, fc = self._skill_to_filters(sub_skill, sub_params)
+                    vf, af, opts, fc, io = self._skill_to_filters(sub_skill, sub_params)
                     video_filters.extend(vf)
                     audio_filters.extend(af)
                     output_options.extend(opts)
+                    input_options.extend(io)
                     if fc:
                         filter_complex = fc if not filter_complex else f"{filter_complex};{fc}"
 
         # Handle specific skill types
         else:
-            vf, af, opts, fc = self._builtin_skill_filters(skill.name, params)
+            vf, af, opts, fc, io = self._builtin_skill_filters(skill.name, params)
             video_filters.extend(vf)
             audio_filters.extend(af)
             output_options.extend(opts)
+            input_options.extend(io)
             if fc:
                 filter_complex = fc
 
-        return video_filters, audio_filters, output_options, filter_complex
+        return video_filters, audio_filters, output_options, filter_complex, input_options
 
     def validate_pipeline(self, pipeline: Pipeline) -> tuple[bool, list[str]]:
         """Validate a pipeline before execution.
@@ -369,7 +375,7 @@ class SkillComposer:
         self,
         skill_name: str,
         params: dict,
-    ) -> tuple[list[str], list[str], list[str], str]:
+    ) -> tuple[list[str], list[str], list[str], str, list[str]]:
         """Generate filters for built-in skills using dispatch table.
 
         Args:
@@ -377,17 +383,19 @@ class SkillComposer:
             params: Parameters.
 
         Returns:
-            Tuple of (video_filters, audio_filters, output_options, filter_complex).
+            Tuple of (video_filters, audio_filters, output_options, filter_complex, input_options).
         """
         handler = _SKILL_DISPATCH.get(skill_name)
         if handler is None:
-            return [], [], [], ""
+            return [], [], [], "", []
         result = handler(params)
-        # Handlers may return 3-tuple (vf, af, opts) or 4-tuple (vf, af, opts, fc)
-        if len(result) == 4:
+        # Handlers may return 3-tuple, 4-tuple, or 5-tuple
+        if len(result) == 5:
             return result
+        if len(result) == 4:
+            return result + ([],)
         vf, af, opts = result
-        return vf, af, opts, ""
+        return vf, af, opts, "", []
 
 
 # ====================================================================== #
@@ -396,14 +404,37 @@ class SkillComposer:
 # ====================================================================== #
 
 def _f_trim(p):
-    opts = []
-    if p.get("start"):
-        opts.extend(["-ss", str(p["start"])])
-    if p.get("end"):
-        opts.extend(["-to", str(p["end"])])
-    if p.get("duration"):
-        opts.extend(["-t", str(p["duration"])])
-    return [], [], opts
+    input_opts = []
+    output_opts = []
+
+    start = p.get("start")
+    end = p.get("end")
+    duration = p.get("duration")
+
+    try:
+        # Try to parse start/end as floats for calculation (fast seek optimization)
+        s_val = float(start) if start is not None else 0.0
+
+        if start is not None:
+            input_opts.extend(["-ss", str(start)])
+
+        if end is not None:
+            e_val = float(end)
+            # Duration is end - start
+            output_opts.extend(["-t", str(e_val - s_val)])
+        elif duration is not None:
+            # Duration is independent of start point
+            output_opts.extend(["-t", str(duration)])
+
+    except (ValueError, TypeError):
+        # Fallback to slow seek if we can't do math (e.g. strings like "00:01:00")
+        opts = []
+        if start: opts.extend(["-ss", str(start)])
+        if end: opts.extend(["-to", str(end)])
+        if duration: opts.extend(["-t", str(duration)])
+        return [], [], opts
+
+    return [], [], output_opts, "", input_opts
 
 
 def _f_speed(p):
@@ -971,7 +1002,7 @@ def _f_audio_codec(p):
 
 def _f_hwaccel(p):
     accel_type = p.get("type", "auto")
-    return [], [], ["-hwaccel", accel_type]
+    return [], [], [], "", ["-hwaccel", accel_type]
 
 
 def _f_perspective(p):
