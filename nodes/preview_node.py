@@ -9,6 +9,7 @@ import torch
 from PIL import Image
 
 import folder_paths
+from ..core.sanitize import validate_video_path  # type: ignore[import-not-found]
 
 
 class VideoPreviewNode:
@@ -107,7 +108,6 @@ class VideoPreviewNode:
             Tuple of (preview_video_path, thumbnail_tensor).
         """
         # Validate input
-        from ..core.sanitize import validate_video_path  # type: ignore[import-not-found]
         validate_video_path(video_path)
 
         # Generate preview video
@@ -205,7 +205,6 @@ class VideoInfoNode:
         Returns:
             Tuple of (info_text, width, height, duration, fps).
         """
-        from ..core.sanitize import validate_video_path  # type: ignore[import-not-found]
         validate_video_path(video_path)
 
         metadata = self.analyzer.analyze(video_path)
@@ -304,7 +303,6 @@ class FrameExtractNode:
         Returns:
             Tuple containing frames as tensor.
         """
-        from ..core.sanitize import validate_video_path  # type: ignore[import-not-found]
         validate_video_path(video_path)
 
         output_dir = Path(folder_paths.get_temp_directory()) / "ffmpega_frames"
