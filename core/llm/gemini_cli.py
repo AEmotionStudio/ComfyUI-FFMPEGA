@@ -65,13 +65,19 @@ class GeminiCLIConnector(LLMConnector):
                 timeout=self.config.timeout,
             )
         except asyncio.TimeoutError:
+            # Kill the subprocess to prevent resource leak
+            try:
+                proc.kill()
+                await proc.wait()
+            except Exception:
+                pass
             raise TimeoutError(
                 f"Gemini CLI timed out after {self.config.timeout}s"
             )
         except FileNotFoundError:
             raise RuntimeError(
                 "Gemini CLI binary not found. Install it with:\n"
-                "  npm install -g @anthropic-ai/gemini-cli\n"
+                "  npm install -g @google/gemini-cli\n"
                 "Or see: https://github.com/google-gemini/gemini-cli"
             )
 
@@ -102,7 +108,10 @@ class GeminiCLIConnector(LLMConnector):
 
     async def is_available(self) -> bool:
         """Check if the gemini binary is on PATH."""
-        return shutil.which("gemini") is not None
+        return (
+            shutil.which("gemini") is not None
+            or shutil.which("gemini.cmd") is not None  # Windows npm shim
+        )
 
 
 def create_gemini_cli_connector(
