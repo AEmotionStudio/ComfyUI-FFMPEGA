@@ -49,19 +49,23 @@ class GeminiCLIConnector(LLMConnector):
             )
         full_prompt += prompt
 
-        cmd = ["gemini", "-p", full_prompt, "-o", "text"]
+        # Use stdin to pass the prompt to avoid OS arg-length limits.
+        # The -p flag with empty string triggers headless mode; it appends
+        # to whatever is piped on stdin.
+        cmd = ["gemini", "-p", "", "-o", "text"]
 
-        logger.debug("[GeminiCLI] Running: gemini -p <prompt> -o text")
+        logger.debug("[GeminiCLI] Running: gemini -p (stdin) -o text")
 
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
+                stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
 
             stdout, stderr = await asyncio.wait_for(
-                proc.communicate(),
+                proc.communicate(input=full_prompt.encode("utf-8")),
                 timeout=self.config.timeout,
             )
         except asyncio.TimeoutError:
@@ -112,25 +116,3 @@ class GeminiCLIConnector(LLMConnector):
             shutil.which("gemini") is not None
             or shutil.which("gemini.cmd") is not None  # Windows npm shim
         )
-
-
-def create_gemini_cli_connector(
-    temperature: float = 0.3,
-    timeout: float = 300.0,
-) -> GeminiCLIConnector:
-    """Create a Gemini CLI connector.
-
-    Args:
-        temperature: Generation temperature (informational only for CLI).
-        timeout: Max seconds to wait for the CLI to respond.
-
-    Returns:
-        Configured GeminiCLIConnector.
-    """
-    config = LLMConfig(
-        provider=LLMProvider.GEMINI_CLI,
-        model="gemini-cli",
-        temperature=temperature,
-        timeout=timeout,
-    )
-    return GeminiCLIConnector(config)
