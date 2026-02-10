@@ -12,8 +12,9 @@ from pathlib import Path
 ALLOWED_EXTENSIONS = {
     # Video
     '.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv', '.wmv', '.m4v', '.mpg', '.mpeg', '.3gp', '.ts',
+    '.m2ts', '.mts', '.vob', '.ogv',
     # Image (often used as input)
-    '.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif', '.tiff',
+    '.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif', '.tiff', '.heic',
     # Audio
     '.mp3', '.wav', '.aac', '.flac', '.m4a', '.ogg', '.wma', '.opus'
 }

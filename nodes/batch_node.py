@@ -8,6 +8,7 @@ from typing import Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import folder_paths
+from ..core.sanitize import validate_video_path
 
 
 class BatchProcessorNode:
@@ -165,7 +166,6 @@ class BatchProcessorNode:
         video_files = glob.glob(pattern)
 
         # Filter valid video files
-        from ..core.sanitize import validate_video_path  # type: ignore[import-not-found]
         valid_video_files = []
         validation_errors = []
         for vf in video_files:
