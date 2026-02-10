@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .registry import SkillRegistry, Skill, SkillCategory, ParameterType, get_registry
 from ..core.executor.command_builder import CommandBuilder, FFMPEGCommand
+from ..core.sanitize import sanitize_text_param
 
 
 @dataclass
@@ -253,7 +254,10 @@ class SkillComposer:
         if skill.ffmpeg_template:
             template = skill.ffmpeg_template
             for key, value in params.items():
-                template = template.replace(f"{{{key}}}", str(value))
+                val_str = str(value)
+                if isinstance(value, str):
+                    val_str = sanitize_text_param(val_str)
+                template = template.replace(f"{{{key}}}", val_str)
 
             # Determine if it's a video filter, audio filter, or output option
             if template.startswith("-"):
@@ -484,7 +488,7 @@ def _f_pad(p):
     h = p.get("height", "ih")
     x = p.get("x", "(ow-iw)/2")
     y = p.get("y", "(oh-ih)/2")
-    color = p.get("color", "black")
+    color = sanitize_text_param(str(p.get("color", "black")))
     return [f"pad={w}:{h}:{x}:{y}:{color}"], [], []
 
 
@@ -608,11 +612,10 @@ def _f_quality(p):
 
 
 def _f_text_overlay(p):
-    from ..core.sanitize import sanitize_text_param
     text = sanitize_text_param(str(p.get("text", "")))
     size = p.get("size", 48)
-    color = p.get("color", "white")
-    font = p.get("font", "Sans")
+    color = sanitize_text_param(str(p.get("color", "white")))
+    font = sanitize_text_param(str(p.get("font", "Sans")))
     border = p.get("border", True)
     position = p.get("position", "center")
 
@@ -883,7 +886,7 @@ def _f_boomerang(p):
 def _f_caption_space(p):
     position = p.get("position", "bottom")
     height = int(p.get("height", 200))
-    color = p.get("color", "black")
+    color = sanitize_text_param(str(p.get("color", "black")))
     if position == "top":
         return [f"pad=iw:ih+{height}:0:{height}:{color}"], [], []
     else:
@@ -913,7 +916,7 @@ def _f_gif(p):
 
 
 def _f_chromakey(p):
-    color = p.get("color", "green")
+    color = sanitize_text_param(str(p.get("color", "green")))
     # Map common names to hex
     color_map = {"green": "0x00FF00", "blue": "0x0000FF", "red": "0xFF0000"}
     color_hex = color_map.get(color.lower(), color)
@@ -967,7 +970,7 @@ def _f_scroll(p):
 def _f_aspect(p):
     ratio = p.get("ratio", "16:9")
     mode = p.get("mode", "pad")
-    color = p.get("color", "black")
+    color = sanitize_text_param(str(p.get("color", "black")))
     # Parse ratio string like "16:9" or "2.35:1"
     parts = ratio.split(":")
     if len(parts) == 2:
@@ -1156,7 +1159,7 @@ def _f_waveform(p):
     """Audio waveform visualization using showwaves + overlay (filter_complex)."""
     mode = p.get("mode", "cline")
     height = int(p.get("height", 200))
-    color = p.get("color", "white")
+    color = sanitize_text_param(str(p.get("color", "white")))
     position = p.get("position", "bottom")
     opacity = float(p.get("opacity", 0.8))
 
@@ -1191,7 +1194,7 @@ def _f_grid(p):
     columns = int(p.get("columns", 2))
     gap = int(p.get("gap", 4))
     duration = float(p.get("duration", 5.0))
-    bg = p.get("background", "black")
+    bg = sanitize_text_param(str(p.get("background", "black")))
     n = int(p.get("_extra_input_count", 0))
 
     if n < 2:

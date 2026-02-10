@@ -99,6 +99,9 @@ class TestSanitizeTextParam:
     def test_escapes_percent(self):
         assert sanitize_text_param("100%") == "100%%"
 
+    def test_escapes_comma(self):
+        assert sanitize_text_param("a,b") == "a\\,b"
+
     def test_combined_escaping(self):
         result = sanitize_text_param("Time: it's 50% done; next\\step")
         assert "\\:" in result
