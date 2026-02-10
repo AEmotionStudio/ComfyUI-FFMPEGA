@@ -846,42 +846,46 @@ def _f_zoom(p):
 def _f_ken_burns(p):
     direction = p.get("direction", "zoom_in")
     amount = float(p.get("amount", 0.2))
+    width = int(p.get("width", 1920))
+    height = int(p.get("height", 1080))
+    fps = int(p.get("fps", 25))
     # Use ffmpeg's zoompan filter for smooth Ken Burns effect
     # zoom goes from 1 to 1+amount (e.g. 1.0 to 1.2 for 20% zoom)
-    # d=1 means each input frame produces 1 output frame (preserves original fps)
+    # d=1 means each input frame produces 1 output frame
     max_zoom = 1.0 + amount
-    zoom_step = amount / 300  # gradual zoom over ~300 frames (~10s @ 30fps)
+    zoom_step = amount / (fps * 10)  # gradual zoom over ~10 seconds
+    sz = f"s={width}x{height}:fps={fps}"
     if direction == "zoom_in":
         return [
             f"zoompan=z='min(zoom+{zoom_step:.6f},{max_zoom})':"
             f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-            f"d=1:s=hd720:fps=30"
+            f"d=1:{sz}"
         ], [], []
     elif direction == "zoom_out":
         return [
             f"zoompan=z='if(eq(on,0),{max_zoom},max(zoom-{zoom_step:.6f},1))':"
             f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-            f"d=1:s=hd720:fps=30"
+            f"d=1:{sz}"
         ], [], []
     elif direction == "pan_right":
         return [
             f"zoompan=z='{max_zoom}':"
             f"x='if(eq(on,0),0,min(x+{amount * 2:.4f},iw-iw/zoom))':"
             f"y='ih/2-(ih/zoom/2)':"
-            f"d=1:s=hd720:fps=30"
+            f"d=1:{sz}"
         ], [], []
     elif direction == "pan_left":
         return [
             f"zoompan=z='{max_zoom}':"
             f"x='if(eq(on,0),iw-iw/zoom,max(x-{amount * 2:.4f},0))':"
             f"y='ih/2-(ih/zoom/2)':"
-            f"d=1:s=hd720:fps=30"
+            f"d=1:{sz}"
         ], [], []
     else:
         return [
             f"zoompan=z='min(zoom+{zoom_step:.6f},{max_zoom})':"
             f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-            f"d=1:s=hd720:fps=30"
+            f"d=1:{sz}"
         ], [], []
 
 
@@ -1239,13 +1243,26 @@ def _f_grid(p):
     if total < 2:
         return [], [], [], ""
 
+    fps = 25
     # Scale all inputs to same cell size (maintain aspect ratio + pad)
+    # Still images need loop+setpts to produce frames for the full duration.
     parts = []
     for i, idx in enumerate(cells):
-        parts.append(
-            f"[{idx}:v]scale={cell_w}:{cell_h}:force_original_aspect_ratio=decrease,"
-            f"pad={cell_w}:{cell_h}:(ow-iw)/2:(oh-ih)/2:{bg},setsar=1[_g{i}]"
-        )
+        if idx == 0 and include_video:
+            # Main video: just scale, it already has frames
+            parts.append(
+                f"[{idx}:v]scale={cell_w}:{cell_h}:force_original_aspect_ratio=decrease,"
+                f"pad={cell_w}:{cell_h}:(ow-iw)/2:(oh-ih)/2:{bg},setsar=1[_g{i}]"
+            )
+        else:
+            # Still image: loop to create video frames for `duration` seconds
+            n_frames = int(duration * fps)
+            parts.append(
+                f"[{idx}:v]loop=loop={n_frames}:size=1:start=0,"
+                f"setpts=N/{fps}/TB,"
+                f"scale={cell_w}:{cell_h}:force_original_aspect_ratio=decrease,"
+                f"pad={cell_w}:{cell_h}:(ow-iw)/2:(oh-ih)/2:{bg},setsar=1[_g{i}]"
+            )
 
     # Build xstack layout string — must use literal pixel values (no arithmetic)
     layout_parts = []
