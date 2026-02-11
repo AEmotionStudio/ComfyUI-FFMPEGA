@@ -52,10 +52,13 @@ class APIConnector(LLMConnector):
         super().__init__(config)
         self._client = None
 
-        # Set up provider-specific settings
+        # Set up provider-specific settings.
+        # Always apply provider base_url when available — LLMConfig's
+        # default base_url is Ollama's localhost, which would otherwise
+        # shadow the correct API endpoint.
         provider_config = self.PROVIDER_CONFIGS.get(config.provider, {})
-        if not config.base_url and provider_config:
-            config.base_url = provider_config.get("base_url", "")
+        if provider_config:
+            config.base_url = provider_config.get("base_url", config.base_url)
 
         self._chat_endpoint = provider_config.get("chat_endpoint", "/chat/completions")
         self._auth_header = provider_config.get("auth_header", "Authorization")
