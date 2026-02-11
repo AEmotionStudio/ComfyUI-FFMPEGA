@@ -29,6 +29,58 @@ const RANDOM_PROMPTS = [
     "Overlay the logo image in the bottom-right corner at 20% scale"
 ];
 
+// --- Dynamic input slot management ---
+// When you connect image_a, image_b appears. Connect image_b → image_c appears, etc.
+// Same for audio_a, audio_b, audio_c, ...
+const SLOT_LABELS = "abcdefghijklmnopqrstuvwxyz";
+
+function updateDynamicSlots(node, prefix, slotType, excludePrefix) {
+    // Find all slots matching this prefix (but not excludePrefix)
+    const matchingIndices = [];
+    for (let i = 0; i < node.inputs.length; i++) {
+        const name = node.inputs[i].name;
+        if (name.startsWith(prefix)) {
+            if (excludePrefix && name.startsWith(excludePrefix)) continue;
+            matchingIndices.push(i);
+        }
+    }
+
+    if (matchingIndices.length === 0) return;
+
+    // Find the last connected slot in this group
+    let lastConnectedGroupIdx = -1;
+    for (let g = matchingIndices.length - 1; g >= 0; g--) {
+        const slotIdx = matchingIndices[g];
+        if (node.inputs[slotIdx].link != null) {
+            lastConnectedGroupIdx = g;
+            break;
+        }
+    }
+
+    // We want exactly (lastConnectedGroupIdx + 2) slots total for this group
+    // i.e. all connected slots + one empty slot after the last connected one
+    const needed = lastConnectedGroupIdx + 2;
+
+    // Add slots if we need more
+    while (matchingIndices.length < needed) {
+        const letter = SLOT_LABELS[matchingIndices.length];
+        if (!letter) break; // safety: max 26 slots
+        const newName = `${prefix}${letter}`;
+        node.addInput(newName, slotType);
+        matchingIndices.push(node.inputs.length - 1);
+    }
+
+    // Remove trailing empty slots if we have too many
+    // (iterate from the end, remove only if unconnected and beyond needed count)
+    while (matchingIndices.length > needed && matchingIndices.length > 1) {
+        const lastGroupIdx = matchingIndices.length - 1;
+        const slotIdx = matchingIndices[lastGroupIdx];
+        if (node.inputs[slotIdx].link != null) break; // connected, stop
+        node.removeInput(slotIdx);
+        matchingIndices.pop();
+    }
+}
+
 // Register FFMPEGA extensions
 app.registerExtension({
     name: "FFMPEGA.UI",
@@ -122,6 +174,20 @@ app.registerExtension({
                         updateSaveVisibility();
                     };
                 }
+
+                // --- Dynamic input slots (auto-expand) ---
+                // Connect image_a → image_b appears. Connect image_b → image_c appears.
+                // Same for audio_a → audio_b → audio_c, etc.
+                const origOnConnectionsChange = this.onConnectionsChange;
+                this.onConnectionsChange = function (type, slotIndex, isConnected, link, ioSlot) {
+                    origOnConnectionsChange?.apply(this, arguments);
+                    if (type === LiteGraph.INPUT) {
+                        updateDynamicSlots(this, "images_", "IMAGE");
+                        updateDynamicSlots(this, "image_", "IMAGE", "images_");
+                        updateDynamicSlots(this, "audio_", "AUDIO");
+                        fitHeight();
+                    }
+                };
 
                 return result;
             };

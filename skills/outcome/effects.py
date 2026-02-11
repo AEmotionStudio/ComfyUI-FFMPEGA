@@ -1149,3 +1149,337 @@ def register_skills(registry: SkillRegistry) -> None:
         ],
         tags=["sketch", "pencil", "drawing", "line_art", "ink", "outline", "edges", "artistic"],
     ))
+
+    # Watermark
+    registry.register(Skill(
+        name="watermark",
+        category=SkillCategory.OUTCOME,
+        description="Add a semi-transparent watermark overlay in a corner. Requires an extra image input (image_a).",
+        parameters=[
+            SkillParameter(
+                name="position",
+                type=ParameterType.CHOICE,
+                description="Where to place the watermark",
+                required=False,
+                default="bottom-right",
+                choices=["top-left", "top-right", "bottom-left", "bottom-right", "center"],
+            ),
+            SkillParameter(
+                name="opacity",
+                type=ParameterType.FLOAT,
+                description="Watermark transparency (0.0 = invisible, 1.0 = fully opaque)",
+                required=False,
+                default=0.3,
+                min_value=0.05,
+                max_value=1.0,
+            ),
+            SkillParameter(
+                name="scale",
+                type=ParameterType.FLOAT,
+                description="Watermark size relative to video (0.1 = 10% of video width)",
+                required=False,
+                default=0.15,
+                min_value=0.05,
+                max_value=0.5,
+            ),
+        ],
+        examples=[
+            "watermark - Semi-transparent watermark in bottom-right corner",
+            "watermark:position=top-left,opacity=0.5 - More visible watermark in top left",
+            "watermark:scale=0.25 - Larger watermark",
+        ],
+        tags=["watermark", "logo", "brand", "overlay", "stamp", "copyright"],
+    ))
+
+    # Chroma key (green screen)
+    registry.register(Skill(
+        name="chromakey",
+        category=SkillCategory.OUTCOME,
+        description="Remove a solid-color background (chroma key / green screen removal)",
+        parameters=[
+            SkillParameter(
+                name="color",
+                type=ParameterType.STRING,
+                description="Hex color to remove (default 0x00FF00 = green)",
+                required=False,
+                default="0x00FF00",
+            ),
+            SkillParameter(
+                name="similarity",
+                type=ParameterType.FLOAT,
+                description="How similar a color must be to key out (0.0 = exact, 1.0 = very loose)",
+                required=False,
+                default=0.3,
+                min_value=0.01,
+                max_value=1.0,
+            ),
+            SkillParameter(
+                name="blend",
+                type=ParameterType.FLOAT,
+                description="Edge blending for smoother keying (0.0 = hard edge, 1.0 = very soft)",
+                required=False,
+                default=0.1,
+                min_value=0.0,
+                max_value=1.0,
+            ),
+            SkillParameter(
+                name="background",
+                type=ParameterType.STRING,
+                description="Replacement background color or 'transparent' for alpha output",
+                required=False,
+                default="black",
+            ),
+        ],
+        examples=[
+            "chromakey - Remove green screen with default settings",
+            "chromakey:color=0x0000FF - Remove blue screen",
+            "chromakey:similarity=0.5,blend=0.2 - Looser key with soft edges",
+            "chromakey:background=white - Replace green with white",
+        ],
+        tags=["chroma", "key", "green_screen", "blue_screen", "remove_background", "transparent", "keying"],
+    ))
+
+    # Concat
+    registry.register(Skill(
+        name="concat",
+        category=SkillCategory.OUTCOME,
+        description="Concatenate (append) video segments sequentially. Requires extra image inputs (image_a, image_b, ...) which become additional segments.",
+        parameters=[
+            SkillParameter(
+                name="width",
+                type=ParameterType.INT,
+                description="Output width",
+                required=False,
+                default=1920,
+            ),
+            SkillParameter(
+                name="height",
+                type=ParameterType.INT,
+                description="Output height",
+                required=False,
+                default=1080,
+            ),
+            SkillParameter(
+                name="still_duration",
+                type=ParameterType.FLOAT,
+                description="Duration for each still image segment (seconds)",
+                required=False,
+                default=5.0,
+            ),
+        ],
+        examples=[
+            "concat - Join main video with extra inputs",
+            "concat:still_duration=3 - Shorter still image segments",
+        ],
+        tags=["concat", "join", "append", "combine", "merge", "sequence"],
+    ))
+
+    # xfade (transition)
+    registry.register(Skill(
+        name="xfade",
+        category=SkillCategory.OUTCOME,
+        description="Concatenate segments with smooth xfade transitions (fade, dissolve, wipe, slide, pixelize, radial). Requires extra image inputs.",
+        parameters=[
+            SkillParameter(
+                name="transition",
+                type=ParameterType.CHOICE,
+                description="Transition effect type",
+                required=False,
+                default="fade",
+                choices=[
+                    "fade", "fadeblack", "fadewhite", "wipeleft", "wiperight",
+                    "wipeup", "wipedown", "slideleft", "slideright",
+                    "dissolve", "pixelize", "radial", "circlecrop",
+                    "smoothleft", "smoothright", "squeezev", "squeezeh",
+                ],
+            ),
+            SkillParameter(
+                name="duration",
+                type=ParameterType.FLOAT,
+                description="Transition duration in seconds",
+                required=False,
+                default=1.0,
+                min_value=0.1,
+                max_value=5.0,
+            ),
+            SkillParameter(
+                name="still_duration",
+                type=ParameterType.FLOAT,
+                description="Display time per segment in seconds",
+                required=False,
+                default=4.0,
+            ),
+        ],
+        examples=[
+            "xfade - Smooth crossfade between segments",
+            "xfade:transition=dissolve,duration=2 - Slow dissolve",
+            "xfade:transition=wipeleft - Left wipe transition",
+            "xfade:transition=pixelize - Pixelated transition",
+        ],
+        tags=["xfade", "transition", "crossfade", "dissolve", "wipe", "slide"],
+    ))
+
+    # Split screen
+    registry.register(Skill(
+        name="split_screen",
+        category=SkillCategory.OUTCOME,
+        description="Show videos/images side-by-side (horizontal) or stacked (vertical). Requires extra image inputs.",
+        parameters=[
+            SkillParameter(
+                name="layout",
+                type=ParameterType.CHOICE,
+                description="Layout direction",
+                required=False,
+                default="horizontal",
+                choices=["horizontal", "vertical"],
+            ),
+            SkillParameter(
+                name="width",
+                type=ParameterType.INT,
+                description="Per-cell width",
+                required=False,
+                default=960,
+            ),
+            SkillParameter(
+                name="height",
+                type=ParameterType.INT,
+                description="Per-cell height",
+                required=False,
+                default=540,
+            ),
+            SkillParameter(
+                name="duration",
+                type=ParameterType.FLOAT,
+                description="Output duration in seconds",
+                required=False,
+                default=10.0,
+            ),
+        ],
+        examples=[
+            "split_screen - Side-by-side view",
+            "split_screen:layout=vertical - Top and bottom",
+            "split_screen:width=640,height=480 - Custom cell size",
+        ],
+        tags=["split", "screen", "side_by_side", "dual", "comparison", "hstack", "vstack"],
+    ))
+
+    # Animated overlay
+    registry.register(Skill(
+        name="animated_overlay",
+        category=SkillCategory.OUTCOME,
+        description="Overlay an image with animated motion (scroll, float, bounce, slide). Requires image_a as the overlay image.",
+        parameters=[
+            SkillParameter(
+                name="animation",
+                type=ParameterType.CHOICE,
+                description="Motion animation type",
+                required=False,
+                default="scroll_right",
+                choices=[
+                    "scroll_right", "scroll_left", "scroll_up", "scroll_down",
+                    "float", "bounce", "slide_in", "slide_in_top",
+                ],
+            ),
+            SkillParameter(
+                name="speed",
+                type=ParameterType.FLOAT,
+                description="Motion speed multiplier",
+                required=False,
+                default=1.0,
+                min_value=0.1,
+                max_value=10.0,
+            ),
+            SkillParameter(
+                name="scale",
+                type=ParameterType.FLOAT,
+                description="Overlay size relative to video (0.1 = 10% width)",
+                required=False,
+                default=0.2,
+                min_value=0.05,
+                max_value=1.0,
+            ),
+            SkillParameter(
+                name="opacity",
+                type=ParameterType.FLOAT,
+                description="Overlay opacity (0.0 = invisible, 1.0 = opaque)",
+                required=False,
+                default=1.0,
+                min_value=0.0,
+                max_value=1.0,
+            ),
+        ],
+        examples=[
+            "animated_overlay - Scrolling overlay from left to right",
+            "animated_overlay:animation=float,speed=0.5 - Slow floating effect",
+            "animated_overlay:animation=bounce - Bouncing overlay",
+            "animated_overlay:animation=slide_in - Slide in from left edge",
+        ],
+        tags=["animated", "overlay", "scroll", "float", "bounce", "slide", "motion", "moving"],
+    ))
+
+    # Text overlay
+    registry.register(Skill(
+        name="text_overlay",
+        category=SkillCategory.OUTCOME,
+        description="Draw text on the video with style presets (title, subtitle, lower_third, caption)",
+        parameters=[
+            SkillParameter(
+                name="text",
+                type=ParameterType.STRING,
+                description="Text to display",
+                required=True,
+            ),
+            SkillParameter(
+                name="preset",
+                type=ParameterType.CHOICE,
+                description="Style preset",
+                required=False,
+                default="title",
+                choices=["title", "subtitle", "lower_third", "caption", "top"],
+            ),
+            SkillParameter(
+                name="fontsize",
+                type=ParameterType.INT,
+                description="Font size in pixels (auto if not set)",
+                required=False,
+                default=None,
+            ),
+            SkillParameter(
+                name="fontcolor",
+                type=ParameterType.STRING,
+                description="Text color",
+                required=False,
+                default="white",
+            ),
+            SkillParameter(
+                name="start",
+                type=ParameterType.FLOAT,
+                description="Start time in seconds",
+                required=False,
+                default=0.0,
+            ),
+            SkillParameter(
+                name="duration",
+                type=ParameterType.FLOAT,
+                description="Display duration in seconds (0 = entire video)",
+                required=False,
+                default=0.0,
+            ),
+            SkillParameter(
+                name="background",
+                type=ParameterType.STRING,
+                description="Background box color (empty = no background)",
+                required=False,
+                default="",
+            ),
+        ],
+        examples=[
+            "text_overlay:text=My Video - Centered title",
+            "text_overlay:text=Scene 1,preset=lower_third - Lower third text",
+            "text_overlay:text=Hello,preset=subtitle,fontcolor=yellow - Yellow subtitle",
+            "text_overlay:text=Breaking News,background=red@0.7,fontsize=48 - News-style banner",
+        ],
+        tags=["text", "title", "subtitle", "caption", "drawtext", "overlay", "typography", "lower_third"],
+    ))
+
+

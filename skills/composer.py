@@ -130,6 +130,19 @@ class SkillComposer:
                 "greyscale": "monochrome",
                 "black_and_white": "monochrome",
                 "bw": "monochrome",
+                "concatenate": "concat",
+                "join": "concat",
+                "transition": "xfade",
+                "splitscreen": "split_screen",
+                "side_by_side": "split_screen",
+                "moving_overlay": "animated_overlay",
+                "chroma_key": "chromakey",
+                "green_screen": "chromakey",
+                "text": "text_overlay",
+                "drawtext": "text_overlay",
+                "title": "text_overlay",
+                "subtitle": "text_overlay",
+                "caption": "text_overlay",
             }
             resolved_name = _SKILL_ALIASES.get(step.skill_name, step.skill_name)
             skill = self.registry.get(resolved_name)
@@ -204,6 +217,7 @@ class SkillComposer:
             # Inject multi-input metadata for handlers that need it
             if pipeline.extra_inputs:
                 step.params["_extra_input_count"] = len(pipeline.extra_inputs)
+                step.params["_extra_input_paths"] = pipeline.extra_inputs
 
             # Get filters/options for this skill
             vf, af, opts, fc, input_opts = self._skill_to_filters(skill, step.params)
@@ -505,6 +519,7 @@ def _f_trim(p):
 
 def _f_speed(p):
     factor = float(p.get("factor", 1.0))
+
     vf = [f"setpts={1.0 / factor}*PTS"]
     af = []
     if 0.5 <= factor <= 2.0:
@@ -521,6 +536,7 @@ def _f_speed(p):
             af.append("atempo=2.0")
             remaining /= 2
         af.append(f"atempo={remaining}")
+
     return vf, af, []
 
 
@@ -677,7 +693,7 @@ def _f_quality(p):
     return [], [], ["-c:v", "libx264", "-crf", str(crf), "-preset", preset]
 
 
-def _f_text_overlay(p):
+def _f_add_text(p):
     text = sanitize_text_param(str(p.get("text", "")))
     size = p.get("size", 48)
     color = sanitize_text_param(str(p.get("color", "white")))
@@ -997,7 +1013,7 @@ def _f_gif(p):
     ], [], []
 
 
-def _f_chromakey(p):
+def _f_chromakey_simple(p):
     color = sanitize_text_param(str(p.get("color", "green")))
     # Map common names to hex
     color_map = {"green": "0x00FF00", "blue": "0x0000FF", "red": "0xFF0000"}
@@ -1360,7 +1376,8 @@ _SKILL_DISPATCH: dict[str, callable] = {
     "bitrate": _f_bitrate,
     "quality": _f_quality,
     # Overlay
-    "text_overlay": _f_text_overlay,
+    "text_overlay": _f_add_text,
+    "add_text": _f_add_text,
     "pixelate": _f_pixelate,
     "posterize": _f_posterize,
     # Transitions
@@ -1387,7 +1404,8 @@ _SKILL_DISPATCH: dict[str, callable] = {
     "color_grade": _f_color_grade,
     "gif": _f_gif,
     # High-impact
-    "chromakey": _f_chromakey,
+    "chromakey": _f_chromakey_simple,
+    "chroma_key_simple": _f_chromakey_simple,
     "deband": _f_deband,
     "lens_correction": _f_lens_correction,
     "color_temperature": _f_color_temperature,
@@ -1625,10 +1643,10 @@ def _f_overlay_image(p):
         idx = i + 1  # extra inputs: [1:v], [2:v], ...
         ovl_label = f"[_ovl{i}]"
 
-        # Scale the overlay
-        scale_expr = f"[{idx}:v]scale=iw*{scale}:ih*{scale}"
+        # Scale the overlay — always preserve alpha for PNG transparency
+        scale_expr = f"[{idx}:v]format=rgba,scale=iw*{scale}:ih*{scale}"
         if opacity < 1.0:
-            scale_expr += f",format=yuva420p,colorchannelmixer=aa={opacity}"
+            scale_expr += f",colorchannelmixer=aa={opacity}"
         scale_expr += ovl_label
         fc_parts.append(scale_expr)
 
@@ -1649,8 +1667,413 @@ def _f_overlay_image(p):
     return [], [], [], ";".join(fc_parts)
 
 
+def _f_watermark(p):
+    """Apply a semi-transparent watermark overlay.
+
+    Thin wrapper around overlay_image with watermark-appropriate defaults.
+    """
+    # Set watermark defaults, but allow user overrides
+    p.setdefault("opacity", 0.3)
+    p.setdefault("scale", 0.15)
+    p.setdefault("position", "bottom-right")
+    p.setdefault("margin", 10)
+    return _f_overlay_image(p)
+
+
+def _f_chromakey(p):
+    """Remove a solid-color background (chroma key / green screen).
+
+    Uses ffmpeg's colorkey filter to make the specified color transparent,
+    then overlays the result onto a background color or leaves alpha.
+
+    Parameters:
+        color: hex color to key out (default "0x00FF00" = green)
+        similarity: how close to the key color counts (0.0-1.0, default 0.3)
+        blend: edge blending amount (0.0-1.0, default 0.1)
+        background: replacement background color (default "black").
+                     Set to "transparent" to output with alpha channel.
+    """
+    color = p.get("color", "0x00FF00")
+    similarity = float(p.get("similarity", 0.3))
+    blend = float(p.get("blend", 0.1))
+    background = p.get("background", "black")
+
+    if background == "transparent":
+        # Output with alpha: just apply colorkey
+        vf = [f"colorkey=color={color}:similarity={similarity}:blend={blend}"]
+    else:
+        # Replace keyed color with a solid background
+        # Split → colorkey on one branch, color source on other, overlay
+        fc = (
+            f"[0:v]split[ckv][bg];"
+            f"[ckv]colorkey=color={color}:similarity={similarity}:blend={blend}[keyed];"
+            f"[bg]drawbox=c={background}:t=fill[solid];"
+            f"[solid][keyed]overlay=format=auto"
+        )
+        return [], [], [], fc
+
+    return vf, [], []
+
+
 # Register multi-input skills in dispatch
 _SKILL_DISPATCH["grid"] = _f_grid
 _SKILL_DISPATCH["slideshow"] = _f_slideshow
 _SKILL_DISPATCH["overlay_image"] = _f_overlay_image
 _SKILL_DISPATCH["overlay"] = _f_overlay_image  # alias
+_SKILL_DISPATCH["watermark"] = _f_watermark
+_SKILL_DISPATCH["chromakey"] = _f_chromakey
+_SKILL_DISPATCH["chroma_key"] = _f_chromakey  # alias
+_SKILL_DISPATCH["green_screen"] = _f_chromakey  # alias
+
+
+# ── Phase 2: Concat, Transitions, Split Screen ──────────────────────
+
+_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".ts", ".m4v"}
+
+def _is_video_file(path):
+    """Check if a file path is a video based on its extension."""
+    import os
+    return os.path.splitext(path)[1].lower() in _VIDEO_EXTENSIONS
+
+
+def _f_concat(p):
+    """Concatenate the main video with extra video/image inputs sequentially.
+
+    Each extra input becomes a segment. Still images are looped for
+    `still_duration` seconds. All segments are scaled to the same
+    resolution before concatenation.
+
+    Parameters:
+        width:          Output width (default 1920)
+        height:         Output height (default 1080)
+        still_duration: Seconds to display each still image (default 5)
+    """
+    width = int(p.get("width", 1920))
+    height = int(p.get("height", 1080))
+    still_dur = float(p.get("still_duration", 5.0))
+    n_extra = int(p.get("_extra_input_count", 0))
+
+    # Build segment list: main video (idx=0) + extras (idx=1,2,...)
+    extra_paths = p.get("_extra_input_paths", [])
+    segments = [(0, True)]  # (ffmpeg_idx, is_video)
+    for i in range(n_extra):
+        is_video = _is_video_file(extra_paths[i]) if i < len(extra_paths) else False
+        segments.append((i + 1, is_video))
+
+    total = len(segments)
+    if total < 2:
+        return [], [], [], ""
+
+    fps = 25
+    parts = []
+    concat_labels = []
+
+    for i, (idx, is_video) in enumerate(segments):
+        vlbl = f"[_cv{i}]"
+        albl = f"[_ca{i}]"
+        if is_video:
+            # Main video: scale to uniform dimensions (video-only concat)
+            parts.append(
+                f"[{idx}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,"
+                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps={fps}{vlbl}"
+            )
+        else:
+            n_frames = int(still_dur * fps)
+            parts.append(
+                f"[{idx}:v]loop=loop={n_frames}:size=1:start=0,"
+                f"setpts=N/{fps}/TB,"
+                f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1{vlbl}"
+            )
+        concat_labels.append(vlbl)
+
+    # Video-only concat (avoids audio stream mismatch)
+    concat_input = "".join(concat_labels)
+    parts.append(f"{concat_input}concat=n={total}:v=1:a=0")
+
+    return [], [], [], ";".join(parts)
+
+
+def _f_xfade(p):
+    """Concatenate segments with smooth xfade transitions between them.
+
+    Supports transitions: fade, fadeblack, fadewhite, wipeleft, wiperight,
+    wipeup, wipedown, slideleft, slideright, slideup, slidedown,
+    circlecrop, rectcrop, distance, dissolve, pixelize, radial, smoothleft,
+    smoothright, smoothup, smoothdown, squeezev, squeezeh.
+
+    Parameters:
+        transition: Transition type (default "fade")
+        duration:   Transition duration in seconds (default 1.0)
+        still_duration: Seconds to display each still image (default 4.0)
+        width/height: Output resolution (default 1920x1080)
+    """
+    transition = sanitize_text_param(str(p.get("transition", "fade")))
+    trans_dur = float(p.get("duration", 1.0))
+    still_dur = float(p.get("still_duration", 4.0))
+    width = int(p.get("width", 1920))
+    height = int(p.get("height", 1080))
+    n_extra = int(p.get("_extra_input_count", 0))
+
+    extra_paths = p.get("_extra_input_paths", [])
+    segments = [(0, True)]
+    for i in range(n_extra):
+        is_video = _is_video_file(extra_paths[i]) if i < len(extra_paths) else False
+        segments.append((i + 1, is_video))
+
+    total = len(segments)
+    if total < 2:
+        return [], [], [], ""
+
+    fps = 25
+    parts = []
+
+    # Step 1: Scale/prepare all segments
+    for i, (idx, is_video) in enumerate(segments):
+        lbl = f"[_xv{i}]"
+        if is_video:
+            parts.append(
+                f"[{idx}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,"
+                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps={fps}{lbl}"
+            )
+        else:
+            n_frames = int(still_dur * fps)
+            parts.append(
+                f"[{idx}:v]loop=loop={n_frames}:size=1:start=0,"
+                f"setpts=N/{fps}/TB,"
+                f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1{lbl}"
+            )
+
+    # Step 2: Chain xfade transitions
+    # xfade takes exactly 2 inputs and produces 1 output. Chain them:
+    # [_xv0][_xv1] xfade → [_xf0]; [_xf0][_xv2] xfade → [_xf1]; etc.
+    # The offset for each xfade is: cumulative_duration - transition_duration
+    # For simplicity, assume still_dur for all segments (main video too).
+    # Use actual video duration from metadata if available for segment 0.
+    video_dur = float(p.get("_video_duration", still_dur))
+    cumulative = video_dur if segments[0][1] else still_dur
+    prev_label = "[_xv0]"
+
+    for i in range(1, total):
+        next_label = f"[_xv{i}]"
+        offset = max(0, cumulative - trans_dur)
+        if i < total - 1:
+            out_label = f"[_xf{i}]"
+            parts.append(
+                f"{prev_label}{next_label}xfade=transition={transition}:"
+                f"duration={trans_dur}:offset={offset}{out_label}"
+            )
+            prev_label = out_label
+        else:
+            # Last xfade: no output label
+            parts.append(
+                f"{prev_label}{next_label}xfade=transition={transition}:"
+                f"duration={trans_dur}:offset={offset}"
+            )
+        cumulative += still_dur - trans_dur
+
+    return [], [], [], ";".join(parts)
+
+
+def _f_split_screen(p):
+    """Show videos/images side-by-side or top-to-bottom.
+
+    Parameters:
+        layout: "horizontal" (hstack) or "vertical" (vstack) (default "horizontal")
+        width:  Per-cell width (default 960)
+        height: Per-cell height (default 540)
+        duration: Output duration in seconds for still images (default 10)
+    """
+    layout = str(p.get("layout", "horizontal")).lower()
+    cell_w = int(p.get("width", 960))
+    cell_h = int(p.get("height", 540))
+    duration = float(p.get("duration", 10.0))
+    n_extra = int(p.get("_extra_input_count", 0))
+
+    cells = [0]
+    for i in range(n_extra):
+        cells.append(i + 1)
+
+    total = len(cells)
+    if total < 2:
+        return [], [], [], ""
+
+    fps = 25
+    parts = []
+    labels = []
+
+    for i, idx in enumerate(cells):
+        lbl = f"[_sp{i}]"
+        extra_paths = p.get("_extra_input_paths", [])
+        is_video = (idx == 0) or (idx - 1 < len(extra_paths) and _is_video_file(extra_paths[idx - 1]))
+        if is_video:
+            # Main video: scale, maintain aspect ratio
+            parts.append(
+                f"[{idx}:v]scale={cell_w}:{cell_h}:force_original_aspect_ratio=decrease,"
+                f"pad={cell_w}:{cell_h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1{lbl}"
+            )
+        else:
+            # Extra: loop still images for the duration
+            n_frames = int(duration * fps)
+            parts.append(
+                f"[{idx}:v]loop=loop={n_frames}:size=1:start=0,"
+                f"setpts=N/{fps}/TB,"
+                f"scale={cell_w}:{cell_h}:force_original_aspect_ratio=decrease,"
+                f"pad={cell_w}:{cell_h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1{lbl}"
+            )
+        labels.append(lbl)
+
+    stack_filter = "hstack" if layout == "horizontal" else "vstack"
+    label_str = "".join(labels)
+    parts.append(f"{label_str}{stack_filter}=inputs={total}")
+
+    opts = []
+    if duration > 0:
+        opts = ["-t", str(duration)]
+
+    return [], [], opts, ";".join(parts)
+
+
+# Register Phase 2 skills in dispatch
+_SKILL_DISPATCH["concat"] = _f_concat
+_SKILL_DISPATCH["concatenate"] = _f_concat  # alias
+_SKILL_DISPATCH["join"] = _f_concat  # alias
+_SKILL_DISPATCH["xfade"] = _f_xfade
+_SKILL_DISPATCH["transition"] = _f_xfade  # alias
+_SKILL_DISPATCH["split_screen"] = _f_split_screen
+_SKILL_DISPATCH["splitscreen"] = _f_split_screen  # alias
+_SKILL_DISPATCH["side_by_side"] = _f_split_screen  # alias
+
+
+# ── Phase 3: Animated Overlay ───────────────────────────────────────
+
+def _f_animated_overlay(p):
+    """Overlay an extra image with time-based animated motion.
+
+    The overlay image (from image_a) moves across the frame using
+    eval=frame expressions in the overlay filter.
+
+    Parameters:
+        animation:  Motion preset (default "scroll_right")
+        speed:      Motion speed multiplier (default 1.0)
+        scale:      Overlay size relative to video width (default 0.2)
+        opacity:    Overlay opacity 0.0-1.0 (default 1.0)
+    """
+    animation = sanitize_text_param(str(p.get("animation", "scroll_right")))
+    speed = float(p.get("speed", 1.0))
+    scale = float(p.get("scale", 0.2))
+    opacity = float(p.get("opacity", 1.0))
+    n = int(p.get("_extra_input_count", 0))
+
+    if n < 1:
+        return [], [], [], ""
+
+    # Scale the overlay image relative to main video width
+    # [0:v] = main video, [1:v] = overlay image
+    fc_parts = []
+
+    # Apply opacity to overlay if < 1.0
+    ovl_prep = f"[1:v]scale=iw*{scale}:ih*{scale}"
+    if opacity < 1.0:
+        ovl_prep += f",format=rgba,colorchannelmixer=aa={opacity}"
+    ovl_prep += "[_ovl]"
+    fc_parts.append(ovl_prep)
+
+    # Build motion expression based on animation preset
+    # All use overlay's eval=frame mode for per-frame position updates
+    px_per_frame = max(1, int(2 * speed))
+
+    motion_presets = {
+        "scroll_right": f"x='mod(n*{px_per_frame},W)':y='H-h-20'",
+        "scroll_left": f"x='W-mod(n*{px_per_frame},W+w)':y='H-h-20'",
+        "scroll_up": f"x='W-w-20':y='H-mod(n*{px_per_frame},H+h)'",
+        "scroll_down": f"x='W-w-20':y='mod(n*{px_per_frame},H+h)-h'",
+        "float": f"x='W/2-w/2+sin(n*0.02*{speed})*W/4':y='H/2-h/2+cos(n*0.03*{speed})*H/4'",
+        "bounce": f"x='abs(mod(n*{px_per_frame},2*(W-w))-(W-w))':y='abs(mod(n*{px_per_frame+1},2*(H-h))-(H-h))'",
+        "slide_in": f"x='min(n*{px_per_frame},W-w-20)':y='H-h-20'",
+        "slide_in_top": f"x='W/2-w/2':y='min(n*{px_per_frame}-h,20)'",
+    }
+
+    motion = motion_presets.get(animation, motion_presets["scroll_right"])
+    fc_parts.append(f"[0:v][_ovl]overlay={motion}:eval=frame")
+
+    return [], [], [], ";".join(fc_parts)
+
+
+# ── Phase 4: Text Overlay ───────────────────────────────────────────
+
+def _f_text_overlay(p):
+    """Draw text on the video using ffmpeg's drawtext filter.
+
+    Parameters:
+        text:       Text to display (required)
+        preset:     Style preset: title, subtitle, lower_third, caption (default "title")
+        font:       Font family (default "sans")
+        fontsize:   Font size in pixels (default auto based on preset)
+        fontcolor:  Text color (default "white")
+        borderw:    Text border/outline width (default 2)
+        bordercolor: Border color (default "black")
+        x:          Horizontal position expression (default auto)
+        y:          Vertical position expression (default auto)
+        start:      Start time in seconds (default 0)
+        duration:   Display duration in seconds (0 = entire video, default 0)
+        background: Background box color (default "" = none)
+    """
+    text = sanitize_text_param(str(p.get("text", "Hello")))
+    preset = str(p.get("preset", "title")).lower()
+    font = sanitize_text_param(str(p.get("font", "sans")))
+    fontcolor = sanitize_text_param(str(p.get("fontcolor", "white")))
+    borderw = int(p.get("borderw", 2))
+    bordercolor = sanitize_text_param(str(p.get("bordercolor", "black")))
+    bg = sanitize_text_param(str(p.get("background", "")))
+    start = float(p.get("start", 0))
+    duration = float(p.get("duration", 0))
+
+    # Preset defaults
+    preset_config = {
+        "title": {"fontsize": 72, "x": "(w-text_w)/2", "y": "(h-text_h)/2"},
+        "subtitle": {"fontsize": 36, "x": "(w-text_w)/2", "y": "h-text_h-60"},
+        "lower_third": {"fontsize": 32, "x": "40", "y": "h-text_h-40"},
+        "caption": {"fontsize": 28, "x": "(w-text_w)/2", "y": "h-text_h-30"},
+        "top": {"fontsize": 48, "x": "(w-text_w)/2", "y": "40"},
+    }
+    cfg = preset_config.get(preset, preset_config["title"])
+    fontsize = int(p.get("fontsize", cfg["fontsize"]))
+    x_pos = str(p.get("x", cfg["x"]))
+    y_pos = str(p.get("y", cfg["y"]))
+
+    # Build drawtext filter
+    dt = (
+        f"drawtext=text='{text}':"
+        f"font='{font}':"
+        f"fontsize={fontsize}:"
+        f"fontcolor={fontcolor}:"
+        f"borderw={borderw}:"
+        f"bordercolor={bordercolor}:"
+        f"x={x_pos}:y={y_pos}"
+    )
+
+    # Background box
+    if bg:
+        dt += f":box=1:boxcolor={bg}:boxborderw=8"
+
+    # Time-based enable/disable
+    if duration > 0:
+        end = start + duration
+        dt += f":enable='between(t,{start},{end})'"
+    elif start > 0:
+        dt += f":enable='gte(t,{start})'"
+
+    return [dt], [], []
+
+
+# Register Phase 3 & 4 skills in dispatch
+_SKILL_DISPATCH["animated_overlay"] = _f_animated_overlay
+_SKILL_DISPATCH["moving_overlay"] = _f_animated_overlay  # alias
+_SKILL_DISPATCH["text_overlay"] = _f_text_overlay
+_SKILL_DISPATCH["text"] = _f_text_overlay  # alias
+_SKILL_DISPATCH["drawtext"] = _f_text_overlay  # alias
+_SKILL_DISPATCH["title"] = _f_text_overlay  # alias
+_SKILL_DISPATCH["subtitle"] = _f_text_overlay  # alias
+_SKILL_DISPATCH["caption"] = _f_text_overlay  # alias
