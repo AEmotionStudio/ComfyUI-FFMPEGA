@@ -875,43 +875,47 @@ def _f_ken_burns(p):
     width = int(p.get("width", 1920))
     height = int(p.get("height", 1080))
     fps = int(p.get("fps", 25))
-    # Use ffmpeg's zoompan filter for smooth Ken Burns effect
-    # zoom goes from 1 to 1+amount (e.g. 1.0 to 1.2 for 20% zoom)
-    # d=1 means each input frame produces 1 output frame
+    # zoompan d=fps: generate <fps> output frames per input frame
+    # This makes the zoom smooth — each input frame is held for 1 second
+    # and the zoom animates across all those output frames.
+    # zoom_step: increment per output frame to reach max_zoom over ~5 seconds
     max_zoom = 1.0 + amount
-    zoom_step = amount / (fps * 10)  # gradual zoom over ~10 seconds
+    total_frames = fps * 5  # zoom completes over ~5 seconds
+    zoom_step = amount / total_frames
     sz = f"s={width}x{height}:fps={fps}"
     if direction == "zoom_in":
         return [
             f"zoompan=z='min(zoom+{zoom_step:.6f},{max_zoom})':"
             f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-            f"d=1:{sz}"
+            f"d={fps}:{sz}"
         ], [], []
     elif direction == "zoom_out":
         return [
             f"zoompan=z='if(eq(on,0),{max_zoom},max(zoom-{zoom_step:.6f},1))':"
             f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-            f"d=1:{sz}"
+            f"d={fps}:{sz}"
         ], [], []
     elif direction == "pan_right":
+        pan_step = amount * width / total_frames
         return [
             f"zoompan=z='{max_zoom}':"
-            f"x='if(eq(on,0),0,min(x+{amount * 2:.4f},iw-iw/zoom))':"
+            f"x='if(eq(on,0),0,min(x+{pan_step:.4f},iw-iw/zoom))':"
             f"y='ih/2-(ih/zoom/2)':"
-            f"d=1:{sz}"
+            f"d={fps}:{sz}"
         ], [], []
     elif direction == "pan_left":
+        pan_step = amount * width / total_frames
         return [
             f"zoompan=z='{max_zoom}':"
-            f"x='if(eq(on,0),iw-iw/zoom,max(x-{amount * 2:.4f},0))':"
+            f"x='if(eq(on,0),iw-iw/zoom,max(x-{pan_step:.4f},0))':"
             f"y='ih/2-(ih/zoom/2)':"
-            f"d=1:{sz}"
+            f"d={fps}:{sz}"
         ], [], []
     else:
         return [
             f"zoompan=z='min(zoom+{zoom_step:.6f},{max_zoom})':"
             f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-            f"d=1:{sz}"
+            f"d={fps}:{sz}"
         ], [], []
 
 
