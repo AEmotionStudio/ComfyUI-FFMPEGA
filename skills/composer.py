@@ -871,67 +871,47 @@ def _f_zoom(p):
 
 def _f_ken_burns(p):
     direction = p.get("direction", "zoom_in")
-    amount = float(p.get("amount", 0.2))
+    amount = float(p.get("amount", 0.3))
     width = int(p.get("width", 1920))
     height = int(p.get("height", 1080))
-    fps = int(p.get("fps", 25))
-    # Use time-based crop+scale for smooth animated zoom.
-    # zoompan is designed for still images; for video, crop+scale with
-    # time-varying expressions produces better results and doesn't
-    # change the output duration.
-    #
-    # Zoom in: crop shrinks over time (more cropped = more zoomed)
-    # We interpolate the crop factor from 1/(1+amount) to 1/1 of frame size
-    # Actually for zoom_in, we go from full frame to cropped (zoomed) frame
-    # factor goes from 1.0 to 1/(1+amount) over the video duration
-    max_zoom = 1.0 + amount
+    # Duration over which the zoom completes (seconds).
+    # Uses 't' variable which gives current time in seconds.
+    dur = float(p.get("duration", 5))
+    # scale eval=frame + crop: the only approach that works for video.
+    # zoompan is for still images; crop with varying dims fails.
     if direction == "zoom_in":
-        # Crop window shrinks over time → zoom in effect
-        # At t=0: crop=full frame. At end: crop=frame/max_zoom
-        # Use 'n' (frame number) and assume ~5 second ramp
-        ramp_frames = fps * 5
+        # Scale up over time, crop center to keep output stable
         return [
-            f"crop='iw/(1+{amount}*min(n\\,{ramp_frames})/{ramp_frames})':"
-            f"'ih/(1+{amount}*min(n\\,{ramp_frames})/{ramp_frames})':"
-            f"'(iw-out_w)/2':'(ih-out_h)/2',"
-            f"scale={width}:{height}"
+            f"scale='iw*(1+{amount}*min(t,{dur})/{dur})':"
+            f"'ih*(1+{amount}*min(t,{dur})/{dur})':eval=frame,"
+            f"crop={width}:{height}"
         ], [], []
     elif direction == "zoom_out":
-        # Crop window grows over time → zoom out effect
-        ramp_frames = fps * 5
+        # Start scaled up, shrink back. Use max() to avoid going below 1x
         return [
-            f"crop='iw/(1+{amount}*max(0\\,1-n/{ramp_frames}))':"
-            f"'ih/(1+{amount}*max(0\\,1-n/{ramp_frames}))':"
-            f"'(iw-out_w)/2':'(ih-out_h)/2',"
-            f"scale={width}:{height}"
+            f"scale='iw*(1+{amount}*max(0,1-t/{dur}))':"
+            f"'ih*(1+{amount}*max(0,1-t/{dur}))':eval=frame,"
+            f"crop={width}:{height}"
         ], [], []
     elif direction == "pan_right":
-        ramp_frames = fps * 5
-        crop_w = f"iw/{max_zoom}"
-        crop_h = f"ih/{max_zoom}"
+        # Fixed zoom, pan x from left to right
         return [
-            f"crop={crop_w}:{crop_h}:"
-            f"'min(n*{amount}*iw/({ramp_frames}*{max_zoom})\\,iw-iw/{max_zoom})':"
-            f"'(ih-ih/{max_zoom})/2',"
-            f"scale={width}:{height}"
+            f"scale='iw*{1+amount}':'ih*{1+amount}':eval=init,"
+            f"crop={width}:{height}:"
+            f"'min(t/{dur},1)*(iw-{width})':'(ih-{height})/2'"
         ], [], []
     elif direction == "pan_left":
-        ramp_frames = fps * 5
-        crop_w = f"iw/{max_zoom}"
-        crop_h = f"ih/{max_zoom}"
+        # Fixed zoom, pan x from right to left
         return [
-            f"crop={crop_w}:{crop_h}:"
-            f"'max(iw-iw/{max_zoom}-n*{amount}*iw/({ramp_frames}*{max_zoom})\\,0)':"
-            f"'(ih-ih/{max_zoom})/2',"
-            f"scale={width}:{height}"
+            f"scale='iw*{1+amount}':'ih*{1+amount}':eval=init,"
+            f"crop={width}:{height}:"
+            f"'max(0,1-t/{dur})*(iw-{width})':'(ih-{height})/2'"
         ], [], []
     else:
-        ramp_frames = fps * 5
         return [
-            f"crop='iw/(1+{amount}*min(n\\,{ramp_frames})/{ramp_frames})':"
-            f"'ih/(1+{amount}*min(n\\,{ramp_frames})/{ramp_frames})':"
-            f"'(iw-out_w)/2':'(ih-out_h)/2',"
-            f"scale={width}:{height}"
+            f"scale='iw*(1+{amount}*min(t,{dur})/{dur})':"
+            f"'ih*(1+{amount}*min(t,{dur})/{dur})':eval=frame,"
+            f"crop={width}:{height}"
         ], [], []
 
 
