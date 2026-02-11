@@ -462,12 +462,17 @@ class FFMPEGAgentNode:
             all_frame_paths = []
 
             # Collect all image_* tensors in alphabetical order
-            # (exclude images_* which are video inputs, not extra images)
+            # (exclude images_* which are collected separately as video inputs)
             all_image_tensors = []
             if image_a is not None:
                 all_image_tensors.append(image_a)
             for k in sorted(kwargs):
                 if k.startswith("image_") and not k.startswith("images_") and kwargs[k] is not None:
+                    all_image_tensors.append(kwargs[k])
+
+            # Also collect images_b, images_c, ... (additional video inputs)
+            for k in sorted(kwargs):
+                if k.startswith("images_") and kwargs[k] is not None:
                     all_image_tensors.append(kwargs[k])
 
             # Save each tensor as frames (optimize: video-length tensors

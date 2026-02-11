@@ -1806,7 +1806,9 @@ def _f_xfade(p):
     # [_xv0][_xv1] xfade → [_xf0]; [_xf0][_xv2] xfade → [_xf1]; etc.
     # The offset for each xfade is: cumulative_duration - transition_duration
     # For simplicity, assume still_dur for all segments (main video too).
-    cumulative = still_dur
+    # Use actual video duration from metadata if available for segment 0.
+    video_dur = float(p.get("_video_duration", still_dur))
+    cumulative = video_dur if segments[0][1] else still_dur
     prev_label = "[_xv0]"
 
     for i in range(1, total):
@@ -1934,7 +1936,7 @@ def _f_animated_overlay(p):
 
     # Build motion expression based on animation preset
     # All use overlay's eval=frame mode for per-frame position updates
-    px_per_frame = int(2 * speed)
+    px_per_frame = max(1, int(2 * speed))
 
     motion_presets = {
         "scroll_right": f"x='mod(n*{px_per_frame},W)':y='H-h-20'",
@@ -1998,7 +2000,7 @@ def _f_text_overlay(p):
     # Build drawtext filter
     dt = (
         f"drawtext=text='{text}':"
-        f"fontfile=/usr/share/fonts/TTF/DejaVuSans.ttf:"
+        f"font='{font}':"
         f"fontsize={fontsize}:"
         f"fontcolor={fontcolor}:"
         f"borderw={borderw}:"
