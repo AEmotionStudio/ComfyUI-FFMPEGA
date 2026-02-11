@@ -1,4 +1,4 @@
-"""Gemini CLI connector — runs the `gemini` binary in headless mode."""
+"""Qwen Code CLI connector — runs the `qwen` binary in non-interactive mode."""
 
 from typing import Optional
 
@@ -6,19 +6,21 @@ from .base import LLMConfig, LLMProvider
 from .cli_base import CLIConnectorBase
 
 
-class GeminiCLIConnector(CLIConnectorBase):
-    """Connector that invokes the Gemini CLI in non-interactive (headless) mode.
+class QwenCodeCLIConnector(CLIConnectorBase):
+    """Connector that invokes Qwen Code CLI in non-interactive (print) mode.
 
-    Uses ``gemini -p <prompt> -o text`` to generate responses.
-    Requires the ``gemini`` binary to be installed and authenticated
-    (e.g. via a Google Ultra subscription for free Gemini 3 Pro access).
+    Uses ``qwen -p --output-format text`` with prompt piped via stdin.
+    Requires the ``qwen`` binary to be installed and authenticated
+    (e.g. via ``pnpm install -g @qwen-code/qwen-code@latest``).
+
+    Free tier: 2,000 requests/day via Qwen OAuth (no credit card required).
     """
 
     def __init__(self, config: Optional[LLMConfig] = None):
         if config is None:
             config = LLMConfig(
-                provider=LLMProvider.GEMINI_CLI,
-                model="gemini-cli",
+                provider=LLMProvider.QWEN_CLI,
+                model="qwen-cli",
                 temperature=0.3,
             )
         super().__init__(config)
@@ -26,11 +28,11 @@ class GeminiCLIConnector(CLIConnectorBase):
     # --- CLIConnectorBase hooks ---
 
     def _binary_names(self) -> tuple[str, ...]:
-        return ("gemini", "gemini.cmd")
+        return ("qwen", "qwen.cmd")
 
     def _build_cmd(self, binary_path: str, prompt: str,
                    system_prompt: Optional[str]) -> list[str]:
-        return [binary_path, "-p", "", "-o", "text"]
+        return [binary_path, "--output-format", "text", "-p"]
 
     def _prepare_stdin(self, prompt: str,
                        system_prompt: Optional[str]) -> Optional[bytes]:
@@ -45,17 +47,17 @@ class GeminiCLIConnector(CLIConnectorBase):
         return full_prompt.encode("utf-8")
 
     def _model_name(self) -> str:
-        return "gemini-cli"
+        return "qwen-cli"
 
     def _provider(self) -> LLMProvider:
-        return LLMProvider.GEMINI_CLI
+        return LLMProvider.QWEN_CLI
 
     def _install_hint(self) -> str:
         return (
-            "Gemini CLI binary not found. Install it with:\n"
-            "  npm install -g @google/gemini-cli\n"
-            "Or see: https://github.com/google-gemini/gemini-cli"
+            "Qwen Code CLI binary not found. Install it with:\n"
+            "  npm install -g @qwen-code/qwen-code@latest\n"
+            "Or see: https://qwenlm.github.io/qwen-code-docs/"
         )
 
     def _log_tag(self) -> str:
-        return "GeminiCLI"
+        return "QwenCLI"

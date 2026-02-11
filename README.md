@@ -5,7 +5,7 @@
 **An AI-powered FFMPEG agent node for ComfyUI — edit videos with natural language.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-1.8.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-1.9.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-4-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 
@@ -20,14 +20,16 @@
 
 ---
 
-## 🚀 What's New in v1.8.0 (February 10, 2026)
+## 🚀 What's New in v1.9.0 (February 11, 2026)
 
-**Enhanced Multi-Input Skills**
+**CLI Connectors & Expanded Presets**
 
-*   **🖼️ Grid + Video**: Grid now includes the main video as the first cell — create side-by-side comparisons with `"Create a side-by-side comparison"`.
-*   **🎞️ Slideshow + Video**: Start a slideshow with the video, then cycle through image slides — `"Create a slideshow starting with the video"`.
-*   **🔲 Multi-Overlay**: Connect multiple images and they auto-distribute to different corners — logos, watermarks, and badges all at once.
-*   **📷 Standalone Mode**: Slideshow and grid work without a main video — just connect `extra_images`.
+*   **🤖 Claude Code CLI**: Use your locally installed Claude Code CLI as an LLM backend — no API key needed. Auto-detected on PATH.
+*   **🖱️ Cursor Agent CLI**: Use Cursor's agent CLI for inference — also auto-detected on PATH.
+*   **🧠 Qwen Code CLI**: Use Qwen Code as an LLM backend — **2,000 free requests/day** via OAuth, no credit card needed.
+*   **🎮 50+ Quick Presets**: Right-click context menu expanded to **9 categories** with 50+ one-click presets — Cinematic, Vintage, Color, Effects, Transitions, Motion, Social, Time, and Audio.
+*   **💾 Save Toggle**: New `save_output` toggle — control whether output goes to the ComfyUI output folder or stays in temp.
+*   **📸 Workflow PNG**: First-frame PNG with embedded workflow metadata — drag it back into ComfyUI to reload the workflow.
 
 > 📄 **See [CHANGELOG.md](CHANGELOG.md) for the complete version history.**
 
@@ -46,7 +48,7 @@ Describe edits in plain text: *"Make it cinematic with a fade in"*, *"Speed up 2
 <td width="50%">
 
 ### 🤖 Multi-LLM Support
-Works with **Ollama** (local, free), **OpenAI** (GPT-4o), and **Anthropic** (Claude). Use any local model — Llama 3.1, Qwen3, Mistral, and more. No API keys required for local models.
+Works with **Ollama** (local, free), **OpenAI**, **Anthropic**, **Google Gemini**, and **CLI tools** (Gemini CLI, Claude Code, Cursor Agent, Qwen Code). Use any local model — Llama 3.1, Qwen3, Mistral, and more. CLI tools are auto-detected on PATH.
 
 </td>
 </tr>
@@ -183,12 +185,13 @@ The main node — translates natural language into FFMPEG commands.
 | :--- | :--- |
 | `video_path` | Path to input video (used unless `images` is connected) |
 | `prompt` | Natural language editing instruction |
-| `llm_model` | Model selection (Ollama / OpenAI / Anthropic / Gemini) |
+| `llm_model` | Model selection (Ollama / OpenAI / Anthropic / Gemini / CLI tools) |
 | `quality_preset` | Output quality: draft, standard, high, lossless |
 | `images` | *(optional)* Image frames from an upstream node |
 | `audio_input` | *(optional)* Audio from an upstream node |
 | `preview_mode` | Quick preview instead of full render |
-| `output_path` | Custom output path (optional) |
+| `save_output` | Save to ComfyUI output folder (default: off) |
+| `output_path` | Custom output path (shown when `save_output` is on) |
 | `ollama_url` | Ollama server URL (default: `http://localhost:11434`) |
 | `api_key` | API key for cloud LLM providers (auto-redacted from outputs) |
 
@@ -456,6 +459,17 @@ FFMPEGA includes a comprehensive skill system with **119+ operations** organized
 
 ## 🤖 LLM Configuration
 
+> **Tested with:** FFMPEGA has been primarily tested using **Gemini CLI** and **Qwen3 8B** (via Ollama). Results may vary with other models.
+
+### Choosing a Model
+
+FFMPEGA works best with models that have **strong JSON output and instruction-following abilities**. The agent sends a structured prompt and expects a valid JSON pipeline back — models with tool-calling or function-calling capabilities tend to perform best.
+
+**Things to keep in mind:**
+- **Some models work better than others** — larger models and those trained for structured output (JSON/tool-calling) produce more reliable results
+- **Some models may need more retries** — if the agent fails to parse the response, try running the same prompt again. Smaller models occasionally return malformed JSON on the first try
+- **Find what works best for you** — experiment with different models to find the right balance of speed, quality, and reliability for your hardware
+
 ### Ollama (Local — Free)
 The default option. Runs locally, no API key needed.
 
@@ -464,30 +478,36 @@ The default option. Runs locally, no API key needed.
 ollama serve
 
 # Pull a model
-ollama pull llama3.1:8b
+ollama pull qwen3:8b
 ```
 
-**Recommended local models:**
-| Model | Speed | Quality | Notes |
+**Recommended local models (≤30B, consumer GPU friendly):**
+| Model | Size | Speed | Notes |
 | :--- | :--- | :--- | :--- |
-| `llama3.1:8b` | ⚡ Fast | Good | Best balance for most users |
-| `qwen3:8b` | ⚡ Fast | Good | Strong JSON output |
-| `llama3.1:70b` | 🐢 Slow | Excellent | Best quality, needs GPU RAM |
-| `mistral:7b` | ⚡ Fast | Good | Fast alternative |
+| `qwen3:8b` | 8B | ⚡ Fast | **Tested** — excellent structured output, native tool-calling |
+| `qwen3:14b` | 14B | ⚡ Fast | Sweet spot of speed and quality, tools + thinking tags |
+| `qwen3:30b` | 30B | 🔄 Medium | Best Qwen under 30B, needs 16GB+ VRAM |
+| `qwen2.5:14b` | 14B | ⚡ Fast | Top IFEval scores, strong instruction following |
+| `deepseek-r1:14b` | 14B | ⚡ Fast | Reasoning model — verifies its own tool calls, very reliable |
+| `mistral-nemo` | 12B | ⚡ Fast | NVIDIA + Mistral collab, 128k context, great reasoning |
+| `mistral-small3.2` | 24B | 🔄 Medium | Native function calling, 128k context |
+| `phi4` | 14B | ⚡ Fast | Microsoft reasoning SLM, rivals larger models in logic |
+| `gemma3:12b` | 12B | ⚡ Fast | High reasoning scores, 128k context |
+| `llama3.3:8b` | 8B | ⚡ Fast | Reliable tool-calling, large ecosystem |
+
+> **Tip:** On the [Ollama library](https://ollama.com/library), look for models with a **tools** tag — this indicates native tool/function-calling support, which produces the best results with FFMPEGA.
 
 ### OpenAI
 ```
-llm_model: gpt-4o-mini
+llm_model: gpt-5.2
 api_key: your-openai-key
 ```
 
 ### Gemini (Google API)
 ```
-llm_model: gemini-2.0-flash
+llm_model: gemini-3-flash
 api_key: your-google-ai-key
 ```
-
-Available models: `gemini-2.0-flash`, `gemini-2.0-flash-lite`, `gemini-1.5-flash`
 
 ### Gemini CLI (Free with Google Ultra)
 
@@ -515,9 +535,93 @@ No API key is needed — authentication is handled by the CLI. Select `gemini-cl
 
 ### Anthropic
 ```
-llm_model: claude-3-5-haiku-20241022
+llm_model: claude-sonnet-4-6
 api_key: your-anthropic-key
 ```
+
+### Claude Code CLI (Free with Anthropic Account)
+
+Use the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) as a local LLM backend. Uses its own authentication — no API key needed in FFMPEGA.
+
+**Install:**
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+**Authenticate** (first time only):
+```bash
+claude
+```
+This opens a browser to sign in with your Anthropic account.
+
+**Use in FFMPEGA:**
+```
+llm_model: claude-cli
+```
+
+Auto-detected on PATH. Select `claude-cli` from the model dropdown.
+
+### Cursor Agent CLI
+
+Use [Cursor's CLI](https://docs.cursor.com) in agent mode as an LLM backend.
+
+**Install:**
+Open Cursor IDE → Command Palette → "Install 'cursor' command"
+
+**Use in FFMPEGA:**
+```
+llm_model: cursor-agent
+```
+
+Auto-detected on PATH. Select `cursor-agent` from the model dropdown.
+
+### Qwen Code CLI (Free — 2,000 requests/day)
+
+Use [Qwen Code](https://qwenlm.github.io/qwen-code-docs/) as a free LLM backend. Powered by Qwen3-Coder with 2,000 free requests/day via OAuth — no credit card required.
+
+**Install:**
+```bash
+npm install -g @qwen-code/qwen-code@latest
+```
+
+**Authenticate** (first time only):
+```bash
+qwen
+```
+Select "Qwen OAuth (Free)" and follow the browser prompts to sign in.
+
+**Use in FFMPEGA:**
+```
+llm_model: qwen-cli
+```
+
+Auto-detected on PATH. Select `qwen-cli` from the model dropdown.
+
+### Custom Model
+
+Select **`custom`** from the model dropdown and type any model name in the `custom_model` field. The provider is auto-detected from the name:
+
+| Prefix | Provider |
+| :--- | :--- |
+| `gpt-*` | OpenAI |
+| `claude-*` | Anthropic |
+| `gemini-*` | Google |
+| Anything else | Ollama (local) |
+
+This lets you use any new model immediately without waiting for a code update.
+
+### 🔒 API Key Security
+
+Your API keys are **automatically scrubbed** and never stored in output files:
+
+- **Error messages** — keys are redacted before being shown in the UI (e.g. `****abcd`)
+- **Workflow metadata** — ComfyUI embeds workflow data in output images/videos; FFMPEGA strips the `api_key` field from this metadata before saving
+- **HTTP errors** — keys are removed from network error messages that might include auth headers
+- **Debug logs** — `LLMConfig` redacts keys in all string representations
+
+No configuration needed — this protection is always active when an API key is provided.
+
+> ⚠️ **Safety precaution:** As with any software, always inspect your output files before sharing them publicly — in the unlikely event of a bug or edge case that bypasses the automatic scrubbing.
 
 ---
 
@@ -595,7 +699,7 @@ ComfyUI-FFMPEGA/
 │   ├── preview_node.py      # Preview and info nodes
 │   └── batch_node.py        # Batch processing nodes
 ├── core/                    # Core functionality
-│   ├── llm/                 # LLM connectors (Ollama, OpenAI, Anthropic)
+│   ├── llm/                 # LLM connectors (Ollama, OpenAI, Anthropic, CLI tools)
 │   ├── executor/            # FFMPEG command building & execution
 │   └── video/               # Video analysis & formats
 ├── skills/                  # Skill system

@@ -1,4 +1,4 @@
-"""Gemini CLI connector — runs the `gemini` binary in headless mode."""
+"""Cursor Agent CLI connector — runs the `agent` binary in non-interactive mode."""
 
 from typing import Optional
 
@@ -6,19 +6,19 @@ from .base import LLMConfig, LLMProvider
 from .cli_base import CLIConnectorBase
 
 
-class GeminiCLIConnector(CLIConnectorBase):
-    """Connector that invokes the Gemini CLI in non-interactive (headless) mode.
+class CursorAgentConnector(CLIConnectorBase):
+    """Connector that invokes Cursor's CLI in non-interactive agent mode.
 
-    Uses ``gemini -p <prompt> -o text`` to generate responses.
-    Requires the ``gemini`` binary to be installed and authenticated
-    (e.g. via a Google Ultra subscription for free Gemini 3 Pro access).
+    Uses ``agent -p <prompt>`` (piped via stdin) to generate responses.
+    The binary is named ``agent`` and is installed via:
+    Cursor IDE → Command Palette → "Install 'cursor' command".
     """
 
     def __init__(self, config: Optional[LLMConfig] = None):
         if config is None:
             config = LLMConfig(
-                provider=LLMProvider.GEMINI_CLI,
-                model="gemini-cli",
+                provider=LLMProvider.CURSOR_AGENT,
+                model="cursor-agent",
                 temperature=0.3,
             )
         super().__init__(config)
@@ -26,11 +26,11 @@ class GeminiCLIConnector(CLIConnectorBase):
     # --- CLIConnectorBase hooks ---
 
     def _binary_names(self) -> tuple[str, ...]:
-        return ("gemini", "gemini.cmd")
+        return ("agent", "agent.cmd")
 
     def _build_cmd(self, binary_path: str, prompt: str,
                    system_prompt: Optional[str]) -> list[str]:
-        return [binary_path, "-p", "", "-o", "text"]
+        return [binary_path, "-p"]
 
     def _prepare_stdin(self, prompt: str,
                        system_prompt: Optional[str]) -> Optional[bytes]:
@@ -45,17 +45,17 @@ class GeminiCLIConnector(CLIConnectorBase):
         return full_prompt.encode("utf-8")
 
     def _model_name(self) -> str:
-        return "gemini-cli"
+        return "cursor-agent"
 
     def _provider(self) -> LLMProvider:
-        return LLMProvider.GEMINI_CLI
+        return LLMProvider.CURSOR_AGENT
 
     def _install_hint(self) -> str:
         return (
-            "Gemini CLI binary not found. Install it with:\n"
-            "  npm install -g @google/gemini-cli\n"
-            "Or see: https://github.com/google-gemini/gemini-cli"
+            "Cursor Agent CLI binary ('agent') not found. Install it from:\n"
+            "  Cursor IDE → Command Palette → 'Install cursor command'\n"
+            "Or see: https://docs.cursor.com/cli"
         )
 
     def _log_tag(self) -> str:
-        return "GeminiCLI"
+        return "CursorAgent"
