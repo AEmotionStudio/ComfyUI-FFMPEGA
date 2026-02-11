@@ -87,3 +87,6 @@ uv.lock
 
 # Gemini
 .gemini/
+
+# PRD
+PRD.md

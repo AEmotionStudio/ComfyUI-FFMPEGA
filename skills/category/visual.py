@@ -572,7 +572,6 @@ def register_skills(registry: SkillRegistry) -> None:
                 max_value=1.0,
             ),
         ],
-        ffmpeg_template="chromakey=color={color}:similarity={similarity}:blend={blend}",
         examples=[
             "chromakey - Remove green screen",
             "chromakey:color=0x0000FF,similarity=0.2 - Remove blue screen",
@@ -584,22 +583,38 @@ def register_skills(registry: SkillRegistry) -> None:
     registry.register(Skill(
         name="deband",
         category=SkillCategory.VISUAL,
-        description="Remove color banding artifacts",
+        description="Remove color banding artifacts (especially from AI-generated video)",
         parameters=[
             SkillParameter(
                 name="threshold",
                 type=ParameterType.FLOAT,
-                description="Deband threshold (higher = more aggressive)",
+                description="Deband threshold (higher = more aggressive, 0.08 = moderate, 0.2+ = heavy)",
                 required=False,
-                default=0.02,
+                default=0.08,
                 min_value=0.0,
-                max_value=0.1,
+                max_value=0.5,
+            ),
+            SkillParameter(
+                name="range",
+                type=ParameterType.INT,
+                description="Banding detection range in pixels (higher = detects wider bands)",
+                required=False,
+                default=16,
+                min_value=8,
+                max_value=64,
+            ),
+            SkillParameter(
+                name="blur",
+                type=ParameterType.BOOL,
+                description="Enable dithering/blur to smooth band transitions",
+                required=False,
+                default=True,
             ),
         ],
-        ffmpeg_template="deband=1thr={threshold}:2thr={threshold}:3thr={threshold}:4thr={threshold}",
         examples=[
             "deband - Remove color banding",
-            "deband:threshold=0.05 - Aggressive debanding",
+            "deband:threshold=0.15 - Aggressive debanding",
+            "deband:threshold=0.3,range=32 - Heavy debanding (AI video)",
         ],
-        tags=["banding", "gradient", "smooth", "quality"],
+        tags=["banding", "gradient", "smooth", "quality", "ai"],
     ))

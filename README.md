@@ -14,7 +14,7 @@
 
 *Describe what you want in plain English — the AI translates your words into precise FFMPEG commands.*
 
-[Features](#-features) • [Installation](#-installation) • [Quick Start](#-quick-start) • [Skills](#-skill-system) • [LLM Setup](#-llm-configuration) • [Troubleshooting](#-troubleshooting) • [Contributing](#-contributing) • [Changelog](CHANGELOG.md)
+[Features](#-features) • [Installation](#-installation) • [Quick Start](#-quick-start) • [Prompt Guide](#-prompt-guide) • [Skills](#-skill-system) • [LLM Setup](#-llm-configuration) • [Troubleshooting](#-troubleshooting) • [Contributing](#-contributing) • [Changelog](CHANGELOG.md)
 
 </div>
 
@@ -130,6 +130,50 @@ Restart ComfyUI after installation.
 
 ---
 
+## 💬 Prompt Guide
+
+The AI agent interprets your natural language and maps it to skills with specific parameters. Here's how to get the best results.
+
+### Specifying Exact Values
+
+You can request specific parameter values and the agent will use them directly:
+
+| Prompt | What the Agent Does |
+| :--- | :--- |
+| `"Set brightness to 0.3"` | `brightness:value=0.3` |
+| `"Blur with strength 20"` | `blur:radius=20` |
+| `"Speed up to 3x"` | `speed:factor=3.0` |
+| `"Crop to 1280x720"` | `crop:width=1280,height=720` |
+| `"Deband with threshold 0.3 and range 32"` | `deband:threshold=0.3,range=32` |
+| `"CRF 18, slow preset"` | `quality:crf=18,preset=slow` |
+| `"Fade in for 3 seconds"` | `fade:type=in,duration=3` |
+
+### What Works Well ✅
+
+- **Explicit numbers**: *"brightness 0.2"*, *"speed 1.5x"*, *"CRF 20"* — the agent maps these directly
+- **Named presets**: *"VHS look"*, *"cinematic style"*, *"noir"* — triggers multi-step preset pipelines
+- **Chaining operations**: *"Trim first 5 seconds, resize to 720p, add vignette"* — executes in order
+- **Descriptive goals**: *"Make it look warmer"*, *"Remove the green screen"* — the agent picks the right skills
+- **Technical terms**: *"denoise"*, *"deband"*, *"normalize audio"* — maps to exact FFmpeg filters
+
+### What Might Not Work as Expected ⚠️
+
+- **Vague intensity words**: *"Make it very blurry"* or *"a little brighter"* — the agent has to guess what number "very" or "a little" means. **Tip**: use a specific value instead: *"blur with radius 15"*
+- **Out-of-range values**: Parameters are auto-clamped to their valid range. If you ask for *"brightness 5.0"* it caps at the max (1.0)
+- **Complex compositing**: Multi-layer effects with precise timing may need to be broken into separate passes
+- **Format-dependent features**: Some effects (like transparency) require specific output formats. H.264/MP4 doesn't support alpha channels
+
+### Tips for AI-Generated Video
+
+AI-generated video often has specific artifacts. Here are targeted prompts:
+
+| Issue | Prompt |
+| :--- | :--- |
+| Heavy color banding | `"Deband with threshold 0.3 and range 32"` |
+| Flickering / temporal noise | `"Denoise with strength strong"` |
+| Low contrast / flat look | `"Cinematic style"` or `"Increase contrast to 1.5"` |
+| Needs sharpening | `"Sharpen with strength 1.5"` |
+
 ## 🎛️ Nodes
 
 ### FFMPEG Agent
@@ -163,6 +207,8 @@ The main node — translates natural language into FFMPEG commands.
 FFMPEGA includes a comprehensive skill system with **119+ operations** organized into categories. The AI agent selects the right skills based on your prompt.
 
 > 📄 **See [SKILLS_REFERENCE.md](SKILLS_REFERENCE.md) for the complete skill reference with all parameters and example prompts.**
+>
+> 🧪 **See [SKILL_TEST_PROMPTS.md](SKILL_TEST_PROMPTS.md) for ready-to-use copy-and-paste test prompts for every skill.**
 
 <details>
 <summary><b>🎨 Visual Effects (17 skills)</b></summary>
@@ -435,13 +481,37 @@ llm_model: gpt-4o-mini
 api_key: your-openai-key
 ```
 
-### Gemini (Google)
+### Gemini (Google API)
 ```
 llm_model: gemini-2.0-flash
 api_key: your-google-ai-key
 ```
 
 Available models: `gemini-2.0-flash`, `gemini-2.0-flash-lite`, `gemini-1.5-flash`
+
+### Gemini CLI (Free with Google Ultra)
+
+Use the [Gemini CLI](https://github.com/google-gemini/gemini-cli) to run Gemini models without an API key. Requires a Google Ultra subscription (which provides free Gemini 3 Pro access).
+
+**Install:**
+```bash
+npm install -g @google/gemini-cli
+```
+
+**Authenticate** (first time only):
+```bash
+gemini
+```
+This opens a browser to sign in with your Google account.
+
+**Use in FFMPEGA:**
+```
+llm_model: gemini-cli
+```
+
+No API key is needed — authentication is handled by the CLI. Select `gemini-cli` from the model dropdown in the node.
+
+> **Note:** The Gemini CLI runs as a subprocess. On Windows, `gemini.cmd` is also detected automatically.
 
 ### Anthropic
 ```

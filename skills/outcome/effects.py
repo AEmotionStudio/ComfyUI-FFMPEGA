@@ -382,14 +382,14 @@ def register_skills(registry: SkillRegistry) -> None:
     registry.register(Skill(
         name="deband",
         category=SkillCategory.OUTCOME,
-        description="Remove banding artifacts from gradients",
+        description="Remove banding artifacts from gradients (especially AI-generated video)",
         parameters=[
             SkillParameter(
                 name="threshold",
                 type=ParameterType.FLOAT,
-                description="Banding detection threshold",
+                description="Banding detection threshold (0.08 = moderate, 0.2+ = heavy)",
                 required=False,
-                default=0.04,
+                default=0.08,
                 min_value=0.003,
                 max_value=0.5,
             ),
@@ -402,12 +402,20 @@ def register_skills(registry: SkillRegistry) -> None:
                 min_value=8,
                 max_value=64,
             ),
+            SkillParameter(
+                name="blur",
+                type=ParameterType.BOOL,
+                description="Enable dithering/blur to smooth band transitions",
+                required=False,
+                default=True,
+            ),
         ],
         examples=[
             "deband - Remove gradient banding",
-            "deband:threshold=0.08 - Aggressive debanding",
+            "deband:threshold=0.15 - Aggressive debanding",
+            "deband:threshold=0.3,range=32 - Heavy debanding (AI video)",
         ],
-        tags=["banding", "gradient", "artifact", "fix", "quality"],
+        tags=["banding", "gradient", "artifact", "fix", "quality", "ai"],
     ))
 
     # Lens correction
