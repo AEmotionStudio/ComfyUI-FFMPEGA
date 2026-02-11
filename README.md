@@ -509,9 +509,9 @@ llm_model: gemini-3-flash
 api_key: your-google-ai-key
 ```
 
-### Gemini CLI (Free with Google Ultra)
+### Gemini CLI (Free with any Google Account)
 
-Use the [Gemini CLI](https://github.com/google-gemini/gemini-cli) to run Gemini models without an API key. Requires a Google Ultra subscription (which provides free Gemini 3 Pro access).
+Use the [Gemini CLI](https://github.com/google-gemini/gemini-cli) to run Gemini models without an API key. Works with any Google account — free tier includes **1,000 requests/day** and 60 requests/minute with Gemini 2.5 Pro and Flash. Pro/Ultra subscribers receive higher rate limits.
 
 **Install:**
 ```bash

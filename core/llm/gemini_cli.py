@@ -11,7 +11,8 @@ class GeminiCLIConnector(CLIConnectorBase):
 
     Uses ``gemini -p <prompt> -o text`` to generate responses.
     Requires the ``gemini`` binary to be installed and authenticated
-    (e.g. via a Google Ultra subscription for free Gemini 3 Pro access).
+    with any Google account (free tier: 1,000 requests/day).
+    Pro/Ultra subscribers receive higher rate limits.
     """
 
     def __init__(self, config: Optional[LLMConfig] = None):
