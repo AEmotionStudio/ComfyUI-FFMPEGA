@@ -125,7 +125,9 @@ class Skill:
 
     def __post_init__(self):
         """Pre-compute search text for faster lookups."""
-        parts = [self.name, self.description] + self.tags
+        # Ensure tags is a list even if initialized with None
+        tags = self.tags if self.tags is not None else []
+        parts = [str(self.name), str(self.description)] + tags
         self._search_text = " ".join(parts).lower()
 
     def validate_params(self, params: dict) -> tuple[bool, list[str]]:
