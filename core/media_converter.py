@@ -219,6 +219,7 @@ class MediaConverter:
                     "-i", tmp_wav.name,
                     "-c:v", "copy",
                     "-c:a", "aac",
+                    "-shortest",
                     tmp_out.name,
                 ],
                 capture_output=True, check=True,

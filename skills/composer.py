@@ -485,7 +485,7 @@ def _f_trim(p):
 
 def _f_speed(p):
     factor = float(p.get("factor", 1.0))
-    print(f"[FFMPEGA DEBUG _f_speed] params={p}, factor={factor}, type={type(factor)}")
+
     vf = [f"setpts={1.0 / factor}*PTS"]
     af = []
     if 0.5 <= factor <= 2.0:
@@ -502,7 +502,7 @@ def _f_speed(p):
             af.append("atempo=2.0")
             remaining /= 2
         af.append(f"atempo={remaining}")
-    print(f"[FFMPEGA DEBUG _f_speed] vf={vf}, af={af}")
+
     return vf, af, []
 
 
@@ -1730,20 +1730,11 @@ def _f_concat(p):
         vlbl = f"[_cv{i}]"
         albl = f"[_ca{i}]"
         if is_video:
-            # Main video: scale + generate silent audio if needed
+            # Main video: scale to uniform dimensions (video-only concat)
             parts.append(
                 f"[{idx}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,"
                 f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps={fps}{vlbl}"
             )
-            # Try to use existing audio, fall back to silent
-            parts.append(
-                f"[{idx}:a]aresample=44100{albl}"
-                if False  # TODO: detect if input has audio
-                else f"anullsrc=r=44100:cl=stereo:d=0.001{albl}"
-            )
-            # Actually: for concat we need matching audio. Use anullsrc
-            # and let the main video's audio come from the original stream.
-            # Simpler approach: video-only concat (n=1, v=1, a=0)
         else:
             n_frames = int(still_dur * fps)
             parts.append(

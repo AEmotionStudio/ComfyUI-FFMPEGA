@@ -451,20 +451,23 @@ class FFMPEGAgentNode:
         # Collect all dynamically-connected image inputs (image_a, image_b, ...)
         # for multi-input skills (grid, slideshow, overlay_image, concat, etc.)
         MULTI_INPUT_SKILLS = {"grid", "slideshow", "overlay_image", "overlay",
-                              "concat", "split_screen", "watermark", "chromakey"}
+                              "concat", "split_screen", "watermark", "chromakey",
+                              "xfade", "transition", "animated_overlay", "moving_overlay"}
         needs_multi_input = any(
             s.skill_name in MULTI_INPUT_SKILLS for s in pipeline.steps
         )
         temp_frames_dirs = set()
+        temp_multi_videos = []  # Track temp videos for cleanup
         if needs_multi_input:
             all_frame_paths = []
 
             # Collect all image_* tensors in alphabetical order
+            # (exclude images_* which are video inputs, not extra images)
             all_image_tensors = []
             if image_a is not None:
                 all_image_tensors.append(image_a)
             for k in sorted(kwargs):
-                if k.startswith("image_") and kwargs[k] is not None:
+                if k.startswith("image_") and not k.startswith("images_") and kwargs[k] is not None:
                     all_image_tensors.append(kwargs[k])
 
             # Save each tensor as frames (optimize: video-length tensors
@@ -474,6 +477,7 @@ class FFMPEGAgentNode:
                     # Save as temp video for performance
                     tmp_vid = self.media_converter.images_to_video(tensor)
                     all_frame_paths.append(tmp_vid)
+                    temp_multi_videos.append(tmp_vid)
                 else:
                     paths = self.media_converter.save_frames_as_images(tensor)
                     all_frame_paths.extend(paths)
@@ -652,20 +656,9 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
         # --- Handle audio ---
         removes_audio = "-an" in command.output_options
         has_audio_processing = removes_audio or bool(command.audio_filters.to_string())
-        print(f"[FFMPEGA DEBUG] audio_a={audio_a is not None}, has_audio_processing={has_audio_processing}, removes_audio={removes_audio}")
 
         if audio_a is not None and not has_audio_processing:
             self.media_converter.mux_audio(output_path, audio_a)
-            print(f"[FFMPEGA DEBUG] mux_audio called!")
-            try:
-                _probe2 = _sp.run(
-                    ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                     "-of", "default=noprint_wrappers=1", output_path],
-                    capture_output=True, text=True
-                )
-                print(f"[FFMPEGA DEBUG] Output duration AFTER audio mux: {_probe2.stdout.strip()}")
-            except Exception:
-                pass
 
         # --- Extract output frames ---
         images_tensor = self.media_converter.frames_to_tensor(output_path)
@@ -695,7 +688,7 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
             )
 
         # Clean up temp videos and frame images
-        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+        for tmp_path in [temp_video_from_images, temp_video_with_audio] + temp_multi_videos:
             if tmp_path and os.path.exists(tmp_path):
                 os.remove(tmp_path)
         if temp_frames_dirs:

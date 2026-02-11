@@ -1442,7 +1442,7 @@ def register_skills(registry: SkillRegistry) -> None:
                 type=ParameterType.INT,
                 description="Font size in pixels (auto if not set)",
                 required=False,
-                default=0,
+                default=None,
             ),
             SkillParameter(
                 name="fontcolor",
