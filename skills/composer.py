@@ -5,8 +5,12 @@ from typing import Optional, Any
 from pathlib import Path
 
 from .registry import SkillRegistry, Skill, SkillCategory, ParameterType, get_registry
-from ..core.executor.command_builder import CommandBuilder, FFMPEGCommand
-from ..core.sanitize import sanitize_text_param
+try:
+    from ..core.executor.command_builder import CommandBuilder, FFMPEGCommand
+    from ..core.sanitize import sanitize_text_param
+except ImportError:
+    from core.executor.command_builder import CommandBuilder, FFMPEGCommand
+    from core.sanitize import sanitize_text_param
 
 
 @dataclass
@@ -180,6 +184,22 @@ class SkillComposer:
                 logger = logging.getLogger("ffmpega")
                 for err in errors:
                     logger.warning(f"Skill '{step.skill_name}': {err} (continuing anyway)")
+
+            # Enforce validation: Drop invalid parameters to prevent injection
+            # (e.g. invalid CHOICE values used directly in filter strings)
+            for param in skill.parameters:
+                if param.name in step.params:
+                    val = step.params[param.name]
+                    # Note: validate_params already handled auto-correction
+                    p_valid, _ = param.validate(val)
+                    if not p_valid:
+                        import logging
+                        logger = logging.getLogger("ffmpega")
+                        logger.warning(
+                            f"Security/Validation: Dropping invalid parameter '{param.name}' "
+                            f"value '{val}' for skill '{step.skill_name}'. Using default."
+                        )
+                        del step.params[param.name]
 
             # Inject multi-input metadata for handlers that need it
             if pipeline.extra_inputs:
