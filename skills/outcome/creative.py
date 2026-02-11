@@ -21,12 +21,7 @@ def register_skills(registry: SkillRegistry) -> None:
                 choices=["subtle", "medium", "strong"],
             ),
         ],
-        pipeline=[
-            "saturation:value=1.8",
-            "contrast:value=1.4",
-            "brightness:value=-0.1",
-            "sharpen:amount=2.0",
-        ],
+        pipeline=[],
         examples=[
             "neon - Neon glow effect",
             "neon:intensity=strong - Intense neon",
@@ -165,11 +160,7 @@ def register_skills(registry: SkillRegistry) -> None:
                 choices=["classic", "manga", "pop_art"],
             ),
         ],
-        pipeline=[
-            "saturation:value=1.5",
-            "contrast:value=1.6",
-            "sharpen:amount=2.5",
-        ],
+        pipeline=[],
         examples=[
             "comic_book - Classic comic book style",
             "comic_book:style=pop_art - Pop art look",
@@ -193,9 +184,8 @@ def register_skills(registry: SkillRegistry) -> None:
             ),
         ],
         pipeline=[
+            "tilt_shift",
             "saturation:value=1.4",
-            "contrast:value=1.2",
-            "sharpen:amount=1.5",
         ],
         examples=[
             "miniature - Tilt-shift miniature effect",
@@ -313,11 +303,7 @@ def register_skills(registry: SkillRegistry) -> None:
         category=SkillCategory.OUTCOME,
         description="Thermal / heat vision camera effect",
         parameters=[],
-        pipeline=[
-            "hue:value=60",
-            "saturation:value=2.0",
-            "contrast:value=1.5",
-        ],
+        pipeline=[],
         examples=[
             "thermal - Thermal camera effect",
         ],
@@ -358,4 +344,77 @@ def register_skills(registry: SkillRegistry) -> None:
             "emboss - Embossed relief effect",
         ],
         tags=["emboss", "relief", "3d", "texture", "carved"],
+    ))
+
+    # ----- Enhanced creative effects ----- #
+
+    # Color channel swap
+    registry.register(Skill(
+        name="color_channel_swap",
+        category=SkillCategory.OUTCOME,
+        description="Dramatic color remapping by swapping/mixing color channels",
+        parameters=[
+            SkillParameter(
+                name="preset",
+                type=ParameterType.CHOICE,
+                description="Channel swap preset",
+                required=False,
+                default="swap_rb",
+                choices=["swap_rb", "swap_rg", "swap_gb", "nightvision", "matrix"],
+            ),
+        ],
+        examples=[
+            "color_channel_swap - Swap red and blue channels",
+            "color_channel_swap:preset=matrix - Green matrix look",
+            "color_channel_swap:preset=nightvision - Night vision green",
+        ],
+        tags=["color", "channel", "swap", "remap", "surreal", "psychedelic", "matrix", "nightvision"],
+    ))
+
+    # False color / heat map
+    registry.register(Skill(
+        name="false_color",
+        category=SkillCategory.OUTCOME,
+        description="Pseudocolor / false-color mapping (heat map, rainbow, etc.)",
+        parameters=[
+            SkillParameter(
+                name="palette",
+                type=ParameterType.CHOICE,
+                description="Color palette",
+                required=False,
+                default="heat",
+                choices=["heat", "rainbow", "blues", "electric"],
+            ),
+        ],
+        examples=[
+            "false_color - Heat map visualization",
+            "false_color:palette=rainbow - Rainbow pseudocolor",
+            "false_color:palette=electric - Electric blue-purple map",
+        ],
+        tags=["false_color", "pseudocolor", "heat_map", "scientific", "visualization",
+              "thermal", "infrared", "rainbow"],
+    ))
+
+    # Halftone dots
+    registry.register(Skill(
+        name="halftone",
+        category=SkillCategory.OUTCOME,
+        description="Print halftone dot pattern (newspaper/screen-print look)",
+        parameters=[
+            SkillParameter(
+                name="dot_size",
+                type=ParameterType.FLOAT,
+                description="Size/frequency of halftone dots (0.1-1.0)",
+                required=False,
+                default=0.3,
+                min_value=0.1,
+                max_value=1.0,
+            ),
+        ],
+        examples=[
+            "halftone - Newspaper dot pattern",
+            "halftone:dot_size=0.5 - Larger dots",
+            "halftone:dot_size=0.15 - Fine print dots",
+        ],
+        tags=["halftone", "dots", "print", "newspaper", "retro", "screen_print", "ben_day"],
     ))

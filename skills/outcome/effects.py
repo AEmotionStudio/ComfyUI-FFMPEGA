@@ -987,3 +987,165 @@ def register_skills(registry: SkillRegistry) -> None:
         ],
         tags=["overlay", "pip", "picture-in-picture", "watermark", "logo", "stamp", "multi"],
     ))
+
+    # ----- Enhanced effects (using advanced FFMPEG filters) ----- #
+
+    # Glow / bloom effect
+    registry.register(Skill(
+        name="glow",
+        category=SkillCategory.OUTCOME,
+        description="Bloom / soft glow effect (split → blur → screen blend)",
+        parameters=[
+            SkillParameter(
+                name="radius",
+                type=ParameterType.FLOAT,
+                description="Blur radius for the glow (5-60)",
+                required=False,
+                default=30,
+                min_value=5,
+                max_value=60,
+            ),
+            SkillParameter(
+                name="strength",
+                type=ParameterType.FLOAT,
+                description="Glow blend strength (0.1-0.8)",
+                required=False,
+                default=0.4,
+                min_value=0.1,
+                max_value=0.8,
+            ),
+        ],
+        examples=[
+            "glow - Soft bloom glow",
+            "glow:radius=50,strength=0.6 - Strong dreamy glow",
+            "glow:radius=10,strength=0.2 - Subtle halo",
+        ],
+        tags=["glow", "bloom", "soft", "dreamy", "halo", "light", "ethereal"],
+    ))
+
+    # Ghost trail / afterimage
+    registry.register(Skill(
+        name="ghost_trail",
+        category=SkillCategory.OUTCOME,
+        description="Temporal trailing / afterimage effect (ghostly motion trails)",
+        parameters=[
+            SkillParameter(
+                name="decay",
+                type=ParameterType.FLOAT,
+                description="Trail persistence (0.9=short, 0.99=long)",
+                required=False,
+                default=0.97,
+                min_value=0.9,
+                max_value=0.995,
+            ),
+        ],
+        examples=[
+            "ghost_trail - Motion afterimage trails",
+            "ghost_trail:decay=0.99 - Long persistent trails",
+            "ghost_trail:decay=0.92 - Brief ghost effect",
+        ],
+        tags=["ghost", "trail", "afterimage", "echo", "phantom", "motion", "persistence"],
+    ))
+
+    # Tilt-shift miniature
+    registry.register(Skill(
+        name="tilt_shift",
+        category=SkillCategory.OUTCOME,
+        description="Real tilt-shift miniature effect with selective blur",
+        parameters=[
+            SkillParameter(
+                name="focus_position",
+                type=ParameterType.FLOAT,
+                description="Vertical position of sharp band (0=top, 1=bottom)",
+                required=False,
+                default=0.5,
+                min_value=0.1,
+                max_value=0.9,
+            ),
+            SkillParameter(
+                name="blur_amount",
+                type=ParameterType.FLOAT,
+                description="Blur strength for out-of-focus areas (2-20)",
+                required=False,
+                default=8,
+                min_value=2,
+                max_value=20,
+            ),
+        ],
+        examples=[
+            "tilt_shift - Miniature/toy model look",
+            "tilt_shift:focus_position=0.3,blur_amount=12 - Focus near top, strong blur",
+        ],
+        tags=["tilt_shift", "miniature", "toy", "model", "diorama", "selective_blur", "focus"],
+    ))
+
+    # Frame blend / motion blur
+    registry.register(Skill(
+        name="frame_blend",
+        category=SkillCategory.OUTCOME,
+        description="Temporal frame blending for dreamy motion blur",
+        parameters=[
+            SkillParameter(
+                name="frames",
+                type=ParameterType.INT,
+                description="Number of frames to blend together (2-10)",
+                required=False,
+                default=5,
+                min_value=2,
+                max_value=10,
+            ),
+        ],
+        examples=[
+            "frame_blend - Dreamy motion blur (5 frames)",
+            "frame_blend:frames=3 - Subtle motion blur",
+            "frame_blend:frames=10 - Heavy long-exposure look",
+        ],
+        tags=["motion_blur", "blend", "dreamy", "smooth", "long_exposure", "temporal"],
+    ))
+
+    # Chromatic aberration
+    registry.register(Skill(
+        name="chromatic_aberration",
+        category=SkillCategory.OUTCOME,
+        description="RGB channel offset for chromatic aberration / color fringing",
+        parameters=[
+            SkillParameter(
+                name="amount",
+                type=ParameterType.INT,
+                description="Pixel offset of color channels (1-20)",
+                required=False,
+                default=4,
+                min_value=1,
+                max_value=20,
+            ),
+        ],
+        examples=[
+            "chromatic_aberration - Subtle color fringing",
+            "chromatic_aberration:amount=10 - Strong RGB split",
+            "chromatic_aberration:amount=2 - Barely visible fringe",
+        ],
+        tags=["chromatic", "aberration", "rgb", "split", "fringe", "lens", "distortion", "glitch"],
+    ))
+
+    # Sketch / line art
+    registry.register(Skill(
+        name="sketch",
+        category=SkillCategory.OUTCOME,
+        description="Pencil drawing / ink line art effect using edge detection",
+        parameters=[
+            SkillParameter(
+                name="mode",
+                type=ParameterType.CHOICE,
+                description="Drawing style",
+                required=False,
+                default="pencil",
+                choices=["pencil", "ink", "color"],
+            ),
+        ],
+        examples=[
+            "sketch - Pencil drawing effect",
+            "sketch:mode=ink - Bold ink outline",
+            "sketch:mode=color - Colored edge detection",
+        ],
+        tags=["sketch", "pencil", "drawing", "line_art", "ink", "outline", "edges", "artistic"],
+    ))

@@ -1138,6 +1138,168 @@ def _f_monochrome(p):
     return [f"monochrome=cb={p_vals['cb']}:cr={p_vals['cr']}:size={size}"], [], []
 
 
+# ====================================================================== #
+#  Enhanced effect handlers (using advanced FFMPEG filters)                 #
+# ====================================================================== #
+
+
+def _f_chromatic_aberration(p):
+    """RGB channel offset using rgbashift — real chromatic aberration."""
+    amount = int(p.get("amount", 4))
+    return [f"rgbashift=rh=-{amount}:bh={amount}:rv={amount // 2}:bv=-{amount // 2}"], [], []
+
+
+def _f_sketch(p):
+    """Pencil/ink line art using edgedetect filter."""
+    mode = p.get("mode", "pencil")
+    if mode == "color":
+        return ["edgedetect=low=0.1:high=0.3:mode=colormix"], [], []
+    elif mode == "ink":
+        return ["edgedetect=low=0.08:high=0.4,negate"], [], []
+    else:  # pencil
+        return ["edgedetect=low=0.1:high=0.3,negate"], [], []
+
+
+def _f_glow(p):
+    """Bloom/soft glow using split → gblur → screen blend (filter_complex)."""
+    radius = float(p.get("radius", 30))
+    strength = float(p.get("strength", 0.4))
+    strength = max(0.1, min(0.8, strength))
+    fc = (
+        f"split[a][b];"
+        f"[b]gblur=sigma={radius}[b];"
+        f"[a][b]blend=all_mode=screen:all_opacity={strength}"
+    )
+    return [], [], [], fc
+
+
+def _f_ghost_trail(p):
+    """Temporal trailing/afterimage using lagfun filter."""
+    decay = float(p.get("decay", 0.97))
+    decay = max(0.9, min(0.995, decay))
+    return [f"lagfun=decay={decay}"], [], []
+
+
+def _f_color_channel_swap(p):
+    """Dramatic color remapping using colorchannelmixer."""
+    preset = p.get("preset", "swap_rb")
+    presets = {
+        "swap_rb": "colorchannelmixer=rr=0:rg=0:rb=1:br=1:bg=0:bb=0",
+        "swap_rg": "colorchannelmixer=rr=0:rg=1:rb=0:gr=1:gg=0:gb=0",
+        "swap_gb": "colorchannelmixer=gg=0:gb=1:bg=1:bb=0",
+        "nightvision": "colorchannelmixer=rr=0.2:rg=0.7:rb=0.1:gr=0.2:gg=0.7:gb=0.1:br=0.1:bg=0.1:bb=0.1",
+        "matrix": "colorchannelmixer=rr=0:rg=1:rb=0:gr=0:gg=1:gb=0:br=0:bg=1:bb=0",
+    }
+    filt = presets.get(preset, presets["swap_rb"])
+    return [filt], [], []
+
+
+def _f_tilt_shift(p):
+    """Real tilt-shift miniature effect with selective blur (filter_complex)."""
+    focus = float(p.get("focus_position", 0.5))
+    blur_amount = float(p.get("blur_amount", 8))
+    # Sharp band is centered on focus, 30% of frame height
+    low = max(0, focus - 0.15)
+    high = min(1, focus + 0.15)
+    fc = (
+        f"split[a][b];"
+        f"[b]gblur=sigma={blur_amount}[b];"
+        f"[a][b]blend=all_expr='if(between(Y/H\\,{low}\\,{high})\\,A\\,B)'"
+    )
+    return [], [], [], fc
+
+
+def _f_frame_blend(p):
+    """Temporal frame blending / motion blur using tmix."""
+    frames = int(p.get("frames", 5))
+    frames = max(2, min(10, frames))
+    weights = " ".join(["1"] * frames)
+    return [f"tmix=frames={frames}:weights='{weights}'"], [], []
+
+
+def _f_false_color(p):
+    """Pseudocolor / heat map using pseudocolor filter."""
+    palette = p.get("palette", "heat")
+    palettes = {
+        "heat": (
+            "pseudocolor="
+            "c0='if(between(val,0,85),255,if(between(val,85,170),255,if(between(val,170,255),255,0)))':"
+            "c1='if(between(val,0,85),0,if(between(val,85,170),val-85,if(between(val,170,255),255,0)))':"
+            "c2='if(between(val,0,85),0,if(between(val,85,170),0,if(between(val,170,255),val-170,0)))'"
+        ),
+        "electric": (
+            "pseudocolor="
+            "c0='if(lt(val,128),val*2,255)':"
+            "c1='if(lt(val,128),0,val-128)':"
+            "c2='if(lt(val,128),255-val*2,0)'"
+        ),
+        "blues": (
+            "pseudocolor="
+            "c0='val/3':"
+            "c1='val/2':"
+            "c2='val'"
+        ),
+        "rainbow": (
+            "pseudocolor="
+            "c0='if(lt(val,85),255-val*3,if(lt(val,170),0,val*3-510))':"
+            "c1='if(lt(val,85),val*3,if(lt(val,170),255,765-val*3))':"
+            "c2='if(lt(val,85),0,if(lt(val,170),val*3-255,255))'"
+        ),
+    }
+    filt = palettes.get(palette, palettes["heat"])
+    return [filt], [], []
+
+
+def _f_halftone(p):
+    """Print halftone dot pattern using geq."""
+    dot_size = float(p.get("dot_size", 0.3))
+    freq = max(0.1, min(1.0, dot_size))
+    return [
+        f"format=gray,geq='if(gt(lum(X\\,Y)\\,128+127*sin(X*{freq})*sin(Y*{freq}))\\,255\\,0)'"
+    ], [], []
+
+
+# --- Upgraded existing effect handlers --- #
+
+def _f_neon_enhanced(p):
+    """Neon glow with real edge detection + high-saturation blend (filter_complex)."""
+    intensity = p.get("intensity", "medium")
+    opacity = {"subtle": 0.3, "medium": 0.5, "strong": 0.7}.get(intensity, 0.5)
+    fc = (
+        f"split[a][b];"
+        f"[b]edgedetect=low=0.08:high=0.3:mode=colormix,"
+        f"eq=saturation=3:brightness=0.1[b];"
+        f"[a][b]blend=all_mode=screen:all_opacity={opacity}"
+    )
+    return [], [], [], fc
+
+
+def _f_thermal_enhanced(p):
+    """Real thermal/heat vision using pseudocolor."""
+    return [
+        "pseudocolor="
+        "c0='if(between(val,0,85),255,if(between(val,85,170),255,if(between(val,170,255),255,0)))':"
+        "c1='if(between(val,0,85),0,if(between(val,85,170),val*3-255,if(between(val,170,255),255,0)))':"
+        "c2='if(between(val,0,85),0,if(between(val,85,170),0,if(between(val,170,255),val*3-510,0)))'"
+    ], [], []
+
+
+def _f_comic_book_enhanced(p):
+    """Comic book with real edge outline + posterization (filter_complex)."""
+    style = p.get("style", "classic")
+    levels = {"classic": 6, "manga": 2, "pop_art": 4}.get(style, 6)
+    step = max(1, 256 // levels)
+    lut_expr = f"trunc(val/{step})*{step}"
+    fc = (
+        f"split[a][b];"
+        f"[b]edgedetect=low=0.1:high=0.4,negate[b];"
+        f"[a]lutrgb=r='{lut_expr}':g='{lut_expr}':b='{lut_expr}',"
+        f"eq=saturation=1.5:contrast=1.3[a];"
+        f"[a][b]blend=all_mode=multiply"
+    )
+    return [], [], [], fc
+
+
 # Dispatch table: skill_name → handler(params) → (vf, af, opts)
 _SKILL_DISPATCH: dict[str, callable] = {
     # Temporal
@@ -1219,6 +1381,20 @@ _SKILL_DISPATCH: dict[str, callable] = {
     "deshake": _f_deshake,
     "selective_color": _f_selective_color,
     "monochrome": _f_monochrome,
+    # Enhanced effects
+    "chromatic_aberration": _f_chromatic_aberration,
+    "sketch": _f_sketch,
+    "glow": _f_glow,
+    "ghost_trail": _f_ghost_trail,
+    "color_channel_swap": _f_color_channel_swap,
+    "tilt_shift": _f_tilt_shift,
+    "frame_blend": _f_frame_blend,
+    "false_color": _f_false_color,
+    "halftone": _f_halftone,
+    # Upgraded effects (override pipeline-based versions)
+    "neon": _f_neon_enhanced,
+    "thermal": _f_thermal_enhanced,
+    "comic_book": _f_comic_book_enhanced,
 }
 
 
