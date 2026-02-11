@@ -6,6 +6,7 @@ import logging
 from typing import Optional, AsyncIterator
 
 from .base import LLMConnector, LLMConfig, LLMResponse, LLMProvider
+from .cli_utils import resolve_cli_binary
 
 logger = logging.getLogger("ffmpega")
 
@@ -38,8 +39,17 @@ class ClaudeCodeCLIConnector(LLMConnector):
     ) -> LLMResponse:
         """Run ``claude -p`` and capture text output."""
 
+        # Resolve the full path — shutil.which may fail inside a venv.
+        claude_bin = resolve_cli_binary("claude", "claude.cmd")
+        if not claude_bin:
+            raise RuntimeError(
+                "Claude Code CLI binary not found. Install it with:\n"
+                "  npm install -g @anthropic-ai/claude-code\n"
+                "Or see: https://docs.anthropic.com/en/docs/claude-code"
+            )
+
         cmd = [
-            "claude", "-p",
+            claude_bin, "-p",
             "--output-format", "text",
             "--no-session-persistence",
         ]
@@ -48,7 +58,7 @@ class ClaudeCodeCLIConnector(LLMConnector):
         if system_prompt:
             cmd.extend(["--system-prompt", system_prompt])
 
-        logger.debug("[ClaudeCLI] Running: claude -p (stdin) --output-format text")
+        logger.debug("[ClaudeCLI] Running: %s -p (stdin) --output-format text", claude_bin)
 
         try:
             proc = await asyncio.create_subprocess_exec(

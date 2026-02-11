@@ -275,7 +275,7 @@ class FFMPEGAgentNode:
         extra_images: Optional[torch.Tensor] = None,
         audio_input: Optional[dict] = None,
         preview_mode: bool = False,
-        save_output: bool = True,
+        save_output: bool = False,
         output_path: str = "",
         ollama_url: str = "http://localhost:11434",
         api_key: str = "",
@@ -652,9 +652,16 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
                 if os.path.isdir(d):
                     shutil.rmtree(d, ignore_errors=True)
         # Clean up temp render dir (pass-through mode)
-        # Note: don't remove output_path yet — downstream nodes may still
-        # need it. The temp *directory* is cleaned up, but the file inside
-        # it is referenced by the returned path and cleaned by ComfyUI.
+        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+            # The output file is referenced by the returned path — downstream
+            # nodes will read it.  We schedule cleanup for *after* this node
+            # returns by removing only the directory if the file has already
+            # been consumed, or leaving it for ComfyUI's own temp management.
+            # For now, do NOT delete — ComfyUI still needs the file.  We only
+            # ensure we are not silently leaking empty dirs if the render
+            # produced nothing.
+            if not os.listdir(temp_render_dir):
+                shutil.rmtree(temp_render_dir, ignore_errors=True)
 
         return (images_tensor, audio_out, output_path, command.to_string(), analysis)
 

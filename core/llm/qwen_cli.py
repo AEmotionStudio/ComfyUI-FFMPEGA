@@ -14,7 +14,7 @@ logger = logging.getLogger("ffmpega")
 class QwenCodeCLIConnector(LLMConnector):
     """Connector that invokes Qwen Code CLI in non-interactive (print) mode.
 
-    Uses ``qwen -p <prompt> --output-format text`` to generate responses.
+    Uses ``qwen -p --output-format text`` with prompt piped via stdin.
     Requires the ``qwen`` binary to be installed and authenticated
     (e.g. via ``pnpm install -g @qwen-code/qwen-code@latest``).
 
@@ -39,7 +39,7 @@ class QwenCodeCLIConnector(LLMConnector):
         prompt: str,
         system_prompt: Optional[str] = None,
     ) -> LLMResponse:
-        """Run ``qwen -p`` and capture text output."""
+        """Run ``qwen -p`` with prompt piped via stdin."""
 
         # Combine system + user prompt into a single string.
         # The Qwen CLI has no separate --system-prompt flag.
@@ -61,13 +61,16 @@ class QwenCodeCLIConnector(LLMConnector):
                 "Or see: https://qwenlm.github.io/qwen-code-docs/"
             )
 
+        # Use stdin + -p flag (no arg) to avoid OS arg-length limits.
+        # The -p flag with positional prompt is deprecated; piping via
+        # stdin is the preferred way for large prompts.
         cmd = [
             qwen_bin,
             "--output-format", "text",
-            "-p", full_prompt,
+            "-p",
         ]
 
-        logger.debug("[QwenCLI] Running: %s -p (prompt) --output-format text", qwen_bin)
+        logger.debug("[QwenCLI] Running: %s -p (stdin) --output-format text", qwen_bin)
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -78,7 +81,7 @@ class QwenCodeCLIConnector(LLMConnector):
             )
 
             stdout, stderr = await asyncio.wait_for(
-                proc.communicate(),
+                proc.communicate(input=full_prompt.encode("utf-8")),
                 timeout=self.config.timeout,
             )
         except asyncio.TimeoutError:

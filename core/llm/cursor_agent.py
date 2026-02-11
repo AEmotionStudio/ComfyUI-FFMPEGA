@@ -14,9 +14,9 @@ logger = logging.getLogger("ffmpega")
 class CursorAgentConnector(LLMConnector):
     """Connector that invokes Cursor's CLI in non-interactive agent mode.
 
-    Uses ``agent -p <prompt>`` to generate responses.
-    Requires the ``agent`` binary to be installed and on PATH
-    (Cursor IDE → command palette → "Install 'cursor' command").
+    Uses ``agent -p <prompt>`` (piped via stdin) to generate responses.
+    The binary is named ``agent`` and is installed via:
+    Cursor IDE → Command Palette → "Install 'cursor' command".
     """
 
     def __init__(self, config: Optional[LLMConfig] = None):
@@ -37,7 +37,7 @@ class CursorAgentConnector(LLMConnector):
         prompt: str,
         system_prompt: Optional[str] = None,
     ) -> LLMResponse:
-        """Run ``cursor --agent -p`` and capture text output."""
+        """Run ``agent -p`` and capture text output."""
 
         # Combine system + user prompt into a single string.
         # The Cursor CLI has no separate --system-prompt flag.
