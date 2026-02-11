@@ -447,7 +447,7 @@ app.registerExtension({
                                     }
                                 },
                                 {
-                                    content: "Clear Prompt",
+                                    content: "🗑️ Clear Prompt",
                                     callback: () => {
                                         const promptWidget = this.widgets?.find(w => w.name === "prompt");
                                         if (promptWidget && promptWidget.value && promptWidget.value.trim() !== "") {
@@ -456,6 +456,7 @@ app.registerExtension({
                                             }
                                             promptWidget.value = "";
                                             this.setDirtyCanvas(true, true);
+                                            flashNode(this);
                                         }
                                     }
                                 }
@@ -534,7 +535,33 @@ function setPrompt(node, text, replace = false) {
             }
         }
         node.setDirtyCanvas(true, true);
+        flashNode(node);
     }
+}
+
+/**
+ * Visual feedback helper - flashes the node background
+ * @param {object} node - The node instance
+ * @param {string} color - The flash color (default: lighter blue-grey)
+ */
+function flashNode(node, color = "#4a5a7a") {
+    if (!node || node._isFlashing) return;
+
+    node._isFlashing = true;
+    const originalBg = node.bgcolor;
+
+    // Flash color
+    node.bgcolor = color;
+    node.setDirtyCanvas(true, true);
+
+    setTimeout(() => {
+        // Restore only if it hasn't been changed again externally (unlikely but safe)
+        if (node.bgcolor === color) {
+             node.bgcolor = originalBg;
+        }
+        node._isFlashing = false;
+        node.setDirtyCanvas(true, true);
+    }, 200);
 }
 
 console.log("FFMPEGA UI extensions loaded");
