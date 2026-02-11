@@ -38,19 +38,97 @@ app.registerExtension({
         if (nodeData.name === "FFMPEGAgent") {
             const onNodeCreated = nodeType.prototype.onNodeCreated;
 
-            nodeType.prototype.onNodeCreated = function() {
+            nodeType.prototype.onNodeCreated = function () {
                 const result = onNodeCreated?.apply(this, arguments);
 
                 // Style the node
                 this.color = "#2a3a5a";
                 this.bgcolor = "#1a2a4a";
 
+                // --- Dynamic widget visibility ---
+                // Uses the standard LiteGraph widget hiding pattern (VHS-style):
+                // hidden widgets get computeSize → [0, -4] so they collapse
+                // entirely and the node resizes cleanly.
+                const node = this;
+
+                // Reusable show/hide for any widget
+                function toggleWidget(widget, show) {
+                    if (!widget) return;
+                    if (!widget._origType) {
+                        widget._origType = widget.type;
+                        widget._origComputeSize = widget.computeSize;
+                    }
+                    if (show) {
+                        widget.type = widget._origType;
+                        widget.computeSize = widget._origComputeSize;
+                    } else {
+                        widget.type = "hidden";
+                        widget.computeSize = () => [0, -4];
+                    }
+                }
+
+                function fitHeight() {
+                    node.setSize([
+                        node.size[0],
+                        node.computeSize([node.size[0], node.size[1]])[1]
+                    ]);
+                    node?.graph?.setDirtyCanvas(true);
+                }
+
+                // --- LLM model → custom_model / api_key visibility ---
+                const llmWidget = this.widgets?.find(w => w.name === "llm_model");
+                if (llmWidget) {
+                    const customWidget = this.widgets?.find(w => w.name === "custom_model");
+                    const apiKeyWidget = this.widgets?.find(w => w.name === "api_key");
+
+                    function needsApiKey(model) {
+                        if (!model) return false;
+                        // CLI-based models use their own auth — no api_key needed
+                        if (model === "gemini-cli" || model === "claude-cli" || model === "cursor-agent" || model === "qwen-cli") return false;
+                        return model.startsWith("gpt") ||
+                            model.startsWith("claude") ||
+                            model.startsWith("gemini") ||
+                            model === "custom";
+                    }
+
+                    function updateLlmVisibility() {
+                        const model = llmWidget.value;
+                        toggleWidget(customWidget, model === "custom");
+                        toggleWidget(apiKeyWidget, needsApiKey(model));
+                        fitHeight();
+                    }
+
+                    updateLlmVisibility();
+                    const origLlmCb = llmWidget.callback;
+                    llmWidget.callback = function (...args) {
+                        origLlmCb?.apply(this, args);
+                        updateLlmVisibility();
+                    };
+                }
+
+                // --- save_output → output_path visibility ---
+                const saveWidget = this.widgets?.find(w => w.name === "save_output");
+                const outputPathWidget = this.widgets?.find(w => w.name === "output_path");
+                if (saveWidget && outputPathWidget) {
+                    function updateSaveVisibility() {
+                        toggleWidget(outputPathWidget, saveWidget.value);
+                        fitHeight();
+                    }
+
+                    updateSaveVisibility();
+                    const origSaveCb = saveWidget.callback;
+                    saveWidget.callback = function (...args) {
+                        origSaveCb?.apply(this, args);
+                        updateSaveVisibility();
+                    };
+                }
+
                 return result;
             };
 
             // Add context menu presets
             const origGetExtraMenuOptions = nodeType.prototype.getExtraMenuOptions;
-            nodeType.prototype.getExtraMenuOptions = function(_, options) {
+            nodeType.prototype.getExtraMenuOptions = function (_, options) {
                 origGetExtraMenuOptions?.apply(this, arguments);
 
                 options.unshift(
@@ -59,35 +137,226 @@ app.registerExtension({
                         submenu: {
                             options: [
                                 {
-                                    content: "Cinematic & Style",
+                                    content: "🎬 Cinematic & Style",
                                     submenu: {
                                         options: [
                                             {
-                                                content: "Cinematic",
+                                                content: "Cinematic Letterbox",
                                                 callback: () => setPrompt(this, "Apply cinematic letterbox and color grading")
                                             },
                                             {
-                                                content: "Vintage",
-                                                callback: () => setPrompt(this, "Create a vintage film look with grain")
+                                                content: "Film Noir",
+                                                callback: () => setPrompt(this, "Black and white film noir style with high contrast")
                                             },
                                             {
-                                                content: "Noir",
-                                                callback: () => setPrompt(this, "Black and white film noir style with high contrast")
+                                                content: "Dreamy / Soft Glow",
+                                                callback: () => setPrompt(this, "Apply a dreamy soft glow effect")
+                                            },
+                                            {
+                                                content: "HDR Look",
+                                                callback: () => setPrompt(this, "Apply an HDR-style look with vivid colors and detail")
+                                            },
+                                            {
+                                                content: "Teal & Orange",
+                                                callback: () => setPrompt(this, "Apply teal and orange color grading")
                                             }
                                         ]
                                     }
                                 },
                                 {
-                                    content: "Format & Social",
+                                    content: "📼 Vintage & Retro",
                                     submenu: {
                                         options: [
                                             {
-                                                content: "Social Vertical (9:16)",
+                                                content: "Vintage Film",
+                                                callback: () => setPrompt(this, "Create a vintage film look with grain")
+                                            },
+                                            {
+                                                content: "VHS Effect",
+                                                callback: () => setPrompt(this, "Apply a VHS tape effect with tracking lines and distortion")
+                                            },
+                                            {
+                                                content: "Sepia Tone",
+                                                callback: () => setPrompt(this, "Apply a warm sepia tone effect")
+                                            },
+                                            {
+                                                content: "Super 8mm Film",
+                                                callback: () => setPrompt(this, "Apply a Super 8mm film look with jitter and grain")
+                                            },
+                                            {
+                                                content: "Old TV / CRT",
+                                                callback: () => setPrompt(this, "Apply an old CRT television look with scanlines")
+                                            },
+                                            {
+                                                content: "Polaroid Look",
+                                                callback: () => setPrompt(this, "Apply a polaroid photo style color treatment")
+                                            },
+                                            {
+                                                content: "Faded / Washed Out",
+                                                callback: () => setPrompt(this, "Apply a faded washed-out film look")
+                                            },
+                                            {
+                                                content: "Damaged Film",
+                                                callback: () => setPrompt(this, "Apply a damaged film effect with scratches and flicker")
+                                            }
+                                        ]
+                                    }
+                                },
+                                {
+                                    content: "🎨 Color & Look",
+                                    submenu: {
+                                        options: [
+                                            {
+                                                content: "Grayscale",
+                                                callback: () => setPrompt(this, "Convert to black and white grayscale")
+                                            },
+                                            {
+                                                content: "Boost Saturation",
+                                                callback: () => setPrompt(this, "Increase color saturation for more vivid colors")
+                                            },
+                                            {
+                                                content: "Desaturate",
+                                                callback: () => setPrompt(this, "Desaturate colors for a muted look")
+                                            },
+                                            {
+                                                content: "Invert Colors",
+                                                callback: () => setPrompt(this, "Invert all colors to create a negative image")
+                                            },
+                                            {
+                                                content: "Sharpen",
+                                                callback: () => setPrompt(this, "Sharpen the video to enhance detail and clarity")
+                                            },
+                                            {
+                                                content: "Blur / Soften",
+                                                callback: () => setPrompt(this, "Apply a soft gaussian blur effect")
+                                            },
+                                            {
+                                                content: "Vignette",
+                                                callback: () => setPrompt(this, "Add a dark vignette around the edges")
+                                            },
+                                            {
+                                                content: "Deband",
+                                                callback: () => setPrompt(this, "Remove color banding artifacts")
+                                            }
+                                        ]
+                                    }
+                                },
+                                {
+                                    content: "✨ Effects & Overlays",
+                                    submenu: {
+                                        options: [
+                                            {
+                                                content: "Text Overlay",
+                                                callback: () => setPrompt(this, "Add text overlay that says 'Hello World' in the center")
+                                            },
+                                            {
+                                                content: "Watermark",
+                                                callback: () => setPrompt(this, "Add a semi-transparent watermark in the bottom-right corner")
+                                            },
+                                            {
+                                                content: "Picture-in-Picture",
+                                                callback: () => setPrompt(this, "Create a picture-in-picture layout with small video in corner")
+                                            },
+                                            {
+                                                content: "Chroma Key (Green Screen)",
+                                                callback: () => setPrompt(this, "Remove the green screen background using chroma key")
+                                            },
+                                            {
+                                                content: "Add Film Grain",
+                                                callback: () => setPrompt(this, "Add subtle film grain noise overlay")
+                                            },
+                                            {
+                                                content: "Mirror / Flip",
+                                                callback: () => setPrompt(this, "Mirror the video horizontally")
+                                            }
+                                        ]
+                                    }
+                                },
+                                {
+                                    content: "🔀 Transitions",
+                                    submenu: {
+                                        options: [
+                                            {
+                                                content: "Fade In from Black",
+                                                callback: () => setPrompt(this, "Add a fade-in from black at the beginning")
+                                            },
+                                            {
+                                                content: "Fade Out to Black",
+                                                callback: () => setPrompt(this, "Add a fade-out to black at the end")
+                                            },
+                                            {
+                                                content: "Fade to White",
+                                                callback: () => setPrompt(this, "Add a fade to white transition")
+                                            },
+                                            {
+                                                content: "Flash Effect",
+                                                callback: () => setPrompt(this, "Add a bright flash transition at the midpoint")
+                                            },
+                                            {
+                                                content: "Cross Dissolve",
+                                                callback: () => setPrompt(this, "Add a cross dissolve transition between clips")
+                                            }
+                                        ]
+                                    }
+                                },
+                                {
+                                    content: "🌀 Motion & Animation",
+                                    submenu: {
+                                        options: [
+                                            {
+                                                content: "Ken Burns Zoom",
+                                                callback: () => setPrompt(this, "Apply a slow Ken Burns zoom-in effect")
+                                            },
+                                            {
+                                                content: "Spin / Rotate",
+                                                callback: () => setPrompt(this, "Slowly rotate the video continuously")
+                                            },
+                                            {
+                                                content: "Camera Shake",
+                                                callback: () => setPrompt(this, "Add a subtle camera shake effect")
+                                            },
+                                            {
+                                                content: "Pulse / Breathe",
+                                                callback: () => setPrompt(this, "Add a rhythmic zoom pulse effect")
+                                            },
+                                            {
+                                                content: "Drift / Pan",
+                                                callback: () => setPrompt(this, "Add a slow horizontal drift pan")
+                                            },
+                                            {
+                                                content: "Bounce",
+                                                callback: () => setPrompt(this, "Add a bouncing animation effect")
+                                            }
+                                        ]
+                                    }
+                                },
+                                {
+                                    content: "📱 Format & Social",
+                                    submenu: {
+                                        options: [
+                                            {
+                                                content: "TikTok / Reels (9:16)",
                                                 callback: () => setPrompt(this, "Crop to vertical 9:16 for TikTok/Reels")
                                             },
                                             {
                                                 content: "Instagram Square (1:1)",
                                                 callback: () => setPrompt(this, "Crop to square 1:1 format")
+                                            },
+                                            {
+                                                content: "YouTube Optimize",
+                                                callback: () => setPrompt(this, "Optimize for YouTube at 1080p with good compression")
+                                            },
+                                            {
+                                                content: "Twitter / X Optimize",
+                                                callback: () => setPrompt(this, "Optimize for Twitter/X with size limits")
+                                            },
+                                            {
+                                                content: "Convert to GIF",
+                                                callback: () => setPrompt(this, "Convert to an animated GIF")
+                                            },
+                                            {
+                                                content: "Add Caption Space",
+                                                callback: () => setPrompt(this, "Add blank space below the video for captions")
                                             },
                                             {
                                                 content: "Compress for Web",
@@ -97,7 +366,7 @@ app.registerExtension({
                                     }
                                 },
                                 {
-                                    content: "Time & Motion",
+                                    content: "⏱️ Time & Speed",
                                     submenu: {
                                         options: [
                                             {
@@ -109,18 +378,30 @@ app.registerExtension({
                                                 callback: () => setPrompt(this, "Speed up the video 2x while keeping audio pitch")
                                             },
                                             {
+                                                content: "Speed Up (4x)",
+                                                callback: () => setPrompt(this, "Speed up the video 4x for time-lapse effect")
+                                            },
+                                            {
                                                 content: "Reverse",
                                                 callback: () => setPrompt(this, "Play the video in reverse")
                                             },
                                             {
                                                 content: "Stabilize",
                                                 callback: () => setPrompt(this, "Stabilize shaky footage")
+                                            },
+                                            {
+                                                content: "Loop (3x)",
+                                                callback: () => setPrompt(this, "Loop the video 3 times seamlessly")
+                                            },
+                                            {
+                                                content: "Trim First 5 Seconds",
+                                                callback: () => setPrompt(this, "Trim the first 5 seconds of the video")
                                             }
                                         ]
                                     }
                                 },
                                 {
-                                    content: "Audio",
+                                    content: "🔊 Audio",
                                     submenu: {
                                         options: [
                                             {
@@ -130,6 +411,22 @@ app.registerExtension({
                                             {
                                                 content: "Boost Volume",
                                                 callback: () => setPrompt(this, "Increase audio volume")
+                                            },
+                                            {
+                                                content: "Normalize Audio",
+                                                callback: () => setPrompt(this, "Normalize audio levels to consistent volume")
+                                            },
+                                            {
+                                                content: "Reduce Noise",
+                                                callback: () => setPrompt(this, "Apply noise reduction to clean up the audio")
+                                            },
+                                            {
+                                                content: "Fade Audio In/Out",
+                                                callback: () => setPrompt(this, "Add audio fade-in at start and fade-out at end")
+                                            },
+                                            {
+                                                content: "Extract Audio Only",
+                                                callback: () => setPrompt(this, "Extract only the audio track as a separate output")
                                             }
                                         ]
                                     }
@@ -174,7 +471,7 @@ app.registerExtension({
         if (nodeData.name === "FFMPEGAPreview") {
             const onNodeCreated = nodeType.prototype.onNodeCreated;
 
-            nodeType.prototype.onNodeCreated = function() {
+            nodeType.prototype.onNodeCreated = function () {
                 const result = onNodeCreated?.apply(this, arguments);
 
                 this.color = "#3a5a3a";
@@ -188,7 +485,7 @@ app.registerExtension({
         if (nodeData.name === "FFMPEGABatchProcessor") {
             const onNodeCreated = nodeType.prototype.onNodeCreated;
 
-            nodeType.prototype.onNodeCreated = function() {
+            nodeType.prototype.onNodeCreated = function () {
                 const result = onNodeCreated?.apply(this, arguments);
 
                 this.color = "#5a3a3a";
@@ -202,7 +499,7 @@ app.registerExtension({
         if (nodeData.name === "FFMPEGAVideoInfo") {
             const onNodeCreated = nodeType.prototype.onNodeCreated;
 
-            nodeType.prototype.onNodeCreated = function() {
+            nodeType.prototype.onNodeCreated = function () {
                 const result = onNodeCreated?.apply(this, arguments);
 
                 this.color = "#4a4a3a";

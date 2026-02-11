@@ -13,6 +13,9 @@ class LLMProvider(str, Enum):
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
     GEMINI_CLI = "gemini_cli"
+    CLAUDE_CLI = "claude_cli"
+    CURSOR_AGENT = "cursor_agent"
+    QWEN_CLI = "qwen_cli"
     CUSTOM = "custom"
 
 

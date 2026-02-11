@@ -1,4 +1,4 @@
-"""Gemini CLI connector — runs the `gemini` binary in headless mode."""
+"""Qwen Code CLI connector — runs the `qwen` binary in non-interactive mode."""
 
 import asyncio
 import shutil
@@ -11,19 +11,21 @@ from .cli_utils import resolve_cli_binary
 logger = logging.getLogger("ffmpega")
 
 
-class GeminiCLIConnector(LLMConnector):
-    """Connector that invokes the Gemini CLI in non-interactive (headless) mode.
+class QwenCodeCLIConnector(LLMConnector):
+    """Connector that invokes Qwen Code CLI in non-interactive (print) mode.
 
-    Uses ``gemini -p <prompt> -o text`` to generate responses.
-    Requires the ``gemini`` binary to be installed and authenticated
-    (e.g. via a Google Ultra subscription for free Gemini 3 Pro access).
+    Uses ``qwen -p <prompt> --output-format text`` to generate responses.
+    Requires the ``qwen`` binary to be installed and authenticated
+    (e.g. via ``pnpm install -g @qwen-code/qwen-code@latest``).
+
+    Free tier: 2,000 requests/day via Qwen OAuth (no credit card required).
     """
 
     def __init__(self, config: Optional[LLMConfig] = None):
         if config is None:
             config = LLMConfig(
-                provider=LLMProvider.GEMINI_CLI,
-                model="gemini-cli",
+                provider=LLMProvider.QWEN_CLI,
+                model="qwen-cli",
                 temperature=0.3,
             )
         super().__init__(config)
@@ -37,10 +39,10 @@ class GeminiCLIConnector(LLMConnector):
         prompt: str,
         system_prompt: Optional[str] = None,
     ) -> LLMResponse:
-        """Run ``gemini -p`` and capture text output."""
+        """Run ``qwen -p`` and capture text output."""
 
         # Combine system + user prompt into a single string.
-        # The CLI has no separate --system-instruction flag in headless mode.
+        # The Qwen CLI has no separate --system-prompt flag.
         full_prompt = ""
         if system_prompt:
             full_prompt += (
@@ -51,17 +53,21 @@ class GeminiCLIConnector(LLMConnector):
         full_prompt += prompt
 
         # Resolve the full path — shutil.which may fail inside a venv.
-        gemini_bin = resolve_cli_binary("gemini", "gemini.cmd")
-        if not gemini_bin:
+        qwen_bin = resolve_cli_binary("qwen", "qwen.cmd")
+        if not qwen_bin:
             raise RuntimeError(
-                "Gemini CLI binary not found. Install it with:\n"
-                "  npm install -g @google/gemini-cli\n"
-                "Or see: https://github.com/google-gemini/gemini-cli"
+                "Qwen Code CLI binary not found. Install it with:\n"
+                "  npm install -g @qwen-code/qwen-code@latest\n"
+                "Or see: https://qwenlm.github.io/qwen-code-docs/"
             )
 
-        cmd = [gemini_bin, "-p", "", "-o", "text"]
+        cmd = [
+            qwen_bin,
+            "--output-format", "text",
+            "-p", full_prompt,
+        ]
 
-        logger.debug("[GeminiCLI] Running: %s -p (stdin) -o text", gemini_bin)
+        logger.debug("[QwenCLI] Running: %s -p (prompt) --output-format text", qwen_bin)
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -72,7 +78,7 @@ class GeminiCLIConnector(LLMConnector):
             )
 
             stdout, stderr = await asyncio.wait_for(
-                proc.communicate(input=full_prompt.encode("utf-8")),
+                proc.communicate(),
                 timeout=self.config.timeout,
             )
         except asyncio.TimeoutError:
@@ -83,25 +89,25 @@ class GeminiCLIConnector(LLMConnector):
             except Exception:
                 pass
             raise TimeoutError(
-                f"Gemini CLI timed out after {self.config.timeout}s"
+                f"Qwen Code CLI timed out after {self.config.timeout}s"
             )
         except FileNotFoundError:
             raise RuntimeError(
-                "Gemini CLI binary not found. Install it with:\n"
-                "  npm install -g @google/gemini-cli\n"
-                "Or see: https://github.com/google-gemini/gemini-cli"
+                "Qwen Code CLI binary not found. Install it with:\n"
+                "  npm install -g @qwen-code/qwen-code@latest\n"
+                "Or see: https://qwenlm.github.io/qwen-code-docs/"
             )
 
         if proc.returncode != 0:
             err = stderr.decode("utf-8", errors="replace").strip()
-            raise RuntimeError(f"Gemini CLI failed (exit {proc.returncode}): {err}")
+            raise RuntimeError(f"Qwen Code CLI failed (exit {proc.returncode}): {err}")
 
         content = stdout.decode("utf-8", errors="replace").strip()
 
         return LLMResponse(
             content=content,
-            model="gemini-cli",
-            provider=LLMProvider.GEMINI_CLI,
+            model="qwen-cli",
+            provider=LLMProvider.QWEN_CLI,
         )
 
     async def generate_stream(
@@ -115,11 +121,11 @@ class GeminiCLIConnector(LLMConnector):
 
     async def list_models(self) -> list[str]:
         """Return the single CLI model identifier."""
-        return ["gemini-cli"]
+        return ["qwen-cli"]
 
     async def is_available(self) -> bool:
-        """Check if the gemini binary is on PATH."""
+        """Check if the qwen binary is on PATH."""
         return (
-            shutil.which("gemini") is not None
-            or shutil.which("gemini.cmd") is not None  # Windows npm shim
+            shutil.which("qwen") is not None
+            or shutil.which("qwen.cmd") is not None  # Windows npm shim
         )

@@ -42,11 +42,9 @@ class PipelineGenerator:
         from ..core.llm.api import APIConnector  # type: ignore[import-not-found]
         from ..core.llm.gemini_cli import GeminiCLIConnector  # type: ignore[import-not-found]
 
-        API_MODELS = [
-            "gpt-4o", "gpt-4o-mini",
-            "claude-sonnet-4-20250514", "claude-3-5-haiku-20241022",
-            "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash",
-        ]
+        # Provider is detected by model name prefix.
+        # No need to maintain a hardcoded list — any model with a
+        # recognised prefix is routed to the right API connector.
 
         # Gemini CLI — uses local binary, no API key needed
         if model == "gemini-cli":
@@ -57,16 +55,37 @@ class PipelineGenerator:
             )
             return GeminiCLIConnector(config)
 
-        if model not in API_MODELS and not model.startswith(("gpt", "claude", "gemini")):
+        # Claude Code CLI — uses local binary, no API key needed
+        if model == "claude-cli":
+            from ..core.llm.claude_cli import ClaudeCodeCLIConnector  # type: ignore[import-not-found]
             config = LLMConfig(
-                provider=LLMProvider.OLLAMA,
+                provider=LLMProvider.CLAUDE_CLI,
                 model=model,
-                base_url=ollama_url,
                 temperature=0.3,
             )
-            return OllamaConnector(config)
+            return ClaudeCodeCLIConnector(config)
 
-        elif model.startswith("gpt"):
+        # Cursor Agent CLI — uses local binary, no API key needed
+        if model == "cursor-agent":
+            from ..core.llm.cursor_agent import CursorAgentConnector  # type: ignore[import-not-found]
+            config = LLMConfig(
+                provider=LLMProvider.CURSOR_AGENT,
+                model=model,
+                temperature=0.3,
+            )
+            return CursorAgentConnector(config)
+
+        # Qwen Code CLI — uses local binary, free OAuth auth
+        if model == "qwen-cli":
+            from ..core.llm.qwen_cli import QwenCodeCLIConnector  # type: ignore[import-not-found]
+            config = LLMConfig(
+                provider=LLMProvider.QWEN_CLI,
+                model=model,
+                temperature=0.3,
+            )
+            return QwenCodeCLIConnector(config)
+
+        if model.startswith("gpt"):
             config = LLMConfig(
                 provider=LLMProvider.OPENAI,
                 model=model,
@@ -75,7 +94,7 @@ class PipelineGenerator:
             )
             return APIConnector(config)
 
-        elif model.startswith("claude"):
+        if model.startswith("claude"):
             config = LLMConfig(
                 provider=LLMProvider.ANTHROPIC,
                 model=model,
@@ -84,7 +103,7 @@ class PipelineGenerator:
             )
             return APIConnector(config)
 
-        elif model.startswith("gemini"):
+        if model.startswith("gemini"):
             config = LLMConfig(
                 provider=LLMProvider.GEMINI,
                 model=model,
@@ -93,14 +112,14 @@ class PipelineGenerator:
             )
             return APIConnector(config)
 
-        else:
-            config = LLMConfig(
-                provider=LLMProvider.OLLAMA,
-                model="llama3.1:8b",
-                base_url=ollama_url,
-                temperature=0.3,
-            )
-            return OllamaConnector(config)
+        # Default: treat as Ollama model
+        config = LLMConfig(
+            provider=LLMProvider.OLLAMA,
+            model=model,
+            base_url=ollama_url,
+            temperature=0.3,
+        )
+        return OllamaConnector(config)
 
     # ------------------------------------------------------------------ #
     #  High-level generate (with retry)                                    #

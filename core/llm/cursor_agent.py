@@ -1,4 +1,4 @@
-"""Gemini CLI connector — runs the `gemini` binary in headless mode."""
+"""Cursor Agent CLI connector — runs the `agent` binary in non-interactive mode."""
 
 import asyncio
 import shutil
@@ -11,19 +11,19 @@ from .cli_utils import resolve_cli_binary
 logger = logging.getLogger("ffmpega")
 
 
-class GeminiCLIConnector(LLMConnector):
-    """Connector that invokes the Gemini CLI in non-interactive (headless) mode.
+class CursorAgentConnector(LLMConnector):
+    """Connector that invokes Cursor's CLI in non-interactive agent mode.
 
-    Uses ``gemini -p <prompt> -o text`` to generate responses.
-    Requires the ``gemini`` binary to be installed and authenticated
-    (e.g. via a Google Ultra subscription for free Gemini 3 Pro access).
+    Uses ``agent -p <prompt>`` to generate responses.
+    Requires the ``agent`` binary to be installed and on PATH
+    (Cursor IDE → command palette → "Install 'cursor' command").
     """
 
     def __init__(self, config: Optional[LLMConfig] = None):
         if config is None:
             config = LLMConfig(
-                provider=LLMProvider.GEMINI_CLI,
-                model="gemini-cli",
+                provider=LLMProvider.CURSOR_AGENT,
+                model="cursor-agent",
                 temperature=0.3,
             )
         super().__init__(config)
@@ -37,10 +37,10 @@ class GeminiCLIConnector(LLMConnector):
         prompt: str,
         system_prompt: Optional[str] = None,
     ) -> LLMResponse:
-        """Run ``gemini -p`` and capture text output."""
+        """Run ``cursor --agent -p`` and capture text output."""
 
         # Combine system + user prompt into a single string.
-        # The CLI has no separate --system-instruction flag in headless mode.
+        # The Cursor CLI has no separate --system-prompt flag.
         full_prompt = ""
         if system_prompt:
             full_prompt += (
@@ -51,17 +51,17 @@ class GeminiCLIConnector(LLMConnector):
         full_prompt += prompt
 
         # Resolve the full path — shutil.which may fail inside a venv.
-        gemini_bin = resolve_cli_binary("gemini", "gemini.cmd")
-        if not gemini_bin:
+        agent_bin = resolve_cli_binary("agent", "agent.cmd")
+        if not agent_bin:
             raise RuntimeError(
-                "Gemini CLI binary not found. Install it with:\n"
-                "  npm install -g @google/gemini-cli\n"
-                "Or see: https://github.com/google-gemini/gemini-cli"
+                "Cursor Agent CLI binary ('agent') not found. Install it from:\n"
+                "  Cursor IDE → Command Palette → 'Install cursor command'\n"
+                "Or see: https://docs.cursor.com/cli"
             )
 
-        cmd = [gemini_bin, "-p", "", "-o", "text"]
+        cmd = [agent_bin, "-p"]
 
-        logger.debug("[GeminiCLI] Running: %s -p (stdin) -o text", gemini_bin)
+        logger.debug("[CursorAgent] Running: %s -p (stdin)", agent_bin)
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -83,25 +83,25 @@ class GeminiCLIConnector(LLMConnector):
             except Exception:
                 pass
             raise TimeoutError(
-                f"Gemini CLI timed out after {self.config.timeout}s"
+                f"Cursor Agent CLI timed out after {self.config.timeout}s"
             )
         except FileNotFoundError:
             raise RuntimeError(
-                "Gemini CLI binary not found. Install it with:\n"
-                "  npm install -g @google/gemini-cli\n"
-                "Or see: https://github.com/google-gemini/gemini-cli"
+                "Cursor Agent CLI binary ('agent') not found. Install it from:\n"
+                "  Cursor IDE → Command Palette → 'Install cursor command'\n"
+                "Or see: https://docs.cursor.com/cli"
             )
 
         if proc.returncode != 0:
             err = stderr.decode("utf-8", errors="replace").strip()
-            raise RuntimeError(f"Gemini CLI failed (exit {proc.returncode}): {err}")
+            raise RuntimeError(f"Cursor Agent CLI failed (exit {proc.returncode}): {err}")
 
         content = stdout.decode("utf-8", errors="replace").strip()
 
         return LLMResponse(
             content=content,
-            model="gemini-cli",
-            provider=LLMProvider.GEMINI_CLI,
+            model="cursor-agent",
+            provider=LLMProvider.CURSOR_AGENT,
         )
 
     async def generate_stream(
@@ -115,11 +115,11 @@ class GeminiCLIConnector(LLMConnector):
 
     async def list_models(self) -> list[str]:
         """Return the single CLI model identifier."""
-        return ["gemini-cli"]
+        return ["cursor-agent"]
 
     async def is_available(self) -> bool:
-        """Check if the gemini binary is on PATH."""
+        """Check if the agent binary is on PATH."""
         return (
-            shutil.which("gemini") is not None
-            or shutil.which("gemini.cmd") is not None  # Windows npm shim
+            shutil.which("agent") is not None
+            or shutil.which("agent.cmd") is not None  # Windows shim
         )

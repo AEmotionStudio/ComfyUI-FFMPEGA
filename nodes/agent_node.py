@@ -1,7 +1,9 @@
 """FFMPEG Agent node for ComfyUI."""
 
+import json
 import os
 import shutil
+import tempfile
 import time
 from pathlib import Path
 from typing import Optional
@@ -16,19 +18,21 @@ class FFMPEGAgentNode:
 
     # Fallback models if Ollama is unreachable
     FALLBACK_OLLAMA_MODELS = [
-        "llama3.1:8b",
-        "mistral:7b",
-        "qwen2.5:7b",
+        "qwen3:8b",
+        "mistral-nemo",
+        "llama3.3:8b",
     ]
 
+    # Stable pointer/alias names — these auto-update and rarely break.
+    # Users can also select "custom" and type any model name.
     API_MODELS = [
-        "gpt-4o",
-        "gpt-4o-mini",
-        "claude-sonnet-4-20250514",
-        "claude-3-5-haiku-20241022",
-        "gemini-2.0-flash",
-        "gemini-2.0-flash-lite",
-        "gemini-1.5-flash",
+        "gpt-5.2",
+        "gpt-5-mini",
+        "gpt-4.1",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5",
+        "gemini-3-flash",
+        "gemini-2.5-flash",
     ]
 
     QUALITY_PRESETS = ["draft", "standard", "high", "lossless"]
@@ -70,9 +74,21 @@ class FFMPEGAgentNode:
         ollama_models = cls._fetch_ollama_models()
         all_models = ollama_models + cls.API_MODELS + ["custom"]
 
-        # Auto-detect Gemini CLI — only show if binary is on PATH
-        if shutil.which("gemini") or shutil.which("gemini.cmd"):
+        # --- CLI auto-detection -------------------------------------------
+        # Use shared resolver that checks PATH + well-known user-local dirs.
+        from ..core.llm.cli_utils import resolve_cli_binary
+
+        if resolve_cli_binary("gemini", "gemini.cmd"):
             all_models.insert(len(ollama_models), "gemini-cli")
+
+        if resolve_cli_binary("claude", "claude.cmd"):
+            all_models.insert(len(ollama_models), "claude-cli")
+
+        if resolve_cli_binary("agent", "agent.cmd"):
+            all_models.insert(len(ollama_models), "cursor-agent")
+
+        if resolve_cli_binary("qwen", "qwen.cmd"):
+            all_models.insert(len(ollama_models), "qwen-cli")
 
         return {
             "required": {
@@ -126,6 +142,12 @@ class FFMPEGAgentNode:
                     "label_off": "Full Render",
                     "tooltip": "When enabled, generates a quick low-res preview (480p, first 10 seconds) instead of a full render.",
                 }),
+                "save_output": ("BOOLEAN", {
+                    "default": False,
+                    "label_on": "Save to Output",
+                    "label_off": "Pass Through",
+                    "tooltip": "When On, saves video and a workflow PNG to the output folder. Turn Off when a downstream Save node handles output to avoid double saves.",
+                }),
                 "output_path": ("STRING", {
                     "default": "",
                     "multiline": False,
@@ -142,6 +164,12 @@ class FFMPEGAgentNode:
                     "multiline": False,
                     "placeholder": "API key for OpenAI/Anthropic",
                     "tooltip": "API key required when using cloud models (GPT, Claude, Gemini). Not needed for local Ollama models.",
+                }),
+                "custom_model": ("STRING", {
+                    "default": "",
+                    "multiline": False,
+                    "placeholder": "Model name (e.g. gpt-5.2, claude-sonnet-4-6)",
+                    "tooltip": "When 'custom' is selected in llm_model, type the exact model name here. Use provider prefixes: gpt-* for OpenAI, claude-* for Anthropic, gemini-* for Google, anything else for Ollama.",
                 }),
                 "crf": ("INT", {
                     "default": -1,
@@ -247,9 +275,11 @@ class FFMPEGAgentNode:
         extra_images: Optional[torch.Tensor] = None,
         audio_input: Optional[dict] = None,
         preview_mode: bool = False,
+        save_output: bool = True,
         output_path: str = "",
         ollama_url: str = "http://localhost:11434",
         api_key: str = "",
+        custom_model: str = "",
         crf: int = -1,
         encoding_preset: str = "auto",
         **kwargs,  # hidden: prompt (PROMPT dict), extra_pnginfo (EXTRA_PNGINFO)
@@ -334,7 +364,16 @@ class FFMPEGAgentNode:
         # --- Generate pipeline via LLM ---
         if not ollama_url or not ollama_url.startswith(("http://", "https://")):
             ollama_url = "http://localhost:11434"
-        connector = self.pipeline_generator.create_connector(llm_model, ollama_url, api_key)
+        # Resolve custom model name
+        effective_model = llm_model
+        if llm_model == "custom":
+            if not custom_model or not custom_model.strip():
+                raise ValueError(
+                    "Please enter a model name in the 'custom_model' field "
+                    "when using 'custom' mode."
+                )
+            effective_model = custom_model.strip()
+        connector = self.pipeline_generator.create_connector(effective_model, ollama_url, api_key)
         try:
             spec = await self.pipeline_generator.generate(connector, prompt, metadata_str)
         except Exception as e:
@@ -355,15 +394,24 @@ class FFMPEGAgentNode:
         stem = Path(effective_video_path).stem
         suffix = "_preview" if preview_mode else "_edited"
 
-        if not output_path:
-            output_dir = folder_paths.get_output_directory()
-            output_path = str(Path(output_dir) / f"{stem}{suffix}.mp4")
-        elif Path(output_path).is_dir() or output_path.endswith(os.sep):
-            output_dir = output_path.rstrip(os.sep)
-            output_path = str(Path(output_dir) / f"{stem}{suffix}.mp4")
-        elif not Path(output_path).suffix:
-            os.makedirs(output_path, exist_ok=True)
-            output_path = str(Path(output_path) / f"{stem}{suffix}.mp4")
+        # Determine final output directory
+        temp_render_dir = None
+        if save_output:
+            # Save to output folder (default behaviour)
+            if not output_path:
+                output_dir = folder_paths.get_output_directory()
+                output_path = str(Path(output_dir) / f"{stem}{suffix}.mp4")
+            elif Path(output_path).is_dir() or output_path.endswith(os.sep):
+                output_dir = output_path.rstrip(os.sep)
+                output_path = str(Path(output_dir) / f"{stem}{suffix}.mp4")
+            elif not Path(output_path).suffix:
+                os.makedirs(output_path, exist_ok=True)
+                output_path = str(Path(output_path) / f"{stem}{suffix}.mp4")
+        else:
+            # Pass-through mode: render to temp dir so downstream nodes
+            # handle the final save. The temp file is cleaned up later.
+            temp_render_dir = tempfile.mkdtemp(prefix="ffmpega_")
+            output_path = str(Path(temp_render_dir) / f"{stem}{suffix}.mp4")
 
         os.makedirs(Path(output_path).parent, exist_ok=True)
 
@@ -577,6 +625,24 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
         else:
             audio_out = self.media_converter.extract_audio(output_path)
 
+        # --- Sanitize api_key from workflow metadata ---
+        # ComfyUI embeds PROMPT/EXTRA_PNGINFO in output files.
+        # Strip the api_key so it never leaks into saved images/videos.
+        hidden_prompt = kwargs.get("hidden_prompt")
+        hidden_extra_pnginfo = kwargs.get("extra_pnginfo")
+        if api_key:
+            self._strip_api_key_from_metadata(api_key, hidden_prompt, hidden_extra_pnginfo)
+
+        # --- Save first-frame workflow PNG ---
+        if save_output and images_tensor is not None and images_tensor.shape[0] > 0:
+            png_path = str(Path(output_path).with_suffix(".png"))
+            self._save_workflow_png(
+                images_tensor[0],
+                png_path,
+                hidden_prompt,
+                hidden_extra_pnginfo,
+            )
+
         # Clean up temp videos and frame images
         for tmp_path in [temp_video_from_images, temp_video_with_audio]:
             if tmp_path and os.path.exists(tmp_path):
@@ -585,16 +651,45 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
             for d in temp_frames_dirs:
                 if os.path.isdir(d):
                     shutil.rmtree(d, ignore_errors=True)
-
-        # --- Sanitize api_key from workflow metadata ---
-        # ComfyUI embeds PROMPT/EXTRA_PNGINFO in output files.
-        # Strip the api_key so it never leaks into saved images/videos.
-        if api_key:
-            hidden_prompt = kwargs.get("hidden_prompt")
-            hidden_extra_pnginfo = kwargs.get("extra_pnginfo")
-            self._strip_api_key_from_metadata(api_key, hidden_prompt, hidden_extra_pnginfo)
+        # Clean up temp render dir (pass-through mode)
+        # Note: don't remove output_path yet — downstream nodes may still
+        # need it. The temp *directory* is cleaned up, but the file inside
+        # it is referenced by the returned path and cleaned by ComfyUI.
 
         return (images_tensor, audio_out, output_path, command.to_string(), analysis)
+
+    @staticmethod
+    def _save_workflow_png(
+        first_frame: torch.Tensor,
+        png_path: str,
+        prompt: Optional[dict],
+        extra_pnginfo: Optional[dict],
+        extra_info: Optional[dict] = None,
+    ) -> None:
+        """Save a first-frame PNG with embedded ComfyUI workflow metadata.
+
+        This allows the PNG to be dragged into ComfyUI to reload the
+        workflow, matching the behavior of ComfyUI's SaveImage node.
+        """
+        from PIL import Image  # type: ignore[import-untyped]
+        from PIL.PngImagePlugin import PngInfo
+        import numpy as np
+
+        # Convert tensor (H, W, C) float [0,1] -> uint8 PIL Image
+        frame_np = (255.0 * first_frame.cpu().numpy()).clip(0, 255).astype(np.uint8)
+        img = Image.fromarray(frame_np)
+
+        metadata = PngInfo()
+        if prompt is not None:
+            metadata.add_text("prompt", json.dumps(prompt))
+        if extra_pnginfo is not None:
+            for key in extra_pnginfo:
+                metadata.add_text(key, json.dumps(extra_pnginfo[key]))
+        if extra_info is not None:
+            for key, value in extra_info.items():
+                metadata.add_text(key, value if isinstance(value, str) else json.dumps(value))
+
+        img.save(png_path, pnginfo=metadata, compress_level=4)
 
     @staticmethod
     def _strip_api_key_from_metadata(
