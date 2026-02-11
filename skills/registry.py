@@ -178,6 +178,10 @@ class SkillRegistry:
         Args:
             skill: Skill to register.
         """
+        if skill.name in self._skills:
+            old = self._skills[skill.name]
+            cat_list = self._by_category[old.category]
+            cat_list[:] = [s for s in cat_list if s.name != skill.name]
         self._skills[skill.name] = skill
         self._by_category[skill.category].append(skill)
 
