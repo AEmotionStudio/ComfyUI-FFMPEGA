@@ -235,8 +235,34 @@ class SkillComposer:
             for af in audio_filters:
                 builder.af(af)
 
-        # Apply output options
-        builder.output_options(*output_options)
+        # Apply output options — deduplicate key-value flags like -c:v, -crf,
+        # -preset etc.  When multiple skills emit the same flag (e.g. two
+        # quality steps) FFMPEG can error on the duplicates.
+        # Strategy: last writer wins for any flag starting with '-'.
+        seen_flags: dict[str, int] = {}  # flag -> index in deduped list
+        deduped_opts: list[str] = []
+        i = 0
+        while i < len(output_options):
+            opt = output_options[i]
+            if opt.startswith("-") and i + 1 < len(output_options) and not output_options[i + 1].startswith("-"):
+                # Key-value pair like "-c:v libx264" or "-crf 23"
+                flag, val = opt, output_options[i + 1]
+                if flag in seen_flags:
+                    # Replace the earlier occurrence
+                    idx = seen_flags[flag]
+                    deduped_opts[idx + 1] = val  # update value
+                else:
+                    seen_flags[flag] = len(deduped_opts)
+                    deduped_opts.extend([flag, val])
+                i += 2
+            else:
+                # Standalone flag like "-an" or "-y"
+                if opt not in seen_flags:
+                    seen_flags[opt] = len(deduped_opts)
+                    deduped_opts.append(opt)
+                i += 1
+
+        builder.output_options(*deduped_opts)
         builder.output(pipeline.output_path)
 
         return builder.build()
