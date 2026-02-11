@@ -777,7 +777,7 @@ Display a tall semi-transparent waveform overlay
 
 ---
 
-## 🖼️ Multi-Input (Images → Video)
+## 🔗 Multi-Input & Composition
 
 ### grid
 ```
@@ -820,3 +820,90 @@ Add a semi-transparent picture-in-picture overlay in the center
 ```
 Overlay images in the corners at 20% scale
 ```
+
+### concat
+```
+Concatenate these videos together
+```
+```
+Join the main video with the extra images into one continuous video
+```
+```
+Append all connected video inputs sequentially
+```
+
+### xfade
+```
+Create a slideshow with dissolve transitions between each segment
+```
+```
+Join these clips with a wipe left transition
+```
+```
+Concatenate with a pixelize transition lasting 2 seconds
+```
+```
+Add a radial transition between each video segment
+```
+
+### split_screen
+```
+Show both videos side by side
+```
+```
+Create a vertical split screen with the video on top and image on bottom
+```
+```
+Make a horizontal split screen comparison
+```
+
+### animated_overlay
+```
+Add a scrolling logo that moves across the bottom of the video
+```
+```
+Overlay the image with a floating bounce animation
+```
+```
+Slide the overlay image in from the left edge
+```
+```
+Add a moving watermark that floats around the video
+```
+
+### text_overlay
+```
+Add the title 'My Video' in large centered text
+```
+```
+Put 'Scene 1' as a lower third text overlay
+```
+```
+Add a subtitle saying 'Hello World' in yellow at the bottom
+```
+```
+Add a red banner at the top saying 'Breaking News'
+```
+```
+Show 'Subscribe!' text for the first 3 seconds only
+```
+
+### watermark
+```
+Add a semi-transparent watermark in the bottom-right corner
+```
+```
+Put a small logo watermark at 15% opacity
+```
+
+### chromakey
+```
+Remove the green screen and replace with a blue background
+```
+```
+Apply chroma key to remove the green screen
+```
+```
+Remove the blue screen background and make it transparent
+```
+

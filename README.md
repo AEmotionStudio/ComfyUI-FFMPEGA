@@ -5,7 +5,7 @@
 **An AI-powered FFMPEG agent node for ComfyUI — edit videos with natural language.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-1.9.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-2.0.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-4-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 
@@ -20,16 +20,18 @@
 
 ---
 
-## 🚀 What's New in v1.9.0 (February 11, 2026)
+## 🚀 What's New in v2.0.0 (February 11, 2026)
 
-**CLI Connectors & Expanded Presets**
+**Dynamic Inputs & 8 New Creative Skills**
 
-*   **🤖 Claude Code CLI**: Use your locally installed Claude Code CLI as an LLM backend — no API key needed. Auto-detected on PATH.
-*   **🖱️ Cursor Agent CLI**: Use Cursor's agent CLI for inference — also auto-detected on PATH.
-*   **🧠 Qwen Code CLI**: Use Qwen Code as an LLM backend — **2,000 free requests/day** via OAuth, no credit card needed.
-*   **🎮 50+ Quick Presets**: Right-click context menu expanded to **9 categories** with 50+ one-click presets — Cinematic, Vintage, Color, Effects, Transitions, Motion, Social, Time, and Audio.
-*   **💾 Save Toggle**: New `save_output` toggle — control whether output goes to the ComfyUI output folder or stays in temp.
-*   **📸 Workflow PNG**: First-frame PNG with embedded workflow metadata — drag it back into ComfyUI to reload the workflow.
+*   **🔗 Dynamic Auto-Expanding Inputs**: Connect `image_a` → `image_b` appears → `image_c` appears, and so on. Same for `images_a/b/c...` (video) and `audio_a/b/c...`. No more fixed slot limits.
+*   **🎥 Concat & Transitions**: Concatenate segments with `concat`, or use `xfade` for 18 smooth transitions (fade, dissolve, wipe, pixelize, radial, slide...).
+*   **📺 Split Screen**: Side-by-side (`hstack`) or top-bottom (`vstack`) multi-video layout.
+*   **🎨 Animated Overlay**: Moving image overlay with 8 motion presets — scroll, float, bounce, slide.
+*   **📝 Text Overlay**: `drawtext` with style presets — title, subtitle, lower_third, caption.
+*   **💧 Watermark & Chroma Key**: Quick watermark and green/blue screen removal.
+
+> ⚠️ **Breaking**: `images` renamed to `images_a`, `audio_input` renamed to `audio_a`. Existing workflows need reconnecting.
 
 > 📄 **See [CHANGELOG.md](CHANGELOG.md) for the complete version history.**
 
@@ -55,8 +57,8 @@ Works with **Ollama** (local, free), **OpenAI**, **Anthropic**, **Google Gemini*
 <tr>
 <td width="50%">
 
-### 🎨 119+ Skills
-Over 119 video editing skills across visual effects, audio processing, spatial transforms, temporal edits, encoding, cinematic presets, vintage looks, social media, creative effects, audio visualization, and multi-input operations like grids, slideshows, and overlays.
+### 🎨 127+ Skills
+Over 127 video editing skills across visual effects, audio processing, spatial transforms, temporal edits, encoding, cinematic presets, vintage looks, social media, creative effects, audio visualization, multi-input operations (grids, slideshows, overlays), transitions (xfade), concat, split screen, animated overlays, and text overlays.
 
 </td>
 <td width="50%">
@@ -183,12 +185,13 @@ The main node — translates natural language into FFMPEG commands.
 
 | Input | Description |
 | :--- | :--- |
-| `video_path` | Path to input video (used unless `images` is connected) |
+| `video_path` | Path to input video (used unless `images_a` is connected) |
 | `prompt` | Natural language editing instruction |
 | `llm_model` | Model selection (Ollama / OpenAI / Anthropic / Gemini / CLI tools) |
 | `quality_preset` | Output quality: draft, standard, high, lossless |
-| `images` | *(optional)* Image frames from an upstream node |
-| `audio_input` | *(optional)* Audio from an upstream node |
+| `images_a` | *(optional, dynamic)* Video frames from upstream — auto-expands to `images_b`, `images_c`... |
+| `image_a` | *(optional, dynamic)* Extra image input — auto-expands to `image_b`, `image_c`... |
+| `audio_a` | *(optional, dynamic)* Audio input — auto-expands to `audio_b`, `audio_c`... |
 | `preview_mode` | Quick preview instead of full render |
 | `save_output` | Save to ComfyUI output folder (default: off) |
 | `output_path` | Custom output path (shown when `save_output` is on) |
@@ -207,7 +210,7 @@ The main node — translates natural language into FFMPEG commands.
 
 ## 🎯 Skill System
 
-FFMPEGA includes a comprehensive skill system with **119+ operations** organized into categories. The AI agent selects the right skills based on your prompt.
+FFMPEGA includes a comprehensive skill system with **127+ operations** organized into categories. The AI agent selects the right skills based on your prompt.
 
 > 📄 **See [SKILLS_REFERENCE.md](SKILLS_REFERENCE.md) for the complete skill reference with all parameters and example prompts.**
 >
@@ -445,13 +448,20 @@ FFMPEGA includes a comprehensive skill system with **119+ operations** organized
 </details>
 
 <details>
-<summary><b>🖼️ Multi-Input (3 skills)</b></summary>
+<summary><b>🔗 Multi-Input & Composition (10 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
 | `grid` | Arrange video + images in a grid layout (xstack). Auto-includes video as first cell. |
 | `slideshow` | Create slideshow from images with fade transitions. Optionally starts with the main video. |
 | `overlay_image` | Picture-in-picture / watermark overlay. Supports multiple overlays auto-placed in corners. |
+| `concat` | Concatenate video segments sequentially. Connect multiple videos/images to join them. |
+| `xfade` | Smooth transitions between segments — 18 types: fade, dissolve, wipe, pixelize, radial, etc. |
+| `split_screen` | Side-by-side (horizontal) or top-bottom (vertical) multi-video layout. |
+| `animated_overlay` | Moving image overlay with motion presets: scroll, float, bounce, slide. |
+| `text_overlay` | Draw text with style presets: title, subtitle, lower_third, caption, top. |
+| `watermark` | Quick watermark — adds semi-transparent logo in corner. |
+| `chromakey` | Green/blue screen removal with background replacement. |
 
 </details>
 

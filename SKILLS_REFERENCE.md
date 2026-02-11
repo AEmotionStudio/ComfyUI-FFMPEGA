@@ -1067,10 +1067,11 @@ Visualize audio as a waveform overlay on the video (uses filter_complex with `sh
 
 ---
 
-## 🖼️ Multi-Input (Images → Video)
+## 🔗 Multi-Input & Composition
 
 > [!NOTE]
-> These skills use multiple input images from `extra_images`, `image_a`, and/or `image_b`.
+> These skills use multiple inputs from `image_a`, `image_b`, etc. (auto-expanding).
+> **Dynamic slots**: Connect `image_a` → `image_b` appears → `image_c` appears, and so on.
 > **Standalone mode**: Slideshow and grid work without a main video — just connect extra images.
 > When a video IS connected, it's automatically included as the first cell/slide.
 
@@ -1130,6 +1131,125 @@ Overlay images on the video (picture-in-picture / watermark). Supports multiple 
 
 ---
 
+### concat
+Concatenate (join) the main video with extra video/image inputs sequentially.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `width` | int | 1920 | output width |
+| `height` | int | 1080 | output height |
+| `still_duration` | float | 5.0 | seconds per still image |
+
+**Example prompts:**
+- "Concatenate these videos together"
+- "Join the clips into one continuous video"
+- "Append all video inputs sequentially"
+
+---
+
+### xfade
+Concatenate segments with smooth transitions. Supports 18+ transition types.
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `transition` | choice | fade | fade, fadeblack, fadewhite, wipeleft, wiperight, wipeup, wipedown, slideleft, slideright, dissolve, pixelize, radial, circlecrop, smoothleft, smoothright, squeezev, squeezeh |
+| `duration` | float | 1.0 | 0.1 to 5.0 seconds |
+| `still_duration` | float | 4.0 | seconds per segment |
+| `width` | int | 1920 | output width |
+| `height` | int | 1080 | output height |
+
+**Example prompts:**
+- "Join clips with a dissolve transition"
+- "Add a wipe left transition between each segment"
+- "Concatenate with a pixelize transition lasting 2 seconds"
+- "Add radial transitions between segments"
+
+---
+
+### split_screen
+Show videos/images side-by-side (horizontal) or stacked (vertical).
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `layout` | choice | horizontal | horizontal, vertical |
+| `width` | int | 960 | per-cell width |
+| `height` | int | 540 | per-cell height |
+| `duration` | float | 10.0 | output duration |
+
+**Example prompts:**
+- "Show both videos side by side"
+- "Create a vertical split screen"
+- "Make a horizontal comparison view"
+
+---
+
+### animated_overlay
+Overlay an image with animated motion. Requires `image_a` as the overlay.
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `animation` | choice | scroll_right | scroll_right, scroll_left, scroll_up, scroll_down, float, bounce, slide_in, slide_in_top |
+| `speed` | float | 1.0 | 0.1 to 10.0 |
+| `scale` | float | 0.2 | 0.05 to 1.0 (relative to video) |
+| `opacity` | float | 1.0 | 0.0 to 1.0 |
+
+**Example prompts:**
+- "Add a scrolling logo across the bottom"
+- "Make the overlay image float around slowly"
+- "Add a bouncing overlay animation"
+- "Slide the overlay in from the left"
+
+---
+
+### text_overlay
+Draw text on the video using ffmpeg's `drawtext` filter with style presets.
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `text` | string | *(required)* | any text |
+| `preset` | choice | title | title, subtitle, lower_third, caption, top |
+| `fontsize` | int | auto | font size in pixels |
+| `fontcolor` | string | white | color name or hex |
+| `borderw` | int | 2 | text outline width |
+| `bordercolor` | string | black | outline color |
+| `start` | float | 0 | start time in seconds |
+| `duration` | float | 0 | display duration (0 = entire video) |
+| `background` | string | *(none)* | background box color (e.g. `red@0.7`) |
+
+**Example prompts:**
+- "Add the title 'My Video' in large centered text"
+- "Put 'Scene 1' as a lower third"
+- "Add a subtitle in yellow"
+- "Show 'Subscribe!' for the first 3 seconds"
+- "Add a red banner saying 'Breaking News'"
+
+---
+
+### watermark
+Quick watermark overlay with sensible defaults (small, semi-transparent, bottom-right).
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `position` | choice | bottom-right | top-left, top-right, bottom-left, bottom-right, center |
+| `scale` | float | 0.15 | 0.05 to 0.8 |
+| `opacity` | float | 0.3 | 0.0 to 1.0 |
+
+**Example prompts:**
+- "Add a watermark in the corner"
+- "Put a logo watermark at 15% opacity"
+
+---
+
+### chromakey
+Green/blue screen removal via ffmpeg `colorkey` filter.
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `color` | string | 00FF00 | hex color to key out |
+| `similarity` | float | 0.3 | 0.01 to 1.0 |
+| `blend` | float | 0.1 | 0.0 to 1.0 |
+| `background` | string | black | replacement color (or "transparent") |
+
+**Example prompts:**
+- "Remove the green screen"
+- "Apply chroma key with a blue background"
+- "Remove the blue screen and make it transparent"
+
+---
+
 ## 💡 Example Prompt Combos
 
 Here are some multi-skill prompt ideas you can try:
@@ -1166,4 +1286,10 @@ Here are some multi-skill prompt ideas you can try:
 | Night ops | "Night vision color swap, add noise, surveillance text" |
 | Thermal cam | "False color heat map with timestamp text" |
 | Miniature city | "Tilt-shift with high saturation and timelapse" |
+| Video mashup | "Concatenate all clips with dissolve transitions" |
+| Split compare | "Show both videos side by side for comparison" |
+| Animated bug | "Add a scrolling logo that bounces around the video" |
+| News style | "Add 'Breaking News' text as lower third with red background" |
+| Branded content | "Add a semi-transparent watermark, title text, and fade in" |
+| Green screen | "Remove the green screen and replace with blue" |
 

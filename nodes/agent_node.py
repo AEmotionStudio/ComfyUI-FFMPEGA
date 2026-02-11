@@ -129,20 +129,14 @@ class FFMPEGAgentNode:
                 }),
             },
             "optional": {
-                "images": ("IMAGE", {
-                    "tooltip": "Optional image frames from an upstream node (e.g. Load Video Upload). When connected, these frames are used as the video input instead of video_path.",
+                "images_a": ("IMAGE", {
+                    "tooltip": "Video input as image frames (e.g. from Load Video Upload). Connect additional video inputs and more slots appear automatically (images_b, images_c, ...). Used for concat, split screen, and multi-video workflows.",
                 }),
                 "image_a": ("IMAGE", {
-                    "tooltip": "First extra image input for multi-input skills (grid, slideshow, overlay_image).",
+                    "tooltip": "Extra image/video input. Connect additional inputs and more slots appear automatically (image_b, image_c, ...). Used for multi-input skills like grid, slideshow, overlay, concat, and split screen.",
                 }),
-                "image_b": ("IMAGE", {
-                    "tooltip": "Second extra image input for multi-input skills (grid, slideshow, overlay_image).",
-                }),
-                "extra_images": ("IMAGE", {
-                    "tooltip": "Batch of extra images for multi-input skills. Connect a Load Images Batch node to provide multiple images for grid, slideshow, or overlay. Each frame in the batch becomes a separate input.",
-                }),
-                "audio_input": ("AUDIO", {
-                    "tooltip": "Optional audio from an upstream node (e.g. Load Video Upload). When connected, this audio is muxed into the output video and passed through on the audio output.",
+                "audio_a": ("AUDIO", {
+                    "tooltip": "Audio input. Connect additional audio and more slots appear automatically (audio_b, audio_c, ...). Used for muxing audio into video, or for multi-audio skills like concat.",
                 }),
                 "preview_mode": ("BOOLEAN", {
                     "default": False,
@@ -201,7 +195,7 @@ class FFMPEGAgentNode:
     RETURN_NAMES = ("images", "audio", "video_path", "command_log", "analysis")
     OUTPUT_TOOLTIPS = (
         "All frames from the output video as a batched image tensor.",
-        "Audio extracted from the output video (or passed through from audio_input) in ComfyUI AUDIO format.",
+        "Audio extracted from the output video (or passed through from audio_a) in ComfyUI AUDIO format.",
         "Absolute path to the rendered output video file.",
         "The ffmpeg command that was executed.",
         "LLM interpretation, estimated changes, pipeline steps, and any warnings.",
@@ -277,11 +271,9 @@ class FFMPEGAgentNode:
         llm_model: str,
         quality_preset: str,
         seed: int = 0,
-        images: Optional[torch.Tensor] = None,
+        images_a: Optional[torch.Tensor] = None,
         image_a: Optional[torch.Tensor] = None,
-        image_b: Optional[torch.Tensor] = None,
-        extra_images: Optional[torch.Tensor] = None,
-        audio_input: Optional[dict] = None,
+        audio_a: Optional[dict] = None,
         preview_mode: bool = False,
         save_output: bool = False,
         output_path: str = "",
@@ -299,8 +291,8 @@ class FFMPEGAgentNode:
             prompt: Natural language editing instruction.
             llm_model: LLM model to use.
             quality_preset: Output quality preset.
-            images: Optional input IMAGE tensor from upstream nodes.
-            audio_input: Optional input AUDIO dict from upstream nodes.
+            images_a: First video input as IMAGE tensor from upstream nodes.
+            audio_a: Optional input AUDIO dict from upstream nodes.
             preview_mode: Generate preview instead of full render.
             output_path: Custom output path.
             ollama_url: Ollama server URL.
@@ -317,10 +309,11 @@ class FFMPEGAgentNode:
         temp_video_from_images = None
         temp_video_with_audio = None
         has_extra_images = (
-            extra_images is not None or image_a is not None or image_b is not None
+            image_a is not None
+            or any(k.startswith("image_") and kwargs.get(k) is not None for k in kwargs)
         )
-        if images is not None:
-            temp_video_from_images = self.media_converter.images_to_video(images)
+        if images_a is not None:
+            temp_video_from_images = self.media_converter.images_to_video(images_a)
             effective_video_path = temp_video_from_images
         elif video_path and video_path.strip():
             effective_video_path = video_path
@@ -348,17 +341,17 @@ class FFMPEGAgentNode:
         from ..core.sanitize import validate_video_path  # type: ignore[import-not-found]
         effective_video_path = validate_video_path(effective_video_path)
 
-        # Pre-mux audio_input into the input video so audio filters
+        # Pre-mux audio_a into the input video so audio filters
         # (e.g. loudnorm, echo) have an audio stream to process.
         # Without this, images-only inputs have no audio track and
         # audio filters silently produce no output.
-        if audio_input is not None and not self.media_converter.has_audio_stream(effective_video_path):
+        if audio_a is not None and not self.media_converter.has_audio_stream(effective_video_path):
             import tempfile as _tmpmod
             tmp = _tmpmod.NamedTemporaryFile(suffix=".mp4", delete=False)
             tmp.close()
             import shutil as _shmod
             _shmod.copy2(effective_video_path, tmp.name)
-            self.media_converter.mux_audio(tmp.name, audio_input)
+            self.media_converter.mux_audio(tmp.name, audio_a)
             temp_video_with_audio = tmp.name
             effective_video_path = tmp.name
 
@@ -455,9 +448,10 @@ class FFMPEGAgentNode:
                 logger.warning(f"Pipeline validation: {err} (continuing anyway)")
 
         # --- Multi-input frame extraction ---
-        # Use image_a / image_b as extra FFMPEG inputs for
-        # multi-input skills (grid, slideshow, overlay_image)
-        MULTI_INPUT_SKILLS = {"grid", "slideshow", "overlay_image", "overlay"}
+        # Collect all dynamically-connected image inputs (image_a, image_b, ...)
+        # for multi-input skills (grid, slideshow, overlay_image, concat, etc.)
+        MULTI_INPUT_SKILLS = {"grid", "slideshow", "overlay_image", "overlay",
+                              "concat", "split_screen", "watermark", "chromakey"}
         needs_multi_input = any(
             s.skill_name in MULTI_INPUT_SKILLS for s in pipeline.steps
         )
@@ -465,28 +459,30 @@ class FFMPEGAgentNode:
         if needs_multi_input:
             all_frame_paths = []
 
-            # Priority 1: extra_images batch (each frame -> separate input)
-            if extra_images is not None:
-                paths = self.media_converter.save_frames_as_images(extra_images)
-                all_frame_paths.extend(paths)
-                if paths:
-                    temp_frames_dirs.add(os.path.dirname(paths[0]))
-
-            # Priority 2: individual image_a / image_b
+            # Collect all image_* tensors in alphabetical order
+            all_image_tensors = []
             if image_a is not None:
-                paths = self.media_converter.save_frames_as_images(image_a)
-                all_frame_paths.extend(paths)
-                if paths:
-                    temp_frames_dirs.add(os.path.dirname(paths[0]))
-            if image_b is not None:
-                paths = self.media_converter.save_frames_as_images(image_b)
-                all_frame_paths.extend(paths)
-                if paths:
-                    temp_frames_dirs.add(os.path.dirname(paths[0]))
+                all_image_tensors.append(image_a)
+            for k in sorted(kwargs):
+                if k.startswith("image_") and kwargs[k] is not None:
+                    all_image_tensors.append(kwargs[k])
 
-            # Fallback: primary images tensor with multiple frames
-            if not all_frame_paths and images is not None and images.shape[0] > 1:
-                all_frame_paths = self.media_converter.save_frames_as_images(images)
+            # Save each tensor as frames (optimize: video-length tensors
+            # are saved as temp video instead of individual PNGs)
+            for tensor in all_image_tensors:
+                if tensor.shape[0] > 10:
+                    # Save as temp video for performance
+                    tmp_vid = self.media_converter.images_to_video(tensor)
+                    all_frame_paths.append(tmp_vid)
+                else:
+                    paths = self.media_converter.save_frames_as_images(tensor)
+                    all_frame_paths.extend(paths)
+                    if paths:
+                        temp_frames_dirs.add(os.path.dirname(paths[0]))
+
+            # Fallback: primary images_a tensor with multiple frames
+            if not all_frame_paths and images_a is not None and images_a.shape[0] > 1:
+                all_frame_paths = self.media_converter.save_frames_as_images(images_a)
                 if all_frame_paths:
                     temp_frames_dirs.add(os.path.dirname(all_frame_paths[0]))
 
@@ -496,12 +492,27 @@ class FFMPEGAgentNode:
 
             # Auto-set include_video for slideshow/grid based on whether
             # a real video is connected (not a dummy placeholder).
-            has_real_video = images is not None or (video_path and video_path.strip())
+            has_real_video = images_a is not None or (video_path and video_path.strip())
             for step in pipeline.steps:
                 if step.skill_name in ("slideshow", "grid"):
                     step.params["include_video"] = has_real_video
 
         command = self.composer.compose(pipeline)
+
+        # --- FPS normalization for speed changes ---
+        # setpts changes timestamps but doesn't alter frame count, so
+        # frames_to_tensor reads the same number of frames.  Downstream
+        # save nodes then write at the original FPS, collapsing the
+        # duration back.  Appending an fps filter resamples the frame
+        # count to match the new duration at the original frame rate.
+        vf_str = command.video_filters.to_string()
+        if "setpts=" in vf_str and not command.complex_filter:
+            input_fps = (
+                video_metadata.primary_video.frame_rate
+                if video_metadata.primary_video and video_metadata.primary_video.frame_rate
+                else 30
+            )
+            command.video_filters.add_filter("fps", {"fps": int(round(input_fps))})
 
         # Debug: print exact command to console
         print(f"[FFMPEGA DEBUG] Command: {command.to_string()}")
@@ -581,6 +592,15 @@ class FFMPEGAgentNode:
                             "preset": encoding_preset if encoding_preset != "auto" else _preset_map.get(quality_preset, "medium"),
                         })
                     command = self.composer.compose(pipeline)
+                    # FPS normalization for retry path (same as main path)
+                    retry_vf = command.video_filters.to_string()
+                    if "setpts=" in retry_vf and not command.complex_filter:
+                        _input_fps = (
+                            video_metadata.primary_video.frame_rate
+                            if video_metadata.primary_video and video_metadata.primary_video.frame_rate
+                            else 30
+                        )
+                        command.video_filters.add_filter("fps", {"fps": int(round(_input_fps))})
                     print(f"[FFMPEGA DEBUG] Retry command: {command.to_string()}")
                     if preview_mode:
                         if command.complex_filter:
@@ -607,6 +627,18 @@ class FFMPEGAgentNode:
         if hasattr(connector, 'close'):
             await connector.close()
 
+        # Debug: probe output duration
+        try:
+            import subprocess as _sp
+            _probe = _sp.run(
+                ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                 "-of", "default=noprint_wrappers=1", output_path],
+                capture_output=True, text=True
+            )
+            print(f"[FFMPEGA DEBUG] Output duration BEFORE audio mux: {_probe.stdout.strip()}")
+        except Exception:
+            pass
+
         # --- Build analysis string ---
         analysis = f"""Interpretation: {interpretation}
 
@@ -620,9 +652,20 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
         # --- Handle audio ---
         removes_audio = "-an" in command.output_options
         has_audio_processing = removes_audio or bool(command.audio_filters.to_string())
+        print(f"[FFMPEGA DEBUG] audio_a={audio_a is not None}, has_audio_processing={has_audio_processing}, removes_audio={removes_audio}")
 
-        if audio_input is not None and not has_audio_processing:
-            self.media_converter.mux_audio(output_path, audio_input)
+        if audio_a is not None and not has_audio_processing:
+            self.media_converter.mux_audio(output_path, audio_a)
+            print(f"[FFMPEGA DEBUG] mux_audio called!")
+            try:
+                _probe2 = _sp.run(
+                    ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                     "-of", "default=noprint_wrappers=1", output_path],
+                    capture_output=True, text=True
+                )
+                print(f"[FFMPEGA DEBUG] Output duration AFTER audio mux: {_probe2.stdout.strip()}")
+            except Exception:
+                pass
 
         # --- Extract output frames ---
         images_tensor = self.media_converter.frames_to_tensor(output_path)

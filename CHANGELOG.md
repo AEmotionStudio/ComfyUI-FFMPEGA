@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-02-11
+
+### ⚠️ Breaking Changes
+- **Input Renames**: `images` → `images_a`, `audio_input` → `audio_a`. Existing workflows referencing these inputs will need reconnecting.
+- **Removed Inputs**: `image_b` and `extra_images` removed — replaced by dynamic auto-expanding slots.
+
+### Added
+- **Dynamic Input Slots**: Image, video, and audio inputs now auto-expand — connect `image_a` and `image_b` appears, connect that and `image_c` appears, etc. Same for `images_a/b/c...` (video inputs) and `audio_a/b/c...`. Powered by JS `onConnectionsChange` hook.
+- **Concat Skill**: Concatenate multiple video/image segments sequentially with `concat` filter. Aliases: `concatenate`, `join`.
+- **Xfade Transitions**: Smooth transitions between segments with 18 effects — `fade`, `fadeblack`, `dissolve`, `wipeleft`, `wiperight`, `pixelize`, `radial`, `circlecrop`, and more. Aliases: `transition`.
+- **Split Screen**: Side-by-side (`hstack`) or top-bottom (`vstack`) layout with `split_screen`. Aliases: `splitscreen`, `side_by_side`.
+- **Animated Overlay**: Moving overlay image with 8 motion presets — `scroll_right`, `scroll_left`, `float`, `bounce`, `slide_in`, and more. Uses `eval=frame` expressions.
+- **Text Overlay**: Draw text with `drawtext` filter and 5 style presets — `title` (centered), `subtitle`, `lower_third`, `caption`, `top`. Supports timed display, background boxes, and custom fonts.
+- **Watermark Skill**: Quick watermark overlay with defaults for corner placement, low opacity, and small scale. Alias for `overlay_image`.
+- **Chroma Key Skill**: Green/blue screen removal via ffmpeg `colorkey` filter with configurable similarity, blend, and background replacement. Aliases: `chroma_key`, `green_screen`.
+
+### Changed
+- **Multi-Input Collection**: Extra images/audio are now collected from `**kwargs` in alphabetical order. Video-length tensors (>10 frames) are saved as temp video instead of individual PNGs for better performance.
+- **Skill Count**: Over **127+ skills** across all categories.
+
+---
+
 ## [1.9.0] - 2026-02-11
 
 ### Added
