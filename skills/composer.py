@@ -197,6 +197,7 @@ class SkillComposer:
             # Inject multi-input metadata for handlers that need it
             if pipeline.extra_inputs:
                 step.params["_extra_input_count"] = len(pipeline.extra_inputs)
+                step.params["_extra_input_paths"] = pipeline.extra_inputs
 
             # Get filters/options for this skill
             vf, af, opts, fc, input_opts = self._skill_to_filters(skill, step.params)
@@ -1356,6 +1357,7 @@ _SKILL_DISPATCH: dict[str, callable] = {
     "quality": _f_quality,
     # Overlay
     "text_overlay": _f_add_text,
+    "add_text": _f_add_text,
     "pixelate": _f_pixelate,
     "posterize": _f_posterize,
     # Transitions
@@ -1383,6 +1385,7 @@ _SKILL_DISPATCH: dict[str, callable] = {
     "gif": _f_gif,
     # High-impact
     "chromakey": _f_chromakey_simple,
+    "chroma_key_simple": _f_chromakey_simple,
     "deband": _f_deband,
     "lens_correction": _f_lens_correction,
     "color_temperature": _f_color_temperature,
@@ -1705,6 +1708,14 @@ _SKILL_DISPATCH["green_screen"] = _f_chromakey  # alias
 
 # ── Phase 2: Concat, Transitions, Split Screen ──────────────────────
 
+_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".ts", ".m4v"}
+
+def _is_video_file(path):
+    """Check if a file path is a video based on its extension."""
+    import os
+    return os.path.splitext(path)[1].lower() in _VIDEO_EXTENSIONS
+
+
 def _f_concat(p):
     """Concatenate the main video with extra video/image inputs sequentially.
 
@@ -1722,14 +1733,12 @@ def _f_concat(p):
     still_dur = float(p.get("still_duration", 5.0))
     n_extra = int(p.get("_extra_input_count", 0))
 
-    # Build segment list: main video (idx=0 ) + extras (idx=1,2,...)
+    # Build segment list: main video (idx=0) + extras (idx=1,2,...)
+    extra_paths = p.get("_extra_input_paths", [])
     segments = [(0, True)]  # (ffmpeg_idx, is_video)
     for i in range(n_extra):
-        # Heuristic: files ending in video extensions are videos; images
-        # are identified by the _extra_input_count mechanism (all extras
-        # come from image_a/b/c which are single frames or short sequences).
-        # For now, treat extras as still images unless they're video paths.
-        segments.append((i + 1, False))
+        is_video = _is_video_file(extra_paths[i]) if i < len(extra_paths) else False
+        segments.append((i + 1, is_video))
 
     total = len(segments)
     if total < 2:
@@ -1786,9 +1795,11 @@ def _f_xfade(p):
     height = int(p.get("height", 1080))
     n_extra = int(p.get("_extra_input_count", 0))
 
+    extra_paths = p.get("_extra_input_paths", [])
     segments = [(0, True)]
     for i in range(n_extra):
-        segments.append((i + 1, False))
+        is_video = _is_video_file(extra_paths[i]) if i < len(extra_paths) else False
+        segments.append((i + 1, is_video))
 
     total = len(segments)
     if total < 2:
@@ -1874,7 +1885,9 @@ def _f_split_screen(p):
 
     for i, idx in enumerate(cells):
         lbl = f"[_sp{i}]"
-        if idx == 0:
+        extra_paths = p.get("_extra_input_paths", [])
+        is_video = (idx == 0) or (idx - 1 < len(extra_paths) and _is_video_file(extra_paths[idx - 1]))
+        if is_video:
             # Main video: scale, maintain aspect ratio
             parts.append(
                 f"[{idx}:v]scale={cell_w}:{cell_h}:force_original_aspect_ratio=decrease,"
