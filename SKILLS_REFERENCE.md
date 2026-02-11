@@ -846,7 +846,11 @@ Add intro and/or outro video segments.
 ## ✨ Creative Effects
 
 ### neon
-Neon glow aesthetic — vibrant colors, high contrast, sharp.
+Neon glow aesthetic — real edge-glow using `edgedetect` + high-saturation screen blend.
+
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------|
+| `intensity` | choice | medium | subtle, medium, strong |
 
 ### horror
 Horror movie atmosphere — dark, desaturated, grainy.
@@ -861,10 +865,14 @@ Golden hour / sunset warm glow.
 Cyberpunk aesthetic — neon tones, high contrast, sharp.
 
 ### comic_book
-Comic book / pop art style — bold colors, high contrast.
+Comic book / pop art style — real edge outlines + posterized colors using `edgedetect` + `lutrgb` + `blend`.
+
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------|
+| `style` | choice | classic | classic, manga, pop_art |
 
 ### miniature
-Tilt-shift miniature effect — makes scenes look like toy models.
+Tilt-shift miniature effect — real selective blur using `gblur` + `blend` expression. Makes scenes look like toy models.
 
 ### surveillance
 Security camera / CCTV look — desaturated, grainy.
@@ -879,13 +887,136 @@ Anime / cel-shaded cartoon style.
 Lo-fi / chill aesthetic — soft, warm, slightly degraded.
 
 ### thermal
-Thermal / heat vision camera effect.
+Thermal / heat vision camera effect — real pseudocolor heat-map gradient using `pseudocolor` filter.
 
 ### posterize
 Reduce color palette for a poster/screen-print look.
 
 ### emboss
 Emboss / relief effect — raised surface look.
+
+---
+
+## 🔮 Enhanced Effects (Advanced Filters)
+
+These effects use powerful FFMPEG filters for results that look genuinely different from basic color adjustments.
+
+### chromatic_aberration
+RGB channel offset for color fringing / glitch aesthetic using `rgbashift`.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `amount` | int | 4 | 1 to 20 |
+
+**Example prompts:**
+- "Add chromatic aberration"
+- "Apply strong RGB split"
+- "Add color fringing like a cheap lens"
+
+---
+
+### sketch
+Pencil drawing / ink line art using `edgedetect` filter.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------|
+| `mode` | choice | pencil | pencil, ink, color |
+
+**Example prompts:**
+- "Turn it into a pencil sketch"
+- "Apply ink outline effect"
+- "Show colored edges only"
+
+---
+
+### glow
+Bloom / soft glow using `split` → `gblur` → `blend` (screen mode). Uses filter_complex.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `radius` | float | 30 | 5 to 60 |
+| `strength` | float | 0.4 | 0.1 to 0.8 |
+
+**Example prompts:**
+- "Add a soft bloom glow"
+- "Make it glow like a dream"
+- "Apply subtle halo light effect"
+
+---
+
+### ghost_trail
+Temporal trailing / afterimage using `lagfun` filter. Great for motion-heavy footage.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `decay` | float | 0.97 | 0.9 to 0.995 |
+
+**Example prompts:**
+- "Add ghostly motion trails"
+- "Apply afterimage echo effect"
+- "Make moving objects leave trails"
+
+---
+
+### color_channel_swap
+Dramatic color remapping by swapping/mixing color channels using `colorchannelmixer`.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------|
+| `preset` | choice | swap_rb | swap_rb, swap_rg, swap_gb, nightvision, matrix |
+
+**Example prompts:**
+- "Swap the red and blue channels for a surreal look"
+- "Apply matrix green effect"
+- "Make it look like night vision"
+
+---
+
+### tilt_shift
+Real tilt-shift miniature with selective blur using `gblur` + `blend` expression.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `focus_position` | float | 0.5 | 0.1 to 0.9 |
+| `blur_amount` | float | 8 | 2 to 20 |
+
+**Example prompts:**
+- "Apply tilt-shift to make it look like a toy"
+- "Add selective blur with focus on the top third"
+- "Make the scene look miniature"
+
+---
+
+### frame_blend
+Temporal frame blending for dreamy motion blur using `tmix` filter.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `frames` | int | 5 | 2 to 10 |
+
+**Example prompts:**
+- "Blend frames for motion blur"
+- "Apply long-exposure look"
+- "Make it dreamy with frame blending"
+
+---
+
+### false_color
+Pseudocolor / false-color mapping (heat map, rainbow, etc.) using `pseudocolor` filter.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------|
+| `palette` | choice | heat | heat, rainbow, blues, electric |
+
+**Example prompts:**
+- "Apply heat map false color"
+- "Make it look like a thermal scanner"
+- "Apply rainbow pseudocolor"
+
+---
+
+### halftone
+Newspaper/screen-print halftone dot pattern using `geq` filter.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `dot_size` | float | 0.3 | 0.1 to 1.0 |
+
+**Example prompts:**
+- "Apply halftone newspaper dots"
+- "Make it look like a print"
+- "Apply Ben Day dot pattern"
 
 ---
 
@@ -1027,4 +1158,12 @@ Here are some multi-skill prompt ideas you can try:
 | Video + slides | "Create a slideshow starting with the video" |
 | Branded video | "Overlay the logo image in the bottom-right corner at 20% scale" |
 | Multi-watermark | "Overlay images in the corners at 15% scale" |
+| Ghost music video | "Ghost trail effect, slow motion, chromatic aberration" |
+| Sketch art | "Pencil sketch with glow overlay" |
+| Retro print | "Halftone dots, sepia tone, add film grain" |
+| Dreamy bloom | "Glow effect with frame blending and slow zoom" |
+| Glitch art | "Chromatic aberration, color channel swap, pixelate" |
+| Night ops | "Night vision color swap, add noise, surveillance text" |
+| Thermal cam | "False color heat map with timestamp text" |
+| Miniature city | "Tilt-shift with high saturation and timelapse" |
 

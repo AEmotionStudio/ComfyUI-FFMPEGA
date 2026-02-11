@@ -475,7 +475,7 @@ Add an intro segment to the beginning
 
 ### neon
 ```
-Apply a neon glow effect
+Apply a neon edge glow effect
 ```
 
 ### horror
@@ -500,12 +500,12 @@ Give it a cyberpunk neon aesthetic
 
 ### comic_book
 ```
-Make it look like a comic book
+Make it look like a comic book with bold outlines
 ```
 
 ### miniature
 ```
-Apply a tilt-shift miniature effect
+Apply a tilt-shift miniature effect with selective blur
 ```
 
 ### surveillance
@@ -530,7 +530,7 @@ Give it a lo-fi chill aesthetic
 
 ### thermal
 ```
-Apply a thermal heat vision camera effect
+Apply a thermal heat vision camera effect with pseudocolor
 ```
 
 ### posterize
@@ -541,6 +541,82 @@ Posterize to reduce the color palette
 ### emboss
 ```
 Apply an emboss relief effect
+```
+
+---
+
+## 🔮 Enhanced Effects (Advanced Filters)
+
+### chromatic_aberration
+```
+Add chromatic aberration with RGB channel split
+```
+
+### sketch
+```
+Turn the video into a pencil sketch drawing
+```
+```
+Apply an ink line art effect
+```
+```
+Apply colored edge detection
+```
+
+### glow
+```
+Add a soft bloom glow to the video
+```
+```
+Apply a strong dreamy glow effect
+```
+
+### ghost_trail
+```
+Add ghostly motion trails to the video
+```
+```
+Apply ghost afterimage effect with long persistence
+```
+
+### color_channel_swap
+```
+Swap the red and blue color channels for a surreal look
+```
+```
+Apply a matrix green channel effect
+```
+```
+Apply night vision effect
+```
+
+### tilt_shift
+```
+Apply a tilt-shift effect to make it look like a toy model
+```
+```
+Add selective blur with focus near the top
+```
+
+### frame_blend
+```
+Blend frames together for a dreamy motion blur
+```
+```
+Apply heavy long-exposure motion blur
+```
+
+### false_color
+```
+Apply a heat map false color effect
+```
+```
+Apply rainbow pseudocolor
+```
+
+### halftone
+```
+Apply a newspaper halftone dot pattern
 ```
 
 ---
