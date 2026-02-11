@@ -78,17 +78,22 @@ class FFMPEGAgentNode:
         # Use shared resolver that checks PATH + well-known user-local dirs.
         from ..core.llm.cli_utils import resolve_cli_binary
 
+        cli_models: list[str] = []
         if resolve_cli_binary("gemini", "gemini.cmd"):
-            all_models.insert(len(ollama_models), "gemini-cli")
-
+            cli_models.append("gemini-cli")
         if resolve_cli_binary("claude", "claude.cmd"):
-            all_models.insert(len(ollama_models), "claude-cli")
-
+            cli_models.append("claude-cli")
         if resolve_cli_binary("agent", "agent.cmd"):
-            all_models.insert(len(ollama_models), "cursor-agent")
-
+            cli_models.append("cursor-agent")
         if resolve_cli_binary("qwen", "qwen.cmd"):
-            all_models.insert(len(ollama_models), "qwen-cli")
+            cli_models.append("qwen-cli")
+
+        # Insert all CLI models at the boundary between Ollama and API models
+        # so they appear in the intended order.
+        insert_pos = len(ollama_models)
+        for model in cli_models:
+            all_models.insert(insert_pos, model)
+            insert_pos += 1
 
         return {
             "required": {

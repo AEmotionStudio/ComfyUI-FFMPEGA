@@ -115,8 +115,5 @@ class ClaudeCodeCLIConnector(LLMConnector):
         return ["claude-cli"]
 
     async def is_available(self) -> bool:
-        """Check if the claude binary is on PATH."""
-        return (
-            shutil.which("claude") is not None
-            or shutil.which("claude.cmd") is not None  # Windows npm shim
-        )
+        """Check if the claude binary is findable."""
+        return resolve_cli_binary("claude", "claude.cmd") is not None

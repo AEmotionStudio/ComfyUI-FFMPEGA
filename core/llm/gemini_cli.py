@@ -118,8 +118,5 @@ class GeminiCLIConnector(LLMConnector):
         return ["gemini-cli"]
 
     async def is_available(self) -> bool:
-        """Check if the gemini binary is on PATH."""
-        return (
-            shutil.which("gemini") is not None
-            or shutil.which("gemini.cmd") is not None  # Windows npm shim
-        )
+        """Check if the gemini binary is findable."""
+        return resolve_cli_binary("gemini", "gemini.cmd") is not None

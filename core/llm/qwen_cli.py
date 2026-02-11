@@ -127,8 +127,5 @@ class QwenCodeCLIConnector(LLMConnector):
         return ["qwen-cli"]
 
     async def is_available(self) -> bool:
-        """Check if the qwen binary is on PATH."""
-        return (
-            shutil.which("qwen") is not None
-            or shutil.which("qwen.cmd") is not None  # Windows npm shim
-        )
+        """Check if the qwen binary is findable."""
+        return resolve_cli_binary("qwen", "qwen.cmd") is not None

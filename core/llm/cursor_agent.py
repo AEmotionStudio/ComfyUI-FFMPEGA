@@ -118,8 +118,5 @@ class CursorAgentConnector(LLMConnector):
         return ["cursor-agent"]
 
     async def is_available(self) -> bool:
-        """Check if the agent binary is on PATH."""
-        return (
-            shutil.which("agent") is not None
-            or shutil.which("agent.cmd") is not None  # Windows shim
-        )
+        """Check if the agent binary is findable."""
+        return resolve_cli_binary("agent", "agent.cmd") is not None
