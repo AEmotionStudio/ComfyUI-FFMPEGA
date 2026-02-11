@@ -71,10 +71,9 @@ def register_skills(registry: SkillRegistry) -> None:
         ],
         examples=[
             "crop:width=1280,height=720 - Crop to 1280x720 from center",
-            "crop:width=iw,height=iw*9/16 - Crop to 9:16 vertical",
             "crop:width=in_w-100,height=in_h-100 - Remove 50px from each edge",
         ],
-        tags=["cut", "frame", "trim", "aspect"],
+        tags=["cut", "frame", "trim"],
     ))
 
     # Pad skill
@@ -199,8 +198,11 @@ def register_skills(registry: SkillRegistry) -> None:
         ],
         examples=[
             "aspect:ratio=16:9,mode=pad - Letterbox to 16:9",
-            "aspect:ratio=9:16,mode=crop - Crop to vertical 9:16",
+            "aspect:ratio=9:16,mode=crop - Crop to vertical 9:16 for TikTok/Reels",
+            "aspect:ratio=1:1,mode=crop - Crop to square for Instagram",
             "aspect:ratio=2.35:1 - Cinematic widescreen",
         ],
-        tags=["widescreen", "letterbox", "format"],
+        tags=["widescreen", "letterbox", "format", "vertical", "portrait",
+              "landscape", "tiktok", "reels", "shorts", "instagram", "9:16",
+              "16:9", "4:3", "1:1", "square", "aspect"],
     ))
