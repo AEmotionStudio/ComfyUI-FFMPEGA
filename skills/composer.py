@@ -484,7 +484,7 @@ def _f_trim(p):
 
 
 def _f_speed(p):
-    factor = p.get("factor", 1.0)
+    factor = float(p.get("factor", 1.0))
     vf = [f"setpts={1.0 / factor}*PTS"]
     af = []
     if 0.5 <= factor <= 2.0:
@@ -873,45 +873,50 @@ def _f_ken_burns(p):
     direction = p.get("direction", "zoom_in")
     amount = float(p.get("amount", 0.3))
     dur = float(p.get("duration", 5))
-    # Technique: scale UP by a time-varying zoom factor (eval=frame forces
-    # per-frame re-evaluation with 't'), then scale back DOWN by the same
-    # factor to restore the original dimensions.  The intermediate upscale
-    # clips the edges, creating a visible zoom-in/out while keeping the
-    # output size constant and resolution-independent (no hardcoded dims).
+    # Use FFmpeg's native zoompan with d=1 (one output frame per input frame)
+    # so it works correctly for video input.  zoompan internally crops a
+    # region of iw/z × ih/z at position (x, y) and scales it to the output
+    # size — exactly the Ken Burns zoom+pan effect.
+    # NOTE: zoompan requires an explicit output size (s=) because it defaults
+    # to hd720; we normalise to even dims first and pass the size through.
     if direction == "zoom_in":
-        fwd = f"1+{amount}*min(t\\,{dur})/{dur}"
+        # z ramps from 1 → (1+amount) over dur seconds using pzoom
+        rate = amount / dur / 25  # per-frame increment at ~25fps
         return [
             f"scale='trunc(iw/2)*2':'trunc(ih/2)*2',"
-            f"scale='iw*({fwd})':'ih*({fwd})':eval=frame,"
-            f"scale='trunc(iw/({fwd})/2)*2':'trunc(ih/({fwd})/2)*2':eval=frame"
+            f"zoompan=z='min(max(zoom\\,pzoom)+{rate:.6f}\\,{1+amount})':"
+            f"d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=hd720:fps=30"
         ], [], []
     elif direction == "zoom_out":
-        fwd = f"1+{amount}*max(0\\,1-t/{dur})"
+        # z starts at (1+amount) and holds (zoompan starts zoomed)
+        # then we reverse by starting high and decreasing
+        rate = amount / dur / 25
         return [
             f"scale='trunc(iw/2)*2':'trunc(ih/2)*2',"
-            f"scale='iw*({fwd})':'ih*({fwd})':eval=frame,"
-            f"scale='trunc(iw/({fwd})/2)*2':'trunc(ih/({fwd})/2)*2':eval=frame"
+            f"zoompan=z='max(if(eq(on\\,1)\\,{1+amount}\\,zoom)-{rate:.6f}\\,1)':"
+            f"d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=hd720:fps=30"
         ], [], []
     elif direction == "pan_right":
         zf = 1 + amount
         return [
-            f"scale='trunc(iw*{zf}/2)*2':'trunc(ih*{zf}/2)*2',"
-            f"crop='trunc(iw/{zf}/2)*2':'trunc(ih/{zf}/2)*2':"
-            f"'min(t/{dur}\\,1)*(iw-ow)':'(ih-oh)/2'"
+            f"scale='trunc(iw/2)*2':'trunc(ih/2)*2',"
+            f"zoompan=z='{zf}':"
+            f"d=1:x='min(on*{zf-1:.4f}*iw/{dur}/25\\,(iw-iw/{zf}))':y='ih/2-(ih/zoom/2)':s=hd720:fps=30"
         ], [], []
     elif direction == "pan_left":
         zf = 1 + amount
         return [
-            f"scale='trunc(iw*{zf}/2)*2':'trunc(ih*{zf}/2)*2',"
-            f"crop='trunc(iw/{zf}/2)*2':'trunc(ih/{zf}/2)*2':"
-            f"'max(0\\,1-t/{dur})*(iw-ow)':'(ih-oh)/2'"
+            f"scale='trunc(iw/2)*2':'trunc(ih/2)*2',"
+            f"zoompan=z='{zf}':"
+            f"d=1:x='max((iw-iw/{zf})-on*{zf-1:.4f}*iw/{dur}/25\\,0)':y='ih/2-(ih/zoom/2)':s=hd720:fps=30"
         ], [], []
     else:
-        fwd = f"1+{amount}*min(t\\,{dur})/{dur}"
+        # Default to zoom_in
+        rate = amount / dur / 25
         return [
             f"scale='trunc(iw/2)*2':'trunc(ih/2)*2',"
-            f"scale='iw*({fwd})':'ih*({fwd})':eval=frame,"
-            f"scale='trunc(iw/({fwd})/2)*2':'trunc(ih/({fwd})/2)*2':eval=frame"
+            f"zoompan=z='min(max(zoom\\,pzoom)+{rate:.6f}\\,{1+amount})':"
+            f"d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=hd720:fps=30"
         ], [], []
 
 
