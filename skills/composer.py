@@ -872,46 +872,46 @@ def _f_zoom(p):
 def _f_ken_burns(p):
     direction = p.get("direction", "zoom_in")
     amount = float(p.get("amount", 0.3))
-    width = int(p.get("width", 1920))
-    height = int(p.get("height", 1080))
-    # Duration over which the zoom completes (seconds).
-    # Uses 't' variable which gives current time in seconds.
     dur = float(p.get("duration", 5))
-    # scale eval=frame + crop: the only approach that works for video.
-    # zoompan is for still images; crop with varying dims fails.
+    # Technique: scale UP by a time-varying zoom factor (eval=frame forces
+    # per-frame re-evaluation with 't'), then scale back DOWN by the same
+    # factor to restore the original dimensions.  The intermediate upscale
+    # clips the edges, creating a visible zoom-in/out while keeping the
+    # output size constant and resolution-independent (no hardcoded dims).
     if direction == "zoom_in":
-        # Scale up over time, crop center to keep output stable
+        fwd = f"1+{amount}*min(t\\,{dur})/{dur}"
         return [
-            f"scale='iw*(1+{amount}*min(t,{dur})/{dur})':"
-            f"'ih*(1+{amount}*min(t,{dur})/{dur})':eval=frame,"
-            f"crop={width}:{height}"
+            f"scale='trunc(iw/2)*2':'trunc(ih/2)*2',"
+            f"scale='iw*({fwd})':'ih*({fwd})':eval=frame,"
+            f"scale='trunc(iw/({fwd})/2)*2':'trunc(ih/({fwd})/2)*2':eval=frame"
         ], [], []
     elif direction == "zoom_out":
-        # Start scaled up, shrink back. Use max() to avoid going below 1x
+        fwd = f"1+{amount}*max(0\\,1-t/{dur})"
         return [
-            f"scale='iw*(1+{amount}*max(0,1-t/{dur}))':"
-            f"'ih*(1+{amount}*max(0,1-t/{dur}))':eval=frame,"
-            f"crop={width}:{height}"
+            f"scale='trunc(iw/2)*2':'trunc(ih/2)*2',"
+            f"scale='iw*({fwd})':'ih*({fwd})':eval=frame,"
+            f"scale='trunc(iw/({fwd})/2)*2':'trunc(ih/({fwd})/2)*2':eval=frame"
         ], [], []
     elif direction == "pan_right":
-        # Fixed zoom, pan x from left to right
+        zf = 1 + amount
         return [
-            f"scale='iw*{1+amount}':'ih*{1+amount}':eval=init,"
-            f"crop={width}:{height}:"
-            f"'min(t/{dur},1)*(iw-{width})':'(ih-{height})/2'"
+            f"scale='trunc(iw*{zf}/2)*2':'trunc(ih*{zf}/2)*2',"
+            f"crop='trunc(iw/{zf}/2)*2':'trunc(ih/{zf}/2)*2':"
+            f"'min(t/{dur}\\,1)*(iw-ow)':'(ih-oh)/2'"
         ], [], []
     elif direction == "pan_left":
-        # Fixed zoom, pan x from right to left
+        zf = 1 + amount
         return [
-            f"scale='iw*{1+amount}':'ih*{1+amount}':eval=init,"
-            f"crop={width}:{height}:"
-            f"'max(0,1-t/{dur})*(iw-{width})':'(ih-{height})/2'"
+            f"scale='trunc(iw*{zf}/2)*2':'trunc(ih*{zf}/2)*2',"
+            f"crop='trunc(iw/{zf}/2)*2':'trunc(ih/{zf}/2)*2':"
+            f"'max(0\\,1-t/{dur})*(iw-ow)':'(ih-oh)/2'"
         ], [], []
     else:
+        fwd = f"1+{amount}*min(t\\,{dur})/{dur}"
         return [
-            f"scale='iw*(1+{amount}*min(t,{dur})/{dur})':"
-            f"'ih*(1+{amount}*min(t,{dur})/{dur})':eval=frame,"
-            f"crop={width}:{height}"
+            f"scale='trunc(iw/2)*2':'trunc(ih/2)*2',"
+            f"scale='iw*({fwd})':'ih*({fwd})':eval=frame,"
+            f"scale='trunc(iw/({fwd})/2)*2':'trunc(ih/({fwd})/2)*2':eval=frame"
         ], [], []
 
 
