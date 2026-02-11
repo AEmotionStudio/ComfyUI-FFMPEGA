@@ -875,47 +875,63 @@ def _f_ken_burns(p):
     width = int(p.get("width", 1920))
     height = int(p.get("height", 1080))
     fps = int(p.get("fps", 25))
-    # zoompan d=fps: generate <fps> output frames per input frame
-    # This makes the zoom smooth — each input frame is held for 1 second
-    # and the zoom animates across all those output frames.
-    # zoom_step: increment per output frame to reach max_zoom over ~5 seconds
+    # Use time-based crop+scale for smooth animated zoom.
+    # zoompan is designed for still images; for video, crop+scale with
+    # time-varying expressions produces better results and doesn't
+    # change the output duration.
+    #
+    # Zoom in: crop shrinks over time (more cropped = more zoomed)
+    # We interpolate the crop factor from 1/(1+amount) to 1/1 of frame size
+    # Actually for zoom_in, we go from full frame to cropped (zoomed) frame
+    # factor goes from 1.0 to 1/(1+amount) over the video duration
     max_zoom = 1.0 + amount
-    total_frames = fps * 5  # zoom completes over ~5 seconds
-    zoom_step = amount / total_frames
-    sz = f"s={width}x{height}:fps={fps}"
     if direction == "zoom_in":
+        # Crop window shrinks over time → zoom in effect
+        # At t=0: crop=full frame. At end: crop=frame/max_zoom
+        # Use 'n' (frame number) and assume ~5 second ramp
+        ramp_frames = fps * 5
         return [
-            f"zoompan=z='min(zoom+{zoom_step:.6f},{max_zoom})':"
-            f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-            f"d={fps}:{sz}"
+            f"crop='iw/(1+{amount}*min(n\\,{ramp_frames})/{ramp_frames})':"
+            f"'ih/(1+{amount}*min(n\\,{ramp_frames})/{ramp_frames})':"
+            f"'(iw-out_w)/2':'(ih-out_h)/2',"
+            f"scale={width}:{height}"
         ], [], []
     elif direction == "zoom_out":
+        # Crop window grows over time → zoom out effect
+        ramp_frames = fps * 5
         return [
-            f"zoompan=z='if(eq(on,0),{max_zoom},max(zoom-{zoom_step:.6f},1))':"
-            f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-            f"d={fps}:{sz}"
+            f"crop='iw/(1+{amount}*max(0\\,1-n/{ramp_frames}))':"
+            f"'ih/(1+{amount}*max(0\\,1-n/{ramp_frames}))':"
+            f"'(iw-out_w)/2':'(ih-out_h)/2',"
+            f"scale={width}:{height}"
         ], [], []
     elif direction == "pan_right":
-        pan_step = amount * width / total_frames
+        ramp_frames = fps * 5
+        crop_w = f"iw/{max_zoom}"
+        crop_h = f"ih/{max_zoom}"
         return [
-            f"zoompan=z='{max_zoom}':"
-            f"x='if(eq(on,0),0,min(x+{pan_step:.4f},iw-iw/zoom))':"
-            f"y='ih/2-(ih/zoom/2)':"
-            f"d={fps}:{sz}"
+            f"crop={crop_w}:{crop_h}:"
+            f"'min(n*{amount}*iw/({ramp_frames}*{max_zoom})\\,iw-iw/{max_zoom})':"
+            f"'(ih-ih/{max_zoom})/2',"
+            f"scale={width}:{height}"
         ], [], []
     elif direction == "pan_left":
-        pan_step = amount * width / total_frames
+        ramp_frames = fps * 5
+        crop_w = f"iw/{max_zoom}"
+        crop_h = f"ih/{max_zoom}"
         return [
-            f"zoompan=z='{max_zoom}':"
-            f"x='if(eq(on,0),iw-iw/zoom,max(x-{pan_step:.4f},0))':"
-            f"y='ih/2-(ih/zoom/2)':"
-            f"d={fps}:{sz}"
+            f"crop={crop_w}:{crop_h}:"
+            f"'max(iw-iw/{max_zoom}-n*{amount}*iw/({ramp_frames}*{max_zoom})\\,0)':"
+            f"'(ih-ih/{max_zoom})/2',"
+            f"scale={width}:{height}"
         ], [], []
     else:
+        ramp_frames = fps * 5
         return [
-            f"zoompan=z='min(zoom+{zoom_step:.6f},{max_zoom})':"
-            f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-            f"d={fps}:{sz}"
+            f"crop='iw/(1+{amount}*min(n\\,{ramp_frames})/{ramp_frames})':"
+            f"'ih/(1+{amount}*min(n\\,{ramp_frames})/{ramp_frames})':"
+            f"'(iw-out_w)/2':'(ih-out_h)/2',"
+            f"scale={width}:{height}"
         ], [], []
 
 
