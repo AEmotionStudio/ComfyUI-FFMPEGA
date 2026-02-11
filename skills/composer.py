@@ -953,13 +953,23 @@ def _f_chromakey(p):
     color_hex = color_map.get(color.lower(), color)
     similarity = float(p.get("similarity", 0.3))
     blend = float(p.get("blend", 0.1))
-    return [f"chromakey=color={color_hex}:similarity={similarity}:blend={blend}"], [], []
+    # Use filter_complex to composite keyed footage over black background.
+    # colorkey produces alpha transparency which H.264/NVENC discard silently,
+    # so we overlay onto black to flatten the alpha before encoding.
+    fc = (
+        f"[0:v]split[_ckbg][_ckfg];"
+        f"[_ckbg]drawbox=x=0:y=0:w=iw:h=ih:c=black:t=fill[_ckblack];"
+        f"[_ckfg]colorkey=color={color_hex}:similarity={similarity}:blend={blend}[_ckkeyed];"
+        f"[_ckblack][_ckkeyed]overlay=format=auto"
+    )
+    return [], [], [], fc
 
 
 def _f_deband(p):
-    thr = float(p.get("threshold", 0.04))
+    thr = float(p.get("threshold", 0.08))
     rng = int(p.get("range", 16))
-    return [f"deband=1thr={thr}:2thr={thr}:3thr={thr}:range={rng}"], [], []
+    blur = 1 if p.get("blur", True) else 0
+    return [f"deband=1thr={thr}:2thr={thr}:3thr={thr}:4thr={thr}:range={rng}:blur={blur}"], [], []
 
 
 def _f_lens_correction(p):

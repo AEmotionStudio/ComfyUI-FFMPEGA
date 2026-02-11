@@ -630,4 +630,20 @@ class TestSkillComposer:
         assert "-vf" in args, f"-vf must be present: {args}"
         assert "-af" not in args, f"-af must NOT be present: {args}"
 
+    # ---- Chroma key (green screen) tests ----
+
+    def test_chromakey_produces_colorkey_filter(self):
+        """chromakey skill must use filter_complex with colorkey+overlay for H.264/NVENC compat."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("chromakey", {"color": "green"})
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        # Must use filter_complex (not simple -vf) to composite alpha over black
+        assert "filter_complex" in cmd_str, f"Expected filter_complex but got: {cmd_str}"
+        assert "colorkey=" in cmd_str, f"Expected 'colorkey' filter but got: {cmd_str}"
+        assert "overlay" in cmd_str, f"Expected 'overlay' for compositing but got: {cmd_str}"
+
 
