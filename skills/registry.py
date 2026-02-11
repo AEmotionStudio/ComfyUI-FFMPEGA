@@ -121,6 +121,12 @@ class Skill:
     pipeline: Optional[list[str]] = None
     examples: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
+    _search_text: str = field(init=False, repr=False, default="")
+
+    def __post_init__(self):
+        """Pre-compute search text for faster lookups."""
+        parts = [self.name, self.description] + self.tags
+        self._search_text = " ".join(parts).lower()
 
     def validate_params(self, params: dict) -> tuple[bool, list[str]]:
         """Validate parameters for this skill.
@@ -157,7 +163,7 @@ class SkillRegistry:
 
     def __init__(self):
         self._skills: dict[str, Skill] = {}
-        self._by_category: dict[SkillCategory, list[str]] = {
+        self._by_category: dict[SkillCategory, list[Skill]] = {
             cat: [] for cat in SkillCategory
         }
         self._by_tag: dict[str, list[str]] = {}
@@ -171,7 +177,7 @@ class SkillRegistry:
             skill: Skill to register.
         """
         self._skills[skill.name] = skill
-        self._by_category[skill.category].append(skill.name)
+        self._by_category[skill.category].append(skill)
 
         for tag in skill.tags:
             if tag not in self._by_tag:
@@ -210,7 +216,7 @@ class SkillRegistry:
         Returns:
             List of skills in the category.
         """
-        return [self._skills[name] for name in self._by_category.get(category, [])]
+        return list(self._by_category.get(category, []))
 
     def list_by_tag(self, tag: str) -> list[Skill]:
         """List skills with a specific tag.
@@ -233,15 +239,10 @@ class SkillRegistry:
             List of matching skills.
         """
         query = query.lower()
-        results = []
-        for skill in self._skills.values():
-            if (
-                query in skill.name.lower() or
-                query in skill.description.lower() or
-                any(query in tag.lower() for tag in skill.tags)
-            ):
-                results.append(skill)
-        return results
+        return [
+            skill for skill in self._skills.values()
+            if query in skill._search_text
+        ]
 
     def to_prompt_string(self) -> str:
         """Generate a string representation for LLM prompts.
