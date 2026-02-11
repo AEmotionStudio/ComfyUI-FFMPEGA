@@ -112,6 +112,15 @@ class PipelineGenerator:
             )
             return APIConnector(config)
 
+        if model.startswith("qwen"):
+            config = LLMConfig(
+                provider=LLMProvider.QWEN,
+                model=model,
+                api_key=api_key,
+                temperature=0.3,
+            )
+            return APIConnector(config)
+
         # Default: treat as Ollama model
         config = LLMConfig(
             provider=LLMProvider.OLLAMA,

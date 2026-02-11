@@ -33,6 +33,9 @@ class FFMPEGAgentNode:
         "claude-haiku-4-5",
         "gemini-3-flash",
         "gemini-2.5-flash",
+        "qwen-max",
+        "qwen-plus",
+        "qwen-turbo",
     ]
 
     QUALITY_PRESETS = ["draft", "standard", "high", "lossless"]

@@ -34,6 +34,13 @@ class APIConnector(LLMConnector):
             "auth_header": "Authorization",
             "auth_prefix": "Bearer",
         },
+        LLMProvider.QWEN: {
+            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "models": ["qwen-max", "qwen-plus", "qwen-turbo"],
+            "chat_endpoint": "/chat/completions",
+            "auth_header": "Authorization",
+            "auth_prefix": "Bearer",
+        },
     }
 
     def __init__(self, config: LLMConfig):
