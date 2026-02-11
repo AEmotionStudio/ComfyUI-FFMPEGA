@@ -182,6 +182,12 @@ class SkillRegistry:
             old = self._skills[skill.name]
             cat_list = self._by_category[old.category]
             cat_list[:] = [s for s in cat_list if s.name != skill.name]
+            # Remove old tag associations
+            for old_tag in old.tags:
+                if old_tag in self._by_tag:
+                    self._by_tag[old_tag] = [
+                        n for n in self._by_tag[old_tag] if n != skill.name
+                    ]
         self._skills[skill.name] = skill
         self._by_category[skill.category].append(skill)
 
