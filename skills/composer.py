@@ -126,6 +126,19 @@ class SkillComposer:
                 "greyscale": "monochrome",
                 "black_and_white": "monochrome",
                 "bw": "monochrome",
+                "concatenate": "concat",
+                "join": "concat",
+                "transition": "xfade",
+                "splitscreen": "split_screen",
+                "side_by_side": "split_screen",
+                "moving_overlay": "animated_overlay",
+                "chroma_key": "chromakey",
+                "green_screen": "chromakey",
+                "text": "text_overlay",
+                "drawtext": "text_overlay",
+                "title": "text_overlay",
+                "subtitle": "text_overlay",
+                "caption": "text_overlay",
             }
             resolved_name = _SKILL_ALIASES.get(step.skill_name, step.skill_name)
             skill = self.registry.get(resolved_name)
@@ -659,7 +672,7 @@ def _f_quality(p):
     return [], [], ["-c:v", "libx264", "-crf", str(crf), "-preset", preset]
 
 
-def _f_text_overlay(p):
+def _f_add_text(p):
     text = sanitize_text_param(str(p.get("text", "")))
     size = p.get("size", 48)
     color = sanitize_text_param(str(p.get("color", "white")))
@@ -979,7 +992,7 @@ def _f_gif(p):
     ], [], []
 
 
-def _f_chromakey(p):
+def _f_chromakey_simple(p):
     color = sanitize_text_param(str(p.get("color", "green")))
     # Map common names to hex
     color_map = {"green": "0x00FF00", "blue": "0x0000FF", "red": "0xFF0000"}
@@ -1342,7 +1355,7 @@ _SKILL_DISPATCH: dict[str, callable] = {
     "bitrate": _f_bitrate,
     "quality": _f_quality,
     # Overlay
-    "text_overlay": _f_text_overlay,
+    "text_overlay": _f_add_text,
     "pixelate": _f_pixelate,
     "posterize": _f_posterize,
     # Transitions
@@ -1369,7 +1382,7 @@ _SKILL_DISPATCH: dict[str, callable] = {
     "color_grade": _f_color_grade,
     "gif": _f_gif,
     # High-impact
-    "chromakey": _f_chromakey,
+    "chromakey": _f_chromakey_simple,
     "deband": _f_deband,
     "lens_correction": _f_lens_correction,
     "color_temperature": _f_color_temperature,
