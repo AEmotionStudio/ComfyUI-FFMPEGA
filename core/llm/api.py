@@ -276,6 +276,188 @@ class APIConnector(LLMConnector):
                         if delta.get("type") == "text_delta":
                             yield delta.get("text", "")
 
+    async def chat_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+    ) -> LLMResponse:
+        """Chat with tool/function-calling support.
+
+        Routes to the appropriate provider-specific implementation.
+
+        Args:
+            messages: Conversation history (role/content dicts).
+            tools: Tool definitions in OpenAI-compatible format.
+
+        Returns:
+            LLMResponse with content and/or tool_calls.
+        """
+        try:
+            if self.config.provider == LLMProvider.ANTHROPIC:
+                return await self._chat_with_tools_anthropic(messages, tools)
+            else:
+                return await self._chat_with_tools_openai(messages, tools)
+        except httpx.HTTPStatusError as e:
+            msg = sanitize_api_key(str(e), self.config.api_key or "")
+            raise httpx.HTTPStatusError(
+                msg, request=e.request, response=e.response
+            ) from None
+        except httpx.HTTPError as e:
+            msg = sanitize_api_key(str(e), self.config.api_key or "")
+            raise RuntimeError(f"LLM API error: {msg}") from None
+
+    async def _chat_with_tools_openai(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+    ) -> LLMResponse:
+        """Tool calling for OpenAI-compatible APIs (OpenAI, Gemini, Qwen).
+
+        Uses the standard OpenAI function-calling format.
+        """
+        payload: dict = {
+            "model": self.config.model,
+            "messages": messages,
+            "temperature": self.config.temperature,
+            "max_tokens": self.config.max_tokens,
+        }
+        if tools:
+            payload["tools"] = tools
+
+        response = await self.client.post(self._chat_endpoint, json=payload)
+        response.raise_for_status()
+
+        data = response.json()
+        choice = data.get("choices", [{}])[0]
+        message = choice.get("message", {})
+        usage = data.get("usage", {})
+
+        # Extract tool calls if present
+        raw_tool_calls = message.get("tool_calls")
+        tool_calls = None
+        if raw_tool_calls:
+            tool_calls = []
+            for tc in raw_tool_calls:
+                func = tc.get("function", {})
+                arguments = func.get("arguments", "{}")
+                # Parse arguments string to dict if needed
+                if isinstance(arguments, str):
+                    try:
+                        arguments = json.loads(arguments)
+                    except (json.JSONDecodeError, ValueError):
+                        arguments = {}
+                tool_calls.append({
+                    "function": {
+                        "name": func.get("name", ""),
+                        "arguments": arguments,
+                    }
+                })
+
+        return LLMResponse(
+            content=message.get("content", "") or "",
+            model=data.get("model", self.config.model),
+            provider=self.config.provider,
+            prompt_tokens=usage.get("prompt_tokens"),
+            completion_tokens=usage.get("completion_tokens"),
+            total_tokens=usage.get("total_tokens"),
+            finish_reason=choice.get("finish_reason"),
+            raw_response=data,
+            tool_calls=tool_calls,
+        )
+
+    async def _chat_with_tools_anthropic(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+    ) -> LLMResponse:
+        """Tool calling for Anthropic API.
+
+        Converts OpenAI-format tool definitions to Anthropic format
+        and parses tool_use content blocks from the response.
+        """
+        # Convert OpenAI tool format to Anthropic format
+        anthropic_tools = []
+        for tool in tools:
+            func = tool.get("function", {})
+            anthropic_tools.append({
+                "name": func.get("name", ""),
+                "description": func.get("description", ""),
+                "input_schema": func.get("parameters", {"type": "object", "properties": {}}),
+            })
+
+        # Build Anthropic-style messages (extract system prompt)
+        system_prompt = None
+        anthropic_messages = []
+        for msg in messages:
+            if msg["role"] == "system":
+                system_prompt = msg.get("content", "")
+            elif msg["role"] == "tool":
+                # Anthropic expects tool results as user messages with
+                # tool_result content blocks
+                anthropic_messages.append({
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": msg.get("tool_use_id", "tool_result"),
+                            "content": msg.get("content", ""),
+                        }
+                    ],
+                })
+            else:
+                anthropic_messages.append({
+                    "role": msg["role"],
+                    "content": msg.get("content", ""),
+                })
+
+        payload: dict = {
+            "model": self.config.model,
+            "messages": anthropic_messages,
+            "max_tokens": self.config.max_tokens,
+        }
+        if system_prompt:
+            payload["system"] = system_prompt
+        if anthropic_tools:
+            payload["tools"] = anthropic_tools
+
+        response = await self.client.post(self._chat_endpoint, json=payload)
+        response.raise_for_status()
+
+        data = response.json()
+        content_blocks = data.get("content", [])
+        usage = data.get("usage", {})
+
+        # Extract text content and tool calls
+        text_parts = []
+        tool_calls = None
+        for block in content_blocks:
+            if block.get("type") == "text":
+                text_parts.append(block.get("text", ""))
+            elif block.get("type") == "tool_use":
+                if tool_calls is None:
+                    tool_calls = []
+                tool_calls.append({
+                    "function": {
+                        "name": block.get("name", ""),
+                        "arguments": block.get("input", {}),
+                    }
+                })
+
+        return LLMResponse(
+            content="\n".join(text_parts),
+            model=data.get("model", self.config.model),
+            provider=LLMProvider.ANTHROPIC,
+            prompt_tokens=usage.get("input_tokens"),
+            completion_tokens=usage.get("output_tokens"),
+            total_tokens=(
+                (usage.get("input_tokens") or 0) +
+                (usage.get("output_tokens") or 0)
+            ) or None,
+            finish_reason=data.get("stop_reason"),
+            raw_response=data,
+            tool_calls=tool_calls,
+        )
+
     async def list_models(self) -> list[str]:
         """List available models.
 

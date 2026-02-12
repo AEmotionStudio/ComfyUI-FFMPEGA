@@ -514,3 +514,227 @@ def register_skills(registry: SkillRegistry) -> None:
         tags=["reverse", "backwards", "creepy"],
     ))
 
+    # Noise reduction — FFT-based audio denoising
+    registry.register(Skill(
+        name="noise_reduction",
+        category=SkillCategory.AUDIO,
+        description="Remove background noise from audio (hiss, hum, ambient noise)",
+        parameters=[
+            SkillParameter(
+                name="floor",
+                type=ParameterType.FLOAT,
+                description="Noise floor in dB (lower = more aggressive, e.g. -40)",
+                required=False,
+                default=-30,
+                min_value=-80,
+                max_value=-10,
+            ),
+            SkillParameter(
+                name="amount",
+                type=ParameterType.FLOAT,
+                description="Noise reduction amount (0.0-1.0)",
+                required=False,
+                default=0.75,
+                min_value=0.0,
+                max_value=1.0,
+            ),
+        ],
+        ffmpeg_template="afftdn=nf={floor}:nr={amount}:nt=w",
+        examples=[
+            "noise_reduction - Standard background noise removal",
+            "noise_reduction:floor=-40,amount=0.9 - Aggressive noise removal",
+            "noise_reduction:floor=-25,amount=0.5 - Gentle cleanup",
+        ],
+        tags=["noise", "denoise", "clean", "hiss", "hum", "background", "fft"],
+    ))
+
+    # Audio crossfade
+    registry.register(Skill(
+        name="audio_crossfade",
+        category=SkillCategory.AUDIO,
+        description="Smooth audio crossfade transition between clips",
+        parameters=[
+            SkillParameter(
+                name="duration",
+                type=ParameterType.FLOAT,
+                description="Crossfade duration in seconds",
+                required=False,
+                default=2.0,
+                min_value=0.1,
+                max_value=30.0,
+            ),
+            SkillParameter(
+                name="curve",
+                type=ParameterType.CHOICE,
+                description="Fade curve shape",
+                required=False,
+                default="tri",
+                choices=["tri", "exp", "log", "par", "qua", "squ", "nofade"],
+            ),
+        ],
+        ffmpeg_template="afade=t=out:st=0:d={duration}",
+        examples=[
+            "audio_crossfade - 2 second triangle crossfade",
+            "audio_crossfade:duration=5,curve=exp - 5s exponential crossfade",
+        ],
+        tags=["crossfade", "transition", "blend", "smooth", "mix"],
+    ))
+
+    # Replace audio — swap the audio track
+    registry.register(Skill(
+        name="replace_audio",
+        category=SkillCategory.AUDIO,
+        description="Replace video's audio with audio from another file (uses extra_inputs)",
+        parameters=[],
+        ffmpeg_template="-map 0:v -map 1:a -shortest",
+        examples=[
+            "replace_audio - Replace audio track with second input's audio",
+        ],
+        tags=["swap", "replace", "dub", "music", "voiceover"],
+    ))
+
+    # Audio delay — sync offset correction
+    registry.register(Skill(
+        name="audio_delay",
+        category=SkillCategory.AUDIO,
+        description="Delay audio by a fixed amount (fix audio/video sync issues)",
+        parameters=[
+            SkillParameter(
+                name="ms",
+                type=ParameterType.INT,
+                description="Delay in milliseconds (positive = delay audio, negative not supported)",
+                required=False,
+                default=200,
+                min_value=1,
+                max_value=10000,
+            ),
+        ],
+        ffmpeg_template="adelay={ms}|{ms}",
+        examples=[
+            "audio_delay:ms=100 - Delay audio by 100ms",
+            "audio_delay:ms=500 - Delay audio by half a second",
+        ],
+        tags=["delay", "sync", "offset", "lip", "latency", "fix"],
+    ))
+
+    # Ducking — lower music volume when voice is present
+    registry.register(Skill(
+        name="ducking",
+        category=SkillCategory.AUDIO,
+        description="Auto-duck music volume when voice/speech is detected (sidechain compression)",
+        parameters=[
+            SkillParameter(
+                name="threshold",
+                type=ParameterType.FLOAT,
+                description="Voice detection threshold in dB",
+                required=False,
+                default=-30,
+                min_value=-60,
+                max_value=-5,
+            ),
+            SkillParameter(
+                name="ratio",
+                type=ParameterType.FLOAT,
+                description="Compression ratio when voice detected",
+                required=False,
+                default=6,
+                min_value=2,
+                max_value=20,
+            ),
+            SkillParameter(
+                name="release",
+                type=ParameterType.FLOAT,
+                description="Release time in seconds (how fast music returns)",
+                required=False,
+                default=0.5,
+                min_value=0.05,
+                max_value=5.0,
+            ),
+        ],
+        ffmpeg_template="compand=attacks=0.05:decays={release}:points=-80/-80|{threshold}/{threshold}|0/-{ratio}|20/-{ratio}",
+        examples=[
+            "ducking - Auto-lower music during speech",
+            "ducking:threshold=-25,ratio=8 - Aggressive ducking",
+        ],
+        tags=["duck", "sidechain", "compress", "voice", "speech", "music", "podcast"],
+    ))
+
+    # Dereverb — remove room echo / reverb
+    registry.register(Skill(
+        name="dereverb",
+        category=SkillCategory.AUDIO,
+        description="Reduce room echo and reverb from audio (dry up the sound)",
+        parameters=[
+            SkillParameter(
+                name="amount",
+                type=ParameterType.FLOAT,
+                description="Dereverb strength (higher = more aggressive)",
+                required=False,
+                default=0.5,
+                min_value=0.1,
+                max_value=1.0,
+            ),
+        ],
+        ffmpeg_template="highpass=f=80,lowpass=f=12000,afftdn=nf=-20:nr={amount}:nt=w",
+        examples=[
+            "dereverb - Standard room echo removal",
+            "dereverb:amount=0.8 - Aggressive reverb removal",
+        ],
+        tags=["reverb", "echo", "room", "dry", "clean", "voice"],
+    ))
+
+    # Split audio — isolate left/right channel
+    registry.register(Skill(
+        name="split_audio",
+        category=SkillCategory.AUDIO,
+        description="Extract a specific audio channel (left or right) from stereo audio",
+        parameters=[
+            SkillParameter(
+                name="channel",
+                type=ParameterType.CHOICE,
+                description="Which channel to extract",
+                required=False,
+                default="left",
+                choices=["left", "right"],
+            ),
+        ],
+        ffmpeg_template="pan=mono|c0=FL",
+        examples=[
+            "split_audio - Extract left channel",
+            "split_audio:channel=right - Extract right channel",
+        ],
+        tags=["channel", "mono", "left", "right", "stereo", "isolate", "split"],
+    ))
+
+    # Audio normalize loudness — EBU R128 standard
+    registry.register(Skill(
+        name="audio_normalize_loudness",
+        category=SkillCategory.AUDIO,
+        description="Normalize audio loudness to broadcast standard (EBU R128 / -14 LUFS for streaming)",
+        parameters=[
+            SkillParameter(
+                name="target",
+                type=ParameterType.FLOAT,
+                description="Target integrated loudness in LUFS (-24 = broadcast, -14 = streaming)",
+                required=False,
+                default=-14,
+                min_value=-30,
+                max_value=-5,
+            ),
+            SkillParameter(
+                name="tp",
+                type=ParameterType.FLOAT,
+                description="Maximum true peak in dBTP",
+                required=False,
+                default=-1.0,
+                min_value=-5.0,
+                max_value=0.0,
+            ),
+        ],
+        ffmpeg_template="loudnorm=I={target}:TP={tp}:LRA=11",
+        examples=[
+            "audio_normalize_loudness - Normalize to -14 LUFS (streaming standard)",
+            "audio_normalize_loudness:target=-24 - Broadcast standard (-24 LUFS)",
+        ],
+        tags=["loudness", "lufs", "ebu", "r128", "broadcast", "normalize", "streaming"],
+    ))

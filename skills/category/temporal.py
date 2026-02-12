@@ -150,3 +150,94 @@ def register_skills(registry: SkillRegistry) -> None:
         ],
         tags=["framerate", "frames"],
     ))
+
+    # Scene detect — select frames at scene boundaries
+    registry.register(Skill(
+        name="scene_detect",
+        category=SkillCategory.TEMPORAL,
+        description="Detect and keep only scene-change frames (useful for auto-splitting or thumbnails)",
+        parameters=[
+            SkillParameter(
+                name="threshold",
+                type=ParameterType.FLOAT,
+                description="Scene change sensitivity (0.1=sensitive, 0.5=major changes only)",
+                required=False,
+                default=0.3,
+                min_value=0.05,
+                max_value=0.9,
+            ),
+        ],
+        ffmpeg_template="select='gt(scene,{threshold})',setpts=N/FRAME_RATE/TB",
+        examples=[
+            "scene_detect - Detect scene changes (default threshold)",
+            "scene_detect:threshold=0.1 - Very sensitive scene detection",
+            "scene_detect:threshold=0.5 - Only major scene changes",
+        ],
+        tags=["scene", "detect", "split", "cut", "auto", "boundary"],
+    ))
+
+    # Silence remove — strip silent audio segments
+    registry.register(Skill(
+        name="silence_remove",
+        category=SkillCategory.AUDIO,
+        description="Automatically remove silent segments from audio/video (great for podcasts, vlogs)",
+        parameters=[
+            SkillParameter(
+                name="threshold",
+                type=ParameterType.FLOAT,
+                description="Silence threshold in dB (e.g. -30 = quiet, -50 = very quiet)",
+                required=False,
+                default=-30,
+                min_value=-80,
+                max_value=-10,
+            ),
+            SkillParameter(
+                name="min_duration",
+                type=ParameterType.FLOAT,
+                description="Minimum silence duration to remove (seconds)",
+                required=False,
+                default=0.5,
+                min_value=0.1,
+                max_value=10.0,
+            ),
+        ],
+        ffmpeg_template="silenceremove=start_periods=1:start_duration={min_duration}:start_threshold={threshold}dB:detection=peak",
+        examples=[
+            "silence_remove - Remove silences below -30dB",
+            "silence_remove:threshold=-40,min_duration=1 - Remove longer quiet gaps",
+        ],
+        tags=["silence", "remove", "strip", "podcast", "vlog", "auto", "jump_cut"],
+    ))
+
+    # Time remap — variable speed with smooth ramping
+    registry.register(Skill(
+        name="time_remap",
+        category=SkillCategory.TEMPORAL,
+        description="Variable speed ramping — smoothly accelerate or decelerate playback",
+        parameters=[
+            SkillParameter(
+                name="start_speed",
+                type=ParameterType.FLOAT,
+                description="Speed at the start of the clip (1.0 = normal)",
+                required=False,
+                default=1.0,
+                min_value=0.1,
+                max_value=10.0,
+            ),
+            SkillParameter(
+                name="end_speed",
+                type=ParameterType.FLOAT,
+                description="Speed at the end of the clip (1.0 = normal)",
+                required=False,
+                default=0.25,
+                min_value=0.1,
+                max_value=10.0,
+            ),
+        ],
+        ffmpeg_template="setpts=PTS*({start_speed}+({end_speed}-{start_speed})*T/5)",
+        examples=[
+            "time_remap:start_speed=1,end_speed=0.25 - Gradually slow to quarter speed",
+            "time_remap:start_speed=0.5,end_speed=2 - Speed up from slow to fast",
+        ],
+        tags=["speed", "ramp", "variable", "ease", "acceleration", "deceleration"],
+    ))

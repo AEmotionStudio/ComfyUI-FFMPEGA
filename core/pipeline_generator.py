@@ -312,16 +312,17 @@ class PipelineGenerator:
             assistant_msg = {"role": "assistant", "content": response.content or ""}
             assistant_msg["tool_calls"] = [
                 {
+                    "id": tc.get("id", f"call_{i}"),
                     "function": {
                         "name": tc["function"]["name"],
                         "arguments": tc["function"]["arguments"],
                     }
                 }
-                for tc in response.tool_calls
+                for i, tc in enumerate(response.tool_calls)
             ]
             messages.append(assistant_msg)
 
-            for tool_call in response.tool_calls:
+            for i, tool_call in enumerate(response.tool_calls):
                 func_name = tool_call["function"]["name"]
                 func_args = tool_call["function"]["arguments"]
 
@@ -338,7 +339,12 @@ class PipelineGenerator:
                 else:
                     result_str = json.dumps({"error": f"Unknown tool: {func_name}"})
 
-                messages.append({"role": "tool", "content": result_str})
+                tool_result_msg = {
+                    "role": "tool",
+                    "content": result_str,
+                    "tool_use_id": tool_call.get("id", f"call_{i}"),
+                }
+                messages.append(tool_result_msg)
 
         # Exhausted iterations
         logger.warning(f"Agentic loop hit max iterations ({max_iterations})")
