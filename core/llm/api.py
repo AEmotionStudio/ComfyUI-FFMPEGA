@@ -337,16 +337,14 @@ class APIConnector(LLMConnector):
         tool_calls = None
         if raw_tool_calls:
             tool_calls = []
-            for tc in raw_tool_calls:
+            for i, tc in enumerate(raw_tool_calls):
                 func = tc.get("function", {})
+                # Keep arguments as raw JSON string for OpenAI round-tripping
                 arguments = func.get("arguments", "{}")
-                # Parse arguments string to dict if needed
-                if isinstance(arguments, str):
-                    try:
-                        arguments = json.loads(arguments)
-                    except (json.JSONDecodeError, ValueError):
-                        arguments = {}
+                if not isinstance(arguments, str):
+                    arguments = json.dumps(arguments)
                 tool_calls.append({
+                    "id": tc.get("id", f"call_{i}"),
                     "function": {
                         "name": func.get("name", ""),
                         "arguments": arguments,
@@ -399,15 +397,34 @@ class APIConnector(LLMConnector):
                     "content": [
                         {
                             "type": "tool_result",
-                            "tool_use_id": msg.get("tool_use_id", "tool_result"),
+                            "tool_use_id": msg.get("tool_call_id", msg.get("tool_use_id", "tool_result")),
                             "content": msg.get("content", ""),
                         }
                     ],
                 })
             else:
+                # Build content blocks for assistant messages
+                content_blocks = []
+                text = msg.get("content", "")
+                if text:
+                    content_blocks.append({"type": "text", "text": text})
+                # Convert tool_calls to Anthropic tool_use blocks
+                for tc in msg.get("tool_calls", []):
+                    func_args = tc["function"]["arguments"]
+                    if isinstance(func_args, str):
+                        try:
+                            func_args = json.loads(func_args)
+                        except (json.JSONDecodeError, ValueError):
+                            func_args = {}
+                    content_blocks.append({
+                        "type": "tool_use",
+                        "id": tc.get("id", "tool_call"),
+                        "name": tc["function"]["name"],
+                        "input": func_args,
+                    })
                 anthropic_messages.append({
                     "role": msg["role"],
-                    "content": msg.get("content", ""),
+                    "content": content_blocks if content_blocks else text or "",
                 })
 
         payload: dict = {
@@ -437,6 +454,7 @@ class APIConnector(LLMConnector):
                 if tool_calls is None:
                     tool_calls = []
                 tool_calls.append({
+                    "id": block.get("id", f"toolu_{len(tool_calls) if tool_calls else 0}"),
                     "function": {
                         "name": block.get("name", ""),
                         "arguments": block.get("input", {}),

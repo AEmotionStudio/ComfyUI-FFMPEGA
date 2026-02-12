@@ -2238,7 +2238,7 @@ def _f_animated_text(p):
         alpha_expr = f"alpha='if(lt(t,{start}+1),(t-{start}),1)'"
         base += f":y=(h-text_h)/2:{alpha_expr}"
     elif animation == "slide_up":
-        y_expr = f"y='h-text_h-60-min((t-{start})*100,0)'"
+        y_expr = f"y='max(h-text_h-60-((t-{start})*100),0)'"
         base += f":{y_expr}"
     elif animation == "slide_down":
         y_expr = f"y='min((t-{start})*100,60)'"
@@ -2542,7 +2542,7 @@ def _f_extract_frames(p):
     """Export frames as image sequence."""
     rate = float(p.get("rate", 1.0))
     vf = f"fps={rate}"
-    return [vf], [], ["-frames:v", "1", "-an"]
+    return [vf], [], ["-an"]
 
 
 _SKILL_DISPATCH["thumbnail"] = _f_thumbnail
@@ -2553,7 +2553,7 @@ def _f_datamosh(p):
     """Datamosh/glitch art via motion vector visualization."""
     mode = p.get("mode", "pf+bf+bb")
     # codecview needs motion vectors exported from decoder
-    vf = f"codecview=mv=pf+bf+bb"
+    vf = f"codecview=mv={mode}"
     return [vf], [], [], "", ["-flags2", "+export_mvs"]
 
 

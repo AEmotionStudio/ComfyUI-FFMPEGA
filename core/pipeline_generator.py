@@ -342,7 +342,7 @@ class PipelineGenerator:
                 tool_result_msg = {
                     "role": "tool",
                     "content": result_str,
-                    "tool_use_id": tool_call.get("id", f"call_{i}"),
+                    "tool_call_id": tool_call.get("id", f"call_{i}"),
                 }
                 messages.append(tool_result_msg)
 

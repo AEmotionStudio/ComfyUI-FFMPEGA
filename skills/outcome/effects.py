@@ -1593,7 +1593,7 @@ def register_skills(registry: SkillRegistry) -> None:
                 max_value=100,
             ),
         ],
-        ffmpeg_template="split[base][blur];[blur]boxblur={strength}[blurred];[base][blurred]overlay={x}:{y}:shortest=1",
+        ffmpeg_template="split[base][blur];[blur]crop={w}:{h}:{x}:{y},boxblur={strength}[blurred];[base][blurred]overlay={x}:{y}:shortest=1",
         examples=[
             "mask_blur:x=500,y=200,w=150,h=150 - Blur a face region",
             "mask_blur:x=100,y=600,w=300,h=80,strength=40 - Heavy blur on license plate",
