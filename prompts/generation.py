@@ -9,8 +9,15 @@ GENERATION_PROMPT_TEMPLATE = """Generate an FFMPEG processing pipeline for this 
 ## Input Video
 {video_metadata}
 
+## Connected Inputs
+{connected_inputs}
+
 ## Instructions
 Create a precise pipeline using only available skills. Output valid JSON.
+When the user refers to specific inputs by name (audio_a, audio_b, images_b, etc.),
+use the "audio_source" parameter to select the appropriate audio track.
+Valid audio_source values: "audio_a", "audio_b", "audio_c", ..., or "mix" (blend all).
+Default audio_source is "mix" when multiple audio inputs are connected.
 
 ## Response Format
 ```json
@@ -19,6 +26,7 @@ Create a precise pipeline using only available skills. Output valid JSON.
   "pipeline": [
     {{"skill": "skill_name", "params": {{...}}}}
   ],
+  "audio_source": "mix",
   "warnings": [],
   "estimated_changes": "description of output changes"
 }}
@@ -26,12 +34,15 @@ Create a precise pipeline using only available skills. Output valid JSON.
 """
 
 
-def get_generation_prompt(user_request: str, video_metadata: str) -> str:
+def get_generation_prompt(
+    user_request: str, video_metadata: str, connected_inputs: str = "",
+) -> str:
     """Generate a pipeline generation prompt.
 
     Args:
         user_request: The user's editing request.
         video_metadata: Video metadata string.
+        connected_inputs: Summary of connected inputs.
 
     Returns:
         Formatted generation prompt.
@@ -39,6 +50,7 @@ def get_generation_prompt(user_request: str, video_metadata: str) -> str:
     return GENERATION_PROMPT_TEMPLATE.format(
         user_request=user_request,
         video_metadata=video_metadata,
+        connected_inputs=connected_inputs or "No extra inputs connected",
     )
 
 

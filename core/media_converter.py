@@ -220,6 +220,8 @@ class MediaConverter:
                     ffmpeg_bin, "-y",
                     "-i", video_path,
                     "-i", tmp_wav.name,
+                    "-map", "0:v",
+                    "-map", "1:a",
                     "-c:v", "copy",
                     "-c:a", "aac",
                     "-shortest",
@@ -233,6 +235,88 @@ class MediaConverter:
             pass  # If muxing fails, keep the original video without audio
         finally:
             for f in [tmp_wav.name, tmp_out.name]:
+                if os.path.exists(f):
+                    try:
+                        os.remove(f)
+                    except OSError:
+                        pass
+
+    def mux_audio_mix(self, video_path: str, audio_dicts: list[dict]) -> None:
+        """Mix multiple audio dicts together and mux into a video file.
+
+        Uses ffmpeg's amix filter to blend all audio tracks into one,
+        then replaces any existing audio in the video.
+        """
+        if not audio_dicts:
+            return
+        if len(audio_dicts) == 1:
+            self.mux_audio(video_path, audio_dicts[0])
+            return
+
+        ffmpeg_bin = shutil.which("ffmpeg")
+        if not ffmpeg_bin:
+            return
+
+        tmp_wavs = []
+        tmp_out = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+        tmp_out.close()
+
+        try:
+            # Write each audio dict to a temp WAV
+            for audio in audio_dicts:
+                waveform = audio["waveform"]
+                sample_rate = audio["sample_rate"]
+                channels = waveform.size(1)
+                audio_data = waveform.squeeze(0).transpose(0, 1).contiguous()
+                audio_bytes = (
+                    (audio_data * 32767.0)
+                    .clamp(-32768, 32767)
+                    .to(torch.int16)
+                    .numpy()
+                    .tobytes()
+                )
+                tmp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+                tmp_wav.close()
+                subprocess.run(
+                    [
+                        ffmpeg_bin, "-y",
+                        "-f", "s16le",
+                        "-ar", str(sample_rate),
+                        "-ac", str(channels),
+                        "-i", "-",
+                        tmp_wav.name,
+                    ],
+                    input=audio_bytes,
+                    capture_output=True,
+                )
+                tmp_wavs.append(tmp_wav.name)
+
+            # Build amix command: video + all audio WAVs
+            cmd = [ffmpeg_bin, "-y", "-i", video_path]
+            for wav in tmp_wavs:
+                cmd.extend(["-i", wav])
+
+            n = len(tmp_wavs)
+            # Build filter: mix all audio inputs together
+            filter_inputs = "".join(f"[{i+1}:a]" for i in range(n))
+            amix_filter = f"{filter_inputs}amix=inputs={n}:duration=longest[aout]"
+
+            cmd.extend([
+                "-filter_complex", amix_filter,
+                "-map", "0:v",
+                "-map", "[aout]",
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-shortest",
+                tmp_out.name,
+            ])
+
+            subprocess.run(cmd, capture_output=True, check=True)
+            shutil.move(tmp_out.name, video_path)
+        except Exception:
+            pass  # If mixing fails, keep the original video
+        finally:
+            for f in tmp_wavs + [tmp_out.name]:
                 if os.path.exists(f):
                     try:
                         os.remove(f)
