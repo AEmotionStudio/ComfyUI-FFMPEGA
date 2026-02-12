@@ -10,8 +10,8 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from core.sanitize import (
-    validate_video_path, validate_output_path, sanitize_text_param,
-    redact_secret, sanitize_api_key,
+    validate_video_path, validate_output_path, validate_output_file_path,
+    sanitize_text_param, redact_secret, sanitize_api_key,
 )
 
 
@@ -97,6 +97,26 @@ class TestValidateOutputPath:
         result = validate_output_path("/tmp/my_output.mp4")
         assert os.path.isabs(result)
         assert result.endswith("my_output.mp4")
+
+
+class TestValidateOutputFilePath:
+    """Tests for validate_output_file_path."""
+
+    def test_valid_extension(self):
+        result = validate_output_file_path("/tmp/output.mp4")
+        assert result.endswith("output.mp4")
+
+    def test_invalid_extension(self):
+        with pytest.raises(ValueError, match="Invalid output file extension"):
+            validate_output_file_path("/tmp/script.sh")
+
+    def test_no_extension(self):
+        with pytest.raises(ValueError, match="must have an extension"):
+            validate_output_file_path("/tmp/output")
+
+    def test_traversal_raises(self):
+        with pytest.raises(ValueError, match="traversal"):
+            validate_output_file_path("/tmp/../output.mp4")
 
 
 class TestSanitizeTextParam:
