@@ -40,8 +40,9 @@ class MediaConverter:
             if not frames:
                 return torch.zeros(1, 64, 64, 3, dtype=torch.float32)
 
-            stacked = np.stack(frames).astype(np.float32) / 255.0
-            return torch.from_numpy(stacked)
+            # Optimization: avoid intermediate float32 copy in numpy
+            stacked = np.stack(frames)
+            return torch.from_numpy(stacked).float().div_(255.0)
 
         except Exception:
             return torch.zeros(1, 64, 64, 3, dtype=torch.float32)
@@ -106,7 +107,8 @@ class MediaConverter:
         if not ffmpeg_bin:
             raise RuntimeError("ffmpeg not found in PATH")
 
-        frames = (images.cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
+        # Optimization: convert to uint8 in torch (faster, avoids float64 intermediate in numpy)
+        frames = (images * 255.0).clamp(0, 255).to(torch.uint8).cpu().numpy()
         h, w = frames.shape[1], frames.shape[2]
 
         tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
@@ -131,7 +133,8 @@ class MediaConverter:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
         )
-        proc.stdin.write(frames.tobytes())
+        # Optimization: direct write avoids tobytes() copy
+        proc.stdin.write(frames)
         proc.stdin.close()
         proc.wait()
 
@@ -159,7 +162,7 @@ class MediaConverter:
         """
         from PIL import Image  # type: ignore[import-not-found]
 
-        frames = (images.cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
+        frames = (images * 255.0).clamp(0, 255).to(torch.uint8).cpu().numpy()
         num_frames = min(frames.shape[0], max_frames)
         tmp_dir = tempfile.mkdtemp(prefix="ffmpega_frames_")
 
