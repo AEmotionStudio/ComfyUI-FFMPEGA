@@ -223,7 +223,7 @@ def register_skills(registry: SkillRegistry) -> None:
                 max_value=255,
             ),
         ],
-        ffmpeg_template="cropdetect=limit={threshold}:round=2:reset=0",
+        ffmpeg_template="cropdetect=limit={threshold}:round=2:reset=0,crop",
         examples=[
             "auto_crop - Remove black borders automatically",
             "auto_crop:threshold=40 - More aggressive border detection",
