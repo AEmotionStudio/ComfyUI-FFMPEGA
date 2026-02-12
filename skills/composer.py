@@ -291,13 +291,14 @@ class SkillComposer:
             if opt.startswith("-") and i + 1 < len(output_options) and not output_options[i + 1].startswith("-"):
                 # Key-value pair like "-c:v libx264" or "-crf 23"
                 flag, val = opt, output_options[i + 1]
-                if flag in seen_flags:
+                # -map intentionally allows duplicates (e.g. -map 0:v -map 1:a)
+                if flag == "-map" or flag not in seen_flags:
+                    seen_flags[flag] = len(deduped_opts)
+                    deduped_opts.extend([flag, val])
+                else:
                     # Replace the earlier occurrence
                     idx = seen_flags[flag]
                     deduped_opts[idx + 1] = val  # update value
-                else:
-                    seen_flags[flag] = len(deduped_opts)
-                    deduped_opts.extend([flag, val])
                 i += 2
             else:
                 # Standalone flag like "-an" or "-y"
@@ -2551,9 +2552,17 @@ _SKILL_DISPATCH["color_match"] = _f_color_match
 def _f_thumbnail(p):
     """Extract best representative frame as image."""
     width = int(p.get("width", 0))
+    time = float(p.get("time", 0))
     scale = f",scale={width}:-1" if width > 0 else ""
-    vf = f"thumbnail{scale}"
-    return [vf], [], ["-frames:v", "1", "-an"]
+    input_opts = []
+    if time > 0:
+        # Seek to specific time instead of auto-detecting
+        input_opts = ["-ss", str(time)]
+        vf = f"null{scale}" if scale else ""
+    else:
+        vf = f"thumbnail{scale}"
+    vf_list = [vf] if vf else []
+    return vf_list, [], ["-frames:v", "1", "-an"], "", input_opts
 
 
 def _f_extract_frames(p):
