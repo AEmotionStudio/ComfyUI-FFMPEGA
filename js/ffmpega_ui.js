@@ -176,9 +176,13 @@ app.registerExtension({
                     if (show) {
                         widget.type = widget._origType;
                         widget.computeSize = widget._origComputeSize;
+                        widget.hidden = false;
+                        if (widget.element) widget.element.hidden = false;
                     } else {
                         widget.type = "hidden";
                         widget.computeSize = () => [0, -4];
+                        widget.hidden = true;
+                        if (widget.element) widget.element.hidden = true;
                     }
                 }
 
