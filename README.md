@@ -22,15 +22,17 @@
 
 ## 🚀 What's New in v2.2.0 (February 12, 2026)
 
-**200 Skills — Massive Skill Expansion**
+**200 Skills — Dynamic Inputs & Massive Skill Expansion**
 
-*   **🎯 200 Skills**: Expanded from 152 to **200 skills** — 48 new skills across every category including audio processing, visual correction, text animations, editing tools, and creative effects.
-*   **🔊 Audio**: `split_audio`, `audio_normalize_loudness` (EBU R128), `noise_reduction`, `dereverb`, `audio_crossfade`, `audio_delay`, `ducking`
-*   **✏️ Text & Graphics**: `animated_text`, `scrolling_text`, `ticker`, `lower_third`, `countdown`, `typewriter_text`, `bounce_text`, `fade_text`, `karaoke_text`
-*   **✂️ Editing**: `picture_in_picture`, `blend`, `mask_blur`, `delogo`, `jump_cut`, `beat_sync`, `extract_frames`, `color_match`
-*   **🎨 Visual & Spatial**: `unsharp_mask`, `white_balance`, `shadows_highlights`, `split_tone`, `deflicker`, `auto_crop`, `scale_2x`
-*   **🎆 Effects**: `datamosh`, `radial_blur`, `grain_overlay`, `frame_rate_interpolation`
-*   **🔧 10 Template Fixes**: Fixed broken FFmpeg templates discovered during comprehensive execution testing.
+*   **🎯 200 Skills**: Expanded from 127 to **200 skills** — covering every category from professional audio processing to text animations, creative effects, and editing tools.
+*   **🔗 Dynamic Auto-Expanding Inputs**: Connect `image_a` → `image_b` appears → `image_c` appears, and so on. Same for `images_a/b/c...` (video) and `audio_a/b/c...`. No more fixed slot limits.
+*   **🎥 Concat & Transitions**: Concatenate segments with `concat`, or use `xfade` for 18 smooth transitions (fade, dissolve, wipe, pixelize, radial, slide...).
+*   **📺 Split Screen**: Side-by-side (`hstack`) or top-bottom (`vstack`) multi-video layout.
+*   **🎨 Animated Overlay**: Moving image overlay with 8 motion presets — scroll, float, bounce, slide.
+*   **📝 Text & Graphics**: Professional text overlays, animated titles, scrolling credits, news tickers, lower thirds, countdowns, karaoke-style text.
+*   **🔊 Professional Audio**: Broadcast-standard loudness normalization (EBU R128), background noise removal, de-reverb, audio crossfade, ducking, and more.
+*   **✂️ Editing Tools**: Picture-in-picture, region blur for privacy, logo removal, jump cuts, beat-synced cuts, frame extraction, and color matching.
+*   **🎆 Creative Effects**: Datamosh glitch art, radial blur, film grain overlay, and motion-interpolated frame rate conversion.
 
 > 📄 **See [CHANGELOG.md](CHANGELOG.md) for the complete version history.**
 

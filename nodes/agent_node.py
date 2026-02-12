@@ -187,6 +187,30 @@ class FFMPEGAgentNode:
                     "default": "auto",
                     "tooltip": "Override x264/x265 encoding speed preset. Slower = better compression. 'auto' uses the quality_preset value.",
                 }),
+                "batch_mode": ("BOOLEAN", {
+                    "default": False,
+                    "label_on": "Batch",
+                    "label_off": "Single",
+                    "tooltip": "When enabled, processes all matching videos in video_folder with the same prompt. Uses a single LLM call and applies the pipeline to every file.",
+                }),
+                "video_folder": ("STRING", {
+                    "default": "",
+                    "multiline": False,
+                    "placeholder": "Folder of videos to batch process",
+                    "tooltip": "Path to a folder containing videos to batch process. Only used when batch_mode is on.",
+                }),
+                "file_pattern": ("STRING", {
+                    "default": "*.mp4",
+                    "multiline": False,
+                    "tooltip": "Glob pattern to match video files in the folder. Examples: '*.mp4', '*.avi', 'clip_*.mov'. Only used when batch_mode is on.",
+                }),
+                "max_concurrent": ("INT", {
+                    "default": 4,
+                    "min": 1,
+                    "max": 16,
+                    "step": 1,
+                    "tooltip": "Maximum number of videos to process simultaneously in batch mode. Higher values use more CPU/GPU.",
+                }),
             },
             "hidden": {
                 "hidden_prompt": "PROMPT",
@@ -285,6 +309,10 @@ class FFMPEGAgentNode:
         custom_model: str = "",
         crf: int = -1,
         encoding_preset: str = "auto",
+        batch_mode: bool = False,
+        video_folder: str = "",
+        file_pattern: str = "*.mp4",
+        max_concurrent: int = 4,
         **kwargs,  # hidden: prompt (PROMPT dict), extra_pnginfo (EXTRA_PNGINFO)
     ) -> tuple[torch.Tensor, dict, str, str, str]:
         """Process the video based on the natural language prompt.
@@ -307,6 +335,24 @@ class FFMPEGAgentNode:
             Tuple of (images_tensor, audio, output_video_path, command_log, analysis).
         """
         from ..skills.composer import Pipeline  # type: ignore[import-not-found]
+
+        # --- Batch mode: process all matching videos in a folder ---
+        if batch_mode:
+            return await self._process_batch(
+                video_folder=video_folder,
+                file_pattern=file_pattern,
+                prompt=prompt,
+                llm_model=llm_model,
+                quality_preset=quality_preset,
+                ollama_url=ollama_url,
+                api_key=api_key,
+                custom_model=custom_model,
+                crf=crf,
+                encoding_preset=encoding_preset,
+                max_concurrent=max_concurrent,
+                save_output=save_output,
+                output_path=output_path,
+            )
 
         # --- Resolve input video ---
         temp_video_from_images = None
@@ -1032,6 +1078,183 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
                     for i, val in enumerate(widgets):
                         if val == api_key:
                             widgets[i] = ""
+
+    async def _process_batch(
+        self,
+        video_folder: str,
+        file_pattern: str,
+        prompt: str,
+        llm_model: str,
+        quality_preset: str,
+        ollama_url: str,
+        api_key: str,
+        custom_model: str,
+        crf: int,
+        encoding_preset: str,
+        max_concurrent: int,
+        save_output: bool,
+        output_path: str,
+    ) -> tuple[torch.Tensor, dict, str, str, str]:
+        """Process all matching videos in a folder with the same pipeline.
+
+        Uses one LLM call to generate the pipeline, then applies it to
+        every video concurrently via ThreadPoolExecutor.
+        """
+        import glob
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from ..skills.composer import Pipeline
+        from ..core.sanitize import validate_video_path as _validate
+
+        # --- Validate folder ---
+        folder = Path(video_folder)
+        if not folder.exists() or not folder.is_dir():
+            raise ValueError(f"Batch mode: video_folder not found or not a directory: {video_folder}")
+
+        if not prompt.strip():
+            raise ValueError("Prompt cannot be empty")
+
+        # --- Discover videos ---
+        pattern = str(folder / file_pattern)
+        video_files = sorted(glob.glob(pattern))
+
+        valid_files = []
+        for vf in video_files:
+            try:
+                _validate(vf)
+                valid_files.append(vf)
+            except ValueError:
+                pass
+
+        if not valid_files:
+            raise ValueError(
+                f"Batch mode: no valid video files matching '{file_pattern}' in {video_folder}"
+            )
+
+        # --- Output folder ---
+        if save_output and output_path:
+            out_dir = Path(output_path)
+        elif save_output:
+            out_dir = Path(folder_paths.get_output_directory()) / "ffmpega_batch"
+        else:
+            out_dir = Path(tempfile.mkdtemp(prefix="ffmpega_batch_"))
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        # --- Generate pipeline via LLM (once from sample) ---
+        sample_video = valid_files[0]
+        video_metadata = self.analyzer.analyze(sample_video)
+        metadata_str = video_metadata.to_analysis_string()
+
+        if not ollama_url or not ollama_url.startswith(("http://", "https://")):
+            ollama_url = "http://localhost:11434"
+        effective_model = llm_model
+        if llm_model == "custom":
+            if not custom_model or not custom_model.strip():
+                raise ValueError(
+                    "Please enter a model name in the 'custom_model' field "
+                    "when using 'custom' mode."
+                )
+            effective_model = custom_model.strip()
+
+        connected_inputs_str = f"Batch mode: {len(valid_files)} videos in {video_folder}"
+        connector = self.pipeline_generator.create_connector(effective_model, ollama_url, api_key)
+        try:
+            spec = await self.pipeline_generator.generate(
+                connector, prompt, metadata_str,
+                connected_inputs=connected_inputs_str,
+            )
+        finally:
+            if hasattr(connector, 'close'):
+                await connector.close()
+
+        pipeline_steps = spec.get("pipeline", [])
+        interpretation = spec.get("interpretation", "")
+
+        # --- Quality preset ---
+        crf_map = {"draft": 28, "standard": 23, "high": 18, "lossless": 0}
+        preset_map = {"draft": "ultrafast", "standard": "medium", "high": "slow", "lossless": "veryslow"}
+        effective_crf = crf if crf >= 0 else crf_map.get(quality_preset, 23)
+        effective_preset = encoding_preset if encoding_preset != "auto" else preset_map.get(quality_preset, "medium")
+
+        # --- Process each video ---
+        output_paths = []
+        errors = []
+        command_logs = []
+
+        def process_single(vpath: str) -> tuple[str, str | None, str]:
+            """Process one video file."""
+            try:
+                stem = Path(vpath).stem
+                out_file = str(out_dir / f"{stem}_edited.mp4")
+
+                pipeline = Pipeline(input_path=vpath, output_path=out_file)
+                for step in pipeline_steps:
+                    skill_name = step.get("skill")
+                    params = step.get("params", {})
+                    if skill_name:
+                        pipeline.add_step(skill_name, params)
+
+                pipeline.add_step("quality", {
+                    "crf": effective_crf,
+                    "preset": effective_preset,
+                })
+
+                command = self.composer.compose(pipeline)
+                result = self.process_manager.execute(command, timeout=600)
+
+                if result.success:
+                    return (out_file, None, command.to_string())
+                else:
+                    return (out_file, result.error_message, command.to_string())
+            except Exception as e:
+                return (vpath, str(e), "")
+
+        with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
+            futures = {
+                executor.submit(process_single, vf): vf
+                for vf in valid_files
+            }
+            for future in as_completed(futures):
+                vf = futures[future]
+                try:
+                    out_file, error, cmd_log = future.result()
+                    if error:
+                        errors.append(f"{Path(vf).name}: {error}")
+                    else:
+                        output_paths.append(out_file)
+                    if cmd_log:
+                        command_logs.append(f"[{Path(vf).name}] {cmd_log}")
+                except Exception as e:
+                    errors.append(f"{Path(vf).name}: {str(e)}")
+
+        # --- Build results ---
+        processed = len(output_paths)
+        total = len(valid_files)
+
+        # Return the last successful video as frames, or a placeholder
+        last_path = output_paths[-1] if output_paths else valid_files[0]
+        frames_tensor = self.media_converter.frames_to_tensor(last_path)
+        audio_dict = self.media_converter.extract_audio(last_path)
+
+        import json
+        paths_json = json.dumps(output_paths, indent=2)
+
+        status_lines = [
+            f"Batch complete: {processed}/{total} videos processed",
+            f"Output folder: {out_dir}",
+        ]
+        if errors:
+            status_lines.append(f"\nErrors ({len(errors)}):")
+            for err in errors:
+                status_lines.append(f"  - {err}")
+
+        analysis = (
+            f"Batch Mode — {interpretation}\n\n"
+            + "\n".join(status_lines)
+        )
+
+        command_log = "\n\n".join(command_logs) if command_logs else "No commands executed"
+
+        return (frames_tensor, audio_dict, paths_json, command_log, analysis)
 
     @classmethod
     def IS_CHANGED(cls, video_path, prompt, seed=0, **kwargs):
