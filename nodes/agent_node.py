@@ -423,7 +423,7 @@ class FFMPEGAgentNode:
                 f"{image_a.shape[2]}x{image_a.shape[1]}"
             )
         for k in sorted(kwargs):
-            if k.startswith("image_") and k != "image_a" and kwargs[k] is not None:
+            if k.startswith("image_") and k != "image_a" and not k.startswith("images_") and kwargs[k] is not None:
                 img = kwargs[k]
                 input_lines.append(
                     f"- {k}: connected — single image "
