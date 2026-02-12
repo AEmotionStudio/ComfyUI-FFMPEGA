@@ -234,7 +234,7 @@ def register_skills(registry: SkillRegistry) -> None:
                 max_value=10.0,
             ),
         ],
-        ffmpeg_template="setpts=PTS*({start_speed}+({end_speed}-{start_speed})*T/5)",
+        ffmpeg_template="setpts=PTS/clip({start_speed}+({end_speed}-{start_speed})*T/5\\,0.1\\,10)",
         examples=[
             "time_remap:start_speed=1,end_speed=0.25 - Gradually slow to quarter speed",
             "time_remap:start_speed=0.5,end_speed=2 - Speed up from slow to fast",

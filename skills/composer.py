@@ -2190,8 +2190,21 @@ def _f_burn_subtitles(p):
     fontsize = int(p.get("fontsize", 24))
     fontcolor = sanitize_text_param(str(p.get("fontcolor", "white")))
 
+    # Map common color names to ASS &HBBGGRR format (BGR, not RGB)
+    color_map = {
+        "white": "&H00FFFFFF",
+        "black": "&H00000000",
+        "red": "&H000000FF",
+        "green": "&H0000FF00",
+        "blue": "&H00FF0000",
+        "yellow": "&H0000FFFF",
+        "cyan": "&H00FFFF00",
+        "magenta": "&H00FF00FF",
+    }
+    ass_color = color_map.get(fontcolor.lower(), "&H00FFFFFF")
+
     # subtitles filter syntax
-    style = f"FontSize={fontsize},PrimaryColour=&H00FFFFFF"
+    style = f"FontSize={fontsize},PrimaryColour={ass_color}"
     vf = f"subtitles='{path}':force_style='{style}'"
     return [vf], [], []
 

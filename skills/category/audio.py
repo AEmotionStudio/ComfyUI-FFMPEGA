@@ -668,17 +668,17 @@ def register_skills(registry: SkillRegistry) -> None:
             SkillParameter(
                 name="amount",
                 type=ParameterType.FLOAT,
-                description="Dereverb strength (higher = more aggressive)",
+                description="Dereverb strength in dB (higher = more aggressive)",
                 required=False,
-                default=0.5,
-                min_value=0.1,
-                max_value=1.0,
+                default=12,
+                min_value=1,
+                max_value=50,
             ),
         ],
         ffmpeg_template="highpass=f=80,lowpass=f=12000,afftdn=nf=-20:nr={amount}:nt=w",
         examples=[
             "dereverb - Standard room echo removal",
-            "dereverb:amount=0.8 - Aggressive reverb removal",
+            "dereverb:amount=30 - Aggressive reverb removal",
         ],
         tags=["reverb", "echo", "room", "dry", "clean", "voice"],
     ))

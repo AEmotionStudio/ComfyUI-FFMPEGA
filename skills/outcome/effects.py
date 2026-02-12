@@ -2286,16 +2286,16 @@ def register_skills(registry: SkillRegistry) -> None:
             SkillParameter(
                 name="mode",
                 type=ParameterType.CHOICE,
-                description="Visualization mode",
+                description="Motion vector visualization flags (pf=forward, bf=backward, bb=bidir)",
                 required=False,
-                default="mv_type",
-                choices=["mv_type", "mv_color", "qp_table"],
+                default="pf+bf+bb",
+                choices=["pf", "bf", "bb", "pf+bf", "pf+bb", "bf+bb", "pf+bf+bb"],
             ),
         ],
         # Handler in composer.py provides input options + vf
         examples=[
-            "datamosh - Standard datamosh effect",
-            "datamosh:mode=mv_color - Color-coded motion vectors",
+            "datamosh - Standard datamosh effect (all motion vectors)",
+            "datamosh:mode=pf - Forward-predicted vectors only",
         ],
         tags=["glitch", "datamosh", "motion", "vectors", "art", "corrupt", "aesthetic"],
     ))

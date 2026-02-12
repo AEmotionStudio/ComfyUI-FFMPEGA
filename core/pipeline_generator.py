@@ -325,6 +325,12 @@ class PipelineGenerator:
             for i, tool_call in enumerate(response.tool_calls):
                 func_name = tool_call["function"]["name"]
                 func_args = tool_call["function"]["arguments"]
+                # OpenAI returns arguments as JSON string; handlers expect dict
+                if isinstance(func_args, str):
+                    try:
+                        func_args = json.loads(func_args)
+                    except (json.JSONDecodeError, ValueError):
+                        func_args = {}
 
                 logger.info(f"Tool call [{iteration+1}]: {func_name}({func_args})")
 
