@@ -86,6 +86,39 @@ def validate_output_path(path: str) -> str:
     return str(Path(path).resolve())
 
 
+def validate_output_file_path(path: str) -> str:
+    """Validate an output file path, ensuring it has a safe extension.
+
+    This should be used when the output path is known to be a file,
+    not a directory.
+
+    Args:
+        path: The output file path string to validate.
+
+    Returns:
+        The resolved, absolute path string.
+
+    Raises:
+        ValueError: If the path is invalid, contains traversal, or has
+                    a disallowed extension.
+    """
+    resolved_path = validate_output_path(path)
+    suffix = Path(resolved_path).suffix.lower()
+
+    if not suffix:
+        raise ValueError(
+            f"Output file path must have an extension: {resolved_path}"
+        )
+
+    if suffix not in ALLOWED_EXTENSIONS:
+        raise ValueError(
+            f"Invalid output file extension: {suffix}. "
+            f"Allowed: {sorted(list(ALLOWED_EXTENSIONS))}"
+        )
+
+    return resolved_path
+
+
 def sanitize_text_param(text: str) -> str:
     """Escape special characters in text for use in FFMPEG filter strings.
 

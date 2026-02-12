@@ -341,7 +341,7 @@ class FFMPEGAgentNode:
             effective_video_path = video_path
 
         # Validate input
-        from ..core.sanitize import validate_video_path  # type: ignore[import-not-found]
+        from ..core.sanitize import validate_video_path, validate_output_file_path  # type: ignore[import-not-found]
         effective_video_path = validate_video_path(effective_video_path)
 
         # Pre-mux audio_a into the input video so audio filters
@@ -484,6 +484,9 @@ class FFMPEGAgentNode:
             elif not Path(output_path).suffix:
                 os.makedirs(output_path, exist_ok=True)
                 output_path = str(Path(output_path) / f"{stem}{suffix}.mp4")
+            else:
+                # User provided a specific file path
+                output_path = validate_output_file_path(output_path)
         else:
             # Pass-through mode: render to temp dir so downstream nodes
             # handle the final save. The temp file is cleaned up later.
