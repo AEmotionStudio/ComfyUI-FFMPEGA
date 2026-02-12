@@ -2635,3 +2635,16 @@ def _f_replace_audio(p):
 _SKILL_DISPATCH["mask_blur"] = _f_mask_blur
 _SKILL_DISPATCH["lut_apply"] = _f_lut_apply
 _SKILL_DISPATCH["replace_audio"] = _f_replace_audio
+
+
+def _f_audio_crossfade(p):
+    """Crossfade between two audio inputs."""
+    duration = float(p.get("duration", 2.0))
+    curve = p.get("curve", "tri")
+    # acrossfade requires two audio inputs via filter_complex
+    fc = f"[0:a][1:a]acrossfade=d={duration}:c1={curve}:c2={curve}"
+    return [], [], [], fc
+
+
+_SKILL_DISPATCH["audio_crossfade"] = _f_audio_crossfade
+

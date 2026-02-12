@@ -572,7 +572,7 @@ def register_skills(registry: SkillRegistry) -> None:
                 choices=["tri", "exp", "log", "par", "qua", "squ", "nofade"],
             ),
         ],
-        ffmpeg_template="acrossfade=d={duration}:c1={curve}:c2={curve}",
+        # acrossfade requires two audio inputs; handled in composer.py via filter_complex
         examples=[
             "audio_crossfade - 2 second triangle crossfade",
             "audio_crossfade:duration=5,curve=exp - 5s exponential crossfade",
