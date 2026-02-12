@@ -260,7 +260,10 @@ class SkillComposer:
 
             # If filter_complex consumes [0:a] (e.g. waveform), we cannot
             # also use -af — fold audio filters into the graph instead.
-            if "[0:a]" in fc_graph and audio_filters:
+            # BUT: skip this when audio is already embedded by xfade/concat
+            # (their filter_complex already produced the final audio stream).
+            audio_embedded = pipeline.metadata.get("_has_embedded_audio", False)
+            if "[0:a]" in fc_graph and audio_filters and not audio_embedded:
                 af_chain = ",".join(audio_filters)
                 fc_graph += f";[0:a]{af_chain}"
                 audio_filters = []  # Don't also emit -af

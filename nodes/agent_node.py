@@ -1,12 +1,15 @@
 """FFMPEG Agent node for ComfyUI."""
 
 import json
+import logging
 import os
 import shutil
 import tempfile
 import time
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger("ffmpega")
 
 import torch  # type: ignore[import-not-found]
 
@@ -461,8 +464,8 @@ class FFMPEGAgentNode:
         estimated_changes = spec.get("estimated_changes", "")
         pipeline_steps = spec.get("pipeline", [])
         audio_source = spec.get("audio_source", "mix")
-        print(f"[FFMPEGA DEBUG] audio_source from LLM: {audio_source}")
-        print(f"[FFMPEGA DEBUG] Connected inputs: {connected_inputs_str}")
+        logger.debug("audio_source from LLM: %s", audio_source)
+        logger.debug("Connected inputs: %s", connected_inputs_str)
 
         # --- Build output path ---
         stem = Path(effective_video_path).stem
@@ -567,7 +570,7 @@ class FFMPEGAgentNode:
             # Save each tensor as frames (optimize: video-length tensors
             # are saved as temp video instead of individual PNGs)
             for ti, tensor in enumerate(all_image_tensors):
-                print(f"[FFMPEGA DEBUG] Multi-input tensor {ti}: shape={tensor.shape}")
+                logger.debug("Multi-input tensor %d: shape=%s", ti, tensor.shape)
                 if tensor.shape[0] > 10:
                     # Save as temp video for performance
                     tmp_vid = self.media_converter.images_to_video(tensor)
@@ -582,8 +585,8 @@ class FFMPEGAgentNode:
                              "default=noprint_wrappers=1", tmp_vid],
                             capture_output=True, text=True,
                         )
-                        print(f"[FFMPEGA DEBUG] Temp video {tmp_vid}: "
-                              f"{_dur.stdout.strip()}, size={os.path.getsize(tmp_vid)}")
+                        logger.debug("Temp video %s: %s, size=%d",
+                                     tmp_vid, _dur.stdout.strip(), os.path.getsize(tmp_vid))
                     except Exception:
                         pass
                 else:
@@ -667,13 +670,13 @@ class FFMPEGAgentNode:
             )
             command.video_filters.add_filter("fps", {"fps": int(round(input_fps))})
 
-        # Debug: print exact command to console
-        print(f"[FFMPEGA DEBUG] Command: {command.to_string()}")
-        print(f"[FFMPEGA DEBUG] Audio filters: '{command.audio_filters.to_string()}'")
-        print(f"[FFMPEGA DEBUG] Video filters: '{command.video_filters.to_string()}'")
+        # Debug: log exact command
+        logger.debug("Command: %s", command.to_string())
+        logger.debug("Audio filters: '%s'", command.audio_filters.to_string())
+        logger.debug("Video filters: '%s'", command.video_filters.to_string())
         if command.complex_filter:
-            print(f"[FFMPEGA DEBUG] Complex filter: '{command.complex_filter}'")
-        print(f"[FFMPEGA DEBUG] Pipeline steps: {[(s.skill_name, s.params) for s in pipeline.steps]}")
+            logger.debug("Complex filter: '%s'", command.complex_filter)
+        logger.debug("Pipeline steps: %s", [(s.skill_name, s.params) for s in pipeline.steps])
 
         # --- Dry-run validation ---
         dry_result = self.process_manager.dry_run(command, timeout=30)
@@ -755,7 +758,7 @@ class FFMPEGAgentNode:
                             else 30
                         )
                         command.video_filters.add_filter("fps", {"fps": int(round(_input_fps))})
-                    print(f"[FFMPEGA DEBUG] Retry command: {command.to_string()}")
+                    logger.debug("Retry command: %s", command.to_string())
                     if preview_mode:
                         if command.complex_filter:
                             command.output_options.extend(["-s", "480x270"])
@@ -789,7 +792,7 @@ class FFMPEGAgentNode:
                  "-of", "default=noprint_wrappers=1", output_path],
                 capture_output=True, text=True
             )
-            print(f"[FFMPEGA DEBUG] Output duration BEFORE audio mux: {_probe.stdout.strip()}")
+            logger.debug("Output duration BEFORE audio mux: %s", _probe.stdout.strip())
         except Exception:
             pass
 
@@ -825,32 +828,32 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
                     audio_source = step_audio
                     break
 
-        print(f"[FFMPEGA DEBUG] Audio decision: removes={removes_audio}, "
-              f"has_processing={has_audio_processing}, "
-              f"already_embedded={audio_already_embedded}, "
-              f"audio_source={audio_source}, "
-              f"available={list(audio_inputs.keys())}")
+        logger.debug("Audio decision: removes=%s, has_processing=%s, "
+                     "already_embedded=%s, audio_source=%s, available=%s",
+                     removes_audio, has_audio_processing,
+                     audio_already_embedded, audio_source,
+                     list(audio_inputs.keys()))
 
         if audio_inputs and not removes_audio and not has_audio_processing and not audio_already_embedded:
             if audio_source and audio_source != "mix" and audio_source in audio_inputs:
                 # Specific audio track requested by LLM
-                print(f"[FFMPEGA DEBUG] Using specific audio: {audio_source}")
+                logger.debug("Using specific audio: %s", audio_source)
                 self.media_converter.mux_audio(output_path, audio_inputs[audio_source])
             elif len(audio_inputs) == 1:
                 # Only one audio input — just use it
                 name = list(audio_inputs.keys())[0]
-                print(f"[FFMPEGA DEBUG] Using only available audio: {name}")
+                logger.debug("Using only available audio: %s", name)
                 self.media_converter.mux_audio(output_path, audio_inputs[name])
             else:
                 # "mix" mode — blend all audio tracks together
-                print(f"[FFMPEGA DEBUG] Mixing {len(audio_inputs)} audio tracks: {list(audio_inputs.keys())}")
+                logger.debug("Mixing %d audio tracks: %s", len(audio_inputs), list(audio_inputs.keys()))
                 self.media_converter.mux_audio_mix(
                     output_path, list(audio_inputs.values())
                 )
 
         # --- Extract output frames ---
         images_tensor = self.media_converter.frames_to_tensor(output_path)
-        print(f"[FFMPEGA DEBUG] Output tensor shape: {images_tensor.shape}")
+        logger.debug("Output tensor shape: %s", images_tensor.shape)
 
         # --- Extract output audio ---
         if removes_audio:
