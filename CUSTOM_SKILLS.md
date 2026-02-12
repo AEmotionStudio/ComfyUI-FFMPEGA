@@ -101,7 +101,7 @@ parameters:
 
 pipeline:
   - "brightness:value={intensity}"
-  - "colorbalance:rs={intensity}:gs=0.05:bs=-0.1"
+  - "colorbalance:rs={intensity},gs=0.05,bs=-0.1"
   - "saturation:value=1.2"
 ```
 
