@@ -5,7 +5,7 @@
 **An AI-powered FFMPEG agent node for ComfyUI — edit videos with natural language.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-2.0.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-2.1.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-4-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 
@@ -20,18 +20,15 @@
 
 ---
 
-## 🚀 What's New in v2.0.0 (February 11, 2026)
+## 🚀 What's New in v2.1.0 (February 12, 2026)
 
-**Dynamic Inputs & 8 New Creative Skills**
+**Input Awareness & Audio Source Selection**
 
-*   **🔗 Dynamic Auto-Expanding Inputs**: Connect `image_a` → `image_b` appears → `image_c` appears, and so on. Same for `images_a/b/c...` (video) and `audio_a/b/c...`. No more fixed slot limits.
-*   **🎥 Concat & Transitions**: Concatenate segments with `concat`, or use `xfade` for 18 smooth transitions (fade, dissolve, wipe, pixelize, radial, slide...).
-*   **📺 Split Screen**: Side-by-side (`hstack`) or top-bottom (`vstack`) multi-video layout.
-*   **🎨 Animated Overlay**: Moving image overlay with 8 motion presets — scroll, float, bounce, slide.
-*   **📝 Text Overlay**: `drawtext` with style presets — title, subtitle, lower_third, caption.
-*   **💧 Watermark & Chroma Key**: Quick watermark and green/blue screen removal.
-
-> ⚠️ **Breaking**: `images` renamed to `images_a`, `audio_input` renamed to `audio_a`. Existing workflows need reconnecting.
+*   **🧠 Input Awareness**: The LLM agent now sees all connected inputs with details (frame count, duration, sample rate, FPS). This enables smarter decisions about multi-input operations.
+*   **🎵 Audio Source Selection**: Control which audio track to use via prompt — *"use audio_b"*, *"mix both audio tracks"*. The agent understands `audio_source` with values: `audio_a`, `audio_b`, or `mix`.
+*   **🔀 Audio Mix Mode**: When `mix` is selected (default with multiple audio inputs), all audio tracks are blended together using ffmpeg's `amix` filter — hear both tracks simultaneously in split screen.
+*   **🔧 Audio Mux Fix**: Fixed audio replacement in post-render — explicit `-map` flags ensure the correct audio track replaces any existing audio instead of adding a duplicate stream.
+*   **🎬 Xfade Audio Crossfade**: Xfade transitions now include audio crossfading (`acrossfade`) for seamless audio blending between segments.
 
 > 📄 **See [CHANGELOG.md](CHANGELOG.md) for the complete version history.**
 
@@ -57,8 +54,8 @@ Works with **Ollama** (local, free), **OpenAI**, **Anthropic**, **Google Gemini*
 <tr>
 <td width="50%">
 
-### 🎨 127+ Skills
-Over 127 video editing skills across visual effects, audio processing, spatial transforms, temporal edits, encoding, cinematic presets, vintage looks, social media, creative effects, audio visualization, multi-input operations (grids, slideshows, overlays), transitions (xfade), concat, split screen, animated overlays, and text overlays.
+### 🎨 146 Skills
+146 video editing skills across visual effects, audio processing, spatial transforms, temporal edits, encoding, cinematic presets, vintage looks, social media, creative effects, audio visualization, multi-input operations (grids, slideshows, overlays), transitions (xfade), concat, split screen, animated overlays, and text overlays.
 
 </td>
 <td width="50%">
@@ -131,6 +128,8 @@ Restart ComfyUI after installation.
 | `"Create a side-by-side comparison"` | Video next to image in 2-column grid |
 | `"Create a slideshow starting with the video"` | Video first, then image slides |
 | `"Overlay images in the corners"` | Multiple images auto-placed in corners |
+| `"Split screen, use audio from audio_b"` | Side-by-side video with specific audio track |
+| `"Split screen, mix both audio tracks"` | Side-by-side with both audio tracks blended |
 
 ---
 
@@ -210,7 +209,7 @@ The main node — translates natural language into FFMPEG commands.
 
 ## 🎯 Skill System
 
-FFMPEGA includes a comprehensive skill system with **127+ operations** organized into categories. The AI agent selects the right skills based on your prompt.
+FFMPEGA includes a comprehensive skill system with **146 operations** organized into categories. The AI agent selects the right skills based on your prompt.
 
 > 📄 **See [SKILLS_REFERENCE.md](SKILLS_REFERENCE.md) for the complete skill reference with all parameters and example prompts.**
 >

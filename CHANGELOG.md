@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-02-12
+
+### Added
+- **Input Awareness**: The LLM agent now receives a connected inputs summary showing all available video tensors, audio tracks, and images with details (frame count, duration, sample rate, FPS). Enables smarter multi-input decisions.
+- **Audio Source Selection**: New `audio_source` parameter in the LLM response JSON — the agent can select a specific audio track (`audio_a`, `audio_b`, etc.) or blend all tracks (`mix`). Users can control this via prompt: *"use audio_b"*, *"mix both audio tracks"*.
+- **Audio Mix Mode**: When `audio_source` is `mix` and multiple audio inputs are connected, all tracks are blended together using ffmpeg's `amix` filter. Default behavior for split screen and other multi-input skills with multiple audio sources.
+- **Xfade Audio Crossfade**: Xfade transitions now include `acrossfade` for seamless audio blending between segments.
+
+### Fixed
+- **Audio Mux Replacement**: `mux_audio` now uses explicit `-map 0:v -map 1:a` flags, ensuring the selected audio track replaces any existing audio instead of adding a duplicate stream.
+- **Split Screen Audio**: Fixed `_has_embedded_audio` flag being set for all multi-input skills. Now only set for concat/xfade where the filter chain reads audio directly. Split screen, grid, overlay, and similar skills now correctly receive post-render audio mux.
+- **Xfade Transition Offset**: Fixed xfade not applying transitions because `offset` was hardcoded to 0 instead of being calculated from input durations.
+- **Concat Audio Sync**: Improved concat audio handling — each audio track is pre-muxed into its paired video segment so the concat filter reads synchronized audio from each input.
+
+### Changed
+- **Prompt Templates**: Both single-shot and agentic system prompts now include a `## Connected Inputs` section with guidance on `audio_source` usage.
+- **Skill Count**: Updated to **146 skills** across all categories.
+
+---
+
 ## [2.0.0] - 2026-02-11
 
 ### ⚠️ Breaking Changes
@@ -23,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Multi-Input Collection**: Extra images/audio are now collected from `**kwargs` in alphabetical order. Video-length tensors (>10 frames) are saved as temp video instead of individual PNGs for better performance.
-- **Skill Count**: Over **127+ skills** across all categories.
+- **Skill Count**: **146 skills** across all categories.
 
 ---
 
