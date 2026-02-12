@@ -199,10 +199,9 @@ class FFMPEGAgentNode:
                     "placeholder": "Folder of videos to batch process",
                     "tooltip": "Path to a folder containing videos to batch process. Only used when batch_mode is on.",
                 }),
-                "file_pattern": ("STRING", {
+                "file_pattern": (["*.mp4", "*.avi", "*.mov", "*.mkv", "*.webm", "*.mp4 *.mov *.avi", "*.*"], {
                     "default": "*.mp4",
-                    "multiline": False,
-                    "tooltip": "Glob pattern to match video files in the folder. Examples: '*.mp4', '*.avi', 'clip_*.mov'. Only used when batch_mode is on.",
+                    "tooltip": "File pattern to match videos in the folder. '*.mp4 *.mov *.avi' matches multiple formats. '*.*' matches all files. Only used when batch_mode is on.",
                 }),
                 "max_concurrent": ("INT", {
                     "default": 4,
@@ -1114,8 +1113,11 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
             raise ValueError("Prompt cannot be empty")
 
         # --- Discover videos ---
-        pattern = str(folder / file_pattern)
-        video_files = sorted(glob.glob(pattern))
+        patterns = file_pattern.split()
+        video_files = []
+        for pat in patterns:
+            video_files.extend(glob.glob(str(folder / pat)))
+        video_files = sorted(set(video_files))
 
         valid_files = []
         for vf in video_files:
