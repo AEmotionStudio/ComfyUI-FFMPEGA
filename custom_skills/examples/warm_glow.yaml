@@ -1,0 +1,20 @@
+name: warm_glow
+description: "Add a warm golden glow by boosting warm tones and softening highlights"
+category: visual
+aliases: [golden_glow, warm_filter]
+tags: [warm, glow, golden, sunset, cozy]
+examples:
+  - "warm_glow - Apply warm golden glow"
+  - "warm_glow:intensity=0.8 - Strong warm glow"
+  - "warm_glow:intensity=0.2 - Subtle warmth"
+
+parameters:
+  intensity:
+    type: float
+    description: "Glow intensity (0.1 = subtle, 1.0 = strong)"
+    default: 0.5
+    min: 0.0
+    max: 1.0
+
+# Simple template: boost reds/yellows and slightly brighten
+ffmpeg_template: "colorbalance=rs={intensity}:gs=0.1:bs=-0.1:rm={intensity}:gm=0.05:bm=-0.15"

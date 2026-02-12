@@ -377,7 +377,21 @@ class SkillComposer:
 
         # Handle specific skill types
         else:
-            vf, af, opts, fc, io = self._builtin_skill_filters(skill.name, params)
+            # Check for custom Python handler from skill packs first
+            custom_handlers = getattr(self.registry, "_custom_handlers", {})
+            handler = custom_handlers.get(skill.name)
+            if handler is not None:
+                result = handler(params)
+                if len(result) == 5:
+                    vf, af, opts, fc, io = result
+                elif len(result) == 4:
+                    vf, af, opts, fc = result
+                    io = []
+                else:
+                    vf, af, opts = result
+                    fc, io = "", []
+            else:
+                vf, af, opts, fc, io = self._builtin_skill_filters(skill.name, params)
             video_filters.extend(vf)
             audio_filters.extend(af)
             output_options.extend(opts)

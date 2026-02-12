@@ -14,6 +14,7 @@ class SkillCategory(str, Enum):
     AUDIO = "audio"
     ENCODING = "encoding"
     OUTCOME = "outcome"
+    CUSTOM = "custom"
 
 
 class ParameterType(str, Enum):
@@ -197,6 +198,31 @@ class SkillRegistry:
             self._by_tag[tag].append(skill.name)
 
         # Invalidate cache
+        self._cached_prompt_string = None
+        self._cached_json_schema = None
+
+    def register_alias(self, alias: str, target_name: str) -> None:
+        """Register an alias that maps to an existing skill.
+
+        Args:
+            alias: The alias name.
+            target_name: The name of the existing skill to alias.
+        """
+        import copy
+        skill = self._skills.get(target_name)
+        if skill is None:
+            return
+        alias_skill = copy.copy(skill)
+        alias_skill.name = alias
+        alias_skill._search_text = " ".join(
+            [alias, skill.description] + (skill.tags or [])
+        ).lower()
+        self._skills[alias] = alias_skill
+        self._by_category[alias_skill.category].append(alias_skill)
+        for tag in alias_skill.tags:
+            if tag not in self._by_tag:
+                self._by_tag[tag] = []
+            self._by_tag[tag].append(alias)
         self._cached_prompt_string = None
         self._cached_json_schema = None
 
@@ -394,6 +420,16 @@ def get_registry() -> SkillRegistry:
     if _registry is None:
         _registry = SkillRegistry()
         _register_default_skills(_registry)
+        # Load user-defined custom skills from custom_skills/
+        try:
+            from .yaml_loader import load_custom_skills
+            _registry._custom_handlers = {}  # type: ignore[attr-defined]
+            load_custom_skills(_registry, _registry._custom_handlers)  # type: ignore[attr-defined]
+        except Exception as exc:
+            import logging
+            logging.getLogger("ffmpega").warning(
+                "Failed to load custom skills: %s", exc
+            )
     return _registry
 
 

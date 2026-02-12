@@ -90,3 +90,10 @@ uv.lock
 
 # PRD
 PRD.md
+
+# Custom skills (user-defined, not shipped)
+custom_skills/*.yaml
+custom_skills/*.yml
+custom_skills/*/
+!custom_skills/.gitkeep
+!custom_skills/examples/
