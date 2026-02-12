@@ -1292,4 +1292,554 @@ Here are some multi-skill prompt ideas you can try:
 | News style | "Add 'Breaking News' text as lower third with red background" |
 | Branded content | "Add a semi-transparent watermark, title text, and fade in" |
 | Green screen | "Remove the green screen and replace with blue" |
+| Loudness fix | "Normalize loudness to -14 LUFS, set audio to 320k" |
+| Smooth slow-mo | "Frame rate interpolation to 60fps, then slow to 0.5x" |
+| Clean podcast | "Remove silence, denoise audio, normalize loudness" |
+| Privacy blur | "Blur the face region at x=300,y=200 for privacy" |
+| News broadcast | "Add lower third, ticker bar, and countdown overlay" |
+| Glitch art | "Datamosh effect with chromatic aberration and radial blur" |
+| Film texture | "Grain overlay, split tone warm highlights, add vignette" |
+| Upscale & sharpen | "Scale 2x with Lanczos, then unsharp mask" |
+
+---
+
+## 🕐 Temporal (New Skills)
+
+### scene_detect
+Auto-detect scene changes / cuts in the video.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `threshold` | float | 0.3 | 0.1 to 0.9 |
+
+**Example prompts:**
+- "Detect scene changes in the video"
+- "Split at every cut point"
+
+---
+
+### silence_remove
+Automatically remove silent segments from audio/video.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `threshold` | float | -30 | -60 to 0 dB |
+| `min_duration` | float | 0.5 | 0.1 to 10.0 sec |
+
+**Example prompts:**
+- "Remove all the silent parts from this podcast"
+- "Strip dead air from the recording"
+
+---
+
+### time_remap
+Gradually change speed from one value to another.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `start_speed` | float | 1.0 | 0.1 to 10.0 |
+| `end_speed` | float | 0.5 | 0.1 to 10.0 |
+
+**Example prompts:**
+- "Gradually slow down from normal to half speed"
+- "Ramp up from slow to fast"
+
+---
+
+### freeze_frame
+Freeze a frame at a specific timestamp.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `time` | float | 2.0 | seconds |
+| `duration` | float | 3.0 | seconds to hold |
+
+**Example prompts:**
+- "Freeze the frame at 5 seconds for 3 seconds"
+- "Hold on that moment at the 10 second mark"
+
+---
+
+## 🔊 Audio (New Skills)
+
+### noise_reduction
+Remove background noise from audio.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `amount` | float | 0.5 | 0.0 to 1.0 |
+
+**Example prompts:**
+- "Clean up the background noise"
+- "Reduce the hiss and hum"
+
+---
+
+### audio_crossfade
+Apply smooth audio crossfade transition.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `duration` | float | 2.0 | 0.1 to 10.0 sec |
+
+**Example prompts:**
+- "Add an audio crossfade"
+- "Smooth audio transition"
+
+---
+
+### audio_delay
+Add delay/offset to the audio track.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `delay_ms` | int | 500 | 0 to 5000 ms |
+
+**Example prompts:**
+- "Delay the audio by half a second"
+- "Offset the audio 200ms"
+
+---
+
+### ducking
+Compress audio dynamics (single-input ducking).
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `threshold` | float | 0.05 | 0.0 to 1.0 |
+
+**Example prompts:**
+- "Apply audio ducking"
+- "Compress the dynamic range"
+
+---
+
+### dereverb
+Remove room echo and reverb from audio.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `amount` | float | 0.5 | 0.0 to 1.0 |
+
+**Example prompts:**
+- "Remove the room echo"
+- "Clean up the reverb from this voice recording"
+
+---
+
+### split_audio
+Extract a specific audio channel from stereo.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------|
+| `channel` | choice | left | left, right |
+
+**Example prompts:**
+- "Extract just the left channel"
+- "Isolate the right audio channel"
+
+---
+
+### audio_normalize_loudness
+Normalize audio to EBU R128 / LUFS standard.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `target` | float | -14 | -30 to -5 LUFS |
+| `tp` | float | -1.0 | -5.0 to 0.0 dBTP |
+
+**Example prompts:**
+- "Normalize loudness to streaming standard"
+- "Set loudness to broadcast standard (-24 LUFS)"
+
+---
+
+## 🎨 Visual (New Skills)
+
+### white_balance
+Adjust white balance / color temperature.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `temperature` | int | 6500 | 2000 to 12000 K |
+
+**Example prompts:**
+- "Make it warmer like candlelight"
+- "Cool down the color temperature"
+
+---
+
+### shadows_highlights
+Separately adjust shadows and highlights.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `shadows` | float | 0.2 | -1.0 to 1.0 |
+| `highlights` | float | -0.1 | -1.0 to 1.0 |
+
+**Example prompts:**
+- "Lift the shadows and pull down the highlights"
+- "Brighten the dark areas"
+
+---
+
+### split_tone
+Apply split toning (warm highlights, cool shadows).
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `intensity` | float | 0.3 | 0.0 to 1.0 |
+
+**Example prompts:**
+- "Add split toning with warm highlights"
+- "Apply teal and orange color grading"
+
+---
+
+### deflicker
+Remove flickering (fluorescent lights, timelapse).
+| Parameter | Type | Default | Range/Choices |
+|-----------|------|---------|---------------|
+| `size` | int | 5 | 2 to 20 |
+| `mode` | choice | pm | am, gm, pm |
+
+**Example prompts:**
+- "Fix the flickering from fluorescent lights"
+- "Remove timelapse flicker"
+
+---
+
+### unsharp_mask
+Fine-grained sharpening with luma/chroma control.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `luma_amount` | float | 1.5 | -2.0 to 5.0 |
+| `chroma_amount` | float | 0.0 | -2.0 to 5.0 |
+| `luma_size` | int | 5 | 3 to 13 |
+
+**Example prompts:**
+- "Apply precise unsharp mask sharpening"
+- "Sharpen only the luma channel"
+- "Soften the image slightly with negative unsharp"
+
+---
+
+## 📐 Spatial (New Skills)
+
+### auto_crop
+Automatically detect and remove black borders.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `threshold` | int | 24 | 0 to 255 |
+
+**Example prompts:**
+- "Remove the black letterbox borders"
+- "Auto-crop the black bars"
+
+---
+
+### scale_2x
+Quick upscale with quality algorithm selection.
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `factor` | int | 2 | 1 to 4 |
+| `algorithm` | choice | lanczos | lanczos, bicubic, bilinear, spline |
+
+**Example prompts:**
+- "Upscale the video 2x"
+- "Double the resolution with Lanczos"
+- "4x upscale with bicubic"
+
+---
+
+## 📦 Encoding (New Skills)
+
+### audio_bitrate
+Set audio encoding bitrate independently.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `kbps` | int | 192 | 32 to 512 |
+
+**Example prompts:**
+- "Set audio to 320kbps high quality"
+- "Lower audio bitrate to 128k"
+
+---
+
+### frame_rate_interpolation
+Motion-interpolated frame rate conversion (smoother than fps).
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `fps` | int | 60 | 12 to 120 |
+| `mode` | choice | mci | mci, blend, dup |
+
+**Example prompts:**
+- "Smoothly interpolate to 60fps"
+- "Motion-interpolate to 120fps for slow-mo"
+- "Convert to 24fps with frame blending"
+
+---
+
+## ✏️ Text & Graphics (New Skills)
+
+### animated_text
+Add animated text overlay.
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `text` | string | Hello World | any text |
+| `size` | int | 72 | 12 to 200 |
+| `color` | string | white | color name or hex |
+
+**Example prompts:**
+- "Add animated 'Hello World' text"
+- "Show animated title text"
+
+---
+
+### scrolling_text
+Add scrolling credits-style text.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `text` | string | Credits | any text |
+| `speed` | float | 1.0 | 0.1 to 5.0 |
+
+**Example prompts:**
+- "Add scrolling end credits"
+- "Scroll text across the bottom"
+
+---
+
+### ticker
+Add news-style scrolling ticker bar.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `text` | string | BREAKING NEWS | any text |
+| `speed` | float | 1.0 | 0.1 to 5.0 |
+
+**Example prompts:**
+- "Add a news ticker at the bottom"
+- "Show a scrolling headline bar"
+
+---
+
+### lower_third
+Add professional broadcast lower third overlay.
+| Parameter | Type | Default |
+|-----------|------|---------|
+| `name` | string | John Doe |
+| `title` | string | CEO |
+
+**Example prompts:**
+- "Add a lower third with name and title"
+- "Show the speaker's name at the bottom"
+
+---
+
+### countdown
+Add countdown timer overlay.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `from_num` | int | 5 | 1 to 60 |
+| `size` | int | 120 | 24 to 300 |
+
+**Example prompts:**
+- "Add a 5-second countdown at the start"
+- "Show a countdown timer"
+
+---
+
+### typewriter_text
+Typewriter reveal effect for text.
+| Parameter | Type | Default |
+|-----------|------|---------|
+| `text` | string | Hello World |
+| `speed` | float | 0.1 |
+
+**Example prompts:**
+- "Add typewriter text that reveals letter by letter"
+- "Show 'Coming Soon' with typewriter effect"
+
+---
+
+### bounce_text
+Bouncing animated text.
+| Parameter | Type | Default |
+|-----------|------|---------|
+| `text` | string | Hello |
+| `size` | int | 72 |
+
+**Example prompts:**
+- "Add bouncing 'NEW!' text at the top"
+- "Show bouncing title text"
+
+---
+
+### fade_text
+Text that fades in and out.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `text` | string | Title |
+| `fade_duration` | float | 1.0 | 0.1 to 5.0 |
+
+**Example prompts:**
+- "Fade in the title over 2 seconds then fade out"
+- "Show text briefly with fade effect"
+
+---
+
+### karaoke_text
+Karaoke-style fill text for music.
+| Parameter | Type | Default |
+|-----------|------|---------|
+| `text` | string | ♪ Lyrics |
+| `speed` | float | 0.5 |
+
+**Example prompts:**
+- "Add karaoke-style text that fills in"
+- "Show lyrics with karaoke highlight"
+
+---
+
+## ✂️ Editing & Composition (New Skills)
+
+### picture_in_picture
+Add a picture-in-picture overlay window.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `x` | int | 20 | position |
+| `y` | int | 20 | position |
+| `scale` | float | 0.25 | 0.1 to 0.5 |
+
+**Example prompts:**
+- "Add a PiP window in the bottom right"
+- "Show a small inset in the corner"
+
+---
+
+### blend
+Blend two video inputs together.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------|
+| `mode` | choice | overlay | overlay, addition, multiply, screen |
+| `opacity` | float | 0.5 | 0.0 to 1.0 |
+
+**Example prompts:**
+- "Blend videos with overlay mode"
+- "Mix the two videos together"
+
+---
+
+### delogo
+Remove a logo/watermark from a region.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `x` | int | 10 | position |
+| `y` | int | 10 | position |
+| `w` | int | 100 | width |
+| `h` | int | 40 | height |
+
+**Example prompts:**
+- "Remove the logo from the top-left corner"
+- "Clean up the watermark"
+
+---
+
+### remove_dup_frames
+Strip duplicate/stuttered frames.
+| Parameter | Type | Default |
+|-----------|------|---------|
+| `max_drop` | int | 0 |
+
+**Example prompts:**
+- "Remove duplicate frames"
+- "Fix the stuttering"
+
+---
+
+### mask_blur
+Blur a rectangular region for privacy.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `x` | int | 0 | position |
+| `y` | int | 0 | position |
+| `w` | int | 200 | width |
+| `h` | int | 200 | height |
+| `strength` | int | 20 | 1 to 50 |
+
+**Example prompts:**
+- "Blur the face region for privacy"
+- "Censor the license plate area"
+
+---
+
+### extract_frames
+Export frames as image sequence.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `rate` | float | 1.0 | 0.1 to 30.0 fps |
+
+**Example prompts:**
+- "Extract one frame per second as PNG"
+- "Export frames at 0.5fps"
+
+---
+
+### jump_cut
+Auto-cut to high-energy moments.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `threshold` | float | 0.3 | 0.1 to 0.9 |
+
+**Example prompts:**
+- "Auto-detect and cut to the action"
+- "Make jump cuts at scene changes"
+
+---
+
+### beat_sync
+Cut video in sync with a beat interval.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `bpm` | float | 120 | 60 to 200 |
+| `threshold` | float | 0.3 | 0.1 to 0.9 |
+
+**Example prompts:**
+- "Sync the cuts to the beat at 120 BPM"
+- "Cut on every beat"
+
+---
+
+### color_match
+Auto-match colors via histogram equalization.
+*No parameters.*
+
+**Example prompts:**
+- "Auto-match the colors and brightness"
+- "Equalize the histogram"
+
+---
+
+## 🎆 Creative Effects (New Skills)
+
+### datamosh
+Glitch art via motion vector visualization.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------|
+| `mode` | choice | mv_type | mv_type, mv_color, qp_table |
+
+**Example prompts:**
+- "Apply a datamosh glitch effect"
+- "Show the motion vectors as art"
+
+---
+
+### radial_blur
+Radial / zoom blur effect.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `angle` | float | 5.0 | 0.5 to 45.0 |
+
+**Example prompts:**
+- "Add a radial blur zoom effect"
+- "Apply strong zoom blur"
+
+---
+
+### grain_overlay
+Cinematic film grain with intensity control.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `intensity` | int | 15 | 1 to 80 |
+| `seed` | int | -1 | -1 to 99999 |
+
+**Example prompts:**
+- "Add subtle cinematic grain"
+- "Apply heavy gritty film grain"
+- "Add organic grain texture"
 
