@@ -646,4 +646,43 @@ class TestSkillComposer:
         assert "colorkey=" in cmd_str, f"Expected 'colorkey' filter but got: {cmd_str}"
         assert "overlay" in cmd_str, f"Expected 'overlay' for compositing but got: {cmd_str}"
 
+    # ---- Concat audio tests ----
 
+    def test_concat_with_audio_produces_audio_streams(self):
+        """concat with embedded audio should produce concat=n=2:v=1:a=1."""
+        composer = SkillComposer()
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+            extra_inputs=["/extra.mp4"],
+        )
+        pipeline.metadata["_has_embedded_audio"] = True
+        pipeline.add_step("concat", {})
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        assert "concat=n=2:v=1:a=1" in cmd_str, (
+            f"Expected audio concat (a=1) but got: {cmd_str}"
+        )
+        assert "filter_complex" in cmd_str
+        # Audio read directly from video inputs
+        assert "[0:a]" in cmd_str, f"Expected [0:a] but got: {cmd_str}"
+        assert "[1:a]" in cmd_str, f"Expected [1:a] but got: {cmd_str}"
+
+    def test_concat_without_audio_stays_video_only(self):
+        """concat without audio should produce concat=n=2:v=1:a=0."""
+        composer = SkillComposer()
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+            extra_inputs=["/extra.mp4"],
+        )
+        pipeline.add_step("concat", {})
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        assert "concat=n=2:v=1:a=0" in cmd_str, (
+            f"Expected video-only concat (a=0) but got: {cmd_str}"
+        )

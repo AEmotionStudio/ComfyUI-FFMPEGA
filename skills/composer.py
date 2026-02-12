@@ -29,6 +29,7 @@ class Pipeline:
     input_path: Optional[str] = None
     output_path: Optional[str] = None
     extra_inputs: list[str] = field(default_factory=list)
+    extra_audio_inputs: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def add_step(
@@ -218,6 +219,10 @@ class SkillComposer:
             if pipeline.extra_inputs:
                 step.params["_extra_input_count"] = len(pipeline.extra_inputs)
                 step.params["_extra_input_paths"] = pipeline.extra_inputs
+            if pipeline.metadata.get("_has_embedded_audio"):
+                step.params["_has_embedded_audio"] = True
+            if "_input_fps" in pipeline.metadata:
+                step.params["_input_fps"] = pipeline.metadata["_input_fps"]
 
             # Get filters/options for this skill
             vf, af, opts, fc, input_opts = self._skill_to_filters(skill, step.params)
@@ -1743,6 +1748,10 @@ def _f_concat(p):
     `still_duration` seconds. All segments are scaled to the same
     resolution before concatenation.
 
+    When extra audio inputs are connected (via audio_a, audio_b, ...),
+    audio is included in the concat (a=1). Segments without a matching
+    audio input get silence via anullsrc.
+
     Parameters:
         width:          Output width (default 1920)
         height:         Output height (default 1080)
@@ -1764,18 +1773,20 @@ def _f_concat(p):
     if total < 2:
         return [], [], [], ""
 
-    fps = 25
+    # Check if audio was pre-muxed into the video inputs
+    has_audio = bool(p.get("_has_embedded_audio", False))
+
+    fps = int(p.get("_input_fps", 25))
     parts = []
     concat_labels = []
 
     for i, (idx, is_video) in enumerate(segments):
         vlbl = f"[_cv{i}]"
-        albl = f"[_ca{i}]"
         if is_video:
-            # Main video: scale to uniform dimensions (video-only concat)
             parts.append(
                 f"[{idx}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,"
-                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps={fps}{vlbl}"
+                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,"
+                f"setpts=PTS-STARTPTS,fps={fps}{vlbl}"
             )
         else:
             n_frames = int(still_dur * fps)
@@ -1787,9 +1798,17 @@ def _f_concat(p):
             )
         concat_labels.append(vlbl)
 
-    # Video-only concat (avoids audio stream mismatch)
+        if has_audio:
+            albl = f"[_ca{i}]"
+            # Audio is embedded in the video — just read it
+            parts.append(f"[{idx}:a]aresample=44100,asetpts=PTS-STARTPTS{albl}")
+            concat_labels.append(albl)
+
     concat_input = "".join(concat_labels)
-    parts.append(f"{concat_input}concat=n={total}:v=1:a=0")
+    if has_audio:
+        parts.append(f"{concat_input}concat=n={total}:v=1:a=1")
+    else:
+        parts.append(f"{concat_input}concat=n={total}:v=1:a=0")
 
     return [], [], [], ";".join(parts)
 

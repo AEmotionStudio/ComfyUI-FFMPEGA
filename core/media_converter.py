@@ -27,18 +27,21 @@ class MediaConverter:
         Returns:
             Tensor of shape (B, H, W, 3) with float32 values in [0, 1].
         """
-        import imageio.v3 as iio  # type: ignore[import-not-found]
-
         try:
-            frames_raw = iio.imread(video_path, plugin="pyav")
-            frames = frames_raw.astype(np.float32) / 255.0
+            import av  # type: ignore[import-not-found]
 
-            if frames.shape[-1] == 4:
-                frames = frames[:, :, :, :3]
-            elif frames.shape[-1] == 1:
-                frames = np.repeat(frames, 3, axis=-1)
+            container = av.open(video_path)
+            frames = []
+            for frame in container.decode(video=0):
+                arr = frame.to_ndarray(format="rgb24")
+                frames.append(arr)
+            container.close()
 
-            return torch.from_numpy(frames)
+            if not frames:
+                return torch.zeros(1, 64, 64, 3, dtype=torch.float32)
+
+            stacked = np.stack(frames).astype(np.float32) / 255.0
+            return torch.from_numpy(stacked)
 
         except Exception:
             return torch.zeros(1, 64, 64, 3, dtype=torch.float32)

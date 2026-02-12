@@ -421,6 +421,14 @@ class FFMPEGAgentNode:
             input_path=effective_video_path,
             output_path=output_path,
         )
+        # Store input FPS so concat can match it (avoids FPS mismatch
+        # when external save nodes re-encode our frame tensors)
+        input_fps = (
+            video_metadata.primary_video.frame_rate
+            if video_metadata.primary_video and video_metadata.primary_video.frame_rate
+            else 24
+        )
+        pipeline.metadata["_input_fps"] = int(round(input_fps))
 
         for step in pipeline_steps:
             skill_name = step.get("skill")
@@ -477,12 +485,26 @@ class FFMPEGAgentNode:
 
             # Save each tensor as frames (optimize: video-length tensors
             # are saved as temp video instead of individual PNGs)
-            for tensor in all_image_tensors:
+            for ti, tensor in enumerate(all_image_tensors):
+                print(f"[FFMPEGA DEBUG] Multi-input tensor {ti}: shape={tensor.shape}")
                 if tensor.shape[0] > 10:
                     # Save as temp video for performance
                     tmp_vid = self.media_converter.images_to_video(tensor)
                     all_frame_paths.append(tmp_vid)
                     temp_multi_videos.append(tmp_vid)
+                    # Probe duration for debugging
+                    try:
+                        import subprocess as _sp
+                        _dur = _sp.run(
+                            ["ffprobe", "-v", "error", "-show_entries",
+                             "format=duration", "-of",
+                             "default=noprint_wrappers=1", tmp_vid],
+                            capture_output=True, text=True,
+                        )
+                        print(f"[FFMPEGA DEBUG] Temp video {tmp_vid}: "
+                              f"{_dur.stdout.strip()}, size={os.path.getsize(tmp_vid)}")
+                    except Exception:
+                        pass
                 else:
                     paths = self.media_converter.save_frames_as_images(tensor)
                     all_frame_paths.extend(paths)
@@ -505,6 +527,38 @@ class FFMPEGAgentNode:
             for step in pipeline.steps:
                 if step.skill_name in ("slideshow", "grid"):
                     step.params["include_video"] = has_real_video
+
+        # --- Multi-audio input collection ---
+        # Mux each audio directly into its paired video segment so the
+        # concat filter can simply read [idx:a] from each video input.
+        temp_audio_files = []
+        if needs_multi_input:
+            all_audio_dicts = []
+            if audio_a is not None:
+                all_audio_dicts.append(audio_a)
+            for k in sorted(kwargs):
+                if k.startswith("audio_") and k != "audio_a" and kwargs[k] is not None:
+                    all_audio_dicts.append(kwargs[k])
+
+            if all_audio_dicts:
+                video_segments = [effective_video_path] + list(pipeline.extra_inputs)
+                for ai, audio_dict in enumerate(all_audio_dicts):
+                    if ai >= len(video_segments):
+                        break
+                    vid_path = video_segments[ai]
+                    if not os.path.isfile(vid_path):
+                        continue
+                    # Skip if already has audio (e.g. audio_a pre-muxed earlier)
+                    if self.media_converter.has_audio_stream(vid_path):
+                        continue
+                    try:
+                        self.media_converter.mux_audio(vid_path, audio_dict)
+                    except Exception as e:
+                        import logging
+                        logging.getLogger("ffmpega").warning(
+                            f"Could not mux audio {ai} into {vid_path}: {e}"
+                        )
+                pipeline.metadata["_has_embedded_audio"] = True
 
         command = self.composer.compose(pipeline)
 
@@ -661,12 +715,17 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
         # --- Handle audio ---
         removes_audio = "-an" in command.output_options
         has_audio_processing = removes_audio or bool(command.audio_filters.to_string())
+        # Skip audio mux when a complex_filter was used (concat, xfade, etc.)
+        # because the output duration differs from the original audio and
+        # mux_audio's -shortest flag would truncate the video.
+        has_complex = bool(command.complex_filter)
 
-        if audio_a is not None and not has_audio_processing:
+        if audio_a is not None and not has_audio_processing and not has_complex:
             self.media_converter.mux_audio(output_path, audio_a)
 
         # --- Extract output frames ---
         images_tensor = self.media_converter.frames_to_tensor(output_path)
+        print(f"[FFMPEGA DEBUG] Output tensor shape: {images_tensor.shape}")
 
         # --- Extract output audio ---
         if removes_audio:
@@ -692,8 +751,8 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
                 hidden_extra_pnginfo,
             )
 
-        # Clean up temp videos and frame images
-        for tmp_path in [temp_video_from_images, temp_video_with_audio] + temp_multi_videos:
+        # Clean up temp videos, frame images, and audio files
+        for tmp_path in [temp_video_from_images, temp_video_with_audio] + temp_multi_videos + temp_audio_files:
             if tmp_path and os.path.exists(tmp_path):
                 os.remove(tmp_path)
         if temp_frames_dirs:
@@ -713,6 +772,76 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
                 shutil.rmtree(temp_render_dir, ignore_errors=True)
 
         return (images_tensor, audio_out, output_path, command.to_string(), analysis)
+
+    @staticmethod
+    def _audio_dict_to_wav(audio: dict) -> Optional[str]:
+        """Convert a ComfyUI AUDIO dict to a temporary WAV file.
+
+        Args:
+            audio: ComfyUI AUDIO dict with 'waveform' and 'sample_rate'.
+
+        Returns:
+            Path to the created temporary WAV file, or None on failure.
+        """
+        import subprocess
+
+        try:
+            waveform = audio["waveform"]       # (1, channels, samples)
+            sample_rate = audio["sample_rate"]
+        except (KeyError, TypeError):
+            return None
+
+        channels = waveform.size(1)
+        audio_data = waveform.squeeze(0).transpose(0, 1).contiguous()  # (samples, channels)
+        audio_bytes = (audio_data * 32767.0).clamp(-32768, 32767).to(torch.int16).numpy().tobytes()
+
+        tmp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        tmp_wav.close()
+
+        ffmpeg_bin = shutil.which("ffmpeg")
+        if not ffmpeg_bin:
+            return None
+
+        result = subprocess.run(
+            [
+                ffmpeg_bin, "-y",
+                "-f", "s16le",
+                "-ar", str(sample_rate),
+                "-ac", str(channels),
+                "-i", "-",
+                tmp_wav.name,
+            ],
+            input=audio_bytes,
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            if os.path.exists(tmp_wav.name):
+                os.remove(tmp_wav.name)
+            return None
+
+        return tmp_wav.name
+
+    @staticmethod
+    def _probe_duration(video_path: str) -> float:
+        """Probe the duration of a video file using ffprobe.
+
+        Returns:
+            Duration in seconds, or 0.0 if probing fails.
+        """
+        import subprocess
+        ffprobe_bin = shutil.which("ffprobe")
+        if not ffprobe_bin:
+            return 0.0
+        try:
+            result = subprocess.run(
+                [ffprobe_bin, "-v", "error", "-show_entries",
+                 "format=duration", "-of", "default=noprint_wrappers=1:nokey=1",
+                 video_path],
+                capture_output=True, text=True, check=True,
+            )
+            return float(result.stdout.strip())
+        except Exception:
+            return 0.0
 
     @staticmethod
     def _save_workflow_png(
