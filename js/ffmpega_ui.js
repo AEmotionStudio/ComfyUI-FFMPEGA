@@ -238,6 +238,28 @@ app.registerExtension({
                     };
                 }
 
+                // --- batch_mode → video_folder / file_pattern / max_concurrent visibility ---
+                const batchWidget = this.widgets?.find(w => w.name === "batch_mode");
+                const folderWidget = this.widgets?.find(w => w.name === "video_folder");
+                const patternWidget = this.widgets?.find(w => w.name === "file_pattern");
+                const concurrentWidget = this.widgets?.find(w => w.name === "max_concurrent");
+                if (batchWidget) {
+                    function updateBatchVisibility() {
+                        const show = batchWidget.value;
+                        if (folderWidget) toggleWidget(folderWidget, show);
+                        if (patternWidget) toggleWidget(patternWidget, show);
+                        if (concurrentWidget) toggleWidget(concurrentWidget, show);
+                        fitHeight();
+                    }
+
+                    updateBatchVisibility();
+                    const origBatchCb = batchWidget.callback;
+                    batchWidget.callback = function (...args) {
+                        origBatchCb?.apply(this, args);
+                        updateBatchVisibility();
+                    };
+                }
+
                 // --- Dynamic input slots (auto-expand) ---
                 // Connect image_a → image_b appears. Connect image_b → image_c appears.
                 // Same for audio_a → audio_b → audio_c, etc.
