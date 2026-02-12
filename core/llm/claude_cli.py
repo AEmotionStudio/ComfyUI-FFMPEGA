@@ -11,7 +11,7 @@ class ClaudeCodeCLIConnector(CLIConnectorBase):
 
     Uses ``claude -p <prompt> --output-format text`` to generate responses.
     Requires the ``claude`` binary to be installed and authenticated
-    (e.g. via ``npm install -g @anthropic-ai/claude-code``).
+    (e.g. via ``pnpm add -g @anthropic-ai/claude-code``).
     """
 
     def __init__(self, config: Optional[LLMConfig] = None):
@@ -55,7 +55,7 @@ class ClaudeCodeCLIConnector(CLIConnectorBase):
     def _install_hint(self) -> str:
         return (
             "Claude Code CLI binary not found. Install it with:\n"
-            "  npm install -g @anthropic-ai/claude-code\n"
+            "  pnpm add -g @anthropic-ai/claude-code\n"
             "Or see: https://docs.anthropic.com/en/docs/claude-code"
         )
 

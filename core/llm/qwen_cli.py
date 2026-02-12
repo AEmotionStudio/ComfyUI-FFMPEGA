@@ -11,7 +11,7 @@ class QwenCodeCLIConnector(CLIConnectorBase):
 
     Uses ``qwen -p --output-format text`` with prompt piped via stdin.
     Requires the ``qwen`` binary to be installed and authenticated
-    (e.g. via ``pnpm install -g @qwen-code/qwen-code@latest``).
+    (e.g. via ``pnpm add -g @qwen-code/qwen-code@latest``).
 
     Free tier: 2,000 requests/day via Qwen OAuth (no credit card required).
     """
@@ -55,7 +55,7 @@ class QwenCodeCLIConnector(CLIConnectorBase):
     def _install_hint(self) -> str:
         return (
             "Qwen Code CLI binary not found. Install it with:\n"
-            "  npm install -g @qwen-code/qwen-code@latest\n"
+            "  pnpm add -g @qwen-code/qwen-code@latest\n"
             "Or see: https://qwenlm.github.io/qwen-code-docs/"
         )
 

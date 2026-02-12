@@ -54,7 +54,7 @@ class GeminiCLIConnector(CLIConnectorBase):
     def _install_hint(self) -> str:
         return (
             "Gemini CLI binary not found. Install it with:\n"
-            "  npm install -g @google/gemini-cli\n"
+            "  pnpm add -g @google/gemini-cli\n"
             "Or see: https://github.com/google-gemini/gemini-cli"
         )
 

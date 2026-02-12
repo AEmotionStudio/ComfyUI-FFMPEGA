@@ -90,7 +90,7 @@ Process multiple videos with the same instruction. Generate quick low-res previe
 cd /path/to/ComfyUI/custom_nodes
 git clone https://github.com/AEmotionStudio/ComfyUI-FFMPEGA.git
 cd ComfyUI-FFMPEGA
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 ```
 
 Restart ComfyUI after installation.
@@ -584,7 +584,7 @@ Use the [Gemini CLI](https://github.com/google-gemini/gemini-cli) to run Gemini 
 
 **Install:**
 ```bash
-npm install -g @google/gemini-cli
+pnpm add -g @google/gemini-cli
 ```
 
 **Authenticate** (first time only):
@@ -614,7 +614,7 @@ Use the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) as a l
 
 **Install:**
 ```bash
-npm install -g @anthropic-ai/claude-code
+pnpm add -g @anthropic-ai/claude-code
 ```
 
 **Authenticate** (first time only):
@@ -650,7 +650,7 @@ Use [Qwen Code](https://qwenlm.github.io/qwen-code-docs/) as a free LLM backend.
 
 **Install:**
 ```bash
-npm install -g @qwen-code/qwen-code@latest
+pnpm add -g @qwen-code/qwen-code@latest
 ```
 
 **Authenticate** (first time only):
