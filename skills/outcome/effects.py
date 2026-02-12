@@ -1593,7 +1593,7 @@ def register_skills(registry: SkillRegistry) -> None:
                 max_value=100,
             ),
         ],
-        ffmpeg_template="split[base][blur];[blur]crop={w}:{h}:{x}:{y},boxblur={strength}[blurred];[base][blurred]overlay={x}:{y}:shortest=1",
+        # mask_blur needs filter_complex syntax (split/overlay); handled in composer.py
         examples=[
             "mask_blur:x=500,y=200,w=150,h=150 - Blur a face region",
             "mask_blur:x=100,y=600,w=300,h=80,strength=40 - Heavy blur on license plate",
@@ -1623,7 +1623,7 @@ def register_skills(registry: SkillRegistry) -> None:
                 max_value=1.0,
             ),
         ],
-        ffmpeg_template="lut3d=file='{path}'",
+        # lut_apply with intensity blending requires filter_complex; handled in composer.py
         examples=[
             "lut_apply:path=/path/to/grade.cube - Apply a .cube LUT",
             "lut_apply:path=cinematic.3dl - Apply a 3DL LUT",
@@ -2307,19 +2307,19 @@ def register_skills(registry: SkillRegistry) -> None:
         description="Create a radial/zoom blur effect for dynamic motion emphasis",
         parameters=[
             SkillParameter(
-                name="angle",
-                type=ParameterType.FLOAT,
-                description="Blur angle in degrees (higher = more blur)",
+                name="radius",
+                type=ParameterType.INT,
+                description="Blur radius in pixels (higher = more blur)",
                 required=False,
-                default=5.0,
-                min_value=0.5,
-                max_value=45.0,
+                default=5,
+                min_value=1,
+                max_value=50,
             ),
         ],
-        ffmpeg_template="avgblur=sizeX={angle}:sizeY={angle}",
+        ffmpeg_template="avgblur=sizeX={radius}:sizeY={radius}",
         examples=[
-            "radial_blur - Subtle radial blur effect",
-            "radial_blur:angle=15 - Strong blur effect",
+            "radial_blur - Subtle blur effect (5px radius)",
+            "radial_blur:radius=15 - Strong blur effect",
         ],
         tags=["blur", "radial", "zoom", "motion", "spin", "dynamic", "focus"],
     ))
@@ -2349,7 +2349,7 @@ def register_skills(registry: SkillRegistry) -> None:
                 max_value=99999,
             ),
         ],
-        ffmpeg_template="noise=alls={intensity}:allf=t",
+        ffmpeg_template="noise=alls={intensity}:allf=t:seed={seed}",
         examples=[
             "grain_overlay - Subtle cinematic grain",
             "grain_overlay:intensity=40 - Heavy gritty grain",

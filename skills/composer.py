@@ -2503,7 +2503,8 @@ def _f_karaoke_text(p):
     duration = float(p.get("duration", 5))
     end = start + duration
 
-    # Two drawtext layers: base (gray) + fill (yellow with time-based width clip)
+    # Two drawtext layers: base (gray) underneath + fill (yellow) with progressive crop via x offset
+    # The fill text is drawn starting from left, advancing rightward over the duration
     dt_base = (
         f"drawtext=text='{text}':"
         f"fontsize={fontsize}:"
@@ -2513,12 +2514,16 @@ def _f_karaoke_text(p):
         f"enable='between(t,{start},{end})'"
     )
 
+    # Fill layer: use alpha expression that clips horizontally based on time progression
+    # Progress goes from 0 to 1 over the duration, controls alpha via x position
+    progress = f"(t-{start})/{duration}"
     dt_fill = (
         f"drawtext=text='{text}':"
         f"fontsize={fontsize}:"
         f"fontcolor={fill_color}:"
         f"borderw=2:bordercolor=black:"
         f"x=(w-text_w)/2:y=(h-text_h)/2:"
+        f"alpha='if(lt(x-((w-text_w)/2), text_w*{progress}), 1, 0)':"
         f"enable='between(t,{start},{end})'"
     )
 
@@ -2571,3 +2576,53 @@ def _f_datamosh(p):
 
 
 _SKILL_DISPATCH["datamosh"] = _f_datamosh
+
+
+def _f_mask_blur(p):
+    """Blur a rectangular region of the video (privacy/censor)."""
+    x = int(p.get("x", 100))
+    y = int(p.get("y", 100))
+    w = int(p.get("w", 200))
+    h = int(p.get("h", 200))
+    strength = int(p.get("strength", 20))
+    # Uses filter_complex: split, crop+blur the region, overlay back
+    fc = (
+        f"[0:v]split[base][blur];"
+        f"[blur]crop={w}:{h}:{x}:{y},boxblur={strength}[blurred];"
+        f"[base][blurred]overlay={x}:{y}:shortest=1"
+    )
+    return [], [], [], fc
+
+
+def _f_lut_apply(p):
+    """Apply a color LUT with intensity blending."""
+    from ..core.sanitize import sanitize_text_param
+    path = sanitize_text_param(str(p.get("path", "lut.cube")))
+    intensity = float(p.get("intensity", 1.0))
+    if intensity >= 1.0:
+        # Full LUT, no blending needed
+        vf = f"lut3d=file='{path}'"
+        return [vf], [], []
+    elif intensity <= 0.0:
+        # No LUT
+        return [], [], []
+    else:
+        # Blend original with LUT-graded using filter_complex
+        inv = 1.0 - intensity
+        fc = (
+            f"[0:v]split[orig][lut];"
+            f"[lut]lut3d=file='{path}'[graded];"
+            f"[orig][graded]blend=all_mode=normal:all_opacity={intensity}"
+        )
+        return [], [], [], fc
+
+
+def _f_replace_audio(p):
+    """Replace video's audio track with audio from second input."""
+    # Return output options directly to avoid -map deduplication
+    return [], [], ["-map", "0:v", "-map", "1:a", "-shortest"]
+
+
+_SKILL_DISPATCH["mask_blur"] = _f_mask_blur
+_SKILL_DISPATCH["lut_apply"] = _f_lut_apply
+_SKILL_DISPATCH["replace_audio"] = _f_replace_audio

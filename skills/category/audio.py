@@ -586,7 +586,7 @@ def register_skills(registry: SkillRegistry) -> None:
         category=SkillCategory.AUDIO,
         description="Replace video's audio with audio from another file (uses extra_inputs)",
         parameters=[],
-        ffmpeg_template="-map 0:v -map 1:a -shortest",
+        # replace_audio needs duplicate -map flags; handled in composer.py to avoid dedup
         examples=[
             "replace_audio - Replace audio track with second input's audio",
         ],
