@@ -537,8 +537,6 @@ class FFMPEGAgentNode:
         # Validate pipeline (warn but don't block — LLMs are imprecise)
         is_valid, errors = self.composer.validate_pipeline(pipeline)
         if not is_valid:
-            import logging
-            logger = logging.getLogger("ffmpega")
             for err in errors:
                 logger.warning(f"Pipeline validation: {err} (continuing anyway)")
 
@@ -708,8 +706,6 @@ class FFMPEGAgentNode:
 
             if attempt < max_attempts - 1:
                 # Feed error back to LLM for correction
-                import logging
-                logger = logging.getLogger("ffmpega")
                 logger.warning(
                     f"FFMPEG failed (attempt {attempt + 1}), "
                     f"feeding error back to LLM: {result.error_message}"
