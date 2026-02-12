@@ -299,11 +299,12 @@ class MediaConverter:
             n = len(tmp_wavs)
             # Build filter: mix all audio inputs together
             filter_inputs = "".join(f"[{i+1}:a]" for i in range(n))
-            amix_filter = f"{filter_inputs}amix=inputs={n}:duration=longest"
+            amix_filter = f"{filter_inputs}amix=inputs={n}:duration=longest[aout]"
 
             cmd.extend([
                 "-filter_complex", amix_filter,
                 "-map", "0:v",
+                "-map", "[aout]",
                 "-c:v", "copy",
                 "-c:a", "aac",
                 "-shortest",

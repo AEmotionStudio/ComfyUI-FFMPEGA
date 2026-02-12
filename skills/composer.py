@@ -1909,28 +1909,36 @@ def _f_xfade(p):
     # Step 3: Audio crossfade (when audio is embedded in video inputs)
     has_audio = bool(p.get("_has_embedded_audio", False))
     if has_audio:
-        # Prepare audio streams
-        for i, (idx, _is_video) in enumerate(segments):
-            parts.append(
-                f"[{idx}:a]aresample=44100,asetpts=PTS-STARTPTS[_xa{i}]"
-            )
+        # Filter to only segments that actually have an audio stream
+        audio_segments = []
+        for i, (idx, is_video) in enumerate(segments):
+            if is_video:
+                audio_segments.append((i, idx))
+        # Only do audio crossfade if at least 2 segments have audio
+        if len(audio_segments) >= 2:
+            # Prepare audio streams (only for segments with audio)
+            for ai, (orig_i, idx) in enumerate(audio_segments):
+                parts.append(
+                    f"[{idx}:a]aresample=44100,asetpts=PTS-STARTPTS[_xa{ai}]"
+                )
 
-        # Chain acrossfade transitions
-        prev_alabel = "[_xa0]"
-        for i in range(1, total):
-            next_alabel = f"[_xa{i}]"
-            if i < total - 1:
-                out_alabel = f"[_xaf{i}]"
-                parts.append(
-                    f"{prev_alabel}{next_alabel}acrossfade=d={trans_dur}:"
-                    f"c1=tri:c2=tri{out_alabel}"
-                )
-                prev_alabel = out_alabel
-            else:
-                parts.append(
-                    f"{prev_alabel}{next_alabel}acrossfade=d={trans_dur}:"
-                    f"c1=tri:c2=tri"
-                )
+            # Chain acrossfade transitions
+            n_audio = len(audio_segments)
+            prev_alabel = "[_xa0]"
+            for i in range(1, n_audio):
+                next_alabel = f"[_xa{i}]"
+                if i < n_audio - 1:
+                    out_alabel = f"[_xaf{i}]"
+                    parts.append(
+                        f"{prev_alabel}{next_alabel}acrossfade=d={trans_dur}:"
+                        f"c1=tri:c2=tri{out_alabel}"
+                    )
+                    prev_alabel = out_alabel
+                else:
+                    parts.append(
+                        f"{prev_alabel}{next_alabel}acrossfade=d={trans_dur}:"
+                        f"c1=tri:c2=tri"
+                    )
 
     return [], [], [], ";".join(parts)
 

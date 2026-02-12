@@ -392,7 +392,6 @@ class FFMPEGAgentNode:
                 )
 
         # Audio inputs
-        all_audio_names = []
         if audio_a is not None:
             sr = audio_a.get("sample_rate", "unknown")
             wf = audio_a.get("waveform")
@@ -402,7 +401,6 @@ class FFMPEGAgentNode:
             input_lines.append(
                 f"- audio_a: connected — {dur_str}, {sr}Hz"
             )
-            all_audio_names.append("audio_a")
         for k in sorted(kwargs):
             if k.startswith("audio_") and k != "audio_a" and kwargs[k] is not None:
                 ad = kwargs[k]
@@ -414,7 +412,6 @@ class FFMPEGAgentNode:
                 input_lines.append(
                     f"- {k}: connected — {dur_str}, {sr}Hz"
                 )
-                all_audio_names.append(k)
 
         # Image inputs
         if image_a is not None:
@@ -722,7 +719,8 @@ class FFMPEGAgentNode:
                 )
                 try:
                     retry_spec = await self.pipeline_generator.generate(
-                        connector, error_prompt, metadata_str
+                        connector, error_prompt, metadata_str,
+                        connected_inputs=connected_inputs_str,
                     )
                     # Rebuild pipeline from corrected spec
                     pipeline = Pipeline(
@@ -808,7 +806,6 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
         # --- Handle audio (respecting audio_source from LLM) ---
         removes_audio = "-an" in command.output_options
         has_audio_processing = removes_audio or bool(command.audio_filters.to_string())
-        has_complex = bool(command.complex_filter)
         # Complex filters that already embed audio (concat, xfade) should not be muxed again
         audio_already_embedded = pipeline.metadata.get("_has_embedded_audio", False)
 
