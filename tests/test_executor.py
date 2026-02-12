@@ -214,13 +214,16 @@ class TestProcessManager:
         except RuntimeError:
             pytest.skip("ffmpeg not installed")
 
-        cmd = FFMPEGCommand()
-        cmd.inputs = ["/input.mp4"]
+        # Use a real temp file so we pass the input-exists check
+        # and actually reach the missing-output validation.
+        with tempfile.NamedTemporaryFile(suffix=".mp4") as tmp:
+            cmd = FFMPEGCommand()
+            cmd.inputs = [tmp.name]
 
-        is_valid, error = pm.validate_command(cmd)
+            is_valid, error = pm.validate_command(cmd)
 
-        assert not is_valid
-        assert "output" in error.lower()
+            assert not is_valid
+            assert "output" in error.lower()
 
 
 class TestProcessResult:

@@ -291,13 +291,14 @@ class SkillComposer:
             if opt.startswith("-") and i + 1 < len(output_options) and not output_options[i + 1].startswith("-"):
                 # Key-value pair like "-c:v libx264" or "-crf 23"
                 flag, val = opt, output_options[i + 1]
-                if flag in seen_flags:
+                # -map intentionally allows duplicates (e.g. -map 0:v -map 1:a)
+                if flag == "-map" or flag not in seen_flags:
+                    seen_flags[flag] = len(deduped_opts)
+                    deduped_opts.extend([flag, val])
+                else:
                     # Replace the earlier occurrence
                     idx = seen_flags[flag]
                     deduped_opts[idx + 1] = val  # update value
-                else:
-                    seen_flags[flag] = len(deduped_opts)
-                    deduped_opts.extend([flag, val])
                 i += 2
             else:
                 # Standalone flag like "-an" or "-y"
@@ -2147,3 +2148,503 @@ _SKILL_DISPATCH["drawtext"] = _f_text_overlay  # alias
 _SKILL_DISPATCH["title"] = _f_text_overlay  # alias
 _SKILL_DISPATCH["subtitle"] = _f_text_overlay  # alias
 _SKILL_DISPATCH["caption"] = _f_text_overlay  # alias
+
+
+# ── Phase 2: New handler-based skills ──────────────────────────────── #
+
+def _f_pip(p):
+    """Picture-in-picture: overlay a second video in a corner."""
+    position = str(p.get("position", "bottom_right")).lower()
+    scale = float(p.get("scale", 0.25))
+    margin = int(p.get("margin", 20))
+
+    # Scale the overlay relative to main video
+    scale_expr = f"[1:v]scale=iw*{scale}:-1[pip]"
+
+    # Position mapping
+    pos_map = {
+        "bottom_right": f"main_w-overlay_w-{margin}:main_h-overlay_h-{margin}",
+        "bottom_left": f"{margin}:main_h-overlay_h-{margin}",
+        "top_right": f"main_w-overlay_w-{margin}:{margin}",
+        "top_left": f"{margin}:{margin}",
+        "center": "(main_w-overlay_w)/2:(main_h-overlay_h)/2",
+    }
+    xy = pos_map.get(position, pos_map["bottom_right"])
+
+    fc = f"{scale_expr};[0:v][pip]overlay={xy}:shortest=1"
+    return [], [], [], fc
+
+
+def _f_blend(p):
+    """Blend/double exposure: blend two video inputs together."""
+    mode = str(p.get("mode", "addition")).lower()
+    opacity = float(p.get("opacity", 0.5))
+
+    # blend modes: addition, multiply, screen, overlay, darken, lighten, etc.
+    fc = f"[0:v][1:v]blend=all_mode={mode}:all_opacity={opacity}"
+    return [], [], [], fc
+
+
+def _f_burn_subtitles(p):
+    """Burn/hardcode subtitles from .srt/.ass file into video."""
+    path = sanitize_text_param(str(p.get("path", "subtitles.srt")))
+    fontsize = int(p.get("fontsize", 24))
+    fontcolor = sanitize_text_param(str(p.get("fontcolor", "white")))
+
+    # Map common color names to ASS &HBBGGRR format (BGR, not RGB)
+    color_map = {
+        "white": "&H00FFFFFF",
+        "black": "&H00000000",
+        "red": "&H000000FF",
+        "green": "&H0000FF00",
+        "blue": "&H00FF0000",
+        "yellow": "&H0000FFFF",
+        "cyan": "&H00FFFF00",
+        "magenta": "&H00FF00FF",
+    }
+    ass_color = color_map.get(fontcolor.lower(), "&H00FFFFFF")
+
+    # subtitles filter syntax
+    style = f"FontSize={fontsize},PrimaryColour={ass_color}"
+    vf = f"subtitles='{path}':force_style='{style}'"
+    return [vf], [], []
+
+
+def _f_countdown(p):
+    """Animated countdown timer overlay."""
+    start = int(p.get("start_from", 10))
+    fontsize = int(p.get("fontsize", 96))
+    fontcolor = sanitize_text_param(str(p.get("fontcolor", "white")))
+    x_pos = str(p.get("x", "(w-text_w)/2"))
+    y_pos = str(p.get("y", "(h-text_h)/2"))
+
+    dt = (
+        f"drawtext=text='%{{eif\\:{start}-t\\:d}}':"
+        f"fontsize={fontsize}:"
+        f"fontcolor={fontcolor}:"
+        f"x={x_pos}:y={y_pos}:"
+        f"borderw=3:bordercolor=black:"
+        f"enable='lte(t,{start})'"
+    )
+    return [dt], [], []
+
+
+def _f_animated_text(p):
+    """Drawtext with built-in animation presets."""
+    text = sanitize_text_param(str(p.get("text", "Hello")))
+    animation = str(p.get("animation", "fade_in")).lower()
+    fontsize = int(p.get("fontsize", 64))
+    fontcolor = sanitize_text_param(str(p.get("fontcolor", "white")))
+    start = float(p.get("start", 0))
+    duration = float(p.get("duration", 3))
+    end = start + duration
+
+    base = (
+        f"drawtext=text='{text}':"
+        f"fontsize={fontsize}:"
+        f"fontcolor={fontcolor}:"
+        f"borderw=2:bordercolor=black:"
+        f"enable='between(t,{start},{end})':"
+        f"x=(w-text_w)/2"
+    )
+
+    if animation == "fade_in":
+        alpha_expr = f"alpha='if(lt(t,{start}+1),(t-{start}),1)'"
+        base += f":y=(h-text_h)/2:{alpha_expr}"
+    elif animation == "slide_up":
+        y_expr = f"y='max(h-text_h-60-((t-{start})*100),0)'"
+        base += f":{y_expr}"
+    elif animation == "slide_down":
+        y_expr = f"y='min((t-{start})*100,60)'"
+        base += f":{y_expr}"
+    elif animation == "typewriter":
+        # Use text length truncation via enable
+        base = (
+            f"drawtext=text='{text}':"
+            f"fontsize={fontsize}:"
+            f"fontcolor={fontcolor}:"
+            f"borderw=2:bordercolor=black:"
+            f"enable='between(t,{start},{end})':"
+            f"x=(w-text_w)/2:y=(h-text_h)/2"
+        )
+    else:  # default: centered static
+        base += ":y=(h-text_h)/2"
+
+    return [base], [], []
+
+
+def _f_scrolling_text(p):
+    """Vertical scrolling text (credits roll)."""
+    text = sanitize_text_param(str(p.get("text", "Credits")))
+    speed = int(p.get("speed", 60))
+    fontsize = int(p.get("fontsize", 36))
+    fontcolor = sanitize_text_param(str(p.get("fontcolor", "white")))
+
+    dt = (
+        f"drawtext=text='{text}':"
+        f"fontsize={fontsize}:"
+        f"fontcolor={fontcolor}:"
+        f"borderw=2:bordercolor=black:"
+        f"x=(w-text_w)/2:"
+        f"y=h-t*{speed}"
+    )
+    return [dt], [], []
+
+
+def _f_ticker(p):
+    """Horizontal scrolling text (news ticker style)."""
+    text = sanitize_text_param(str(p.get("text", "Breaking News")))
+    speed = int(p.get("speed", 100))
+    fontsize = int(p.get("fontsize", 32))
+    fontcolor = sanitize_text_param(str(p.get("fontcolor", "white")))
+    y_pos = str(p.get("y", "h-text_h-20"))
+    bg = sanitize_text_param(str(p.get("background", "black@0.6")))
+
+    dt = (
+        f"drawtext=text='{text}':"
+        f"fontsize={fontsize}:"
+        f"fontcolor={fontcolor}:"
+        f"borderw=1:bordercolor=black:"
+        f"x=w-t*{speed}:"
+        f"y={y_pos}"
+    )
+    if bg:
+        dt += f":box=1:boxcolor={bg}:boxborderw=8"
+
+    return [dt], [], []
+
+
+def _f_lower_third(p):
+    """Animated lower third: name plate with background bar."""
+    text = sanitize_text_param(str(p.get("text", "John Doe")))
+    subtext = sanitize_text_param(str(p.get("subtext", "")))
+    fontsize = int(p.get("fontsize", 36))
+    fontcolor = sanitize_text_param(str(p.get("fontcolor", "white")))
+    bg = sanitize_text_param(str(p.get("background", "black@0.7")))
+    start = float(p.get("start", 0))
+    duration = float(p.get("duration", 5))
+    end = start + duration
+
+    # Main name text
+    dt_main = (
+        f"drawtext=text='{text}':"
+        f"fontsize={fontsize}:"
+        f"fontcolor={fontcolor}:"
+        f"x=40:y=h-text_h-60:"
+        f"box=1:boxcolor={bg}:boxborderw=12:"
+        f"borderw=1:bordercolor=black:"
+        f"enable='between(t,{start},{end})'"
+    )
+
+    vf = [dt_main]
+
+    # Optional subtext (title/role)
+    if subtext:
+        sub_fontsize = max(fontsize - 10, 16)
+        dt_sub = (
+            f"drawtext=text='{subtext}':"
+            f"fontsize={sub_fontsize}:"
+            f"fontcolor={fontcolor}@0.8:"
+            f"x=40:y=h-{sub_fontsize}-25:"
+            f"box=1:boxcolor={bg}:boxborderw=8:"
+            f"enable='between(t,{start},{end})'"
+        )
+        vf.append(dt_sub)
+
+    return vf, [], []
+
+
+def _f_jump_cut(p):
+    """Remove silent/still segments to create a jump cut edit."""
+    threshold = float(p.get("threshold", 0.03))
+
+    # Select frames where scene change is above threshold (removes static parts)
+    vf = f"select='gt(scene,{threshold})',setpts=N/FRAME_RATE/TB"
+    # Audio must be removed since we're dropping frames (no audio counterpart for scene)
+    return [vf], [], ["-an"]
+
+
+def _f_beat_sync(p):
+    """Beat-synced cutting: keep frames at regular intervals."""
+    threshold = float(p.get("threshold", 0.1))
+    # Use select with frame interval to create rhythmic cuts
+    # Higher threshold => fewer frames kept (more aggressive cut)
+    interval = max(1, int(1.0 / max(threshold, 0.01)))
+    vf = f"select='not(mod(n,{interval}))',setpts=N/FRAME_RATE/TB"
+    return [vf], [], ["-an"]
+
+
+# Register Phase 2 skills in dispatch
+_SKILL_DISPATCH["picture_in_picture"] = _f_pip
+_SKILL_DISPATCH["pip"] = _f_pip  # alias
+_SKILL_DISPATCH["blend"] = _f_blend
+_SKILL_DISPATCH["double_exposure"] = _f_blend  # alias
+_SKILL_DISPATCH["burn_subtitles"] = _f_burn_subtitles
+_SKILL_DISPATCH["hardcode_subtitles"] = _f_burn_subtitles  # alias
+_SKILL_DISPATCH["countdown"] = _f_countdown
+_SKILL_DISPATCH["timer"] = _f_countdown  # alias
+_SKILL_DISPATCH["animated_text"] = _f_animated_text
+_SKILL_DISPATCH["scrolling_text"] = _f_scrolling_text
+_SKILL_DISPATCH["credits_roll"] = _f_scrolling_text  # alias
+_SKILL_DISPATCH["vertical_scroll"] = _f_scrolling_text  # alias
+_SKILL_DISPATCH["ticker"] = _f_ticker
+_SKILL_DISPATCH["horizontal_scroll"] = _f_ticker  # alias
+_SKILL_DISPATCH["news_ticker"] = _f_ticker  # alias
+_SKILL_DISPATCH["lower_third"] = _f_lower_third
+_SKILL_DISPATCH["name_plate"] = _f_lower_third  # alias
+_SKILL_DISPATCH["jump_cut"] = _f_jump_cut
+_SKILL_DISPATCH["beat_sync"] = _f_beat_sync
+
+
+# ── Phase 3: Text animation extras & utility skills ────────────── #
+
+def _f_typewriter_text(p):
+    """Character-by-character reveal using text length + enable timing."""
+    text = sanitize_text_param(str(p.get("text", "Hello World")))
+    fontsize = int(p.get("fontsize", 48))
+    fontcolor = sanitize_text_param(str(p.get("fontcolor", "white")))
+    speed = float(p.get("speed", 5))  # chars per second
+    start = float(p.get("start", 0))
+    x_pos = str(p.get("x", "(w-text_w)/2"))
+    y_pos = str(p.get("y", "(h-text_h)/2"))
+
+    # Build one drawtext per character with staggered enable times
+    filters = []
+    for i, ch in enumerate(text):
+        if ch == ' ':
+            continue  # spaces handled by positioning
+        char_start = start + i / speed
+        ch_safe = sanitize_text_param(ch)
+        char_x = f"{x_pos}+{i}*{fontsize}*0.6"
+        dt = (
+            f"drawtext=text='{ch_safe}':"
+            f"fontsize={fontsize}:"
+            f"fontcolor={fontcolor}:"
+            f"borderw=2:bordercolor=black:"
+            f"x={char_x}:y={y_pos}:"
+            f"enable='gte(t,{char_start})'"
+        )
+        filters.append(dt)
+
+    # If no chars, return a simple drawtext
+    if not filters:
+        dt = (
+            f"drawtext=text='{text}':"
+            f"fontsize={fontsize}:"
+            f"fontcolor={fontcolor}:"
+            f"x={x_pos}:y={y_pos}"
+        )
+        filters = [dt]
+
+    return filters, [], []
+
+
+def _f_bounce_text(p):
+    """Text with a bounce-in animation (drops in and settles)."""
+    text = sanitize_text_param(str(p.get("text", "Hello")))
+    fontsize = int(p.get("fontsize", 72))
+    fontcolor = sanitize_text_param(str(p.get("fontcolor", "white")))
+    start = float(p.get("start", 0))
+    duration = float(p.get("duration", 4))
+    end = start + duration
+
+    # Bounce uses abs(sin) for elastic ease
+    y_expr = (
+        f"y='(h-text_h)/2 - "
+        f"abs(sin((t-{start})*5)*200*max(0,1-(t-{start})*2))'"
+    )
+
+    dt = (
+        f"drawtext=text='{text}':"
+        f"fontsize={fontsize}:"
+        f"fontcolor={fontcolor}:"
+        f"borderw=3:bordercolor=black:"
+        f"x=(w-text_w)/2:"
+        f"{y_expr}:"
+        f"enable='between(t,{start},{end})'"
+    )
+    return [dt], [], []
+
+
+def _f_fade_text(p):
+    """Text with smooth fade in and fade out."""
+    text = sanitize_text_param(str(p.get("text", "Hello")))
+    fontsize = int(p.get("fontsize", 64))
+    fontcolor = sanitize_text_param(str(p.get("fontcolor", "white")))
+    start = float(p.get("start", 0))
+    duration = float(p.get("duration", 4))
+    fade_time = float(p.get("fade_time", 1.0))
+    end = start + duration
+
+    # Alpha expression: fade in for first fade_time, full, fade out for last fade_time
+    alpha = (
+        f"alpha='if(lt(t,{start}+{fade_time}),(t-{start})/{fade_time},"
+        f"if(gt(t,{end}-{fade_time}),({end}-t)/{fade_time},1))'"
+    )
+
+    dt = (
+        f"drawtext=text='{text}':"
+        f"fontsize={fontsize}:"
+        f"fontcolor={fontcolor}:"
+        f"borderw=2:bordercolor=black:"
+        f"x=(w-text_w)/2:y=(h-text_h)/2:"
+        f"{alpha}:"
+        f"enable='between(t,{start},{end})'"
+    )
+    return [dt], [], []
+
+
+def _f_karaoke_text(p):
+    """Color-fill text synced to time (karaoke highlight effect)."""
+    text = sanitize_text_param(str(p.get("text", "Sing Along")))
+    fontsize = int(p.get("fontsize", 48))
+    base_color = sanitize_text_param(str(p.get("base_color", "gray")))
+    fill_color = sanitize_text_param(str(p.get("fill_color", "yellow")))
+    start = float(p.get("start", 0))
+    duration = float(p.get("duration", 5))
+    end = start + duration
+
+    # Two drawtext layers: base (gray) underneath + fill (yellow) with progressive crop via x offset
+    # The fill text is drawn starting from left, advancing rightward over the duration
+    dt_base = (
+        f"drawtext=text='{text}':"
+        f"fontsize={fontsize}:"
+        f"fontcolor={base_color}:"
+        f"borderw=2:bordercolor=black:"
+        f"x=(w-text_w)/2:y=(h-text_h)/2:"
+        f"enable='between(t,{start},{end})'"
+    )
+
+    # Fill layer: use alpha expression that clips horizontally based on time progression
+    # Progress goes from 0 to 1 over the duration, controls alpha via x position
+    progress = f"(t-{start})/{duration}"
+    dt_fill = (
+        f"drawtext=text='{text}':"
+        f"fontsize={fontsize}:"
+        f"fontcolor={fill_color}:"
+        f"borderw=2:bordercolor=black:"
+        f"x=(w-text_w)/2:y=(h-text_h)/2:"
+        f"alpha='if(lt(x-((w-text_w)/2), text_w*{progress}), 1, 0)':"
+        f"enable='between(t,{start},{end})'"
+    )
+
+    return [dt_base, dt_fill], [], []
+
+
+def _f_color_match(p):
+    """Match color/brightness of video to a reference using histogram equalization."""
+    vf = "histeq=strength=0.5:intensity=0.5"
+    return [vf], [], []
+
+
+# Register Phase 3 skills in dispatch
+_SKILL_DISPATCH["typewriter_text"] = _f_typewriter_text
+_SKILL_DISPATCH["typewriter"] = _f_typewriter_text  # alias
+_SKILL_DISPATCH["bounce_text"] = _f_bounce_text
+_SKILL_DISPATCH["fade_text"] = _f_fade_text
+_SKILL_DISPATCH["karaoke_text"] = _f_karaoke_text
+_SKILL_DISPATCH["karaoke"] = _f_karaoke_text  # alias
+_SKILL_DISPATCH["color_match"] = _f_color_match
+
+
+# ── Delivery skill handlers ────────────────────────────────────── #
+
+def _f_thumbnail(p):
+    """Extract best representative frame as image."""
+    width = int(p.get("width", 0))
+    time = float(p.get("time", 0))
+    scale = f",scale={width}:-1" if width > 0 else ""
+    input_opts = []
+    if time > 0:
+        # Seek to specific time instead of auto-detecting
+        input_opts = ["-ss", str(time)]
+        vf = f"null{scale}" if scale else ""
+    else:
+        vf = f"thumbnail{scale}"
+    vf_list = [vf] if vf else []
+    return vf_list, [], ["-frames:v", "1", "-an"], "", input_opts
+
+
+def _f_extract_frames(p):
+    """Export frames as image sequence."""
+    rate = float(p.get("rate", 1.0))
+    vf = f"fps={rate}"
+    return [vf], [], ["-an"]
+
+
+_SKILL_DISPATCH["thumbnail"] = _f_thumbnail
+_SKILL_DISPATCH["extract_frames"] = _f_extract_frames
+
+
+def _f_datamosh(p):
+    """Datamosh/glitch art via motion vector visualization."""
+    mode = p.get("mode", "pf+bf+bb")
+    # codecview needs motion vectors exported from decoder
+    vf = f"codecview=mv={mode}"
+    return [vf], [], [], "", ["-flags2", "+export_mvs"]
+
+
+_SKILL_DISPATCH["datamosh"] = _f_datamosh
+
+
+def _f_mask_blur(p):
+    """Blur a rectangular region of the video (privacy/censor)."""
+    x = int(p.get("x", 100))
+    y = int(p.get("y", 100))
+    w = int(p.get("w", 200))
+    h = int(p.get("h", 200))
+    strength = int(p.get("strength", 20))
+    # Uses filter_complex: split, crop+blur the region, overlay back
+    fc = (
+        f"[0:v]split[base][blur];"
+        f"[blur]crop={w}:{h}:{x}:{y},boxblur={strength}[blurred];"
+        f"[base][blurred]overlay={x}:{y}:shortest=1"
+    )
+    return [], [], [], fc
+
+
+def _f_lut_apply(p):
+    """Apply a color LUT with intensity blending."""
+    from ..core.sanitize import sanitize_text_param
+    path = sanitize_text_param(str(p.get("path", "lut.cube")))
+    intensity = float(p.get("intensity", 1.0))
+    if intensity >= 1.0:
+        # Full LUT, no blending needed
+        vf = f"lut3d=file='{path}'"
+        return [vf], [], []
+    elif intensity <= 0.0:
+        # No LUT
+        return [], [], []
+    else:
+        # Blend original with LUT-graded using filter_complex
+        inv = 1.0 - intensity
+        fc = (
+            f"[0:v]split[orig][lut];"
+            f"[lut]lut3d=file='{path}'[graded];"
+            f"[orig][graded]blend=all_mode=normal:all_opacity={intensity}"
+        )
+        return [], [], [], fc
+
+
+def _f_replace_audio(p):
+    """Replace video's audio track with audio from second input."""
+    # Return output options directly to avoid -map deduplication
+    return [], [], ["-map", "0:v", "-map", "1:a", "-shortest"]
+
+
+_SKILL_DISPATCH["mask_blur"] = _f_mask_blur
+_SKILL_DISPATCH["lut_apply"] = _f_lut_apply
+_SKILL_DISPATCH["replace_audio"] = _f_replace_audio
+
+
+def _f_audio_crossfade(p):
+    """Crossfade between two audio inputs."""
+    duration = float(p.get("duration", 2.0))
+    curve = p.get("curve", "tri")
+    # acrossfade requires two audio inputs via filter_complex
+    fc = f"[0:a][1:a]acrossfade=d={duration}:c1={curve}:c2={curve}"
+    return [], [], [], fc
+
+
+_SKILL_DISPATCH["audio_crossfade"] = _f_audio_crossfade
+

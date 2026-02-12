@@ -251,3 +251,61 @@ def register_skills(registry: SkillRegistry) -> None:
         ],
         tags=["gpu", "fast", "nvidia", "intel", "amd"],
     ))
+
+    # Audio bitrate — independent audio bitrate control
+    registry.register(Skill(
+        name="audio_bitrate",
+        category=SkillCategory.ENCODING,
+        description="Set audio encoding bitrate independently (without changing video codec)",
+        parameters=[
+            SkillParameter(
+                name="kbps",
+                type=ParameterType.INT,
+                description="Audio bitrate in kbps (e.g. 128, 192, 320)",
+                required=False,
+                default=192,
+                min_value=32,
+                max_value=512,
+            ),
+        ],
+        ffmpeg_template="-b:a {kbps}k",
+        examples=[
+            "audio_bitrate:kbps=320 - High quality audio (320 kbps)",
+            "audio_bitrate:kbps=128 - Standard quality (128 kbps)",
+            "audio_bitrate:kbps=64 - Low bitrate for voice",
+        ],
+        tags=["audio", "bitrate", "quality", "kbps", "encoding"],
+    ))
+
+    # Frame rate interpolation — smooth FPS conversion via motion interpolation
+    registry.register(Skill(
+        name="frame_rate_interpolation",
+        category=SkillCategory.ENCODING,
+        description="Change frame rate using motion interpolation (smoother than simple frame drop/dup)",
+        parameters=[
+            SkillParameter(
+                name="fps",
+                type=ParameterType.INT,
+                description="Target frame rate",
+                required=False,
+                default=60,
+                min_value=12,
+                max_value=120,
+            ),
+            SkillParameter(
+                name="mode",
+                type=ParameterType.CHOICE,
+                description="Interpolation mode (mci = best quality, blend = fast)",
+                required=False,
+                default="mci",
+                choices=["mci", "blend", "dup"],
+            ),
+        ],
+        ffmpeg_template="minterpolate=fps={fps}:mi_mode={mode}",
+        examples=[
+            "frame_rate_interpolation - Smooth 60fps interpolation",
+            "frame_rate_interpolation:fps=120 - 120fps slow-motion ready",
+            "frame_rate_interpolation:fps=24,mode=blend - 24fps with frame blending",
+        ],
+        tags=["fps", "interpolation", "smooth", "motion", "slowmo", "60fps", "120fps"],
+    ))

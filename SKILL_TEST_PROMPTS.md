@@ -907,3 +907,236 @@ Apply chroma key to remove the green screen
 Remove the blue screen background and make it transparent
 ```
 
+---
+
+## 🕐 Temporal & Audio (New)
+
+### scene_detect
+```
+Auto-detect scene changes and split the video at cut points
+```
+
+### silence_remove
+```
+Remove all the silent pauses from this podcast recording
+```
+
+### time_remap
+```
+Gradually slow the video from normal speed to half speed
+```
+
+### noise_reduction
+```
+Clean up the background noise from the audio
+```
+
+### audio_crossfade
+```
+Add a smooth audio crossfade transition
+```
+
+### audio_delay
+```
+Add a 500ms delay to the audio track
+```
+
+### ducking
+```
+Apply audio ducking to compress the dynamic range
+```
+
+### dereverb
+```
+Remove the room echo and reverb from the voice recording
+```
+
+### split_audio
+```
+Extract just the left audio channel
+```
+
+### audio_normalize_loudness
+```
+Normalize the audio loudness to streaming standard (-14 LUFS)
+```
+
+### freeze_frame
+```
+Freeze the frame at 3 seconds for 2 seconds
+```
+
+---
+
+## 🎨 Visual Correction (New)
+
+### white_balance
+```
+Adjust the white balance to make it look warmer like candlelight
+```
+
+### shadows_highlights
+```
+Lift the shadows and recover the blown-out highlights
+```
+
+### split_tone
+```
+Add warm tones to highlights and cool tones to shadows
+```
+
+### deflicker
+```
+Fix the flickering from the fluorescent lights
+```
+
+### unsharp_mask
+```
+Apply precise unsharp mask sharpening to the luma channel
+```
+
+---
+
+## 📐 Spatial Transform (New)
+
+### auto_crop
+```
+Automatically detect and remove the black letterbox borders
+```
+
+### scale_2x
+```
+Upscale the video 2x with Lanczos filtering
+```
+
+---
+
+## 📦 Encoding (New)
+
+### audio_bitrate
+```
+Set the audio bitrate to 320kbps for high quality
+```
+
+### frame_rate_interpolation
+```
+Interpolate frames to smooth 60fps using motion estimation
+```
+
+---
+
+## ✏️ Text & Graphics (New)
+
+### animated_text
+```
+Add animated 'Hello World' text in the center
+```
+
+### scrolling_text
+```
+Add scrolling credits text at the bottom of the video
+```
+
+### ticker
+```
+Add a breaking news ticker bar at the bottom
+```
+
+### lower_third
+```
+Add a professional lower third with name and title
+```
+
+### typewriter_text
+```
+Add a typewriter reveal effect for the text 'Coming Soon'
+```
+
+### bounce_text
+```
+Add bouncing text that says 'NEW!' at the top
+```
+
+### fade_text
+```
+Fade in the title text over 2 seconds then fade out
+```
+
+### karaoke_text
+```
+Add karaoke-style text that fills in as the song plays
+```
+
+### countdown
+```
+Add a 5-second countdown timer overlay at the start
+```
+
+---
+
+## ✂️ Editing & Composition (New)
+
+### picture_in_picture
+```
+Add a picture-in-picture window in the bottom right corner
+```
+
+### blend
+```
+Blend this video with the second input using overlay mode
+```
+
+### delogo
+```
+Remove the logo watermark from the top-left corner
+```
+
+### remove_dup_frames
+```
+Strip out duplicate frames to clean up the video
+```
+
+### mask_blur
+```
+Blur the face region at coordinates x=300,y=200 for privacy
+```
+
+### extract_frames
+```
+Extract one frame per second as PNG images
+```
+
+### jump_cut
+```
+Auto-detect and cut to the high-energy moments
+```
+
+### beat_sync
+```
+Sync cuts to the beat of the music every 2 seconds
+```
+
+### color_match
+```
+Auto-match the colors and brightness via histogram equalization
+```
+
+---
+
+## 🎆 Creative Effects (New)
+
+### datamosh
+```
+Apply a datamosh glitch art effect showing motion vectors
+```
+
+### radial_blur
+```
+Add a radial zoom blur effect
+```
+
+### grain_overlay
+```
+Add subtle cinematic film grain with intensity 20
+```
+```

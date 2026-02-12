@@ -1482,4 +1482,878 @@ def register_skills(registry: SkillRegistry) -> None:
         tags=["text", "title", "subtitle", "caption", "drawtext", "overlay", "typography", "lower_third"],
     ))
 
+    # Delogo — remove watermark/logo
+    registry.register(Skill(
+        name="delogo",
+        category=SkillCategory.OUTCOME,
+        description="Remove or obscure a watermark/logo from a fixed region of the video",
+        parameters=[
+            SkillParameter(
+                name="x",
+                type=ParameterType.INT,
+                description="X position of the logo region (pixels from left)",
+                required=True,
+                default=10,
+            ),
+            SkillParameter(
+                name="y",
+                type=ParameterType.INT,
+                description="Y position of the logo region (pixels from top)",
+                required=True,
+                default=10,
+            ),
+            SkillParameter(
+                name="w",
+                type=ParameterType.INT,
+                description="Width of the logo region in pixels",
+                required=True,
+                default=100,
+            ),
+            SkillParameter(
+                name="h",
+                type=ParameterType.INT,
+                description="Height of the logo region in pixels",
+                required=True,
+                default=40,
+            ),
+        ],
+        ffmpeg_template="delogo=x={x}:y={y}:w={w}:h={h}",
+        examples=[
+            "delogo:x=10,y=10,w=100,h=40 - Remove logo at top-left corner",
+            "delogo:x=1700,y=50,w=200,h=60 - Remove watermark at top-right (1080p)",
+        ],
+        tags=["watermark", "logo", "remove", "clean", "copyright"],
+    ))
 
+    # Remove duplicate frames — clean stuttery footage
+    registry.register(Skill(
+        name="remove_dup_frames",
+        category=SkillCategory.OUTCOME,
+        description="Remove duplicate/near-duplicate frames (fix stuttery or low-FPS footage)",
+        parameters=[
+            SkillParameter(
+                name="max_drop",
+                type=ParameterType.INT,
+                description="Max consecutive frames to drop (0 = unlimited)",
+                required=False,
+                default=0,
+                min_value=0,
+                max_value=100,
+            ),
+        ],
+        ffmpeg_template="mpdecimate=max={max_drop},setpts=N/FRAME_RATE/TB",
+        examples=[
+            "remove_dup_frames - Remove all duplicate frames",
+            "remove_dup_frames:max_drop=5 - Drop up to 5 consecutive duplicates",
+        ],
+        tags=["duplicate", "stutter", "clean", "fps", "decimate", "fix"],
+    ))
+
+    # Mask blur — blur a region (privacy)
+    registry.register(Skill(
+        name="mask_blur",
+        category=SkillCategory.OUTCOME,
+        description="Blur a rectangular region of the video (face/plate privacy)",
+        parameters=[
+            SkillParameter(
+                name="x",
+                type=ParameterType.INT,
+                description="X position of blur region",
+                required=True,
+                default=100,
+            ),
+            SkillParameter(
+                name="y",
+                type=ParameterType.INT,
+                description="Y position of blur region",
+                required=True,
+                default=100,
+            ),
+            SkillParameter(
+                name="w",
+                type=ParameterType.INT,
+                description="Width of blur region in pixels",
+                required=True,
+                default=200,
+            ),
+            SkillParameter(
+                name="h",
+                type=ParameterType.INT,
+                description="Height of blur region in pixels",
+                required=True,
+                default=200,
+            ),
+            SkillParameter(
+                name="strength",
+                type=ParameterType.INT,
+                description="Blur strength (higher = more blur)",
+                required=False,
+                default=20,
+                min_value=1,
+                max_value=100,
+            ),
+        ],
+        # mask_blur needs filter_complex syntax (split/overlay); handled in composer.py
+        examples=[
+            "mask_blur:x=500,y=200,w=150,h=150 - Blur a face region",
+            "mask_blur:x=100,y=600,w=300,h=80,strength=40 - Heavy blur on license plate",
+        ],
+        tags=["blur", "mask", "privacy", "face", "censor", "region", "plate"],
+    ))
+
+    # LUT apply — load .cube/.3dl LUT file
+    registry.register(Skill(
+        name="lut_apply",
+        category=SkillCategory.OUTCOME,
+        description="Apply a color LUT file (.cube or .3dl) for professional color grading",
+        parameters=[
+            SkillParameter(
+                name="path",
+                type=ParameterType.STRING,
+                description="Path to the .cube or .3dl LUT file",
+                required=True,
+            ),
+            SkillParameter(
+                name="intensity",
+                type=ParameterType.FLOAT,
+                description="LUT blend intensity (0.0=none, 1.0=full LUT)",
+                required=False,
+                default=1.0,
+                min_value=0.0,
+                max_value=1.0,
+            ),
+        ],
+        # lut_apply with intensity blending requires filter_complex; handled in composer.py
+        examples=[
+            "lut_apply:path=/path/to/grade.cube - Apply a .cube LUT",
+            "lut_apply:path=cinematic.3dl - Apply a 3DL LUT",
+        ],
+        tags=["lut", "cube", "3dl", "grade", "color", "professional", "cinema", "look"],
+    ))
+
+    # ── Phase 2: Handler-based skills ──────────────────────────────── #
+    # These have Python handlers in composer.py for filter_complex support.
+
+    # Picture-in-picture
+    registry.register(Skill(
+        name="picture_in_picture",
+        category=SkillCategory.OUTCOME,
+        description="Overlay a second video in a corner (picture-in-picture / PiP)",
+        parameters=[
+            SkillParameter(
+                name="position",
+                type=ParameterType.CHOICE,
+                description="Corner position for the overlay",
+                required=False,
+                default="bottom_right",
+                choices=["bottom_right", "bottom_left", "top_right", "top_left", "center"],
+            ),
+            SkillParameter(
+                name="scale",
+                type=ParameterType.FLOAT,
+                description="Scale of the overlay (0.25 = quarter size)",
+                required=False,
+                default=0.25,
+                min_value=0.05,
+                max_value=1.0,
+            ),
+            SkillParameter(
+                name="margin",
+                type=ParameterType.INT,
+                description="Margin from edge in pixels",
+                required=False,
+                default=20,
+                min_value=0,
+                max_value=200,
+            ),
+        ],
+        examples=[
+            "picture_in_picture - PiP in bottom-right corner",
+            "picture_in_picture:position=top_left,scale=0.3 - Larger PiP top-left",
+        ],
+        tags=["pip", "picture", "overlay", "corner", "webcam", "inset", "compositing"],
+    ))
+
+    # Blend / double exposure
+    registry.register(Skill(
+        name="blend",
+        category=SkillCategory.OUTCOME,
+        description="Blend two video inputs together (double exposure, multiply, screen, etc.)",
+        parameters=[
+            SkillParameter(
+                name="mode",
+                type=ParameterType.CHOICE,
+                description="Blend mode",
+                required=False,
+                default="addition",
+                choices=["addition", "multiply", "screen", "overlay", "darken", "lighten", "softlight", "hardlight"],
+            ),
+            SkillParameter(
+                name="opacity",
+                type=ParameterType.FLOAT,
+                description="Blend opacity (0.0-1.0)",
+                required=False,
+                default=0.5,
+                min_value=0.0,
+                max_value=1.0,
+            ),
+        ],
+        examples=[
+            "blend:mode=screen,opacity=0.6 - Dreamy screen blend",
+            "blend:mode=multiply,opacity=0.4 - Dark multiply blend",
+        ],
+        tags=["blend", "double_exposure", "composite", "mix", "layer", "screen", "multiply"],
+    ))
+
+    # Burn subtitles
+    registry.register(Skill(
+        name="burn_subtitles",
+        category=SkillCategory.OUTCOME,
+        description="Hardcode/burn subtitles from .srt or .ass file into the video",
+        parameters=[
+            SkillParameter(
+                name="path",
+                type=ParameterType.STRING,
+                description="Path to subtitle file (.srt, .ass, .ssa)",
+                required=True,
+            ),
+            SkillParameter(
+                name="fontsize",
+                type=ParameterType.INT,
+                description="Font size in pixels",
+                required=False,
+                default=24,
+                min_value=8,
+                max_value=200,
+            ),
+            SkillParameter(
+                name="fontcolor",
+                type=ParameterType.STRING,
+                description="Font color",
+                required=False,
+                default="white",
+            ),
+        ],
+        examples=[
+            "burn_subtitles:path=subs.srt - Burn SRT subtitles",
+            "burn_subtitles:path=captions.ass,fontsize=32 - Large ASS subtitles",
+        ],
+        tags=["subtitle", "burn", "hardcode", "srt", "ass", "caption", "text"],
+    ))
+
+    # Countdown timer
+    registry.register(Skill(
+        name="countdown",
+        category=SkillCategory.OUTCOME,
+        description="Animated countdown timer overlay on the video",
+        parameters=[
+            SkillParameter(
+                name="start_from",
+                type=ParameterType.INT,
+                description="Number to start counting down from",
+                required=False,
+                default=10,
+                min_value=1,
+                max_value=999,
+            ),
+            SkillParameter(
+                name="fontsize",
+                type=ParameterType.INT,
+                description="Font size",
+                required=False,
+                default=96,
+                min_value=12,
+                max_value=300,
+            ),
+            SkillParameter(
+                name="fontcolor",
+                type=ParameterType.STRING,
+                description="Font color",
+                required=False,
+                default="white",
+            ),
+        ],
+        examples=[
+            "countdown - 10 second countdown",
+            "countdown:start_from=5,fontsize=120 - 5 second large countdown",
+        ],
+        tags=["countdown", "timer", "count", "number", "overlay", "animation"],
+    ))
+
+    # Animated text
+    registry.register(Skill(
+        name="animated_text",
+        category=SkillCategory.OUTCOME,
+        description="Text overlay with animation effects (fade in, slide, typewriter)",
+        parameters=[
+            SkillParameter(
+                name="text",
+                type=ParameterType.STRING,
+                description="Text to display",
+                required=True,
+            ),
+            SkillParameter(
+                name="animation",
+                type=ParameterType.CHOICE,
+                description="Animation style",
+                required=False,
+                default="fade_in",
+                choices=["fade_in", "slide_up", "slide_down", "typewriter"],
+            ),
+            SkillParameter(
+                name="fontsize",
+                type=ParameterType.INT,
+                description="Font size",
+                required=False,
+                default=64,
+                min_value=12,
+                max_value=300,
+            ),
+            SkillParameter(
+                name="fontcolor",
+                type=ParameterType.STRING,
+                description="Font color",
+                required=False,
+                default="white",
+            ),
+            SkillParameter(
+                name="start",
+                type=ParameterType.FLOAT,
+                description="Start time in seconds",
+                required=False,
+                default=0,
+            ),
+            SkillParameter(
+                name="duration",
+                type=ParameterType.FLOAT,
+                description="Duration in seconds",
+                required=False,
+                default=3,
+            ),
+        ],
+        examples=[
+            "animated_text:text=Welcome,animation=fade_in - Fade in text",
+            "animated_text:text=Chapter 1,animation=slide_up,duration=5 - Slide up title",
+        ],
+        tags=["animated", "text", "fade", "slide", "typewriter", "motion", "title"],
+    ))
+
+    # Scrolling text (credits roll)
+    registry.register(Skill(
+        name="scrolling_text",
+        category=SkillCategory.OUTCOME,
+        description="Vertical scrolling text overlay (credits roll, end card)",
+        parameters=[
+            SkillParameter(
+                name="text",
+                type=ParameterType.STRING,
+                description="Text to scroll (use \\n for line breaks)",
+                required=True,
+            ),
+            SkillParameter(
+                name="speed",
+                type=ParameterType.INT,
+                description="Scroll speed in pixels per second",
+                required=False,
+                default=60,
+                min_value=10,
+                max_value=500,
+            ),
+            SkillParameter(
+                name="fontsize",
+                type=ParameterType.INT,
+                description="Font size",
+                required=False,
+                default=36,
+                min_value=12,
+                max_value=200,
+            ),
+            SkillParameter(
+                name="fontcolor",
+                type=ParameterType.STRING,
+                description="Font color",
+                required=False,
+                default="white",
+            ),
+        ],
+        examples=[
+            "scrolling_text:text=Directed by\\nJohn Doe - Credits scroll",
+            "scrolling_text:text=Thank you!,speed=30 - Slow scroll",
+        ],
+        tags=["scroll", "credits", "roll", "vertical", "end", "text"],
+    ))
+
+    # Ticker (horizontal scroll)
+    registry.register(Skill(
+        name="ticker",
+        category=SkillCategory.OUTCOME,
+        description="Horizontal scrolling text bar (news ticker, banner)",
+        parameters=[
+            SkillParameter(
+                name="text",
+                type=ParameterType.STRING,
+                description="Ticker text",
+                required=True,
+            ),
+            SkillParameter(
+                name="speed",
+                type=ParameterType.INT,
+                description="Scroll speed in pixels per second",
+                required=False,
+                default=100,
+                min_value=20,
+                max_value=1000,
+            ),
+            SkillParameter(
+                name="fontsize",
+                type=ParameterType.INT,
+                description="Font size",
+                required=False,
+                default=32,
+                min_value=12,
+                max_value=100,
+            ),
+            SkillParameter(
+                name="fontcolor",
+                type=ParameterType.STRING,
+                description="Font color",
+                required=False,
+                default="white",
+            ),
+            SkillParameter(
+                name="background",
+                type=ParameterType.STRING,
+                description="Background color (e.g. black@0.6)",
+                required=False,
+                default="black@0.6",
+            ),
+        ],
+        examples=[
+            "ticker:text=Breaking News: Stock market surges - News ticker",
+            "ticker:text=Subscribe!,speed=50,fontcolor=yellow - Slow yellow ticker",
+        ],
+        tags=["ticker", "horizontal", "scroll", "news", "banner", "bar", "crawl"],
+    ))
+
+    # Lower third
+    registry.register(Skill(
+        name="lower_third",
+        category=SkillCategory.OUTCOME,
+        description="Professional lower third name plate with optional subtitle",
+        parameters=[
+            SkillParameter(
+                name="text",
+                type=ParameterType.STRING,
+                description="Main text (e.g. person name)",
+                required=True,
+            ),
+            SkillParameter(
+                name="subtext",
+                type=ParameterType.STRING,
+                description="Secondary text (e.g. title/role)",
+                required=False,
+                default="",
+            ),
+            SkillParameter(
+                name="fontsize",
+                type=ParameterType.INT,
+                description="Font size",
+                required=False,
+                default=36,
+                min_value=16,
+                max_value=100,
+            ),
+            SkillParameter(
+                name="fontcolor",
+                type=ParameterType.STRING,
+                description="Font color",
+                required=False,
+                default="white",
+            ),
+            SkillParameter(
+                name="background",
+                type=ParameterType.STRING,
+                description="Background color",
+                required=False,
+                default="black@0.7",
+            ),
+            SkillParameter(
+                name="start",
+                type=ParameterType.FLOAT,
+                description="Start time in seconds",
+                required=False,
+                default=0,
+            ),
+            SkillParameter(
+                name="duration",
+                type=ParameterType.FLOAT,
+                description="Display duration in seconds",
+                required=False,
+                default=5,
+            ),
+        ],
+        examples=[
+            "lower_third:text=John Doe,subtext=CEO - Name plate with title",
+            "lower_third:text=Jane Smith,start=5,duration=8 - Timed lower third",
+        ],
+        tags=["lower_third", "name", "plate", "title", "interview", "identification"],
+    ))
+
+    # Jump cut
+    registry.register(Skill(
+        name="jump_cut",
+        category=SkillCategory.OUTCOME,
+        description="Auto-create jump cuts by removing static/still segments",
+        parameters=[
+            SkillParameter(
+                name="threshold",
+                type=ParameterType.FLOAT,
+                description="Scene-change threshold (lower = more cuts)",
+                required=False,
+                default=0.03,
+                min_value=0.001,
+                max_value=0.5,
+            ),
+        ],
+        examples=[
+            "jump_cut - Auto jump cut (default sensitivity)",
+            "jump_cut:threshold=0.01 - Very aggressive jump cutting",
+        ],
+        tags=["jump", "cut", "auto", "edit", "static", "remove", "vlog"],
+    ))
+
+    # Beat sync
+    registry.register(Skill(
+        name="beat_sync",
+        category=SkillCategory.OUTCOME,
+        description="Volume-based beat detection — keep only frames on audio peaks",
+        parameters=[
+            SkillParameter(
+                name="threshold",
+                type=ParameterType.FLOAT,
+                description="Volume threshold (0.0-1.0, higher = fewer cuts)",
+                required=False,
+                default=0.1,
+                min_value=0.01,
+                max_value=1.0,
+            ),
+        ],
+        examples=[
+            "beat_sync - Sync cuts to audio beats",
+            "beat_sync:threshold=0.3 - Only keep loud beats",
+        ],
+        tags=["beat", "sync", "rhythm", "music", "edit", "auto", "cuts"],
+    ))
+
+    # ── Phase 3: Text animation extras & utility ───────────────── #
+
+    # Typewriter text
+    registry.register(Skill(
+        name="typewriter_text",
+        category=SkillCategory.OUTCOME,
+        description="Character-by-character typewriter text reveal animation",
+        parameters=[
+            SkillParameter(
+                name="text",
+                type=ParameterType.STRING,
+                description="Text to reveal",
+                required=True,
+            ),
+            SkillParameter(
+                name="speed",
+                type=ParameterType.FLOAT,
+                description="Characters per second",
+                required=False,
+                default=5,
+                min_value=1,
+                max_value=30,
+            ),
+            SkillParameter(
+                name="fontsize",
+                type=ParameterType.INT,
+                description="Font size",
+                required=False,
+                default=48,
+                min_value=12,
+                max_value=200,
+            ),
+            SkillParameter(
+                name="fontcolor",
+                type=ParameterType.STRING,
+                description="Font color",
+                required=False,
+                default="white",
+            ),
+            SkillParameter(
+                name="start",
+                type=ParameterType.FLOAT,
+                description="Start time in seconds",
+                required=False,
+                default=0,
+            ),
+        ],
+        examples=[
+            "typewriter_text:text=Hello World - Typewriter reveal",
+            "typewriter_text:text=Loading...,speed=3 - Slow typewriter",
+        ],
+        tags=["typewriter", "type", "reveal", "character", "text", "animation"],
+    ))
+
+    # Bounce text
+    registry.register(Skill(
+        name="bounce_text",
+        category=SkillCategory.OUTCOME,
+        description="Text with elastic bounce-in animation (drops in and settles)",
+        parameters=[
+            SkillParameter(
+                name="text",
+                type=ParameterType.STRING,
+                description="Text to display",
+                required=True,
+            ),
+            SkillParameter(
+                name="fontsize",
+                type=ParameterType.INT,
+                description="Font size",
+                required=False,
+                default=72,
+                min_value=16,
+                max_value=300,
+            ),
+            SkillParameter(
+                name="fontcolor",
+                type=ParameterType.STRING,
+                description="Font color",
+                required=False,
+                default="white",
+            ),
+            SkillParameter(
+                name="start",
+                type=ParameterType.FLOAT,
+                description="Start time in seconds",
+                required=False,
+                default=0,
+            ),
+            SkillParameter(
+                name="duration",
+                type=ParameterType.FLOAT,
+                description="Duration in seconds",
+                required=False,
+                default=4,
+            ),
+        ],
+        examples=[
+            "bounce_text:text=WOW! - Bouncing text",
+            "bounce_text:text=SALE,fontsize=120,fontcolor=red - Large red bounce",
+        ],
+        tags=["bounce", "elastic", "text", "animation", "drop", "spring"],
+    ))
+
+    # Fade text
+    registry.register(Skill(
+        name="fade_text",
+        category=SkillCategory.OUTCOME,
+        description="Text with smooth fade in and fade out animation",
+        parameters=[
+            SkillParameter(
+                name="text",
+                type=ParameterType.STRING,
+                description="Text to display",
+                required=True,
+            ),
+            SkillParameter(
+                name="fontsize",
+                type=ParameterType.INT,
+                description="Font size",
+                required=False,
+                default=64,
+                min_value=12,
+                max_value=300,
+            ),
+            SkillParameter(
+                name="fontcolor",
+                type=ParameterType.STRING,
+                description="Font color",
+                required=False,
+                default="white",
+            ),
+            SkillParameter(
+                name="start",
+                type=ParameterType.FLOAT,
+                description="Start time in seconds",
+                required=False,
+                default=0,
+            ),
+            SkillParameter(
+                name="duration",
+                type=ParameterType.FLOAT,
+                description="Total duration in seconds",
+                required=False,
+                default=4,
+            ),
+            SkillParameter(
+                name="fade_time",
+                type=ParameterType.FLOAT,
+                description="Fade in/out duration in seconds",
+                required=False,
+                default=1.0,
+                min_value=0.1,
+                max_value=5.0,
+            ),
+        ],
+        examples=[
+            "fade_text:text=Welcome - Fade in/out text",
+            "fade_text:text=Coming Soon,duration=6,fade_time=2 - Slow fade",
+        ],
+        tags=["fade", "text", "alpha", "dissolve", "smooth", "animation"],
+    ))
+
+    # Karaoke text
+    registry.register(Skill(
+        name="karaoke_text",
+        category=SkillCategory.OUTCOME,
+        description="Karaoke-style text with color fill synced to time",
+        parameters=[
+            SkillParameter(
+                name="text",
+                type=ParameterType.STRING,
+                description="Text to display",
+                required=True,
+            ),
+            SkillParameter(
+                name="fontsize",
+                type=ParameterType.INT,
+                description="Font size",
+                required=False,
+                default=48,
+                min_value=16,
+                max_value=200,
+            ),
+            SkillParameter(
+                name="base_color",
+                type=ParameterType.STRING,
+                description="Base (unfilled) text color",
+                required=False,
+                default="gray",
+            ),
+            SkillParameter(
+                name="fill_color",
+                type=ParameterType.STRING,
+                description="Fill (highlighted) text color",
+                required=False,
+                default="yellow",
+            ),
+            SkillParameter(
+                name="start",
+                type=ParameterType.FLOAT,
+                description="Start time in seconds",
+                required=False,
+                default=0,
+            ),
+            SkillParameter(
+                name="duration",
+                type=ParameterType.FLOAT,
+                description="Duration of the fill sweep",
+                required=False,
+                default=5,
+            ),
+        ],
+        examples=[
+            "karaoke_text:text=Sing Along - Karaoke highlight",
+            "karaoke_text:text=La La La,fill_color=cyan - Cyan karaoke fill",
+        ],
+        tags=["karaoke", "lyrics", "sing", "highlight", "fill", "music", "text"],
+    ))
+
+    # Color match
+    registry.register(Skill(
+        name="color_match",
+        category=SkillCategory.OUTCOME,
+        description="Auto-match colors and brightness via histogram equalization",
+        parameters=[],
+        examples=[
+            "color_match - Auto color/brightness matching",
+        ],
+        tags=["color", "match", "histogram", "equalize", "grade", "auto"],
+    ))
+
+    # Datamosh — glitch art with motion vectors
+    registry.register(Skill(
+        name="datamosh",
+        category=SkillCategory.OUTCOME,
+        description="Create datamosh/glitch art effect by visualizing motion vectors",
+        parameters=[
+            SkillParameter(
+                name="mode",
+                type=ParameterType.CHOICE,
+                description="Motion vector visualization flags (pf=forward, bf=backward, bb=bidir)",
+                required=False,
+                default="pf+bf+bb",
+                choices=["pf", "bf", "bb", "pf+bf", "pf+bb", "bf+bb", "pf+bf+bb"],
+            ),
+        ],
+        # Handler in composer.py provides input options + vf
+        examples=[
+            "datamosh - Standard datamosh effect (all motion vectors)",
+            "datamosh:mode=pf - Forward-predicted vectors only",
+        ],
+        tags=["glitch", "datamosh", "motion", "vectors", "art", "corrupt", "aesthetic"],
+    ))
+
+    # Radial blur — spinning/zoom blur effect
+    registry.register(Skill(
+        name="radial_blur",
+        category=SkillCategory.OUTCOME,
+        description="Create a radial/zoom blur effect for dynamic motion emphasis",
+        parameters=[
+            SkillParameter(
+                name="radius",
+                type=ParameterType.INT,
+                description="Blur radius in pixels (higher = more blur)",
+                required=False,
+                default=5,
+                min_value=1,
+                max_value=50,
+            ),
+        ],
+        ffmpeg_template="avgblur=sizeX={radius}:sizeY={radius}",
+        examples=[
+            "radial_blur - Subtle blur effect (5px radius)",
+            "radial_blur:radius=15 - Strong blur effect",
+        ],
+        tags=["blur", "radial", "zoom", "motion", "spin", "dynamic", "focus"],
+    ))
+
+    # Grain overlay — cinematic film grain
+    registry.register(Skill(
+        name="grain_overlay",
+        category=SkillCategory.OUTCOME,
+        description="Add cinematic film grain with precise intensity control (different from film_grain)",
+        parameters=[
+            SkillParameter(
+                name="intensity",
+                type=ParameterType.INT,
+                description="Grain intensity (1 = subtle, 50 = heavy)",
+                required=False,
+                default=15,
+                min_value=1,
+                max_value=80,
+            ),
+            SkillParameter(
+                name="seed",
+                type=ParameterType.INT,
+                description="Random seed for reproducible grain",
+                required=False,
+                default=-1,
+                min_value=-1,
+                max_value=99999,
+            ),
+        ],
+        ffmpeg_template="noise=alls={intensity}:allf=t:seed={seed}",
+        examples=[
+            "grain_overlay - Subtle cinematic grain",
+            "grain_overlay:intensity=40 - Heavy gritty grain",
+            "grain_overlay:intensity=8 - Very subtle grain for clean footage",
+        ],
+        tags=["grain", "film", "noise", "cinematic", "texture", "analog", "organic"],
+    ))

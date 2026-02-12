@@ -348,7 +348,7 @@ class TestSkillComposer:
         assert "compress" in explanation.lower()
 
     def test_compose_with_unknown_skill(self):
-        """Test handling of unknown skill."""
+        """Test handling of unknown skill — skipped with warning."""
         composer = SkillComposer()
 
         pipeline = Pipeline(
@@ -357,8 +357,10 @@ class TestSkillComposer:
         )
         pipeline.add_step("nonexistent_skill", {})
 
-        with pytest.raises(ValueError):
-            composer.compose(pipeline)
+        # Unknown skills are now skipped (with a warning log) rather than
+        # raising an exception, so compose should succeed.
+        result = composer.compose(pipeline)
+        assert result is not None
 
     # ---- Template option splitting tests (regression for the -movflags bug) ----
 

@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-02-12
+
+### Added
+- **200 Skills**: Expanded from 152 to **200 skills** — 48 new skills across all categories:
+  - **Audio** (8): `noise_reduction`, `audio_crossfade`, `audio_delay`, `ducking`, `dereverb`, `split_audio`, `audio_normalize_loudness`
+  - **Temporal** (3): `scene_detect`, `silence_remove`, `time_remap`
+  - **Visual** (5): `white_balance`, `shadows_highlights`, `split_tone`, `deflicker`, `unsharp_mask`
+  - **Spatial** (2): `auto_crop`, `scale_2x`
+  - **Encoding** (2): `audio_bitrate`, `frame_rate_interpolation`
+  - **Text & Graphics** (9): `animated_text`, `scrolling_text`, `ticker`, `lower_third`, `countdown`, `typewriter_text`, `bounce_text`, `fade_text`, `karaoke_text`
+  - **Editing & Composition** (9): `picture_in_picture`, `blend`, `delogo`, `remove_dup_frames`, `mask_blur`, `extract_frames`, `jump_cut`, `beat_sync`, `color_match`
+  - **Effects** (4): `datamosh`, `radial_blur`, `grain_overlay`, `freeze_frame`
+  - **Delivery** (2): `thumbnail` (handler-based), `extract_frames` (handler-based)
+- **New `delivery.py`**: Delivery-focused skills extracted into their own outcome file.
+- **New Test Files**: `test_connectors_tools.py`, `test_pipeline_generator.py`, `test_yaml_loader.py`.
+
+### Fixed
+- **10 Broken Templates**: Fixed template errors discovered during FFmpeg execution testing:
+  - `silence_remove` — changed category from TEMPORAL to AUDIO for correct `-af` routing
+  - `time_remap` — removed nested quotes from `setpts` expression
+  - `shadows_highlights` — removed dual template+pipeline conflict
+  - `mask_blur` — fixed invalid filter syntax
+  - `jump_cut` — fixed `select` expression for FFmpeg compatibility
+  - `beat_sync` — fixed `select` expression rounding
+  - `audio_crossfade` / `ducking` — converted from multi-input to single-input templates
+  - `thumbnail` / `extract_frames` — converted to handler-based for proper `-frames:v 1` and `-an` output options
+  - `datamosh` — converted to handler-based, added `-flags2 +export_mvs` input flag for `codecview`
+
+### Changed
+- **Documentation**: Updated `SKILLS_REFERENCE.md` and `SKILL_TEST_PROMPTS.md` with entries for all 48 new skills.
+
+---
+
 ## [2.1.0] - 2026-02-12
 
 ### Added
@@ -21,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Prompt Templates**: Both single-shot and agentic system prompts now include a `## Connected Inputs` section with guidance on `audio_source` usage.
-- **Skill Count**: Updated to **146 skills** across all categories.
+- **Skill Count**: Updated to **152 skills** across all categories.
 
 ---
 
