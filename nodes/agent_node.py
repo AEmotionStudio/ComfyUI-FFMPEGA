@@ -362,6 +362,76 @@ class FFMPEGAgentNode:
         video_metadata = self.analyzer.analyze(effective_video_path)
         metadata_str = video_metadata.to_analysis_string()
 
+        # --- Build connected inputs summary for LLM context ---
+        input_lines = []
+        # Primary video
+        if images_a is not None:
+            dur = (
+                video_metadata.primary_video.duration
+                if video_metadata.primary_video and video_metadata.primary_video.duration
+                else "unknown"
+            )
+            fps = (
+                video_metadata.primary_video.frame_rate
+                if video_metadata.primary_video and video_metadata.primary_video.frame_rate
+                else "unknown"
+            )
+            input_lines.append(
+                f"- images_a (video): connected — primary video input, "
+                f"{images_a.shape[0]} frames, {dur}s, {fps}fps"
+            )
+        elif video_path and video_path.strip():
+            input_lines.append(f"- video_path: connected — file input")
+
+        # Extra video inputs (images_b, images_c, ...)
+        for k in sorted(kwargs):
+            if k.startswith("images_") and k != "images_a" and kwargs[k] is not None:
+                tensor = kwargs[k]
+                input_lines.append(
+                    f"- {k} (video): connected — {tensor.shape[0]} frames"
+                )
+
+        # Audio inputs
+        all_audio_names = []
+        if audio_a is not None:
+            sr = audio_a.get("sample_rate", "unknown")
+            wf = audio_a.get("waveform")
+            dur_str = "unknown"
+            if wf is not None and sr and sr != "unknown":
+                dur_str = f"{wf.shape[-1] / sr:.1f}s"
+            input_lines.append(
+                f"- audio_a: connected — {dur_str}, {sr}Hz"
+            )
+            all_audio_names.append("audio_a")
+        for k in sorted(kwargs):
+            if k.startswith("audio_") and k != "audio_a" and kwargs[k] is not None:
+                ad = kwargs[k]
+                sr = ad.get("sample_rate", "unknown")
+                wf = ad.get("waveform")
+                dur_str = "unknown"
+                if wf is not None and sr and sr != "unknown":
+                    dur_str = f"{wf.shape[-1] / sr:.1f}s"
+                input_lines.append(
+                    f"- {k}: connected — {dur_str}, {sr}Hz"
+                )
+                all_audio_names.append(k)
+
+        # Image inputs
+        if image_a is not None:
+            input_lines.append(
+                f"- image_a: connected — single image "
+                f"{image_a.shape[2]}x{image_a.shape[1]}"
+            )
+        for k in sorted(kwargs):
+            if k.startswith("image_") and k != "image_a" and kwargs[k] is not None:
+                img = kwargs[k]
+                input_lines.append(
+                    f"- {k}: connected — single image "
+                    f"{img.shape[2]}x{img.shape[1]}"
+                )
+
+        connected_inputs_str = "\n".join(input_lines) if input_lines else "No extra inputs connected"
+
         # --- Generate pipeline via LLM ---
         if not ollama_url or not ollama_url.startswith(("http://", "https://")):
             ollama_url = "http://localhost:11434"
@@ -376,7 +446,10 @@ class FFMPEGAgentNode:
             effective_model = custom_model.strip()
         connector = self.pipeline_generator.create_connector(effective_model, ollama_url, api_key)
         try:
-            spec = await self.pipeline_generator.generate(connector, prompt, metadata_str)
+            spec = await self.pipeline_generator.generate(
+                connector, prompt, metadata_str,
+                connected_inputs=connected_inputs_str,
+            )
         except Exception as e:
             if hasattr(connector, 'close'):
                 await connector.close()
@@ -390,6 +463,9 @@ class FFMPEGAgentNode:
         warnings = spec.get("warnings", [])
         estimated_changes = spec.get("estimated_changes", "")
         pipeline_steps = spec.get("pipeline", [])
+        audio_source = spec.get("audio_source", "mix")
+        print(f"[FFMPEGA DEBUG] audio_source from LLM: {audio_source}")
+        print(f"[FFMPEGA DEBUG] Connected inputs: {connected_inputs_str}")
 
         # --- Build output path ---
         stem = Path(effective_video_path).stem
@@ -429,6 +505,14 @@ class FFMPEGAgentNode:
             else 24
         )
         pipeline.metadata["_input_fps"] = int(round(input_fps))
+        # Store input video duration for xfade offset calculation
+        input_duration = (
+            video_metadata.primary_video.duration
+            if video_metadata.primary_video and video_metadata.primary_video.duration
+            else 0
+        )
+        if input_duration:
+            pipeline.metadata["_video_duration"] = input_duration
 
         for step in pipeline_steps:
             skill_name = step.get("skill")
@@ -558,7 +642,16 @@ class FFMPEGAgentNode:
                         logging.getLogger("ffmpega").warning(
                             f"Could not mux audio {ai} into {vid_path}: {e}"
                         )
-                pipeline.metadata["_has_embedded_audio"] = True
+                # Only flag embedded audio for concat/xfade where the filter
+                # chain reads audio directly from the video inputs.
+                # Other multi-input skills (split_screen, grid, overlay) need
+                # post-render audio mux instead.
+                is_audio_filter_skill = any(
+                    s.skill_name in ("concat", "xfade")
+                    for s in pipeline.steps
+                )
+                if is_audio_filter_skill:
+                    pipeline.metadata["_has_embedded_audio"] = True
 
         command = self.composer.compose(pipeline)
 
@@ -712,16 +805,51 @@ Pipeline Steps:
 
 Warnings: {', '.join(warnings) if warnings else 'None'}"""
 
-        # --- Handle audio ---
+        # --- Handle audio (respecting audio_source from LLM) ---
         removes_audio = "-an" in command.output_options
         has_audio_processing = removes_audio or bool(command.audio_filters.to_string())
-        # Skip audio mux when a complex_filter was used (concat, xfade, etc.)
-        # because the output duration differs from the original audio and
-        # mux_audio's -shortest flag would truncate the video.
         has_complex = bool(command.complex_filter)
+        # Complex filters that already embed audio (concat, xfade) should not be muxed again
+        audio_already_embedded = pipeline.metadata.get("_has_embedded_audio", False)
 
-        if audio_a is not None and not has_audio_processing and not has_complex:
-            self.media_converter.mux_audio(output_path, audio_a)
+        # Build dict of all available audio inputs
+        audio_inputs = {}
+        if audio_a is not None:
+            audio_inputs["audio_a"] = audio_a
+        for k in sorted(kwargs):
+            if k.startswith("audio_") and k != "audio_a" and kwargs[k] is not None:
+                audio_inputs[k] = kwargs[k]
+
+        # Also check pipeline step params for audio_source (LLM may put it there)
+        if audio_source == "mix":
+            for step in pipeline_steps:
+                step_audio = step.get("params", {}).get("audio_source")
+                if step_audio and step_audio != "mix":
+                    audio_source = step_audio
+                    break
+
+        print(f"[FFMPEGA DEBUG] Audio decision: removes={removes_audio}, "
+              f"has_processing={has_audio_processing}, "
+              f"already_embedded={audio_already_embedded}, "
+              f"audio_source={audio_source}, "
+              f"available={list(audio_inputs.keys())}")
+
+        if audio_inputs and not removes_audio and not has_audio_processing and not audio_already_embedded:
+            if audio_source and audio_source != "mix" and audio_source in audio_inputs:
+                # Specific audio track requested by LLM
+                print(f"[FFMPEGA DEBUG] Using specific audio: {audio_source}")
+                self.media_converter.mux_audio(output_path, audio_inputs[audio_source])
+            elif len(audio_inputs) == 1:
+                # Only one audio input — just use it
+                name = list(audio_inputs.keys())[0]
+                print(f"[FFMPEGA DEBUG] Using only available audio: {name}")
+                self.media_converter.mux_audio(output_path, audio_inputs[name])
+            else:
+                # "mix" mode — blend all audio tracks together
+                print(f"[FFMPEGA DEBUG] Mixing {len(audio_inputs)} audio tracks: {list(audio_inputs.keys())}")
+                self.media_converter.mux_audio_mix(
+                    output_path, list(audio_inputs.values())
+                )
 
         # --- Extract output frames ---
         images_tensor = self.media_converter.frames_to_tensor(output_path)

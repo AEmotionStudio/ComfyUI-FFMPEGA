@@ -21,6 +21,14 @@ You have access to a comprehensive library of video editing skills organized int
 ## Input Video Information
 {video_metadata}
 
+## Connected Inputs
+{connected_inputs}
+
+When the user references specific inputs by name (audio_a, audio_b, etc.), include
+"audio_source" in your response JSON to select the appropriate audio track.
+Valid values: "audio_a", "audio_b", "audio_c", ..., or "mix" (blend all connected audio).
+Default is "mix" when multiple audio inputs are connected, or "audio_a" when only one is.
+
 ## Your Task
 Given the user's editing request, you must:
 1. Analyze the request to identify required operations
@@ -205,12 +213,14 @@ Response:
 def get_system_prompt(
     video_metadata: Optional[str] = None,
     include_full_registry: bool = True,
+    connected_inputs: str = "",
 ) -> str:
     """Generate the system prompt with optional video metadata.
 
     Args:
         video_metadata: Optional video analysis string.
         include_full_registry: Whether to include full skill descriptions.
+        connected_inputs: Summary of connected inputs.
 
     Returns:
         Formatted system prompt string.
@@ -235,10 +245,12 @@ def get_system_prompt(
         skill_registry = "\n".join(lines)
 
     video_info = video_metadata or "No video information available - assume standard video input"
+    inputs_info = connected_inputs or "No extra inputs connected"
 
     return SYSTEM_PROMPT_TEMPLATE.format(
         skill_registry=skill_registry,
         video_metadata=video_info,
+        connected_inputs=inputs_info,
     )
 
 
@@ -371,11 +383,18 @@ Respond with valid JSON:
 
 ## Input Video
 {video_metadata}
+
+## Connected Inputs
+{connected_inputs}
+
+When the user references specific inputs by name (audio_a, audio_b, etc.), include
+"audio_source" in your response JSON. Valid values: "audio_a", "audio_b", etc., or "mix".
 """
 
 
 def get_agentic_system_prompt(
     video_metadata: Optional[str] = None,
+    connected_inputs: str = "",
 ) -> str:
     """Generate a system prompt for agentic/tool-calling mode.
 
@@ -389,7 +408,9 @@ def get_agentic_system_prompt(
         Formatted system prompt string.
     """
     video_info = video_metadata or "No video information available - assume standard video input"
+    inputs_info = connected_inputs or "No extra inputs connected"
 
     return AGENTIC_SYSTEM_PROMPT.format(
         video_metadata=video_info,
+        connected_inputs=inputs_info,
     )

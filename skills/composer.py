@@ -223,6 +223,8 @@ class SkillComposer:
                 step.params["_has_embedded_audio"] = True
             if "_input_fps" in pipeline.metadata:
                 step.params["_input_fps"] = pipeline.metadata["_input_fps"]
+            if "_video_duration" in pipeline.metadata:
+                step.params["_video_duration"] = pipeline.metadata["_video_duration"]
 
             # Get filters/options for this skill
             vf, af, opts, fc, input_opts = self._skill_to_filters(skill, step.params)
@@ -1844,7 +1846,7 @@ def _f_xfade(p):
     if total < 2:
         return [], [], [], ""
 
-    fps = 25
+    fps = int(p.get("_input_fps", 25))
     parts = []
 
     # Step 1: Scale/prepare all segments
@@ -1864,12 +1866,10 @@ def _f_xfade(p):
                 f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1{lbl}"
             )
 
-    # Step 2: Chain xfade transitions
+    # Step 2: Chain xfade transitions (video)
     # xfade takes exactly 2 inputs and produces 1 output. Chain them:
     # [_xv0][_xv1] xfade → [_xf0]; [_xf0][_xv2] xfade → [_xf1]; etc.
     # The offset for each xfade is: cumulative_duration - transition_duration
-    # For simplicity, assume still_dur for all segments (main video too).
-    # Use actual video duration from metadata if available for segment 0.
     video_dur = float(p.get("_video_duration", still_dur))
     cumulative = video_dur if segments[0][1] else still_dur
     prev_label = "[_xv0]"
@@ -1885,12 +1885,38 @@ def _f_xfade(p):
             )
             prev_label = out_label
         else:
-            # Last xfade: no output label
+            # Last xfade: no output label (goes to default output)
             parts.append(
                 f"{prev_label}{next_label}xfade=transition={transition}:"
                 f"duration={trans_dur}:offset={offset}"
             )
         cumulative += still_dur - trans_dur
+
+    # Step 3: Audio crossfade (when audio is embedded in video inputs)
+    has_audio = bool(p.get("_has_embedded_audio", False))
+    if has_audio:
+        # Prepare audio streams
+        for i, (idx, _is_video) in enumerate(segments):
+            parts.append(
+                f"[{idx}:a]aresample=44100,asetpts=PTS-STARTPTS[_xa{i}]"
+            )
+
+        # Chain acrossfade transitions
+        prev_alabel = "[_xa0]"
+        for i in range(1, total):
+            next_alabel = f"[_xa{i}]"
+            if i < total - 1:
+                out_alabel = f"[_xaf{i}]"
+                parts.append(
+                    f"{prev_alabel}{next_alabel}acrossfade=d={trans_dur}:"
+                    f"c1=tri:c2=tri{out_alabel}"
+                )
+                prev_alabel = out_alabel
+            else:
+                parts.append(
+                    f"{prev_alabel}{next_alabel}acrossfade=d={trans_dur}:"
+                    f"c1=tri:c2=tri"
+                )
 
     return [], [], [], ";".join(parts)
 

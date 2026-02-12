@@ -139,6 +139,7 @@ class PipelineGenerator:
         connector,
         prompt: str,
         video_metadata: str,
+        connected_inputs: str = "",
     ) -> dict:
         """Generate a pipeline spec, with auto-retry on invalid JSON.
 
@@ -146,6 +147,7 @@ class PipelineGenerator:
             connector: LLM connector instance.
             prompt: User's editing prompt.
             video_metadata: Video analysis string.
+            connected_inputs: Summary of connected inputs.
 
         Returns:
             Parsed pipeline dict.
@@ -156,11 +158,11 @@ class PipelineGenerator:
         # Try agentic mode first, fall back to single-shot
         try:
             raw_response = await self._generate_agentic(
-                connector, prompt, video_metadata
+                connector, prompt, video_metadata, connected_inputs
             )
         except NotImplementedError:
             raw_response = await self._generate_single_shot(
-                connector, prompt, video_metadata
+                connector, prompt, video_metadata, connected_inputs
             )
 
         spec = self.parse_response(raw_response)
@@ -209,6 +211,7 @@ class PipelineGenerator:
 
     async def _generate_single_shot(
         self, connector, prompt: str, video_metadata: str,
+        connected_inputs: str = "",
     ) -> str:
         """Single-shot generation: full registry in system prompt."""
         from ..prompts.system import get_system_prompt  # type: ignore[import-not-found]
@@ -217,8 +220,9 @@ class PipelineGenerator:
         system_prompt = get_system_prompt(
             video_metadata=video_metadata,
             include_full_registry=True,
+            connected_inputs=connected_inputs,
         )
-        user_prompt = get_generation_prompt(prompt, video_metadata)
+        user_prompt = get_generation_prompt(prompt, video_metadata, connected_inputs)
         response = await connector.generate(user_prompt, system_prompt)
         return response.content
 
@@ -231,6 +235,7 @@ class PipelineGenerator:
         connector,
         prompt: str,
         video_metadata: str,
+        connected_inputs: str = "",
         max_iterations: int = 10,
     ) -> str:
         """Agentic pipeline generation with tool calling.
@@ -249,8 +254,11 @@ class PipelineGenerator:
             get_skill_details,
         )
 
-        system_prompt = get_agentic_system_prompt(video_metadata=video_metadata)
-        user_prompt = get_generation_prompt(prompt, video_metadata)
+        system_prompt = get_agentic_system_prompt(
+            video_metadata=video_metadata,
+            connected_inputs=connected_inputs,
+        )
+        user_prompt = get_generation_prompt(prompt, video_metadata, connected_inputs)
 
         messages = [
             {"role": "system", "content": system_prompt},
