@@ -5,7 +5,7 @@
 **An AI-powered FFMPEG agent node for ComfyUI — edit videos with natural language.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-2.1.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-2.2.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-4-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 
@@ -20,15 +20,17 @@
 
 ---
 
-## 🚀 What's New in v2.1.0 (February 12, 2026)
+## 🚀 What's New in v2.2.0 (February 12, 2026)
 
-**Input Awareness & Audio Source Selection**
+**200 Skills — Massive Skill Expansion**
 
-*   **🧠 Input Awareness**: The LLM agent now sees all connected inputs with details (frame count, duration, sample rate, FPS). This enables smarter decisions about multi-input operations.
-*   **🎵 Audio Source Selection**: Control which audio track to use via prompt — *"use audio_b"*, *"mix both audio tracks"*. The agent understands `audio_source` with values: `audio_a`, `audio_b`, or `mix`.
-*   **🔀 Audio Mix Mode**: When `mix` is selected (default with multiple audio inputs), all audio tracks are blended together using ffmpeg's `amix` filter — hear both tracks simultaneously in split screen.
-*   **🔧 Audio Mux Fix**: Fixed audio replacement in post-render — explicit `-map` flags ensure the correct audio track replaces any existing audio instead of adding a duplicate stream.
-*   **🎬 Xfade Audio Crossfade**: Xfade transitions now include audio crossfading (`acrossfade`) for seamless audio blending between segments.
+*   **🎯 200 Skills**: Expanded from 152 to **200 skills** — 48 new skills across every category including audio processing, visual correction, text animations, editing tools, and creative effects.
+*   **🔊 Audio**: `split_audio`, `audio_normalize_loudness` (EBU R128), `noise_reduction`, `dereverb`, `audio_crossfade`, `audio_delay`, `ducking`
+*   **✏️ Text & Graphics**: `animated_text`, `scrolling_text`, `ticker`, `lower_third`, `countdown`, `typewriter_text`, `bounce_text`, `fade_text`, `karaoke_text`
+*   **✂️ Editing**: `picture_in_picture`, `blend`, `mask_blur`, `delogo`, `jump_cut`, `beat_sync`, `extract_frames`, `color_match`
+*   **🎨 Visual & Spatial**: `unsharp_mask`, `white_balance`, `shadows_highlights`, `split_tone`, `deflicker`, `auto_crop`, `scale_2x`
+*   **🎆 Effects**: `datamosh`, `radial_blur`, `grain_overlay`, `frame_rate_interpolation`
+*   **🔧 10 Template Fixes**: Fixed broken FFmpeg templates discovered during comprehensive execution testing.
 
 > 📄 **See [CHANGELOG.md](CHANGELOG.md) for the complete version history.**
 
@@ -54,8 +56,8 @@ Works with **Ollama** (local, free), **OpenAI**, **Anthropic**, **Google Gemini*
 <tr>
 <td width="50%">
 
-### 🎨 146 Skills
-146 video editing skills across visual effects, audio processing, spatial transforms, temporal edits, encoding, cinematic presets, vintage looks, social media, creative effects, audio visualization, multi-input operations (grids, slideshows, overlays), transitions (xfade), concat, split screen, animated overlays, and text overlays.
+### 🎨 200 Skills
+200 video editing skills across visual effects, audio processing, spatial transforms, temporal edits, encoding, cinematic presets, vintage looks, social media, creative effects, text animations, editing & composition, audio visualization, multi-input operations (grids, slideshows, overlays), transitions (xfade), concat, split screen, animated overlays, and text overlays.
 
 </td>
 <td width="50%">
@@ -209,14 +211,14 @@ The main node — translates natural language into FFMPEG commands.
 
 ## 🎯 Skill System
 
-FFMPEGA includes a comprehensive skill system with **146 operations** organized into categories. The AI agent selects the right skills based on your prompt.
+FFMPEGA includes a comprehensive skill system with **200 operations** organized into categories. The AI agent selects the right skills based on your prompt.
 
 > 📄 **See [SKILLS_REFERENCE.md](SKILLS_REFERENCE.md) for the complete skill reference with all parameters and example prompts.**
 >
 > 🧪 **See [SKILL_TEST_PROMPTS.md](SKILL_TEST_PROMPTS.md) for ready-to-use copy-and-paste test prompts for every skill.**
 
 <details>
-<summary><b>🎨 Visual Effects (17 skills)</b></summary>
+<summary><b>🎨 Visual Effects (25 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -240,11 +242,16 @@ FFMPEGA includes a comprehensive skill system with **146 operations** organized 
 | `exposure` | Exposure adjustment |
 | `chromakey` | Green screen removal |
 | `deband` | Remove color banding artifacts |
+| `white_balance` | Adjust color temperature (2000K–12000K) |
+| `shadows_highlights` | Separately adjust shadows and highlights |
+| `split_tone` | Warm highlights, cool shadows |
+| `deflicker` | Remove fluorescent/timelapse flicker |
+| `unsharp_mask` | Fine-grained luma/chroma sharpening |
 
 </details>
 
 <details>
-<summary><b>⏱️ Temporal (5 skills)</b></summary>
+<summary><b>⏱️ Temporal (9 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -253,11 +260,15 @@ FFMPEGA includes a comprehensive skill system with **146 operations** organized 
 | `reverse` | Play backwards |
 | `loop` | Repeat video |
 | `fps` | Change frame rate (1 to 120) |
+| `scene_detect` | Auto-detect scene changes |
+| `silence_remove` | Remove silent segments |
+| `time_remap` | Gradual speed ramp |
+| `freeze_frame` | Freeze a frame at a timestamp |
 
 </details>
 
 <details>
-<summary><b>📐 Spatial (6 skills)</b></summary>
+<summary><b>📐 Spatial (8 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -267,11 +278,13 @@ FFMPEGA includes a comprehensive skill system with **146 operations** organized 
 | `flip` | Mirror horizontal/vertical |
 | `pad` | Add padding / letterbox |
 | `aspect` | Change aspect ratio (16:9, 4:3, 1:1, 9:16, 21:9) |
+| `auto_crop` | Detect and remove black borders |
+| `scale_2x` | Quick upscale with algo choice (2x, 4x) |
 
 </details>
 
 <details>
-<summary><b>🔊 Audio (16 skills)</b></summary>
+<summary><b>🔊 Audio (25 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -292,11 +305,19 @@ FFMPEGA includes a comprehensive skill system with **146 operations** organized 
 | `lowpass` / `highpass` | Frequency filters |
 | `audio_reverse` | Reverse audio track |
 | `compress_audio` | Dynamic range compression |
+| `noise_reduction` | Remove background noise |
+| `audio_crossfade` | Smooth audio crossfade |
+| `audio_delay` | Add delay/offset to audio |
+| `ducking` | Audio dynamic compression |
+| `dereverb` | Remove room echo/reverb |
+| `split_audio` | Extract left/right channel |
+| `audio_normalize_loudness` | EBU R128 loudness normalization |
+| `audio_bitrate` | Set audio encoding bitrate |
 
 </details>
 
 <details>
-<summary><b>📦 Encoding (9 skills)</b></summary>
+<summary><b>📦 Encoding (10 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -309,6 +330,7 @@ FFMPEGA includes a comprehensive skill system with **146 operations** organized 
 | `pixel_format` | Set pixel format (yuv420p, yuv444p, etc.) |
 | `hwaccel` | Hardware acceleration (cuda, vaapi, qsv) |
 | `audio_codec` | Set audio codec (aac, mp3, opus, flac) |
+| `frame_rate_interpolation` | Motion-interpolated FPS conversion |
 
 </details>
 
@@ -387,7 +409,7 @@ FFMPEGA includes a comprehensive skill system with **146 operations** organized 
 </details>
 
 <details>
-<summary><b>🧪 Special Effects (8 skills)</b></summary>
+<summary><b>🧪 Special Effects (11 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -399,6 +421,9 @@ FFMPEGA includes a comprehensive skill system with **146 operations** organized 
 | `day_for_night` | Simulate nighttime from daytime |
 | `dreamy` | Soft, ethereal dream look |
 | `hdr_look` | Simulated HDR dynamic range |
+| `datamosh` | Glitch art / motion vector visualization |
+| `radial_blur` | Radial / zoom blur effect |
+| `grain_overlay` | Cinematic film grain with intensity control |
 
 </details>
 
@@ -461,6 +486,41 @@ FFMPEGA includes a comprehensive skill system with **146 operations** organized 
 | `text_overlay` | Draw text with style presets: title, subtitle, lower_third, caption, top. |
 | `watermark` | Quick watermark — adds semi-transparent logo in corner. |
 | `chromakey` | Green/blue screen removal with background replacement. |
+
+</details>
+
+<details>
+<summary><b>✏️ Text & Graphics (9 skills)</b></summary>
+
+| Skill | Description |
+| :--- | :--- |
+| `animated_text` | Animated text overlay |
+| `scrolling_text` | Scrolling credits-style text |
+| `ticker` | News-style scrolling ticker bar |
+| `lower_third` | Professional broadcast lower third |
+| `countdown` | Countdown timer overlay |
+| `typewriter_text` | Typewriter reveal effect |
+| `bounce_text` | Bouncing animated text |
+| `fade_text` | Text that fades in and out |
+| `karaoke_text` | Karaoke-style fill text |
+
+</details>
+
+<details>
+<summary><b>✂️ Editing & Delivery (10 skills)</b></summary>
+
+| Skill | Description |
+| :--- | :--- |
+| `picture_in_picture` | PiP overlay window |
+| `blend` | Blend two video inputs |
+| `delogo` | Remove logo from a region |
+| `remove_dup_frames` | Strip duplicate/stuttered frames |
+| `mask_blur` | Blur a rectangular region for privacy |
+| `extract_frames` | Export frames as image sequence |
+| `jump_cut` | Auto-cut to high-energy moments |
+| `beat_sync` | Sync cuts to a beat interval |
+| `color_match` | Auto histogram equalization |
+| `thumbnail` | Extract a thumbnail frame |
 
 </details>
 
