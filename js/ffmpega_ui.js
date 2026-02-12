@@ -81,6 +81,58 @@ function updateDynamicSlots(node, prefix, slotType, excludePrefix) {
     }
 }
 
+/**
+ * Helper function to set prompt text on a node
+ * @param {object} node - The node instance
+ * @param {string} text - The text to set or append
+ * @param {boolean} replace - If true, replaces the existing text. If false, appends.
+ */
+function setPrompt(node, text, replace = false) {
+    const promptWidget = node.widgets?.find(w => w.name === "prompt");
+    if (promptWidget) {
+        if (replace) {
+            promptWidget.value = text;
+        } else {
+            const currentText = promptWidget.value;
+            // If prompt is empty, just set it
+            if (!currentText || currentText.trim() === "") {
+                promptWidget.value = text;
+            }
+            // If not empty, append if not already present
+            else if (!currentText.includes(text)) {
+                promptWidget.value = currentText.trim() + " and " + text;
+            }
+        }
+        node.setDirtyCanvas(true, true);
+        flashNode(node);
+    }
+}
+
+/**
+ * Visual feedback helper - flashes the node background
+ * @param {object} node - The node instance
+ * @param {string} color - The flash color (default: lighter blue-grey)
+ */
+function flashNode(node, color = "#4a5a7a") {
+    if (!node || node._isFlashing) return;
+
+    node._isFlashing = true;
+    const originalBg = node.bgcolor;
+
+    // Flash color
+    node.bgcolor = color;
+    node.setDirtyCanvas(true, true);
+
+    setTimeout(() => {
+        // Restore only if it hasn't been changed again externally (unlikely but safe)
+        if (node.bgcolor === color) {
+             node.bgcolor = originalBg;
+        }
+        node._isFlashing = false;
+        node.setDirtyCanvas(true, true);
+    }, 200);
+}
+
 // Register FFMPEGA extensions
 app.registerExtension({
     name: "FFMPEGA.UI",
@@ -513,6 +565,23 @@ app.registerExtension({
                                     }
                                 },
                                 {
+                                    content: "📋 Copy Prompt",
+                                    callback: () => {
+                                        const promptWidget = this.widgets?.find(w => w.name === "prompt");
+                                        const text = promptWidget?.value;
+                                        if (text && navigator.clipboard) {
+                                            navigator.clipboard.writeText(text)
+                                                .then(() => {
+                                                    flashNode(this, "#4a7a4a"); // Greenish flash for success
+                                                })
+                                                .catch(err => {
+                                                    console.error('Failed to copy text: ', err);
+                                                    flashNode(this, "#7a4a4a"); // Reddish flash for error
+                                                });
+                                        }
+                                    }
+                                },
+                                {
                                     content: "🗑️ Clear Prompt",
                                     callback: () => {
                                         const promptWidget = this.widgets?.find(w => w.name === "prompt");
@@ -578,56 +647,5 @@ app.registerExtension({
     },
 });
 
-/**
- * Helper function to set prompt text on a node
- * @param {object} node - The node instance
- * @param {string} text - The text to set or append
- * @param {boolean} replace - If true, replaces the existing text. If false, appends.
- */
-function setPrompt(node, text, replace = false) {
-    const promptWidget = node.widgets?.find(w => w.name === "prompt");
-    if (promptWidget) {
-        if (replace) {
-            promptWidget.value = text;
-        } else {
-            const currentText = promptWidget.value;
-            // If prompt is empty, just set it
-            if (!currentText || currentText.trim() === "") {
-                promptWidget.value = text;
-            }
-            // If not empty, append if not already present
-            else if (!currentText.includes(text)) {
-                promptWidget.value = currentText.trim() + " and " + text;
-            }
-        }
-        node.setDirtyCanvas(true, true);
-        flashNode(node);
-    }
-}
-
-/**
- * Visual feedback helper - flashes the node background
- * @param {object} node - The node instance
- * @param {string} color - The flash color (default: lighter blue-grey)
- */
-function flashNode(node, color = "#4a5a7a") {
-    if (!node || node._isFlashing) return;
-
-    node._isFlashing = true;
-    const originalBg = node.bgcolor;
-
-    // Flash color
-    node.bgcolor = color;
-    node.setDirtyCanvas(true, true);
-
-    setTimeout(() => {
-        // Restore only if it hasn't been changed again externally (unlikely but safe)
-        if (node.bgcolor === color) {
-             node.bgcolor = originalBg;
-        }
-        node._isFlashing = false;
-        node.setDirtyCanvas(true, true);
-    }, 200);
-}
 
 console.log("FFMPEGA UI extensions loaded");
