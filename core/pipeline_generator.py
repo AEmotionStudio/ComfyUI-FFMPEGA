@@ -112,7 +112,10 @@ class PipelineGenerator:
             )
             return APIConnector(config)
 
-        if model.startswith("qwen"):
+        # Qwen API models use dash format: qwen-max, qwen-plus, qwen-turbo
+        # Ollama Qwen models use colon format: qwen3:8b, qwen2.5:7b
+        # Only match dash-prefixed names to avoid hijacking Ollama models.
+        if model.startswith("qwen-") and model != "qwen-cli":
             config = LLMConfig(
                 provider=LLMProvider.QWEN,
                 model=model,
