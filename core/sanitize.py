@@ -19,7 +19,7 @@ ALLOWED_EXTENSIONS = {
     '.mp3', '.wav', '.aac', '.flac', '.m4a', '.ogg', '.wma', '.opus'
 }
 
-ALLOWED_SUBTITLE_EXTENSIONS = {'.srt', '.ass', '.vtt', '.sub', '.sbv', '.json'}
+ALLOWED_SUBTITLE_EXTENSIONS = {'.srt', '.ass', '.vtt', '.sub', '.sbv'}
 ALLOWED_LUT_EXTENSIONS = {'.cube', '.3dl', '.csp', '.look', '.vlt'}
 ALLOWED_FONT_EXTENSIONS = {'.ttf', '.otf', '.woff', '.woff2', '.ttc'}
 
