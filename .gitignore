@@ -72,9 +72,22 @@ tests/fixtures/sample_videos/*.avi
 tmp/
 temp/
 
-# Output files (generated during testing)
+# Output files (generated during testing/processing)
 output/
 *.output.mp4
+*.output.mkv
+*.output.webm
+
+# Media files (generated, not source)
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.webm
+*.wav
+*.mp3
+*.flac
+*.aac
 
 # Debug/error notes
 Errors.md
@@ -82,8 +95,18 @@ Errors.md
 # Package manager lock files
 uv.lock
 
-# Type checker config
+# Type checker / linter caches
 .pyre_configuration
+.mypy_cache/
+.ruff_cache/
+
+# Node.js (if Gemini CLI is installed locally)
+node_modules/
+package-lock.json
+
+# Coverage reports
+coverage.xml
+*.cover
 
 # Gemini
 .gemini/

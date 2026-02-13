@@ -143,6 +143,7 @@ class PipelineGenerator:
         prompt: str,
         video_metadata: str,
         connected_inputs: str = "",
+        video_path: str = "",
     ) -> dict:
         """Generate a pipeline spec, with auto-retry on invalid JSON.
 
@@ -151,6 +152,7 @@ class PipelineGenerator:
             prompt: User's editing prompt.
             video_metadata: Video analysis string.
             connected_inputs: Summary of connected inputs.
+            video_path: Absolute path to the input video for frame extraction.
 
         Returns:
             Parsed pipeline dict.
@@ -161,7 +163,8 @@ class PipelineGenerator:
         # Try agentic mode first, fall back to single-shot
         try:
             raw_response = await self._generate_agentic(
-                connector, prompt, video_metadata, connected_inputs
+                connector, prompt, video_metadata, connected_inputs,
+                video_path=video_path,
             )
         except NotImplementedError:
             raw_response = await self._generate_single_shot(
@@ -240,8 +243,12 @@ class PipelineGenerator:
         video_metadata: str,
         connected_inputs: str = "",
         max_iterations: int = 10,
+        video_path: str = "",
     ) -> str:
         """Agentic pipeline generation with tool calling.
+
+        Args:
+            video_path: Absolute path to the input video for frame extraction.
 
         Raises:
             NotImplementedError: If connector doesn't support tool calling.
@@ -255,6 +262,8 @@ class PipelineGenerator:
             list_skills,
             search_skills,
             get_skill_details,
+            extract_frames,
+            cleanup_vision_frames,
         )
 
         system_prompt = get_agentic_system_prompt(
@@ -268,6 +277,22 @@ class PipelineGenerator:
             {"role": "user", "content": user_prompt},
         ]
 
+        # Resolve video path for extract_frames tool
+        _vid = video_path or ""
+        _vision_run_ids: list[str] = []  # Track per-run frame folders
+
+        def _extract_frames_handler(args: dict) -> dict:
+            result = extract_frames(
+                video_path=args.get("video_path", _vid) or _vid,
+                start=args.get("start", 0.0),
+                duration=args.get("duration", 5.0),
+                fps=args.get("fps", 1.0),
+                max_frames=args.get("max_frames", 8),
+            )
+            if "run_id" in result:
+                _vision_run_ids.append(result["run_id"])
+            return result
+
         tool_handlers = {
             "list_skills": lambda args: list_skills(args.get("category")),
             "search_skills": lambda args: search_skills(args.get("query", "")),
@@ -278,92 +303,98 @@ class PipelineGenerator:
                 input_path=args.get("input_path", "/tmp/input.mp4"),
                 output_path=args.get("output_path", "/tmp/output.mp4"),
             ),
+            "extract_frames": _extract_frames_handler,
         }
 
-        for iteration in range(max_iterations):
-            response = await connector.chat_with_tools(messages, TOOL_DEFINITIONS)
+        try:
+            for iteration in range(max_iterations):
+                response = await connector.chat_with_tools(messages, TOOL_DEFINITIONS)
 
-            if not response.tool_calls:
-                parsed = self.parse_response(response.content)
-                if parsed is not None:
-                    return response.content
+                if not response.tool_calls:
+                    parsed = self.parse_response(response.content)
+                    if parsed is not None:
+                        return response.content
 
-                logger.warning(
-                    f"Agentic iteration {iteration+1}: model returned "
-                    f"non-JSON, requesting correction..."
-                )
-                messages.append({"role": "assistant", "content": response.content or ""})
-                messages.append({
-                    "role": "user",
-                    "content": (
-                        "That response was not valid JSON. You MUST respond with "
-                        "ONLY a JSON object like: "
-                        '{"interpretation": "...", "pipeline": '
-                        '[{"skill": "skill_name", "params": {}}], '
-                        '"warnings": [], "estimated_changes": "..."}\n'
-                        "Use get_skill_details to confirm exact skill names "
-                        "before outputting the pipeline. Do NOT explain — "
-                        "just output the JSON."
-                    ),
-                })
-                continue
+                    logger.warning(
+                        f"Agentic iteration {iteration+1}: model returned "
+                        f"non-JSON, requesting correction..."
+                    )
+                    messages.append({"role": "assistant", "content": response.content or ""})
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "That response was not valid JSON. You MUST respond with "
+                            "ONLY a JSON object like: "
+                            '{"interpretation": "...", "pipeline": '
+                            '[{"skill": "skill_name", "params": {}}], '
+                            '"warnings": [], "estimated_changes": "..."}\n'
+                            "Use get_skill_details to confirm exact skill names "
+                            "before outputting the pipeline. Do NOT explain — "
+                            "just output the JSON."
+                        ),
+                    })
+                    continue
 
-            # Process tool calls
-            assistant_msg = {"role": "assistant", "content": response.content or ""}
-            assistant_msg["tool_calls"] = [
-                {
-                    "id": tc.get("id", f"call_{i}"),
-                    "function": {
-                        "name": tc["function"]["name"],
-                        "arguments": tc["function"]["arguments"],
+                # Process tool calls
+                assistant_msg = {"role": "assistant", "content": response.content or ""}
+                assistant_msg["tool_calls"] = [
+                    {
+                        "id": tc.get("id", f"call_{i}"),
+                        "function": {
+                            "name": tc["function"]["name"],
+                            "arguments": tc["function"]["arguments"],
+                        }
                     }
-                }
-                for i, tc in enumerate(response.tool_calls)
-            ]
-            messages.append(assistant_msg)
+                    for i, tc in enumerate(response.tool_calls)
+                ]
+                messages.append(assistant_msg)
 
-            for i, tool_call in enumerate(response.tool_calls):
-                func_name = tool_call["function"]["name"]
-                func_args = tool_call["function"]["arguments"]
-                # OpenAI returns arguments as JSON string; handlers expect dict
-                if isinstance(func_args, str):
-                    try:
-                        func_args = json.loads(func_args)
-                    except (json.JSONDecodeError, ValueError):
-                        func_args = {}
+                for i, tool_call in enumerate(response.tool_calls):
+                    func_name = tool_call["function"]["name"]
+                    func_args = tool_call["function"]["arguments"]
+                    # OpenAI returns arguments as JSON string; handlers expect dict
+                    if isinstance(func_args, str):
+                        try:
+                            func_args = json.loads(func_args)
+                        except (json.JSONDecodeError, ValueError):
+                            func_args = {}
 
-                logger.info(f"Tool call [{iteration+1}]: {func_name}({func_args})")
+                    logger.info(f"Tool call [{iteration+1}]: {func_name}({func_args})")
 
-                handler = tool_handlers.get(func_name)
-                if handler:
-                    try:
-                        result = handler(func_args)
-                        result_str = json.dumps(result, indent=2)
-                    except Exception as e:
-                        result_str = json.dumps({"error": str(e)})
-                        logger.warning(f"Tool error: {func_name} -> {e}")
-                else:
-                    result_str = json.dumps({"error": f"Unknown tool: {func_name}"})
+                    handler = tool_handlers.get(func_name)
+                    if handler:
+                        try:
+                            result = handler(func_args)
+                            result_str = json.dumps(result, indent=2)
+                        except Exception as e:
+                            result_str = json.dumps({"error": str(e)})
+                            logger.warning(f"Tool error: {func_name} -> {e}")
+                    else:
+                        result_str = json.dumps({"error": f"Unknown tool: {func_name}"})
 
-                tool_result_msg = {
-                    "role": "tool",
-                    "content": result_str,
-                    "tool_call_id": tool_call.get("id", f"call_{i}"),
-                }
-                messages.append(tool_result_msg)
+                    tool_result_msg = {
+                        "role": "tool",
+                        "content": result_str,
+                        "tool_call_id": tool_call.get("id", f"call_{i}"),
+                    }
+                    messages.append(tool_result_msg)
 
-        # Exhausted iterations
-        logger.warning(f"Agentic loop hit max iterations ({max_iterations})")
-        messages.append({
-            "role": "user",
-            "content": (
-                "You have used all available tool calls. Based on "
-                "what you've learned, please output the final JSON "
-                "pipeline now."
-            ),
-        })
-        response = await connector.chat_with_tools(messages, [])
-        return response.content
+            # Exhausted iterations
+            logger.warning(f"Agentic loop hit max iterations ({max_iterations})")
+            messages.append({
+                "role": "user",
+                "content": (
+                    "You have used all available tool calls. Based on "
+                    "what you've learned, please output the final JSON "
+                    "pipeline now."
+                ),
+            })
+            response = await connector.chat_with_tools(messages, [])
+            return response.content
+        finally:
+            # Clean up only this run's extracted vision frames
+            for rid in _vision_run_ids:
+                cleanup_vision_frames(rid)
 
     # ------------------------------------------------------------------ #
     #  JSON parsing                                                        #

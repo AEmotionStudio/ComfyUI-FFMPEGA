@@ -142,4 +142,51 @@ TOOL_DEFINITIONS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "extract_frames",
+            "description": (
+                "Extract frames from the input video as PNG images for visual "
+                "inspection. Returns absolute file paths to the extracted "
+                "frame images. Use this to SEE the actual video content — "
+                "colors, composition, lighting, subjects — before choosing "
+                "effects or color grading. Only available when using a "
+                "vision-capable model."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "start": {
+                        "type": "number",
+                        "description": (
+                            "Start time in seconds to begin extraction "
+                            "(default: 0)"
+                        ),
+                    },
+                    "duration": {
+                        "type": "number",
+                        "description": (
+                            "Duration in seconds to extract from "
+                            "(default: 5)"
+                        ),
+                    },
+                    "fps": {
+                        "type": "number",
+                        "description": (
+                            "Frames per second to extract. 1 = one frame "
+                            "per second (default: 1)"
+                        ),
+                    },
+                    "max_frames": {
+                        "type": "integer",
+                        "description": (
+                            "Maximum number of frames to extract "
+                            "(default: 8, max: 16)"
+                        ),
+                    },
+                },
+            },
+        },
+    },
 ]

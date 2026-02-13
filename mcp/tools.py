@@ -253,6 +253,114 @@ def get_skill_details(skill_name: str) -> dict:
     }
 
 
+def extract_frames(
+    video_path: str,
+    start: float = 0.0,
+    duration: float = 5.0,
+    fps: float = 1.0,
+    max_frames: int = 8,
+) -> dict:
+    """Extract frames from a video for visual inspection.
+
+    Extracts PNG frames to a temp folder so CLI agents with vision
+    capabilities can view the actual video content.
+
+    Args:
+        video_path: Path to the input video file.
+        start: Start time in seconds.
+        duration: Duration in seconds to extract from.
+        fps: Frames per second to extract.
+        max_frames: Maximum number of frames (capped at 16).
+
+    Returns:
+        Dictionary with frame_count, paths, and folder.
+    """
+    from pathlib import Path
+    from ..core.executor.preview import PreviewGenerator
+    from ..core.executor.process_manager import ProcessManager
+
+    if not video_path or not Path(video_path).is_file():
+        return {"error": f"Video file not found: {video_path}"}
+
+    # Cap max_frames to prevent excessive disk/token usage
+    max_frames = min(max(max_frames, 1), 16)
+    fps = max(fps, 0.1)
+
+    # Limit duration so ffmpeg never extracts more frames than needed
+    max_duration = max_frames / fps
+    duration = min(duration, max_duration)
+
+    # Create a unique per-run subfolder to avoid cross-run interference
+    import uuid
+    node_dir = Path(__file__).resolve().parent.parent
+    run_id = uuid.uuid4().hex[:8]
+    frames_dir = node_dir / "_vision_frames" / run_id
+    frames_dir.mkdir(parents=True, exist_ok=True)
+
+    preview = PreviewGenerator()
+
+    try:
+        frame_paths = preview.extract_frames(
+            input_path=video_path,
+            output_dir=frames_dir,
+            fps=fps,
+            start=start if start > 0 else None,
+            duration=duration,
+        )
+    except Exception as e:
+        # Clean up the created directory on failure
+        import shutil
+        shutil.rmtree(frames_dir, ignore_errors=True)
+        return {"error": f"Frame extraction failed: {e}", "run_id": run_id}
+
+    # Limit to max_frames and remove excess files from disk
+    if len(frame_paths) > max_frames:
+        for excess in frame_paths[max_frames:]:
+            excess.unlink(missing_ok=True)
+        frame_paths = frame_paths[:max_frames]
+
+    path_strings = [str(p.resolve()) for p in frame_paths]
+
+    return {
+        "frame_count": len(path_strings),
+        "paths": path_strings,
+        "folder": str(frames_dir.resolve()),
+        "run_id": run_id,
+        "hint": (
+            "These are absolute paths to PNG frame images extracted from "
+            "the video. You can view them to understand the video content, "
+            "colors, composition, and lighting before choosing effects."
+        ),
+    }
+
+
+def cleanup_vision_frames(run_id: str = "") -> None:
+    """Remove the temporary vision frames folder.
+
+    Args:
+        run_id: If provided, removes only the specific run's subfolder.
+                If empty, removes the entire _vision_frames directory.
+
+    Called after pipeline generation completes to clean up disk space.
+    """
+    import shutil
+    from pathlib import Path
+
+    base_dir = Path(__file__).resolve().parent.parent / "_vision_frames"
+    if run_id:
+        target = base_dir / run_id
+        if target.exists():
+            shutil.rmtree(target, ignore_errors=True)
+        # Remove parent if empty (ignore errors to avoid masking success)
+        try:
+            if base_dir.exists() and not any(base_dir.iterdir()):
+                base_dir.rmdir()
+        except OSError:
+            pass
+    elif base_dir.exists():
+        shutil.rmtree(base_dir, ignore_errors=True)
+
+
 def validate_skill_params(skill_name: str, params: dict) -> dict:
     """Validate parameters for a skill.
 

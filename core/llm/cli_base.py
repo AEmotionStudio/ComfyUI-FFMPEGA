@@ -13,6 +13,7 @@ individual CLI connectors only need to specify:
 import asyncio
 import json
 import logging
+from pathlib import Path
 import re
 from abc import abstractmethod
 from typing import Optional, AsyncIterator
@@ -90,7 +91,11 @@ class CLIConnectorBase(LLMConnector):
         cmd = self._build_cmd(binary_path, prompt, system_prompt)
         stdin_data = self._prepare_stdin(prompt, system_prompt)
 
-        logger.debug("[%s] Running: %s", self._log_tag(), " ".join(cmd[:3]))
+        # Sandbox: restrict CLI agent workspace to the node directory
+        # (prevents access to user's home dir, SSH keys, configs, etc.)
+        node_dir = str(Path(__file__).resolve().parent.parent.parent)
+
+        logger.debug("[%s] Running: %s (cwd=%s)", self._log_tag(), " ".join(cmd[:3]), node_dir)
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -98,6 +103,7 @@ class CLIConnectorBase(LLMConnector):
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                cwd=node_dir,
             )
 
             stdout, stderr = await asyncio.wait_for(

@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.1] - 2026-02-13
+
+### Security
+- **CLI Agent Sandbox**: CLI agents (Gemini, Claude, Cursor, Qwen) are now sandboxed to the custom node directory via `cwd=` in `create_subprocess_exec()`. Previously, agents inherited ComfyUI's working directory, potentially exposing the user's home directory (SSH keys, configs, other projects).
+
+### Fixed
+- **Vision Frame Accessibility**: Removed `_vision_frames/` from `.gitignore` so CLI agents can read extracted frames. CLI agents (especially Gemini CLI) respect both `.gitignore` and `.git/info/exclude` ignore patterns, which previously blocked frame access. The `cleanup_vision_frames()` function handles deletion after use.
+
+### Added
+- **Sandbox Test**: New `test_generate_sandboxes_cwd_to_node_dir` test verifying that `create_subprocess_exec` is called with `cwd=` pointing to the node directory.
+- **README: CLI Vision Support**: Added documentation showing which CLI agents support vision (Gemini ✅, Claude ✅, Cursor ✅, Qwen ❌) and guidelines for `_vision_frames/` accessibility.
+- **README: Gemini CLI Plans & Limits**: Added detailed free/paid tier comparison table, available models, and rate limits for Gemini CLI users.
+
+---
+
 ## [2.2.0] - 2026-02-12
 
 ### Added

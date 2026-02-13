@@ -487,16 +487,39 @@ Extract audio only.
 
 ---
 
-### bass / treble
-Boost or cut bass/treble frequencies.
+### bass
+Boost or reduce bass frequencies.
 | Parameter | Type | Default | Range |
 |-----------|------|---------|-------|
-| `gain` | float | 6 / 4 | -20 to 20 dB |
+| `gain` | float | 6 | -20 to 20 dB |
 
 **Example prompts:**
 - "Boost the bass"
+- "Add more low-end punch"
+- "Cut the bass frequencies"
+
+---
+
+### treble
+Boost or reduce treble frequencies.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `gain` | float | 4 | -20 to 20 dB |
+
+**Example prompts:**
 - "Add more treble"
-- "Cut the low frequencies"
+- "Make it sound brighter"
+- "Reduce the highs"
+
+---
+
+### replace_audio
+Replace the original audio track with a new one.
+*No parameters.*
+
+**Example prompts:**
+- "Replace the audio with this track"
+- "Swap out the audio"
 
 ---
 
@@ -747,6 +770,44 @@ Set audio codec.
 
 ---
 
+
+### frame_interpolation
+Smooth slow motion or frame rate conversion using motion interpolation.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `fps` | int | 60 | 24 to 120 |
+
+**Example prompts:**
+- "Interpolate to 60fps for smooth motion"
+- "Create smooth slow motion with frame interpolation"
+
+---
+
+### two_pass
+Enable two-pass encoding for better quality at a target bitrate.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `target_bitrate` | string | — | e.g. 5M, 10M |
+
+**Example prompts:**
+- "Encode with two-pass at 5M bitrate"
+- "Use two-pass encoding for best quality"
+
+---
+
+### hls_package
+Package video as HLS (HTTP Live Streaming) segments for adaptive streaming.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `segment_duration` | int | 6 | 2 to 30 seconds |
+| `playlist_type` | string | vod | vod, event |
+
+**Example prompts:**
+- "Package for HLS streaming"
+- "Create HLS segments for adaptive playback"
+
+---
+
 ## 🎬 Cinematic Presets
 
 ### cinematic
@@ -778,6 +839,47 @@ Cool blue sci-fi atmosphere.
 
 ### dark_moody
 Dark, atmospheric, moody feel.
+
+
+### color_grade
+Apply cinematic color grading.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `style` | choice | — | teal_orange, warm, cool, bleach_bypass, film |
+
+**Example prompts:**
+- "Apply teal and orange color grading"
+- "Add warm cinematic color grade"
+
+### color_temperature
+Adjust overall color temperature (warm/cool).
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `temperature` | float | 5500 | 2000 to 12000 K |
+
+**Example prompts:**
+- "Make it warmer"
+- "Cool down the color temperature"
+
+### letterbox
+Add cinematic letterbox bars for widescreen look.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `ratio` | choice | 2.35:1 | 2.35:1, 2.39:1, 1.85:1 |
+
+**Example prompts:**
+- "Add cinematic letterbox bars"
+- "Add widescreen black bars"
+
+### film_grain
+Add authentic film grain texture.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `intensity` | choice | medium | light, medium, heavy |
+
+**Example prompts:**
+- "Add film grain"
+- "Apply subtle film grain texture"
 
 ---
 
@@ -1020,6 +1122,237 @@ Newspaper/screen-print halftone dot pattern using `geq` filter.
 
 ---
 
+
+### spin
+Continuous animated rotation.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `speed` | float | 1.0 | 0.1 to 5.0 |
+
+**Example prompts:**
+- "Spin the video clockwise"
+- "Add a continuous slow rotation"
+
+---
+
+### shake
+Add camera shake / earthquake effect.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `intensity` | choice | medium | light, medium, heavy |
+
+**Example prompts:**
+- "Add camera shake"
+- "Apply earthquake effect"
+
+---
+
+### pulse
+Rhythmic breathing zoom effect.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `speed` | float | 1.0 | 0.5 to 3.0 |
+| `amount` | float | 0.05 | 0.01 to 0.2 |
+
+**Example prompts:**
+- "Make it pulse like a heartbeat"
+- "Add a rhythmic zoom pulse"
+
+---
+
+### bounce
+Bouncing vertical animation effect.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `height` | int | 30 | 5 to 100 px |
+
+**Example prompts:**
+- "Make the video bounce"
+- "Add a bouncing animation"
+
+---
+
+### drift
+Slow cinematic drift/pan across the frame.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `direction` | choice | right | left, right, up, down |
+
+**Example prompts:**
+- "Pan slowly to the right"
+- "Cinematic drift leftward"
+
+---
+
+### fade_to_black
+Fade in from black at start and/or fade out to black at end.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `in_duration` | float | 1.0 | 0.1 to 5.0 sec |
+| `out_duration` | float | 1.0 | 0.1 to 5.0 sec |
+
+**Example prompts:**
+- "Fade in from black"
+- "Fade out to black at the end"
+
+---
+
+### fade_to_white
+Fade in from white at start and/or fade out to white at end.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `in_duration` | float | 1.0 | 0.1 to 5.0 sec |
+| `out_duration` | float | 1.0 | 0.1 to 5.0 sec |
+
+**Example prompts:**
+- "Fade in from white"
+- "Fade out to white at the end"
+
+---
+
+### flash
+Camera flash effect at a specific timestamp.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `time` | float | 1.0 | seconds |
+| `duration` | float | 0.3 | 0.1 to 1.0 sec |
+
+**Example prompts:**
+- "Add a camera flash at 2 seconds"
+- "Flash transition midway through"
+
+---
+
+### iris_reveal
+Circular reveal expanding from the center of the frame.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `duration` | float | 2.0 | 0.5 to 5.0 sec |
+
+**Example prompts:**
+- "Add an iris reveal from center"
+- "Circle wipe opening from the middle"
+
+---
+
+### wipe
+Reveal the video with a directional wipe from black.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `direction` | choice | left | left, right, up, down |
+
+**Example prompts:**
+- "Wipe reveal from the left"
+- "Add a wipe from the right"
+
+---
+
+### slide_in
+Slide the video in from an edge of the frame.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `direction` | choice | left | left, right, top, bottom |
+
+**Example prompts:**
+- "Slide the video in from the left"
+- "Slide in from the bottom"
+
+---
+
+### deinterlace
+Remove interlacing from old or TV footage.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `mode` | choice | send_frame | send_frame, send_field |
+
+**Example prompts:**
+- "Deinterlace the footage"
+- "Remove interlacing artifacts"
+
+---
+
+### deshake
+Simple video stabilization to reduce shakiness.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `rx` | int | 16 | 0 to 64 |
+| `ry` | int | 16 | 0 to 64 |
+
+**Example prompts:**
+- "Deshake the camera movement"
+- "Quick stabilization for handheld footage"
+
+---
+
+### fill_borders
+Fill black borders with mirrored/blurred content.
+*No parameters.*
+
+**Example prompts:**
+- "Fill the black borders"
+- "Mirror-fill the blank edges"
+
+---
+
+### lens_correction
+Correct barrel or pincushion lens distortion.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `k1` | float | -0.3 | -1 to 1 |
+| `k2` | float | 0 | -1 to 1 |
+
+**Example prompts:**
+- "Fix the barrel distortion"
+- "Apply lens correction"
+
+---
+
+### lut_apply
+Apply a LUT (Look-Up Table) file for color grading.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `path` | string | — | .cube or .3dl file path |
+
+**Example prompts:**
+- "Apply this LUT file"
+- "Load a .cube LUT for color grading"
+
+---
+
+### perspective
+Apply perspective transform / keystoning.
+*No parameters.*
+
+**Example prompts:**
+- "Add perspective tilt"
+- "Apply keystoning effect"
+
+---
+
+### selective_color
+Isolate and adjust a specific color range.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `color` | choice | red | red, green, blue, yellow, cyan, magenta |
+
+**Example prompts:**
+- "Make only the red pop"
+- "Desaturate everything except blue"
+
+---
+
+### burn_subtitles
+Hardcode/burn subtitles from .srt or .ass file into the video.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `path` | string | — | .srt or .ass file path |
+
+**Example prompts:**
+- "Burn these subtitles into the video"
+- "Hardcode the SRT file"
+
+---
+
 ## 🧪 Special Effects (Outcome)
 
 ### meme
@@ -1045,6 +1378,85 @@ Soft, ethereal, dreamy look.
 
 ### hdr_look
 Simulated HDR dynamic range.
+
+
+### boomerang
+Create looping boomerang effect (forward + reverse).
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `loops` | int | 3 | 1 to 10 |
+
+**Example prompts:**
+- "Make it a boomerang loop"
+- "Play forward then backward"
+
+### ken_burns
+Ken Burns slow zoom pan effect for photos.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `direction` | choice | in | in, out |
+| `duration` | float | 5.0 | 1 to 30 sec |
+
+### slowmo
+Smooth slow motion effect.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `factor` | float | 0.5 | 0.1 to 0.9 |
+
+**Example prompts:**
+- "Make it slow motion"
+- "Apply 50% speed slow-mo"
+
+### stabilize
+Remove camera shake and stabilize footage.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `strength` | choice | medium | light, medium, strong |
+
+**Example prompts:**
+- "Stabilize the shaky footage"
+- "Remove camera shake"
+
+### timelapse
+Speed up footage dramatically for timelapse effect.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `factor` | float | 10.0 | 2 to 100 |
+
+**Example prompts:**
+- "Create a timelapse at 10x speed"
+- "Speed up for timelapse"
+
+### zoom
+Apply zoom effect.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `factor` | float | 1.5 | 1.1 to 4.0 |
+
+**Example prompts:**
+- "Zoom in 2x"
+- "Crop and zoom to center"
+
+### scroll
+Scroll the video vertically or horizontally.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `direction` | choice | up | up, down, left, right |
+| `speed` | float | 1.0 | 0.1 to 5.0 |
+
+**Example prompts:**
+- "Scroll the video upward"
+- "Add a horizontal scroll"
+
+### monochrome
+Convert to monochrome with optional color tint.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------| 
+| `preset` | choice | neutral | neutral, warm, cool, green, sepia |
+
+**Example prompts:**
+- "Make it black and white"
+- "Warm monochrome look"
 
 ---
 
@@ -1194,59 +1606,6 @@ Overlay an image with animated motion. Requires `image_a` as the overlay.
 - "Make the overlay image float around slowly"
 - "Add a bouncing overlay animation"
 - "Slide the overlay in from the left"
-
----
-
-### text_overlay
-Draw text on the video using ffmpeg's `drawtext` filter with style presets.
-| Parameter | Type | Default | Choices/Range |
-|-----------|------|---------|---------------|
-| `text` | string | *(required)* | any text |
-| `preset` | choice | title | title, subtitle, lower_third, caption, top |
-| `fontsize` | int | auto | font size in pixels |
-| `fontcolor` | string | white | color name or hex |
-| `borderw` | int | 2 | text outline width |
-| `bordercolor` | string | black | outline color |
-| `start` | float | 0 | start time in seconds |
-| `duration` | float | 0 | display duration (0 = entire video) |
-| `background` | string | *(none)* | background box color (e.g. `red@0.7`) |
-
-**Example prompts:**
-- "Add the title 'My Video' in large centered text"
-- "Put 'Scene 1' as a lower third"
-- "Add a subtitle in yellow"
-- "Show 'Subscribe!' for the first 3 seconds"
-- "Add a red banner saying 'Breaking News'"
-
----
-
-### watermark
-Quick watermark overlay with sensible defaults (small, semi-transparent, bottom-right).
-| Parameter | Type | Default | Choices/Range |
-|-----------|------|---------|---------------|
-| `position` | choice | bottom-right | top-left, top-right, bottom-left, bottom-right, center |
-| `scale` | float | 0.15 | 0.05 to 0.8 |
-| `opacity` | float | 0.3 | 0.0 to 1.0 |
-
-**Example prompts:**
-- "Add a watermark in the corner"
-- "Put a logo watermark at 15% opacity"
-
----
-
-### chromakey
-Green/blue screen removal via ffmpeg `colorkey` filter.
-| Parameter | Type | Default | Choices/Range |
-|-----------|------|---------|---------------|
-| `color` | string | 00FF00 | hex color to key out |
-| `similarity` | float | 0.3 | 0.01 to 1.0 |
-| `blend` | float | 0.1 | 0.0 to 1.0 |
-| `background` | string | black | replacement color (or "transparent") |
-
-**Example prompts:**
-- "Remove the green screen"
-- "Apply chroma key with a blue background"
-- "Remove the blue screen and make it transparent"
 
 ---
 
@@ -1842,4 +2201,44 @@ Cinematic film grain with intensity control.
 - "Add subtle cinematic grain"
 - "Apply heavy gritty film grain"
 - "Add organic grain texture"
+
+---
+
+## 📦 Delivery
+
+### extract_subtitles
+Extract subtitle track from video container to a separate .srt file.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `track` | int | 0 | subtitle track index |
+
+**Example prompts:**
+- "Extract the subtitles"
+- "Save the subtitle track as SRT"
+
+---
+
+### preview_strip
+Generate a filmstrip preview showing key frames side by side.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `count` | int | 6 | 3 to 20 |
+| `tile_width` | int | 320 | 100 to 640 |
+
+**Example prompts:**
+- "Create a filmstrip preview"
+- "Generate a thumbnail strip"
+
+---
+
+### sprite_sheet
+Generate a sprite sheet of evenly-spaced frames.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `columns` | int | 5 | 2 to 10 |
+| `rows` | int | 5 | 2 to 10 |
+
+**Example prompts:**
+- "Create a sprite sheet"
+- "Generate a contact sheet of frames"
 
