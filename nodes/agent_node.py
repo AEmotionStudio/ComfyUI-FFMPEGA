@@ -151,7 +151,7 @@ class FFMPEGAgentNode:
                     "default": False,
                     "label_on": "Save to Output",
                     "label_off": "Pass Through",
-                    "tooltip": "When On, saves video and a workflow PNG to the output folder. Turn Off when a downstream Save node handles output to avoid double saves.",
+                    "tooltip": "When On, saves video and a workflow PNG to the output folder. Turn Off when a downstream Save node handles output to avoid double saves. Note: downstream nodes may re-encode with their own settings (format, quality, resolution), so the final saved file may differ from FFMPEGA's output.",
                 }),
                 "output_path": ("STRING", {
                     "default": "",
@@ -494,6 +494,7 @@ class FFMPEGAgentNode:
             spec = await self.pipeline_generator.generate(
                 connector, prompt, metadata_str,
                 connected_inputs=connected_inputs_str,
+                video_path=effective_video_path,
             )
         except Exception as e:
             if hasattr(connector, 'close'):

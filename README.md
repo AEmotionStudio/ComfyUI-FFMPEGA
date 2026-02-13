@@ -5,7 +5,7 @@
 **An AI-powered FFMPEG agent node for ComfyUI — edit videos with natural language.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-2.2.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-2.2.1-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-4-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 
@@ -20,9 +20,16 @@
 
 ---
 
-## 🚀 What's New in v2.2.0 (February 12, 2026)
+## 🚀 What's New in v2.2.1 (February 13, 2026)
 
-**200 Skills — Dynamic Inputs & Massive Skill Expansion**
+**Security Sandbox & CLI Vision Support**
+
+*   **🔒 CLI Agent Sandbox**: All CLI agents (Gemini, Claude, Cursor, Qwen) are now sandboxed to the custom node directory — they can no longer access your home directory, SSH keys, or other projects.
+*   **👁️ Vision Frame Access**: CLI agents can now read extracted video frames for visual analysis. Tested: Gemini ✅, Claude ✅, Cursor ✅, Qwen ❌ (upstream limitation).
+*   **📊 Gemini CLI Plans & Limits**: README now documents free/paid tiers, available models, and rate limits to help users choose the right plan.
+
+<details>
+<summary><b>Previous: v2.2.0 — 200 Skills & Dynamic Inputs</b></summary>
 
 *   **🎯 200 Skills**: Expanded from 127 to **200 skills** — covering every category from professional audio processing to text animations, creative effects, and editing tools.
 *   **🔗 Dynamic Auto-Expanding Inputs**: Connect `image_a` → `image_b` appears → `image_c` appears, and so on. Same for `images_a/b/c...` (video) and `audio_a/b/c...`. No more fixed slot limits.
@@ -33,6 +40,8 @@
 *   **🔊 Professional Audio**: Broadcast-standard loudness normalization (EBU R128), background noise removal, de-reverb, audio crossfade, ducking, and more.
 *   **✂️ Editing Tools**: Picture-in-picture, region blur for privacy, logo removal, jump cuts, beat-synced cuts, frame extraction, and color matching.
 *   **🎆 Creative Effects**: Datamosh glitch art, radial blur, film grain overlay, and motion-interpolated frame rate conversion.
+
+</details>
 
 > 📄 **See [CHANGELOG.md](CHANGELOG.md) for the complete version history.**
 
@@ -184,30 +193,80 @@ AI-generated video often has specific artifacts. Here are targeted prompts:
 ## 🎛️ Nodes
 
 ### FFMPEG Agent
+
 The main node — translates natural language into FFMPEG commands.
 
-| Input | Description |
-| :--- | :--- |
-| `video_path` | Path to input video (used unless `images_a` is connected) |
-| `prompt` | Natural language editing instruction |
-| `llm_model` | Model selection (Ollama / OpenAI / Anthropic / Gemini / CLI tools) |
-| `quality_preset` | Output quality: draft, standard, high, lossless |
-| `images_a` | *(optional, dynamic)* Video frames from upstream — auto-expands to `images_b`, `images_c`... |
-| `image_a` | *(optional, dynamic)* Extra image input — auto-expands to `image_b`, `image_c`... |
-| `audio_a` | *(optional, dynamic)* Audio input — auto-expands to `audio_b`, `audio_c`... |
-| `preview_mode` | Quick preview instead of full render |
-| `save_output` | Save to ComfyUI output folder (default: off) |
-| `output_path` | Custom output path (shown when `save_output` is on) |
-| `ollama_url` | Ollama server URL (default: `http://localhost:11434`) |
-| `api_key` | API key for cloud LLM providers (auto-redacted from outputs) |
+<details>
+<summary><b>Required Inputs</b></summary>
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `video_path` | STRING | Absolute path to source video. Used as ffmpeg input unless `images_a` is connected. |
+| `prompt` | STRING | Natural language editing instruction (e.g. *"Add cinematic letterbox"*, *"Speed up 2x"*). |
+| `llm_model` | DROPDOWN | AI model selection — local Ollama models appear first, then CLI tools (gemini-cli, claude-cli, cursor-agent, qwen-cli), then cloud APIs. |
+| `quality_preset` | DROPDOWN | Output quality: `draft`, `standard`, `high`, `lossless`. |
+| `seed` | INT | Change to force re-execution with the same prompt. Supports randomize control. |
+
+</details>
+
+<details>
+<summary><b>Optional Inputs</b></summary>
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `images_a` | IMAGE | Video frames from upstream (e.g. Load Video). Auto-expands: `images_b`, `images_c`... |
+| `image_a` | IMAGE | Extra image input for multi-input skills (grid, slideshow, overlay). Auto-expands: `image_b`, `image_c`... |
+| `audio_a` | AUDIO | Audio input for muxing or multi-audio workflows. Auto-expands: `audio_b`, `audio_c`... |
+| `preview_mode` | BOOLEAN | Quick low-res preview (480p, 10s) instead of full render. |
+| `save_output` | BOOLEAN | Save video + workflow PNG to output folder. Off when a downstream Save node handles output. |
+| `output_path` | STRING | Custom output file/folder path. Empty = ComfyUI default. |
+| `ollama_url` | STRING | Ollama server URL (default: `http://localhost:11434`). |
+| `api_key` | STRING | API key for cloud models (GPT, Claude, Gemini). Auto-redacted from outputs. |
+| `custom_model` | STRING | Exact model name when `llm_model` is set to `custom` (e.g. `gpt-5.2`, `claude-sonnet-4-6`). |
+| `crf` | INT | Override CRF (0 = lossless, 23 = default, 51 = worst). Set to -1 to use `quality_preset`. |
+| `encoding_preset` | DROPDOWN | Override x264/x265 speed preset (`ultrafast` → `veryslow`). `auto` follows `quality_preset`. |
+
+</details>
+
+<details>
+<summary><b>Batch Processing Inputs</b></summary>
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `batch_mode` | BOOLEAN | Process all matching videos in `video_folder` with the same prompt. Single LLM call. |
+| `video_folder` | STRING | Folder containing videos to batch process. |
+| `file_pattern` | DROPDOWN | File pattern to match (`*.mp4`, `*.mov`, `*.*`, etc.). |
+| `max_concurrent` | INT | Maximum simultaneous encodes in batch mode (1–16, default 4). |
+
+</details>
 
 | Output | Description |
 | :--- | :--- |
-| `images` | Video frames as image tensor |
-| `audio` | Audio extracted or passed through |
-| `video_path` | Path to processed video |
-| `command_log` | FFMPEG commands that were executed |
-| `analysis` | Agent's interpretation of your prompt |
+| `images` | All frames from the output video as a batched image tensor |
+| `audio` | Audio extracted from output video (or passed through from `audio_a`) |
+| `video_path` | Absolute path to the rendered output video file |
+| `command_log` | The ffmpeg command(s) that were executed |
+| `analysis` | LLM interpretation, pipeline steps, and warnings |
+
+---
+
+### Frame Extract (FFMPEGA)
+
+Standalone node for extracting individual frames from a video as image tensors.
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `video_path` | STRING | Absolute path to the video to extract frames from. |
+| `fps` | FLOAT | Extraction rate (0.1–60.0). `1.0` = one frame per second. |
+| `start_time` | FLOAT | *(optional)* Start time in seconds (default: 0). |
+| `duration` | FLOAT | *(optional)* Duration to extract from, in seconds (default: 10). |
+| `max_frames` | INT | *(optional)* Max frames to return (default: 100, max: 1000). |
+
+| Output | Description |
+| :--- | :--- |
+| `frames` | Extracted video frames as a batched image tensor |
+
+> **Tip:** Connect `frames` output to the FFMPEG Agent's `images_a` input to build pipelines that analyze frames before editing.
 
 ---
 
@@ -286,7 +345,7 @@ FFMPEGA includes a comprehensive skill system with **200 operations** organized 
 </details>
 
 <details>
-<summary><b>🔊 Audio (25 skills)</b></summary>
+<summary><b>🔊 Audio (26 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -314,12 +373,13 @@ FFMPEGA includes a comprehensive skill system with **200 operations** organized 
 | `dereverb` | Remove room echo/reverb |
 | `split_audio` | Extract left/right channel |
 | `audio_normalize_loudness` | EBU R128 loudness normalization |
+| `replace_audio` | Replace original audio track |
 | `audio_bitrate` | Set audio encoding bitrate |
 
 </details>
 
 <details>
-<summary><b>📦 Encoding (10 skills)</b></summary>
+<summary><b>📦 Encoding (13 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -333,11 +393,14 @@ FFMPEGA includes a comprehensive skill system with **200 operations** organized 
 | `hwaccel` | Hardware acceleration (cuda, vaapi, qsv) |
 | `audio_codec` | Set audio codec (aac, mp3, opus, flac) |
 | `frame_rate_interpolation` | Motion-interpolated FPS conversion |
+| `frame_interpolation` | Smooth slow motion via motion interpolation |
+| `two_pass` | Two-pass encoding for better quality |
+| `hls_package` | HLS adaptive streaming packaging |
 
 </details>
 
 <details>
-<summary><b>🎬 Cinematic Presets (10 skills)</b></summary>
+<summary><b>🎬 Cinematic Presets (14 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -351,6 +414,10 @@ FFMPEGA includes a comprehensive skill system with **200 operations** organized 
 | `romantic` | Soft, warm romantic mood |
 | `sci_fi` | Cool blue sci-fi atmosphere |
 | `dark_moody` | Dark, atmospheric, moody feel |
+| `color_grade` | Cinematic color grading (teal_orange, warm, cool) |
+| `color_temperature` | Adjust color temperature (warm/cool) |
+| `letterbox` | Cinematic widescreen letterbox bars |
+| `film_grain` | Film grain texture (light, medium, heavy) |
 
 </details>
 
@@ -411,7 +478,7 @@ FFMPEGA includes a comprehensive skill system with **200 operations** organized 
 </details>
 
 <details>
-<summary><b>🧪 Special Effects (11 skills)</b></summary>
+<summary><b>🧪 Special Effects (36 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -426,6 +493,31 @@ FFMPEGA includes a comprehensive skill system with **200 operations** organized 
 | `datamosh` | Glitch art / motion vector visualization |
 | `radial_blur` | Radial / zoom blur effect |
 | `grain_overlay` | Cinematic film grain with intensity control |
+| `burn_subtitles` | Hardcode subtitles |
+| `selective_color` | Isolate specific colors |
+| `perspective` | Perspective transform |
+| `lut_apply` | Apply LUT color grading |
+| `lens_correction` | Fix lens distortion |
+| `fill_borders` | Fill black borders |
+| `deshake` | Quick stabilization |
+| `deinterlace` | Remove interlacing |
+| `halftone` | Newspaper dot pattern |
+| `false_color` | Pseudocolor heat map |
+| `frame_blend` | Temporal frame blending |
+| `tilt_shift` | Tilt-shift miniature effect |
+| `color_channel_swap` | Color channel remapping |
+| `ghost_trail` | Temporal motion trails |
+| `glow` | Bloom / soft glow effect |
+| `sketch` | Pencil drawing / ink line art |
+| `chromatic_aberration` | RGB channel offset / color fringing |
+| `boomerang` | Looping boomerang effect |
+| `ken_burns` | Slow zoom pan for photos |
+| `slowmo` | Smooth slow motion |
+| `stabilize` | Remove camera shake |
+| `timelapse` | Dramatic speed-up for timelapse |
+| `zoom` | Zoom in/out effect |
+| `scroll` | Scroll video vertically/horizontally |
+| `monochrome` | Monochrome with optional tint |
 
 </details>
 
@@ -485,9 +577,6 @@ FFMPEGA includes a comprehensive skill system with **200 operations** organized 
 | `xfade` | Smooth transitions between segments — 18 types: fade, dissolve, wipe, pixelize, radial, etc. |
 | `split_screen` | Side-by-side (horizontal) or top-bottom (vertical) multi-video layout. |
 | `animated_overlay` | Moving image overlay with motion presets: scroll, float, bounce, slide. |
-| `text_overlay` | Draw text with style presets: title, subtitle, lower_third, caption, top. |
-| `watermark` | Quick watermark — adds semi-transparent logo in corner. |
-| `chromakey` | Green/blue screen removal with background replacement. |
 
 </details>
 
@@ -509,7 +598,7 @@ FFMPEGA includes a comprehensive skill system with **200 operations** organized 
 </details>
 
 <details>
-<summary><b>✂️ Editing & Delivery (10 skills)</b></summary>
+<summary><b>✂️ Editing & Delivery (13 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -522,7 +611,9 @@ FFMPEGA includes a comprehensive skill system with **200 operations** organized 
 | `jump_cut` | Auto-cut to high-energy moments |
 | `beat_sync` | Sync cuts to a beat interval |
 | `color_match` | Auto histogram equalization |
-| `thumbnail` | Extract a thumbnail frame |
+| `extract_subtitles` | Extract subtitle track |
+| `preview_strip` | Filmstrip preview of key frames |
+| `sprite_sheet` | Contact sheet of frames |
 
 </details>
 
@@ -582,7 +673,7 @@ api_key: your-google-ai-key
 
 ### Gemini CLI (Free with any Google Account)
 
-Use the [Gemini CLI](https://github.com/google-gemini/gemini-cli) to run Gemini models without an API key. Works with any Google account — free tier includes **1,000 requests/day** and 60 requests/minute with Gemini 2.5 Pro and Flash. Pro/Ultra subscribers receive higher rate limits.
+Use the [Gemini CLI](https://github.com/google-gemini/gemini-cli) to run Gemini models without an API key. Works with any Google account.
 
 **Install:**
 ```bash
@@ -602,7 +693,33 @@ llm_model: gemini-cli
 
 No API key is needed — authentication is handled by the CLI. Select `gemini-cli` from the model dropdown in the node.
 
-> **Note:** The Gemini CLI runs as a subprocess. On Windows, `gemini.cmd` is also detected automatically.
+> **Note:** The Gemini CLI runs as a subprocess and is sandboxed to the custom node directory for security. On Windows, `gemini.cmd` is also detected automatically.
+
+#### Plans & Usage Limits
+
+| Plan | Rate Limit | Daily Limit | Models | Cost |
+| :--- | :--- | :--- | :--- | :--- |
+| **Free** (Google login) | 60 req/min | 1,000 req/day | Gemini model family (Pro + Flash) | Free |
+| **Free** (API key only) | 10 req/min | 250 req/day | Flash only | Free |
+| **Code Assist Standard** | 120 req/min | 1,500 req/day | Gemini model family | Paid |
+| **Code Assist Enterprise** | 120 req/min | 2,000 req/day | Gemini model family | Paid |
+| **Google AI Pro** | Higher | Higher | Full Gemini family | $19.99/mo |
+
+> **Tip:** Sign in with a Google account (free) for the best experience — 1,000 requests/day with access to Pro and Flash models. An unpaid API key limits you to 250/day on Flash only.
+
+#### Available Models
+
+The Gemini CLI auto-selects the best model, but the following are available:
+
+| Model | Best For |
+| :--- | :--- |
+| Gemini 2.5 Pro | Complex reasoning, creative tasks |
+| Gemini 2.5 Flash | Fast responses, high throughput |
+| Gemini 2.5 Flash-Lite | Maximum speed, lowest cost |
+| Gemini 3 Pro | Most capable, advanced reasoning |
+| Gemini 3 Flash | Fast + capable, good balance |
+
+> Free tier may auto-switch to Flash models when Pro quota is exhausted.
 
 ### Anthropic
 ```
@@ -667,6 +784,21 @@ llm_model: qwen-cli
 ```
 
 Auto-detected on PATH. Select `qwen-cli` from the model dropdown.
+
+### 👁️ CLI Agent Vision Support
+
+When [Frame Extraction](SKILLS_REFERENCE.md) is used, FFMPEGA saves extracted frames to a `_vision_frames/` directory and passes the frame paths to the CLI agent. Agents with vision support can **see and analyze the actual frame images** to make better editing decisions.
+
+| CLI Agent | Vision Support | Notes |
+| :--- | :--- | :--- |
+| **Gemini CLI** | ✅ Yes | `read_file` converts images to base64 for multimodal analysis |
+| **Claude Code CLI** | ✅ Yes | Native image reading and description |
+| **Cursor Agent CLI** | ✅ Yes | Native image reading and description |
+| **Qwen Code CLI** | ❌ Not yet | [Known issue](https://github.com/QwenLM/qwen-code/issues) — `read_file` returns raw binary instead of interpreting images. Vision is listed as a planned feature. |
+
+> **Note:** Agents without vision support still receive the frame file paths and can use video metadata (duration, resolution, FPS) from `analyze_video` to make editing decisions. When Qwen fixes their vision support upstream, it will work automatically since the frame paths are already passed correctly.
+
+> ⚠️ **Important:** The `_vision_frames/` directory must **not** be listed in `.gitignore` or `.git/info/exclude` — CLI agents respect these ignore patterns and will be unable to read the frames. FFMPEGA's `cleanup_vision_frames()` automatically deletes the directory after each pipeline run.
 
 ### Custom Model
 

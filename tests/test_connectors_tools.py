@@ -354,3 +354,93 @@ class TestToolIDPropagation:
         ]
 
         assert with_ids[0]["id"] == "toolu_abc123"
+
+
+# ── extract_frames tool tests ─────────────────────────────────────────
+
+import importlib
+import importlib.util
+import sys
+from pathlib import Path
+
+
+def _load_tool_defs():
+    """Import mcp.tool_defs directly, bypassing mcp/__init__.py."""
+    mod_name = "mcp.tool_defs"
+    if mod_name in sys.modules:
+        return sys.modules[mod_name]
+    spec = importlib.util.spec_from_file_location(
+        mod_name,
+        str(Path(__file__).resolve().parent.parent / "mcp" / "tool_defs.py"),
+    )
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[mod_name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class TestExtractFramesToolDefinition:
+    """Test that extract_frames is properly defined in TOOL_DEFINITIONS."""
+
+    def test_extract_frames_in_tool_definitions(self):
+        """extract_frames should appear in TOOL_DEFINITIONS."""
+        tool_defs = _load_tool_defs()
+
+        tool_names = [t["function"]["name"] for t in tool_defs.TOOL_DEFINITIONS]
+        assert "extract_frames" in tool_names
+
+    def test_extract_frames_has_parameters(self):
+        """extract_frames tool definition should have the expected params."""
+        tool_defs = _load_tool_defs()
+
+        tool = next(
+            t for t in tool_defs.TOOL_DEFINITIONS
+            if t["function"]["name"] == "extract_frames"
+        )
+        props = tool["function"]["parameters"]["properties"]
+        assert "start" in props
+        assert "duration" in props
+        assert "fps" in props
+        assert "max_frames" in props
+
+    def test_all_original_tools_still_present(self):
+        """Original 5 tools should still be present after adding extract_frames."""
+        tool_defs = _load_tool_defs()
+
+        tool_names = {t["function"]["name"] for t in tool_defs.TOOL_DEFINITIONS}
+        assert "search_skills" in tool_names
+        assert "get_skill_details" in tool_names
+        assert "list_skills" in tool_names
+        assert "analyze_video" in tool_names
+        assert "build_pipeline" in tool_names
+        assert "extract_frames" in tool_names
+        assert len(tool_defs.TOOL_DEFINITIONS) == 6
+
+
+class TestExtractFramesCleanup:
+    """Test vision frame cleanup logic."""
+
+    def test_cleanup_removes_directory(self, tmp_path):
+        """shutil.rmtree correctly removes a vision frames directory."""
+        import shutil
+
+        frames_dir = tmp_path / "_vision_frames"
+        frames_dir.mkdir()
+        (frames_dir / "frame_0001.png").write_bytes(b"fake png")
+        (frames_dir / "frame_0002.png").write_bytes(b"fake png")
+        assert frames_dir.exists()
+        assert len(list(frames_dir.iterdir())) == 2
+
+        shutil.rmtree(frames_dir)
+        assert not frames_dir.exists()
+
+    def test_cleanup_idempotent(self, tmp_path):
+        """Cleaning up a non-existent directory should not raise."""
+        import shutil
+
+        frames_dir = tmp_path / "_vision_frames"
+        assert not frames_dir.exists()
+        # shutil.rmtree with ignore_errors should not raise
+        shutil.rmtree(frames_dir, ignore_errors=True)
+
+

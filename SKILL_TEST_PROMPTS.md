@@ -871,44 +871,6 @@ Slide the overlay image in from the left edge
 Add a moving watermark that floats around the video
 ```
 
-### text_overlay
-```
-Add the title 'My Video' in large centered text
-```
-```
-Put 'Scene 1' as a lower third text overlay
-```
-```
-Add a subtitle saying 'Hello World' in yellow at the bottom
-```
-```
-Add a red banner at the top saying 'Breaking News'
-```
-```
-Show 'Subscribe!' text for the first 3 seconds only
-```
-
-### watermark
-```
-Add a semi-transparent watermark in the bottom-right corner
-```
-```
-Put a small logo watermark at 15% opacity
-```
-
-### chromakey
-```
-Remove the green screen and replace with a blue background
-```
-```
-Apply chroma key to remove the green screen
-```
-```
-Remove the blue screen background and make it transparent
-```
-
----
-
 ## 🕐 Temporal & Audio (New)
 
 ### scene_detect
@@ -1140,3 +1102,176 @@ Add a radial zoom blur effect
 Add subtle cinematic film grain with intensity 20
 ```
 ```
+
+---
+
+## 📦 Additional Skills
+
+### burn_subtitles
+```
+Burn these subtitles into the video
+```
+```
+Hardcode the SRT file
+```
+
+### color_grade
+```
+Apply teal and orange color grading
+```
+```
+Add warm cinematic color grade
+```
+
+### color_temperature
+```
+Make it warmer
+```
+```
+Cool down the color temperature
+```
+
+### deinterlace
+```
+Deinterlace the footage
+```
+```
+Remove interlacing artifacts
+```
+
+### deshake
+```
+Deshake the camera movement
+```
+```
+Quick stabilization for handheld footage
+```
+
+### extract_subtitles
+```
+Extract the subtitles
+```
+```
+Save the subtitle track as SRT
+```
+
+### fill_borders
+```
+Fill the black borders
+```
+```
+Mirror-fill the blank edges
+```
+
+### film_grain
+```
+Add film grain
+```
+```
+Apply subtle film grain texture
+```
+
+### frame_interpolation
+```
+Interpolate to 60fps for smooth motion
+```
+```
+Create smooth slow motion with frame interpolation
+```
+
+### hls_package
+```
+Package for HLS streaming
+```
+```
+Create HLS segments for adaptive playback
+```
+
+### lens_correction
+```
+Fix the barrel distortion
+```
+```
+Apply lens correction
+```
+
+### letterbox
+```
+Add cinematic letterbox bars
+```
+```
+Add widescreen black bars
+```
+
+### lut_apply
+```
+Apply this LUT file
+```
+```
+Load a .cube LUT for color grading
+```
+
+### monochrome
+```
+Make it black and white
+```
+```
+Apply a warm monochrome look
+```
+
+### perspective
+```
+Add perspective tilt
+```
+```
+Apply keystoning effect
+```
+
+### preview_strip
+```
+Create a filmstrip preview
+```
+```
+Generate a thumbnail strip
+```
+
+### replace_audio
+```
+Replace the audio with this track
+```
+```
+Swap out the audio
+```
+
+### scroll
+```
+Scroll the video upward
+```
+```
+Add a horizontal scroll
+```
+
+### selective_color
+```
+Make only the red pop
+```
+```
+Desaturate everything except blue
+```
+
+### sprite_sheet
+```
+Create a sprite sheet
+```
+```
+Generate a contact sheet of frames
+```
+
+### two_pass
+```
+Encode with two-pass at 5M bitrate
+```
+```
+Use two-pass encoding for best quality
+```
+
