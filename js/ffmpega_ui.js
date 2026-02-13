@@ -98,7 +98,7 @@ function updateDynamicSlots(node, prefix, slotType, excludePrefix) {
  * @param {string} text - The text to set or append
  * @param {boolean} replace - If true, replaces the existing text. If false, appends.
  */
-function setPrompt(node, text, replace = false) {
+function setPrompt(node, text, replace = false, color = "#4a5a7a") {
     const promptWidget = node.widgets?.find(w => w.name === "prompt");
     if (promptWidget) {
         if (replace) {
@@ -115,7 +115,7 @@ function setPrompt(node, text, replace = false) {
             }
         }
         node.setDirtyCanvas(true, true);
-        flashNode(node);
+        flashNode(node, color);
     }
 }
 
@@ -522,7 +522,8 @@ app.registerExtension({
                                             if (!confirm("Replace current prompt with a random example?")) return;
                                         }
                                         const randomPrompt = RANDOM_PROMPTS[Math.floor(Math.random() * RANDOM_PROMPTS.length)];
-                                        setPrompt(this, randomPrompt, true);
+                                        // Use purple magic color
+                                        setPrompt(this, randomPrompt, true, "#8a4a8a");
                                     }
                                 },
                                 {
@@ -538,6 +539,26 @@ app.registerExtension({
                                     }
                                 },
                                 {
+                                    content: "📥 Paste Prompt",
+                                    callback: () => {
+                                        if (navigator.clipboard && navigator.clipboard.readText) {
+                                            navigator.clipboard.readText()
+                                                .then(text => {
+                                                    if (text) {
+                                                        // Append pasted text with blue feedback
+                                                        setPrompt(this, text, false, "#4a6a8a");
+                                                    }
+                                                })
+                                                .catch(err => {
+                                                    console.error("Failed to read clipboard", err);
+                                                    flashNode(this, "#7a4a4a");
+                                                });
+                                        } else {
+                                            flashNode(this, "#7a4a4a");
+                                        }
+                                    }
+                                },
+                                {
                                     content: "🗑️ Clear Prompt",
                                     callback: () => {
                                         const promptWidget = this.widgets?.find(w => w.name === "prompt");
@@ -545,7 +566,7 @@ app.registerExtension({
                                             if (!confirm("Are you sure you want to clear the prompt?")) return;
                                             promptWidget.value = "";
                                             this.setDirtyCanvas(true, true);
-                                            flashNode(this);
+                                            flashNode(this, "#7a3a3a");
                                         }
                                     }
                                 }
