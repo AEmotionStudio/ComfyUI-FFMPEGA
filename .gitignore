@@ -133,3 +133,13 @@ custom_skills/*/
 
 # Token usage logs
 usage_log.jsonl
+
+# Local integration tests (require local LLM servers)
+tests/test_*_ollama.py
+tests/test_*_local.py
+
+# Stray files from Python REPL / ImageMagick (bare module names)
+/json
+/re
+/os
+/sys

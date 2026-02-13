@@ -8,7 +8,17 @@ logic is tested indirectly via integration tests.
 import pytest
 import json
 
-from core.pipeline_generator import PipelineGenerator
+try:
+    from core.pipeline_generator import PipelineGenerator
+except (ImportError, ModuleNotFoundError):
+    import importlib.util, os
+    _spec = importlib.util.spec_from_file_location(
+        "core.pipeline_generator",
+        os.path.join(os.path.dirname(__file__), "..", "core", "pipeline_generator.py"),
+    )
+    _mod = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_mod)
+    PipelineGenerator = _mod.PipelineGenerator
 
 
 class TestParseResponse:
