@@ -144,23 +144,46 @@ class CLIConnectorBase(LLMConnector):
     ) -> LLMResponse:
         """Parse raw CLI output into an LLMResponse.
 
-        Subclasses (e.g. GeminiCLI, ClaudeCLI) override this to extract
-        structured JSON with native token stats. The base implementation
-        returns estimated token counts from character length.
+        Calls ``_parse_json_output`` (overridden by subclasses to extract
+        structured JSON with native token stats). If that returns ``None``
+        or yields no token counts, falls back to char-based estimation.
         """
-        # Estimate tokens from character length (~4 chars/token)
+        response = self._parse_json_output(raw_output)
+        if response is not None:
+            # If JSON parsing yielded token counts, use them directly
+            if response.prompt_tokens is not None or response.completion_tokens is not None:
+                return response
+            # JSON parsed content but no tokens — fill in estimates
+            content = response.content
+        else:
+            content = raw_output
+
         _CPC = 4  # chars per token estimate
         est_prompt = len(stdin_data) // _CPC if stdin_data else 0
-        est_completion = max(1, len(raw_output) // _CPC) if raw_output else 0
+        est_completion = max(1, len(content) // _CPC) if content else 0
 
         return LLMResponse(
-            content=raw_output,
+            content=content,
             model=self._model_name(),
             provider=self._provider(),
             prompt_tokens=est_prompt,
             completion_tokens=est_completion,
             total_tokens=est_prompt + est_completion,
         )
+
+    def _parse_json_output(self, raw_output: str) -> Optional[LLMResponse]:
+        """Parse structured JSON from CLI output.
+
+        Subclasses override this to extract content and native token stats.
+        Return ``None`` if the output is not valid JSON (base class will
+        fall back to char-based estimation).
+        """
+        return None
+
+    @staticmethod
+    def _first_not_none(a: Optional[int], b: Optional[int]) -> Optional[int]:
+        """Return the first non-None value (preserves valid 0)."""
+        return a if a is not None else b
 
     async def generate_stream(
         self,

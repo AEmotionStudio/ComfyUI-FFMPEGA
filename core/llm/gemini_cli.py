@@ -70,42 +70,17 @@ class GeminiCLIConnector(CLIConnectorBase):
     def _log_tag(self) -> str:
         return "GeminiCLI"
 
-    # --- Override _parse_raw_output to extract JSON token stats ---
-
-    def _parse_raw_output(
-        self,
-        raw_output: str,
-        stdin_data: Optional[bytes] = None,
-    ) -> LLMResponse:
-        """Parse Gemini CLI JSON output for content and native token stats."""
-        response = self._parse_json_output(raw_output)
-        # If JSON parsing didn't yield token counts, use char-based estimation
-        if response.prompt_tokens is None and response.completion_tokens is None:
-            _CPC = 4
-            est_prompt = len(stdin_data) // _CPC if stdin_data else 0
-            est_completion = max(1, len(response.content) // _CPC) if response.content else 0
-            return LLMResponse(
-                content=response.content,
-                model=response.model,
-                provider=response.provider,
-                prompt_tokens=est_prompt,
-                completion_tokens=est_completion,
-                total_tokens=est_prompt + est_completion,
-            )
-        return response
-
-    def _parse_json_output(self, raw_output: str) -> LLMResponse:
+    def _parse_json_output(self, raw_output: str) -> Optional[LLMResponse]:
         """Parse Gemini CLI JSON output, extracting content and token stats.
 
         The JSON output may contain a list of response objects. Each object
         can have a 'response' field with the text content, and a 'stats'
         or 'usage' field with token counts.
 
-        Falls back to treating output as plain text if JSON parsing fails.
+        Returns None if JSON parsing fails (base class falls back to
+        char-based estimation).
         """
-        def _first(a: Optional[int], b: Optional[int]) -> Optional[int]:
-            """Return first non-None value (0 is valid)."""
-            return a if a is not None else b
+        _first = self._first_not_none
 
         prompt_tokens: Optional[int] = None
         completion_tokens: Optional[int] = None
@@ -145,8 +120,9 @@ class GeminiCLIConnector(CLIConnectorBase):
             )
 
         except (json.JSONDecodeError, ValueError, TypeError):
-            # Not valid JSON — treat as plain text (fallback to text mode)
+            # Not valid JSON — signal base class to use char-based fallback
             logger.debug("[GeminiCLI] JSON parse failed, treating as plain text")
+            return None
 
         return LLMResponse(
             content=content,
