@@ -6,10 +6,7 @@ Auto-generated from composer.py — do not edit directly.
 try:
     from ...core.sanitize import sanitize_text_param
 except ImportError:
-    try:
-        from core.sanitize import sanitize_text_param
-    except ImportError:
-        def sanitize_text_param(s): return s
+    from core.sanitize import sanitize_text_param
 
 def _f_resize(p):
     return [f"scale={p.get('width', -1)}:{p.get('height', -1)}"], [], []

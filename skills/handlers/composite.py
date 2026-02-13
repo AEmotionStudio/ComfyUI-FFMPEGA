@@ -11,18 +11,12 @@ try:
         ALLOWED_FONT_EXTENSIONS,
     )
 except ImportError:
-    try:
-        from core.sanitize import (
-            sanitize_text_param,
-            validate_path,
-            ALLOWED_SUBTITLE_EXTENSIONS,
-            ALLOWED_FONT_EXTENSIONS,
-        )
-    except ImportError:
-        def sanitize_text_param(s): return s
-        def validate_path(p, e, must_exist=True): return p
-        ALLOWED_SUBTITLE_EXTENSIONS = set()
-        ALLOWED_FONT_EXTENSIONS = set()
+    from core.sanitize import (
+        sanitize_text_param,
+        validate_path,
+        ALLOWED_SUBTITLE_EXTENSIONS,
+        ALLOWED_FONT_EXTENSIONS,
+    )
 
 _VIDEO_EXTENSIONS = {".mp4", ".webm", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".ts", ".m4v"}
 

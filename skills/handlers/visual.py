@@ -6,10 +6,7 @@ Auto-generated from composer.py — do not edit directly.
 try:
     from ...core.sanitize import sanitize_text_param
 except ImportError:
-    try:
-        from core.sanitize import sanitize_text_param
-    except ImportError:
-        def sanitize_text_param(s): return s
+    from core.sanitize import sanitize_text_param
 
 def _f_brightness(p):
     return [f"eq=brightness={p.get('value', 0)}"], [], []
@@ -324,6 +321,26 @@ def _f_waveform(p):
     return [], [], [], fc
 
 
+def _colorkey_impl(color, similarity, blend, background):
+    """Shared colorkey implementation for chromakey and colorkey skills."""
+    color = sanitize_text_param(str(color))
+    similarity = float(similarity)
+    blend = float(blend)
+    background = sanitize_text_param(str(background))
+
+    if background == "transparent":
+        vf = [f"colorkey=color={color}:similarity={similarity}:blend={blend}"]
+        return vf, [], []
+
+    fc = (
+        f"[0:v]split[ckv][bg];"
+        f"[ckv]colorkey=color={color}:similarity={similarity}:blend={blend}[keyed];"
+        f"[bg]drawbox=c={background}:t=fill[solid];"
+        f"[solid][keyed]overlay=format=auto"
+    )
+    return [], [], [], fc
+
+
 def _f_chromakey(p):
     """Remove a solid-color background (chroma key / green screen).
 
@@ -337,26 +354,12 @@ def _f_chromakey(p):
         background: replacement background color (default "black").
                      Set to "transparent" to output with alpha channel.
     """
-    color = p.get("color", "0x00FF00")
-    similarity = float(p.get("similarity", 0.3))
-    blend = float(p.get("blend", 0.1))
-    background = p.get("background", "black")
-
-    if background == "transparent":
-        # Output with alpha: just apply colorkey
-        vf = [f"colorkey=color={color}:similarity={similarity}:blend={blend}"]
-    else:
-        # Replace keyed color with a solid background
-        # Split → colorkey on one branch, color source on other, overlay
-        fc = (
-            f"[0:v]split[ckv][bg];"
-            f"[ckv]colorkey=color={color}:similarity={similarity}:blend={blend}[keyed];"
-            f"[bg]drawbox=c={background}:t=fill[solid];"
-            f"[solid][keyed]overlay=format=auto"
-        )
-        return [], [], [], fc
-
-    return vf, [], []
+    return _colorkey_impl(
+        p.get("color", "0x00FF00"),
+        p.get("similarity", 0.3),
+        p.get("blend", 0.1),
+        p.get("background", "black"),
+    )
 
 
 def _f_blend(p):
@@ -450,22 +453,12 @@ def _f_lut_apply(p):
 
 def _f_colorkey(p):
     """Key out an arbitrary color (general-purpose version of chromakey)."""
-    color = sanitize_text_param(str(p.get("color", "0x00FF00")))
-    similarity = float(p.get("similarity", 0.3))
-    blend = float(p.get("blend", 0.1))
-    background = sanitize_text_param(str(p.get("background", "black")))
-
-    if background == "transparent":
-        vf = [f"colorkey=color={color}:similarity={similarity}:blend={blend}"]
-        return vf, [], []
-
-    fc = (
-        f"[0:v]split[ckv][bg];"
-        f"[ckv]colorkey=color={color}:similarity={similarity}:blend={blend}[keyed];"
-        f"[bg]drawbox=c={background}:t=fill[solid];"
-        f"[solid][keyed]overlay=format=auto"
+    return _colorkey_impl(
+        p.get("color", "0x00FF00"),
+        p.get("similarity", 0.3),
+        p.get("blend", 0.1),
+        p.get("background", "black"),
     )
-    return [], [], [], fc
 
 
 def _f_lumakey(p):
