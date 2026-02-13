@@ -32,6 +32,11 @@ Overlay the connected image as a small picture-in-picture in the bottom right co
 Fade in from black over 2 seconds, add text "Episode 12" centered in a large font, then fade the text out after 3 seconds, add a vignette
 ```
 
+### Branded End Screen
+```
+Add scrolling credits text at the bottom, overlay the logo in the top right at 10% scale, fade out to black at the end, normalize audio
+```
+
 ---
 
 ## 🎞️ Professional Color Grading
@@ -59,6 +64,16 @@ Color match via histogram equalization, normalize loudness to broadcast standard
 ### Golden Hour Warmth
 ```
 Apply sunset golden hour look, slightly boost saturation to 1.2, add a slow Ken Burns zoom, fade in for 1.5 seconds
+```
+
+### LUT Color Grade
+```
+Apply a LUT file for professional color grading, add film grain, add letterbox bars, normalize loudness
+```
+
+### Split Tone Grade
+```
+Add split toning with warm highlights and cool shadows, lift the shadows slightly, sharpen with unsharp mask, add a vignette
 ```
 
 ---
@@ -90,6 +105,16 @@ Stabilize the video, crop slightly to remove black edges, sharpen with strength 
 Trim from 1:30 to 2:45, convert to h265, set CRF to 20 with slow preset, optimize for web
 ```
 
+### Remove Letterbox and Upscale
+```
+Auto-crop the black borders, upscale 2x with Lanczos, sharpen with unsharp mask, set quality to high
+```
+
+### Deflicker Timelapse
+```
+Fix the flickering from the timelapse, smooth it with frame blending, speed up 2x, add a slow drift pan to the right
+```
+
 ---
 
 ## 📱 Social Media & Delivery
@@ -117,6 +142,11 @@ Trim to the first 4 seconds, resize to 480 wide, speed up 1.5x, convert to GIF
 ### Multi-Platform Export
 ```
 Resize to 1080p, normalize audio, compress with CRF 22, optimize for web streaming, set pixel format to yuv420p
+```
+
+### Boomerang for Stories
+```
+Trim to 2 seconds, create a boomerang loop 3 times, make it vertical 9:16, speed up 1.2x
 ```
 
 ---
@@ -148,6 +178,16 @@ Arrange all connected images in a 2-column grid with small gaps between them
 Concatenate all video segments, overlay the logo in the bottom right at 15% scale, normalize audio, compress for web
 ```
 
+### Animated Bug Overlay
+```
+Overlay the connected image with a floating bounce animation at 15% scale, 50% opacity, throughout the entire video
+```
+
+### Multi-Transition Montage
+```
+Concatenate all connected clips with a wipe left transition, 1.5 second duration, resize to 1080p, normalize audio
+```
+
 ---
 
 ## 🎵 Audio-Focused Workflows
@@ -175,6 +215,11 @@ Remove reverb, reduce background noise, normalize loudness, compress dynamics, b
 ### Audio Visualization
 ```
 Show the audio waveform at the bottom of the video in cyan color with line mode, add a slight vignette
+```
+
+### Audio Crossfade Loop
+```
+Loop the video 3 times, add smooth audio crossfade transitions, normalize loudness
 ```
 
 ---
@@ -209,6 +254,138 @@ Convert to black and white, increase contrast to 1.5, add strong vignette, add f
 ### Dreamy Timelapse
 ```
 Speed up 8x, apply dreamy effect, add a slow zoom, fade in from white, fade out to black
+```
+
+### Thermal Vision
+```
+Apply thermal false color heat map, add text "THERMAL CAM" in the top left, add a timestamp, boost contrast
+```
+
+### Datamosh Glitch Art
+```
+Apply datamosh glitch effect, add chromatic aberration with strong RGB split, pixelate slightly, add ghost trails
+```
+
+### Comic Book Style
+```
+Apply comic book effect with pop art style, posterize to reduce colors, add halftone dots, boost saturation
+```
+
+---
+
+## 🎭 Keying & Masking Workflows
+
+### Green Screen Removal
+```
+Remove the green screen with chroma key, despill the green edges, sharpen slightly, add a vignette
+```
+
+### Simple Green Screen
+```
+Quick chroma key simple to remove the green background, resize to 1080p, compress for web
+```
+
+### Sin City Effect
+```
+Use colorhold to keep only the red, desaturate everything else, boost contrast to 1.5, add a strong vignette, apply noir style
+```
+
+### Luma Matte Compositing
+```
+Key out the dark areas with lumakey, add a soft glow, fade in from black over 2 seconds
+```
+
+### Color Spill Cleanup
+```
+Chroma key the green screen, despill the green color bleeding, color match via histogram, normalize audio
+```
+
+### Selective Color Pop
+```
+Use selective color to make only the blue pop, desaturate to 0.3, add a subtle vignette, boost contrast slightly
+```
+
+### Privacy Masking
+```
+Blur the face region at x=300 y=200 width=150 height=150 for privacy, add text "Identity Protected" at the bottom
+```
+
+---
+
+## ✏️ Broadcast Text & Graphics
+
+### News Lower Third
+```
+Add a professional lower third with name "Sarah Johnson" and title "Lead Designer", add a news ticker at the bottom saying "BREAKING: New product launch today"
+```
+
+### Typewriter Title Reveal
+```
+Add typewriter text revealing "Chapter 1: The Beginning" letter by letter, fade in from black, add a subtle vignette
+```
+
+### Karaoke Lyrics
+```
+Add karaoke-style text that fills in as the song plays, large centered text, white with yellow fill
+```
+
+### Countdown Intro
+```
+Add a 5 second countdown timer overlay, fade in from black, add text "Starting Soon" at the bottom
+```
+
+### Scrolling End Credits
+```
+Add scrolling credits text at the bottom, fade in from black, add a slow Ken Burns zoom, fade out to black at the end
+```
+
+### Bouncing Call-to-Action
+```
+Add bouncing text "SUBSCRIBE!" in yellow at the top, add a ticker at the bottom with "Like and share for more content"
+```
+
+### Animated Title Card
+```
+Add animated text "My Vlog" in the center, fade it in over 2 seconds, add a pulse zoom effect, overlay logo in the corner
+```
+
+---
+
+## 🔮 Motion & Reveal Effects
+
+### Iris Reveal Opening
+```
+Add a circular iris reveal opening from the center over 2 seconds, add a vignette, fade in from black
+```
+
+### Wipe Transition Intro
+```
+Reveal the video with a left-to-right wipe from black, add text "Welcome" that fades in after the wipe
+```
+
+### Slide-In Entrance
+```
+Slide the video in from the left edge, add a pulse zoom effect for energy, add a fade out at the end
+```
+
+### Cinematic Drift
+```
+Add a slow cinematic drift panning to the right, apply color grade with teal orange style, add letterbox bars
+```
+
+### Earthquake Shake
+```
+Add heavy camera shake effect, add chromatic aberration, flash at 2 seconds, speed up 1.3x
+```
+
+### Spin Transition
+```
+Spin the video while zooming in, add ghost trail, fade to black at the end
+```
+
+### Ken Burns Photo
+```
+Apply Ken Burns slow zoom in over 10 seconds, add a vignette, fade in from black, fade out to white
 ```
 
 ---
@@ -250,6 +427,21 @@ Make it better
 Make this look more professional and engaging for social media
 ```
 
+### All Visual Effects Chain
+```
+Apply brightness 0.1, contrast 1.2, saturation 1.3, sharpen, add vignette, color grade teal orange, add chromatic aberration, sketch in pencil mode
+```
+
+### All Keying/Masking
+```
+Chroma key green screen, despill green, colorhold red, add glow, fade in from black
+```
+
+### Heavy Filter Complex
+```
+Add a glow overlay, ghost trail, waveform at the bottom in cyan, picture-in-picture overlay in the corner, text "LIVE" in top left
+```
+
 ---
 
 ## 🎬 Production Workflows
@@ -264,9 +456,9 @@ Concatenate all connected video segments together, add 1 second cross dissolve t
 Add a lower third with name "Sarah Johnson" and title "Lead Designer", have it appear 2 seconds in with a fade
 ```
 
-### Countdown Intro
+### Interview Cleanup
 ```
-Add a 5 second countdown timer, then fade to the main video, add text "Starting Soon" below the countdown
+Denoise audio, remove reverb, normalize loudness to -14 LUFS, stabilize the footage, add a lower third with name and title
 ```
 
 ### Privacy Blur
@@ -282,4 +474,40 @@ Resize to 1920x1080, set frame rate to 29.97fps, normalize loudness to -23 LUFS,
 ### Archive / Preservation
 ```
 Convert to lossless quality, preserve original resolution, extract audio as separate track
+```
+
+### Two-Pass High Quality
+```
+Encode with two-pass at 8M bitrate, convert to h265 with slow preset, normalize loudness, optimize for web streaming
+```
+
+### Frame Extraction for Review
+```
+Extract one frame per second as PNG images for frame-by-frame review
+```
+
+### Smooth Slow-Mo Conversion
+```
+Frame rate interpolation to 60fps with motion estimation, then slow to 0.5x for smooth slow motion, normalize audio
+```
+
+---
+
+## 📊 Analysis-Aided Workflows
+
+> These prompts rely on the LLM agent using analysis tools before editing.
+
+### Smart Color Grade
+```
+Analyze the video's colors first, then apply appropriate color grading to make it look cinematic without over-processing
+```
+
+### Audio-Aware Edit
+```
+Check the audio levels first, then normalize if too quiet, add a noise gate if there's background noise, and compress dynamics for consistency
+```
+
+### Intelligent Trim
+```
+Analyze the video and trim out any sections with silence or black frames, keep only the interesting content
 ```

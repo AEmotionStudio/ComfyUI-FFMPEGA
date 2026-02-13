@@ -9,7 +9,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Timelapse skill
     registry.register(Skill(
         name="timelapse",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.TEMPORAL,
         description="Speed up footage dramatically for timelapse effect",
         parameters=[
             SkillParameter(
@@ -42,7 +42,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Slowmo skill
     registry.register(Skill(
         name="slowmo",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.TEMPORAL,
         description="Smooth slow motion effect",
         parameters=[
             SkillParameter(
@@ -119,7 +119,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Glitch skill
     registry.register(Skill(
         name="glitch",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="Digital glitch effect",
         parameters=[
             SkillParameter(
@@ -144,7 +144,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Mirror skill
     registry.register(Skill(
         name="mirror",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.SPATIAL,
         description="Create mirror/kaleidoscope effect",
         parameters=[
             SkillParameter(
@@ -166,7 +166,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Zoom skill
     registry.register(Skill(
         name="zoom",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.SPATIAL,
         description="Apply zoom effect",
         parameters=[
             SkillParameter(
@@ -202,7 +202,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Ken Burns skill
     registry.register(Skill(
         name="ken_burns",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.SPATIAL,
         description="Pan and zoom animation (Ken Burns effect)",
         parameters=[
             SkillParameter(
@@ -233,7 +233,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Boomerang skill
     registry.register(Skill(
         name="boomerang",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.TEMPORAL,
         description="Create looping boomerang effect",
         parameters=[
             SkillParameter(
@@ -341,7 +341,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Chroma key (green/blue screen removal)
     registry.register(Skill(
         name="chromakey",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="Remove green or blue screen background (chroma key)",
         parameters=[
             SkillParameter(
@@ -381,7 +381,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Deband (remove gradient banding)
     registry.register(Skill(
         name="deband",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="Remove banding artifacts from gradients (especially AI-generated video)",
         parameters=[
             SkillParameter(
@@ -421,7 +421,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Lens correction
     registry.register(Skill(
         name="lens_correction",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.SPATIAL,
         description="Fix barrel or pincushion lens distortion (GoPro, wide-angle)",
         parameters=[
             SkillParameter(
@@ -453,7 +453,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Deinterlace
     registry.register(Skill(
         name="deinterlace",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.SPATIAL,
         description="Remove interlacing from old or TV footage",
         parameters=[
             SkillParameter(
@@ -475,7 +475,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Frame interpolation (smooth slow-mo)
     registry.register(Skill(
         name="frame_interpolation",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.SPATIAL,
         description="Smooth slow motion or frame rate conversion using motion interpolation",
         parameters=[
             SkillParameter(
@@ -506,7 +506,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Scroll (scrolling credits/ticker)
     registry.register(Skill(
         name="scroll",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.SPATIAL,
         description="Scroll the video horizontally or vertically (credits, ticker effect)",
         parameters=[
             SkillParameter(
@@ -537,7 +537,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Perspective correction/warp
     registry.register(Skill(
         name="perspective",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.SPATIAL,
         description="Skew or warp video perspective (tilt, lean)",
         parameters=[
             SkillParameter(
@@ -568,7 +568,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Fill borders
     registry.register(Skill(
         name="fill_borders",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.SPATIAL,
         description="Fill black borders (useful after rotation or stabilization)",
         parameters=[
             SkillParameter(
@@ -626,7 +626,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Deshake (simple stabilization)
     registry.register(Skill(
         name="deshake",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.SPATIAL,
         description="Simple video stabilization to reduce shakiness",
         parameters=[
             SkillParameter(
@@ -667,7 +667,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Selective color
     registry.register(Skill(
         name="selective_color",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="Adjust specific color ranges (like only reds or blues)",
         parameters=[
             SkillParameter(
@@ -726,7 +726,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Monochrome tinting
     registry.register(Skill(
         name="monochrome",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="Convert to monochrome with optional color tint",
         parameters=[
             SkillParameter(
@@ -758,7 +758,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Audio waveform visualization
     registry.register(Skill(
         name="waveform",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="Visualize audio as a waveform overlay on the video",
         parameters=[
             SkillParameter(
@@ -940,7 +940,7 @@ def register_skills(registry: SkillRegistry) -> None:
 
     registry.register(Skill(
         name="overlay_image",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="Overlay a second input image on top of the video (picture-in-picture)",
         parameters=[
             SkillParameter(
@@ -993,7 +993,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Glow / bloom effect
     registry.register(Skill(
         name="glow",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="Bloom / soft glow effect (split → blur → screen blend)",
         parameters=[
             SkillParameter(
@@ -1026,7 +1026,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Ghost trail / afterimage
     registry.register(Skill(
         name="ghost_trail",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="Temporal trailing / afterimage effect (ghostly motion trails)",
         parameters=[
             SkillParameter(
@@ -1050,7 +1050,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Tilt-shift miniature
     registry.register(Skill(
         name="tilt_shift",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="Real tilt-shift miniature effect with selective blur",
         parameters=[
             SkillParameter(
@@ -1082,7 +1082,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Frame blend / motion blur
     registry.register(Skill(
         name="frame_blend",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.SPATIAL,
         description="Temporal frame blending for dreamy motion blur",
         parameters=[
             SkillParameter(
@@ -1106,7 +1106,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Chromatic aberration
     registry.register(Skill(
         name="chromatic_aberration",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="RGB channel offset for chromatic aberration / color fringing",
         parameters=[
             SkillParameter(
@@ -1130,7 +1130,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Sketch / line art
     registry.register(Skill(
         name="sketch",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="Pencil drawing / ink line art effect using edge detection",
         parameters=[
             SkillParameter(
@@ -1194,7 +1194,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Chroma key (green screen)
     registry.register(Skill(
         name="chromakey",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="Remove a solid-color background (chroma key / green screen removal)",
         parameters=[
             SkillParameter(
@@ -1237,6 +1237,222 @@ def register_skills(registry: SkillRegistry) -> None:
             "chromakey:background=white - Replace green with white",
         ],
         tags=["chroma", "key", "green_screen", "blue_screen", "remove_background", "transparent", "keying"],
+    ))
+
+    # Color key (general-purpose key out any color)
+    registry.register(Skill(
+        name="colorkey",
+        category=SkillCategory.VISUAL,
+        description="Key out any arbitrary color and replace with a background (general-purpose color removal)",
+        parameters=[
+            SkillParameter(
+                name="color",
+                type=ParameterType.STRING,
+                description="Hex color to key out (e.g. '0xFF0000' for red, '0x00FF00' for green)",
+                required=False,
+                default="0x00FF00",
+            ),
+            SkillParameter(
+                name="similarity",
+                type=ParameterType.FLOAT,
+                description="How similar a color must be to key out (0.0 = exact, 1.0 = very loose)",
+                required=False,
+                default=0.3,
+                min_value=0.01,
+                max_value=1.0,
+            ),
+            SkillParameter(
+                name="blend",
+                type=ParameterType.FLOAT,
+                description="Edge blending for smoother keying (0.0 = hard edge, 1.0 = very soft)",
+                required=False,
+                default=0.1,
+                min_value=0.0,
+                max_value=1.0,
+            ),
+            SkillParameter(
+                name="background",
+                type=ParameterType.STRING,
+                description="Replacement background color or 'transparent' for alpha output",
+                required=False,
+                default="black",
+            ),
+        ],
+        examples=[
+            "colorkey:color=0xFF0000 - Remove red background",
+            "colorkey:color=0xFFFFFF,similarity=0.2 - Remove white background",
+            "colorkey:background=transparent - Output with alpha channel",
+        ],
+        tags=["color", "key", "remove", "background", "mask", "transparent", "keying"],
+    ))
+
+    # Luma key (key out by brightness)
+    registry.register(Skill(
+        name="lumakey",
+        category=SkillCategory.VISUAL,
+        description="Key out regions based on brightness (luma). Remove dark or bright areas.",
+        parameters=[
+            SkillParameter(
+                name="threshold",
+                type=ParameterType.FLOAT,
+                description="Luma value to key out (0.0 = black, 1.0 = white)",
+                required=False,
+                default=0.0,
+                min_value=0.0,
+                max_value=1.0,
+            ),
+            SkillParameter(
+                name="tolerance",
+                type=ParameterType.FLOAT,
+                description="Range around threshold to also key out",
+                required=False,
+                default=0.1,
+                min_value=0.0,
+                max_value=1.0,
+            ),
+            SkillParameter(
+                name="softness",
+                type=ParameterType.FLOAT,
+                description="Edge softness (0 = hard, 1 = very soft)",
+                required=False,
+                default=0.0,
+                min_value=0.0,
+                max_value=1.0,
+            ),
+            SkillParameter(
+                name="background",
+                type=ParameterType.STRING,
+                description="Replacement background color or 'transparent'",
+                required=False,
+                default="black",
+            ),
+        ],
+        examples=[
+            "lumakey - Remove black background",
+            "lumakey:threshold=1.0,tolerance=0.2 - Remove white background",
+            "lumakey:threshold=0.0,tolerance=0.3,softness=0.2 - Soft black key",
+        ],
+        tags=["luma", "key", "brightness", "black", "white", "mask", "background", "transparent"],
+    ))
+
+    # Color hold (sin-city effect — keep one color, desaturate rest)
+    registry.register(Skill(
+        name="colorhold",
+        category=SkillCategory.VISUAL,
+        description="Keep only a selected color while desaturating everything else (sin-city / spot color effect)",
+        parameters=[
+            SkillParameter(
+                name="color",
+                type=ParameterType.STRING,
+                description="Hex color to preserve (e.g. '0xFF0000' for red)",
+                required=False,
+                default="0xFF0000",
+            ),
+            SkillParameter(
+                name="similarity",
+                type=ParameterType.FLOAT,
+                description="How close to the held color counts (0.0 = exact, 1.0 = very loose)",
+                required=False,
+                default=0.3,
+                min_value=0.01,
+                max_value=1.0,
+            ),
+            SkillParameter(
+                name="blend",
+                type=ParameterType.FLOAT,
+                description="Edge blend between held color and desaturated areas",
+                required=False,
+                default=0.1,
+                min_value=0.0,
+                max_value=1.0,
+            ),
+        ],
+        examples=[
+            "colorhold - Keep red, desaturate rest (sin-city effect)",
+            "colorhold:color=0x0000FF - Keep blue, desaturate rest",
+            "colorhold:color=0xFFFF00,similarity=0.4 - Keep yellow tones",
+        ],
+        tags=["color", "hold", "sin_city", "spot_color", "selective", "desaturate", "mask", "effect"],
+    ))
+
+    # Despill (clean color spill from chroma key edges)
+    registry.register(Skill(
+        name="despill",
+        category=SkillCategory.VISUAL,
+        description="Remove green/blue color spill from chroma-keyed footage edges",
+        parameters=[
+            SkillParameter(
+                name="type",
+                type=ParameterType.CHOICE,
+                description="Spill color to remove",
+                required=False,
+                default="green",
+                choices=["green", "blue"],
+            ),
+            SkillParameter(
+                name="mix",
+                type=ParameterType.FLOAT,
+                description="Spill removal mix factor (0.0 = none, 1.0 = full)",
+                required=False,
+                default=0.5,
+                min_value=0.0,
+                max_value=1.0,
+            ),
+            SkillParameter(
+                name="expand",
+                type=ParameterType.FLOAT,
+                description="How far spill correction extends (0.0 = minimal, 1.0 = wide)",
+                required=False,
+                default=0.0,
+                min_value=0.0,
+                max_value=1.0,
+            ),
+            SkillParameter(
+                name="brightness",
+                type=ParameterType.FLOAT,
+                description="Brightness correction for despill areas",
+                required=False,
+                default=0.0,
+                min_value=-1.0,
+                max_value=1.0,
+            ),
+        ],
+        examples=[
+            "despill - Remove green spill (after chromakey)",
+            "despill:type=blue - Remove blue spill",
+            "despill:mix=0.8,expand=0.3 - Aggressive despill with wider reach",
+        ],
+        tags=["despill", "spill", "chroma", "key", "edge", "cleanup", "green", "blue"],
+    ))
+
+    # Remove background (rembg-based, optional dependency)
+    registry.register(Skill(
+        name="remove_background",
+        category=SkillCategory.VISUAL,
+        description="Remove arbitrary backgrounds using AI (rembg). Requires optional masking dependency.",
+        parameters=[
+            SkillParameter(
+                name="model",
+                type=ParameterType.CHOICE,
+                description="AI model for background removal",
+                required=False,
+                default="silueta",
+                choices=["silueta", "u2net", "birefnet-general"],
+            ),
+            SkillParameter(
+                name="background",
+                type=ParameterType.STRING,
+                description="Replacement background color or 'transparent'",
+                required=False,
+                default="transparent",
+            ),
+        ],
+        examples=[
+            "remove_background - Remove background (fast silueta model)",
+            "remove_background:model=birefnet-general - High quality background removal",
+            "remove_background:background=white - Replace background with white",
+        ],
+        tags=["remove", "background", "mask", "ai", "rembg", "segment", "cutout", "transparent"],
     ))
 
     # Concat
@@ -1322,7 +1538,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Split screen
     registry.register(Skill(
         name="split_screen",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="Show videos/images side-by-side (horizontal) or stacked (vertical). Requires extra image inputs.",
         parameters=[
             SkillParameter(
@@ -1366,7 +1582,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Animated overlay
     registry.register(Skill(
         name="animated_overlay",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="Overlay an image with animated motion (scroll, float, bounce, slide). Requires image_a as the overlay image.",
         parameters=[
             SkillParameter(
@@ -1485,7 +1701,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Delogo — remove watermark/logo
     registry.register(Skill(
         name="delogo",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="Remove or obscure a watermark/logo from a fixed region of the video",
         parameters=[
             SkillParameter(
@@ -1528,7 +1744,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Remove duplicate frames — clean stuttery footage
     registry.register(Skill(
         name="remove_dup_frames",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.TEMPORAL,
         description="Remove duplicate/near-duplicate frames (fix stuttery or low-FPS footage)",
         parameters=[
             SkillParameter(
@@ -1552,7 +1768,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Mask blur — blur a region (privacy)
     registry.register(Skill(
         name="mask_blur",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="Blur a rectangular region of the video (face/plate privacy)",
         parameters=[
             SkillParameter(
@@ -1604,7 +1820,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # LUT apply — load .cube/.3dl LUT file
     registry.register(Skill(
         name="lut_apply",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="Apply a color LUT file (.cube or .3dl) for professional color grading",
         parameters=[
             SkillParameter(
@@ -1637,7 +1853,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Picture-in-picture
     registry.register(Skill(
         name="picture_in_picture",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="Overlay a second video in a corner (picture-in-picture / PiP)",
         parameters=[
             SkillParameter(
@@ -1677,7 +1893,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Blend / double exposure
     registry.register(Skill(
         name="blend",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="Blend two video inputs together (double exposure, multiply, screen, etc.)",
         parameters=[
             SkillParameter(
@@ -2002,7 +2218,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Jump cut
     registry.register(Skill(
         name="jump_cut",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.TEMPORAL,
         description="Auto-create jump cuts by removing static/still segments",
         parameters=[
             SkillParameter(
@@ -2025,7 +2241,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Beat sync
     registry.register(Skill(
         name="beat_sync",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.TEMPORAL,
         description="Volume-based beat detection — keep only frames on audio peaks",
         parameters=[
             SkillParameter(
@@ -2268,7 +2484,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Color match
     registry.register(Skill(
         name="color_match",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="Auto-match colors and brightness via histogram equalization",
         parameters=[],
         examples=[
@@ -2280,7 +2496,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Datamosh — glitch art with motion vectors
     registry.register(Skill(
         name="datamosh",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="Create datamosh/glitch art effect by visualizing motion vectors",
         parameters=[
             SkillParameter(
@@ -2303,7 +2519,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Radial blur — spinning/zoom blur effect
     registry.register(Skill(
         name="radial_blur",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="Create a radial/zoom blur effect for dynamic motion emphasis",
         parameters=[
             SkillParameter(
@@ -2327,7 +2543,7 @@ def register_skills(registry: SkillRegistry) -> None:
     # Grain overlay — cinematic film grain
     registry.register(Skill(
         name="grain_overlay",
-        category=SkillCategory.OUTCOME,
+        category=SkillCategory.VISUAL,
         description="Add cinematic film grain with precise intensity control (different from film_grain)",
         parameters=[
             SkillParameter(
@@ -2356,4 +2572,102 @@ def register_skills(registry: SkillRegistry) -> None:
             "grain_overlay:intensity=8 - Very subtle grain for clean footage",
         ],
         tags=["grain", "film", "noise", "cinematic", "texture", "analog", "organic"],
+    ))
+
+    # ── Missing registrations (Fix 1) ────────────────────────────── #
+
+    registry.register(Skill(
+        name="audio_crossfade",
+        category=SkillCategory.AUDIO,
+        description="Crossfade between two audio inputs, blending the end of one into the start of another.",
+        parameters=[
+            SkillParameter(
+                name="duration",
+                type=ParameterType.FLOAT,
+                description="Crossfade duration in seconds",
+                required=False,
+                default=2.0,
+                min_value=0.1,
+                max_value=30.0,
+            ),
+            SkillParameter(
+                name="curve",
+                type=ParameterType.STRING,
+                description="Fade curve shape",
+                required=False,
+                default="tri",
+                choices=["tri", "log", "exp", "qsin", "hsin", "esin", "ipar", "qua", "cub", "squ", "cbr", "par", "nofade"],
+            ),
+        ],
+        examples=[
+            "audio_crossfade - 2-second triangular crossfade",
+            "audio_crossfade:duration=5:curve=log - 5-second logarithmic fade",
+        ],
+        tags=["audio", "crossfade", "transition", "blend", "mix"],
+    ))
+
+    registry.register(Skill(
+        name="extract_frames",
+        category=SkillCategory.ENCODING,
+        description="Export video frames as an image sequence (PNG). Useful for inspection or frame-by-frame editing.",
+        parameters=[
+            SkillParameter(
+                name="rate",
+                type=ParameterType.FLOAT,
+                description="Frames per second to extract",
+                required=False,
+                default=1.0,
+                min_value=0.1,
+                max_value=60.0,
+            ),
+        ],
+        examples=[
+            "extract_frames - Extract 1 frame per second",
+            "extract_frames:rate=0.5 - Extract 1 frame every 2 seconds",
+            "extract_frames:rate=24 - Extract every frame (at 24 fps)",
+        ],
+        tags=["frames", "export", "image", "sequence", "png", "extract"],
+    ))
+
+    registry.register(Skill(
+        name="replace_audio",
+        category=SkillCategory.AUDIO,
+        description="Replace the video's original audio track with audio from a second input file.",
+        parameters=[],
+        examples=[
+            "replace_audio - Replace audio with second input",
+        ],
+        tags=["audio", "replace", "swap", "soundtrack", "music"],
+    ))
+
+    registry.register(Skill(
+        name="thumbnail",
+        category=SkillCategory.ENCODING,
+        description="Generate a single representative thumbnail image from the video.",
+        parameters=[
+            SkillParameter(
+                name="width",
+                type=ParameterType.INT,
+                description="Output thumbnail width in pixels (0 = original)",
+                required=False,
+                default=0,
+                min_value=0,
+                max_value=7680,
+            ),
+            SkillParameter(
+                name="time",
+                type=ParameterType.FLOAT,
+                description="Specific time in seconds to capture (0 = auto-detect best frame)",
+                required=False,
+                default=0,
+                min_value=0,
+                max_value=86400,
+            ),
+        ],
+        examples=[
+            "thumbnail - Auto-detect best representative frame",
+            "thumbnail:time=5 - Capture frame at 5 seconds",
+            "thumbnail:width=640:time=10 - 640px wide thumbnail at 10s",
+        ],
+        tags=["thumbnail", "poster", "preview", "screenshot", "frame", "image"],
     ))

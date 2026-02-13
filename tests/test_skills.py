@@ -688,3 +688,146 @@ class TestSkillComposer:
         assert "concat=n=2:v=1:a=0" in cmd_str, (
             f"Expected video-only concat (a=0) but got: {cmd_str}"
         )
+
+    # ---- Masking & Keying skill tests ----
+
+    def test_colorkey_produces_filter_complex(self):
+        """colorkey skill must use filter_complex with colorkey + overlay."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("colorkey", {"color": "0xFF0000"})
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        assert "filter_complex" in cmd_str, f"Expected filter_complex: {cmd_str}"
+        assert "colorkey=" in cmd_str, f"Expected colorkey filter: {cmd_str}"
+        assert "overlay" in cmd_str, f"Expected overlay for compositing: {cmd_str}"
+        assert "0xFF0000" in cmd_str, f"Expected color value: {cmd_str}"
+
+    def test_colorkey_transparent_produces_vf(self):
+        """colorkey with transparent background should produce -vf (no overlay)."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("colorkey", {"color": "0x00FF00", "background": "transparent"})
+
+        command = composer.compose(pipeline)
+        args = command.to_args()
+
+        assert "-vf" in args, f"Expected -vf for transparent mode: {args}"
+        vf_idx = args.index("-vf")
+        assert "colorkey=" in args[vf_idx + 1], f"Expected colorkey in vf: {args}"
+
+    def test_lumakey_produces_filter_complex(self):
+        """lumakey skill must use filter_complex with lumakey + overlay."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("lumakey", {"threshold": 0.0, "tolerance": 0.2})
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        assert "filter_complex" in cmd_str, f"Expected filter_complex: {cmd_str}"
+        assert "lumakey=" in cmd_str, f"Expected lumakey filter: {cmd_str}"
+        assert "overlay" in cmd_str, f"Expected overlay for compositing: {cmd_str}"
+
+    def test_lumakey_transparent_produces_vf(self):
+        """lumakey with transparent background should produce -vf."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("lumakey", {"threshold": 1.0, "background": "transparent"})
+
+        command = composer.compose(pipeline)
+        args = command.to_args()
+
+        assert "-vf" in args, f"Expected -vf for transparent mode: {args}"
+        vf_idx = args.index("-vf")
+        assert "lumakey=" in args[vf_idx + 1], f"Expected lumakey in vf: {args}"
+
+    def test_colorhold_produces_video_filter(self):
+        """colorhold skill must produce -vf with colorhold= filter (no filter_complex)."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("colorhold", {"color": "0xFF0000"})
+
+        command = composer.compose(pipeline)
+        args = command.to_args()
+
+        assert "-vf" in args, f"Expected -vf: {args}"
+        vf_idx = args.index("-vf")
+        assert "colorhold=" in args[vf_idx + 1], f"Expected colorhold in vf: {args}"
+        assert "0xFF0000" in args[vf_idx + 1], f"Expected color value: {args}"
+
+    def test_despill_produces_video_filter(self):
+        """despill skill must produce -vf with despill= filter."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("despill", {"type": "green"})
+
+        command = composer.compose(pipeline)
+        args = command.to_args()
+
+        assert "-vf" in args, f"Expected -vf: {args}"
+        vf_idx = args.index("-vf")
+        assert "despill=" in args[vf_idx + 1], f"Expected despill in vf: {args}"
+        assert "type=0" in args[vf_idx + 1], f"Expected type=0 (green): {args}"
+
+    def test_despill_blue_type(self):
+        """despill with type=blue should produce type=1."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("despill", {"type": "blue"})
+
+        command = composer.compose(pipeline)
+        args = command.to_args()
+
+        vf_idx = args.index("-vf")
+        assert "type=1" in args[vf_idx + 1], f"Expected type=1 (blue): {args}"
+
+    def test_chromakey_then_despill_pipeline(self):
+        """chromakey + despill should produce filter_complex + vf (combined)."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("chromakey", {"color": "0x00FF00"})
+        pipeline.add_step("despill", {"type": "green"})
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        assert "colorkey=" in cmd_str, f"Expected colorkey: {cmd_str}"
+        assert "despill=" in cmd_str, f"Expected despill: {cmd_str}"
+
+    def test_remove_background_graceful_without_rembg(self):
+        """remove_background should not crash when rembg is not installed."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("remove_background", {"model": "silueta"})
+
+        # Should compose without error (skill simply does nothing)
+        command = composer.compose(pipeline)
+        assert command is not None
+
+    def test_colorkey_alias_resolves(self):
+        """color_key alias should resolve to colorkey in both aliases and dispatch."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("color_key", {"color": "0xFF0000"})
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        assert "colorkey=" in cmd_str, f"Alias color_key should resolve: {cmd_str}"
+
+    def test_sin_city_alias_resolves(self):
+        """sin_city alias should resolve to colorhold."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("sin_city", {"color": "0xFF0000"})
+
+        command = composer.compose(pipeline)
+        args = command.to_args()
+
+        assert "-vf" in args, f"Expected -vf from colorhold: {args}"
+        vf_idx = args.index("-vf")
+        assert "colorhold=" in args[vf_idx + 1], f"sin_city should map to colorhold: {args}"
+

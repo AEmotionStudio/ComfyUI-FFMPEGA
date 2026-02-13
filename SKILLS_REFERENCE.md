@@ -276,6 +276,94 @@ Remove color banding artifacts.
 
 ---
 
+### chroma_key_simple
+Simplified green/blue screen removal with automatic black background compositing.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------|
+| `color` | choice | green | green, blue, red |
+| `similarity` | float | 0.3 | 0.01 to 0.5 |
+| `blend` | float | 0.1 | 0.0 to 1.0 |
+
+**Example prompts:**
+- "Simple green screen removal"
+- "Quick chroma key with blue screen"
+
+---
+
+### colorkey
+Key out an arbitrary color (general-purpose version of chromakey).
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `color` | string | 0x00FF00 | hex color |
+| `similarity` | float | 0.3 | 0.01 to 0.5 |
+| `blend` | float | 0.1 | 0.0 to 1.0 |
+| `background` | string | black | color name or "transparent" |
+
+**Example prompts:**
+- "Key out the red background"
+- "Remove the blue color and replace with black"
+
+---
+
+### lumakey
+Key out regions based on brightness (luma).
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `threshold` | float | 0.0 | 0.0 to 1.0 |
+| `tolerance` | float | 0.1 | 0.0 to 1.0 |
+| `softness` | float | 0.0 | 0.0 to 1.0 |
+| `background` | string | black | color name or "transparent" |
+
+**Example prompts:**
+- "Key out the dark areas based on brightness"
+- "Remove bright white regions with luma keying"
+
+---
+
+### colorhold
+Keep only a selected color, desaturate everything else (sin-city effect).
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `color` | string | 0xFF0000 | hex color |
+| `similarity` | float | 0.3 | 0.01 to 0.5 |
+| `blend` | float | 0.1 | 0.0 to 1.0 |
+
+**Example prompts:**
+- "Keep only the red and make everything else black and white"
+- "Isolate blue tones and grayscale the rest"
+
+---
+
+### despill
+Remove green/blue color spill from chroma-keyed footage.
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------|
+| `type` | choice | green | green, blue |
+| `mix` | float | 0.5 | 0.0 to 1.0 |
+| `expand` | float | 0.0 | 0.0 to 1.0 |
+| `brightness` | float | 0.0 | -1.0 to 1.0 |
+
+**Example prompts:**
+- "Clean up the green spill on the actor"
+- "Remove blue bleeding from chroma key edges"
+
+---
+
+### remove_background
+Remove background using AI (requires `rembg` optional dependency).
+| Parameter | Type | Default | Choices |
+|-----------|------|---------|---------|
+| `model` | string | silueta | silueta, u2net, isnet |
+
+> [!NOTE]
+> Requires `pip install 'comfyui-ffmpega[masking]'` for the `rembg` dependency.
+
+**Example prompts:**
+- "Remove the background automatically"
+- "Cut out the subject from the background"
+
+---
+
 ## ⏱️ Temporal (Time)
 
 ### trim
@@ -1659,6 +1747,9 @@ Here are some multi-skill prompt ideas you can try:
 | Glitch art | "Datamosh effect with chromatic aberration and radial blur" |
 | Film texture | "Grain overlay, split tone warm highlights, add vignette" |
 | Upscale & sharpen | "Scale 2x with Lanczos, then unsharp mask" |
+| Sin city effect | "Colorhold red, boost contrast, add vignette" |
+| VFX compositing | "Chroma key green screen, despill green, color match" |
+| Luma matte | "Lumakey dark areas, add glow, fade in from black" |
 
 ---
 

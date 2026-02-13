@@ -1,7 +1,10 @@
 """System prompt template for FFMPEGA agent."""
 
 from typing import Optional
-from ..skills.registry import get_registry
+try:
+    from ..skills.registry import get_registry
+except ImportError:
+    from skills.registry import get_registry
 
 
 SYSTEM_PROMPT_TEMPLATE = """You are FFMPEGA, an expert video editing agent. Your role is to interpret natural language video editing requests and translate them into precise FFMPEG operations.

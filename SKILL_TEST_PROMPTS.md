@@ -1105,6 +1105,58 @@ Add subtle cinematic film grain with intensity 20
 
 ---
 
+## 🎭 Keying & Masking
+
+### colorkey
+```
+Key out the red background and replace with black
+```
+```
+Remove the blue color from the video and make it transparent
+```
+
+### lumakey
+```
+Key out the dark areas based on brightness
+```
+```
+Remove the bright white regions with luma keying
+```
+
+### colorhold
+```
+Keep only the red and desaturate everything else — sin city style
+```
+```
+Isolate the blue tones and grayscale the rest
+```
+
+### despill
+```
+Clean up the green spill on the actor from the green screen
+```
+```
+Remove the blue color bleeding from chroma key edges
+```
+
+### chroma_key_simple
+```
+Simple green screen removal with black background
+```
+```
+Quick chroma key with blue screen
+```
+
+### remove_background
+```
+Remove the background from the video automatically
+```
+```
+Cut out the subject from the background
+```
+
+---
+
 ## 📦 Additional Skills
 
 ### burn_subtitles

@@ -18,6 +18,8 @@ from unittest.mock import patch, MagicMock, AsyncMock
 
 from core.llm.base import LLMConfig, LLMProvider, LLMResponse, LLMConnector
 from core.llm.cli_base import CLIConnectorBase, _TOOL_CALL_MARKER
+import core.llm.cli_base as _cli_base_mod
+import core.llm.cli_utils as _cli_utils_mod
 from core.llm.cli_utils import resolve_cli_binary
 from core.llm.gemini_cli import GeminiCLIConnector
 from core.llm.claude_cli import ClaudeCodeCLIConnector
@@ -324,13 +326,13 @@ class TestGeminiCLIConnector:
         assert "gemini.cmd" in names
 
     def test_build_cmd(self):
-        """Command should include -p and -o text flags."""
+        """Command should include -p and -o json flags."""
         c = GeminiCLIConnector()
         cmd = c._build_cmd("/usr/bin/gemini", "test prompt", None)
         assert cmd[0] == "/usr/bin/gemini"
         assert "-p" in cmd
         assert "-o" in cmd
-        assert "text" in cmd
+        assert "json" in cmd
 
     def test_prepare_stdin_with_system(self):
         """Stdin should include system instructions wrapper."""
@@ -389,7 +391,7 @@ class TestClaudeCodeCLIConnector:
         assert "--system-prompt" in cmd
         assert "be helpful" in cmd
         assert "--output-format" in cmd
-        assert "text" in cmd
+        assert "json" in cmd
         assert "--no-session-persistence" in cmd
 
     def test_build_cmd_without_system_prompt(self):
@@ -578,13 +580,13 @@ class TestCLIGenerate:
     @pytest.mark.asyncio
     async def test_is_available_true(self, connector):
         """is_available returns True when binary is found."""
-        with patch("core.llm.cli_base.resolve_cli_binary", return_value="/usr/bin/gemini"):
+        with patch.object(_cli_base_mod, "resolve_cli_binary", return_value="/usr/bin/gemini"):
             assert await connector.is_available() is True
 
     @pytest.mark.asyncio
     async def test_is_available_false(self, connector):
         """is_available returns False when binary is not found."""
-        with patch("core.llm.cli_base.resolve_cli_binary", return_value=None):
+        with patch.object(_cli_base_mod, "resolve_cli_binary", return_value=None):
             assert await connector.is_available() is False
 
     @pytest.mark.asyncio
@@ -684,7 +686,7 @@ class TestResolveCLIBinary:
         fake_binary.touch()
 
         with patch("shutil.which", return_value=None), \
-             patch("core.llm.cli_utils._EXTRA_SEARCH_DIRS", [tmp_path]):
+             patch.object(_cli_utils_mod, "_EXTRA_SEARCH_DIRS", [tmp_path]):
             result = resolve_cli_binary("gemini")
         assert result == str(fake_binary)
 
@@ -1016,15 +1018,30 @@ class TestLLMConnectorBase:
 class TestPipelineGeneratorAgentic:
     """Tests for PipelineGenerator's agentic pipeline generation."""
 
+    @staticmethod
+    def _import_pipeline_generator():
+        try:
+            from core.pipeline_generator import PipelineGenerator
+        except (ImportError, ModuleNotFoundError):
+            import importlib.util, os
+            _spec = importlib.util.spec_from_file_location(
+                "core.pipeline_generator",
+                os.path.join(os.path.dirname(__file__), "..", "core", "pipeline_generator.py"),
+            )
+            _mod = importlib.util.module_from_spec(_spec)
+            _spec.loader.exec_module(_mod)
+            PipelineGenerator = _mod.PipelineGenerator
+        return PipelineGenerator
+
     def test_pipeline_generator_creation(self):
         """PipelineGenerator should be instantiable without args."""
-        from core.pipeline_generator import PipelineGenerator
+        PipelineGenerator = self._import_pipeline_generator()
         gen = PipelineGenerator()
         assert gen is not None
 
     def test_parse_response_with_tool_calls_text(self):
         """Text containing TOOL_CALL markers should not parse as valid JSON pipeline."""
-        from core.pipeline_generator import PipelineGenerator
+        PipelineGenerator = self._import_pipeline_generator()
         gen = PipelineGenerator()
 
         text = 'TOOL_CALL: {"name": "search_skills", "arguments": {"query": "blur"}}'
@@ -1034,7 +1051,7 @@ class TestPipelineGeneratorAgentic:
 
     def test_parse_response_with_valid_pipeline(self):
         """Valid pipeline JSON should parse correctly."""
-        from core.pipeline_generator import PipelineGenerator
+        PipelineGenerator = self._import_pipeline_generator()
         gen = PipelineGenerator()
 
         pipeline = {

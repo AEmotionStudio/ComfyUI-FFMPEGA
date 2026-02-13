@@ -404,7 +404,7 @@ class TestExtractFramesToolDefinition:
         assert "max_frames" in props
 
     def test_all_original_tools_still_present(self):
-        """Original 5 tools should still be present after adding extract_frames."""
+        """All registered tools should still be present."""
         tool_defs = _load_tool_defs()
 
         tool_names = {t["function"]["name"] for t in tool_defs.TOOL_DEFINITIONS}
@@ -414,7 +414,10 @@ class TestExtractFramesToolDefinition:
         assert "analyze_video" in tool_names
         assert "build_pipeline" in tool_names
         assert "extract_frames" in tool_names
-        assert len(tool_defs.TOOL_DEFINITIONS) == 6
+        assert "analyze_colors" in tool_names
+        assert "list_luts" in tool_names
+        assert "analyze_audio" in tool_names
+        assert len(tool_defs.TOOL_DEFINITIONS) == 9
 
 
 class TestExtractFramesCleanup:
