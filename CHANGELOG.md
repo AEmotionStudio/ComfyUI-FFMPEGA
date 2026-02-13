@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-02-13
+
+### Added
+- **Token Usage Tracking**: New opt-in `track_tokens` and `log_usage` toggles on the FFMPEG Agent node. Tracks prompt tokens, completion tokens, LLM calls, tool calls, and elapsed time per run.
+  - **Console summary**: When `track_tokens` is enabled, prints a formatted usage box to the console after each run.
+  - **Persistent log**: When `log_usage` is enabled, appends a JSON entry to `usage_log.jsonl` for cumulative tracking across sessions.
+  - **Real token stats**: Gemini CLI (`-o json`) and Claude CLI (`--output-format json`) now return native token counts instead of estimates.
+  - **Fallback estimation**: Other CLI connectors (Cursor, Qwen) use character-based estimation (~4 chars/token), clearly labeled as `(estimated)`.
+  - **Core module**: New `core/token_tracker.py` — `TokenTracker` class accumulates per-call usage across the agentic loop.
+- **LUT Color Grading System**: 8 bundled `.cube` LUT files for cinematic color grading (`cinematic_teal_orange`, `warm_vintage`, `cool_scifi`, `film_noir`, `golden_hour`, `cross_process`, `bleach_bypass`, `neutral_clean`). Agent discovers via `list_luts` tool and applies with `lut_apply` skill. Drop custom `.cube`/`.3dl` files into `luts/` for automatic discovery.
+- **Audio Analysis Tool**: New `analyze_audio` agentic tool — analyzes volume (dB), EBU R128 loudness (LUFS), and silence detection from input video. Guides audio effect decisions without manual inspection.
+- **Vision System**: New `mcp/vision.py` — frame extraction and base64 encoding for multimodal LLM analysis. Supports both full image embedding (API/CLI connectors) and raw base64 strings (Ollama).
+- **Agentic Tools Documentation**: New README section documenting all autonomous tools the agent uses (analyze_video, extract_frames, analyze_colors, analyze_audio, search_skills, list_luts).
+- **Verification Loop Documentation**: New README section explaining the output verification loop (extract → analyze → assess → auto-correct).
+- **Custom Skills Documentation**: New README section with inline YAML example for creating custom skills.
+
+### Changed
+- **Gemini CLI Connector**: Switched from `-o text` to `-o json` output format — enables structured token usage parsing alongside text content.
+- **Claude CLI Connector**: Switched from `--output-format text` to `--output-format json` — enables structured token usage parsing alongside text content.
+- **CLI Base Connector**: `generate()` method now populates `prompt_tokens` and `completion_tokens` via character-based estimation when native token counts are unavailable.
+- **Pipeline Generator**: Agentic loop now initializes a `TokenTracker`, records usage after each LLM call, and stores the summary as `last_token_usage` on the generator instance.
+
+---
+
 ## [2.2.1] - 2026-02-13
 
 ### Security

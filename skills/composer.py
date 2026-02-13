@@ -2606,8 +2606,28 @@ def _f_mask_blur(p):
 def _f_lut_apply(p):
     """Apply a color LUT with intensity blending."""
     from ..core.sanitize import sanitize_text_param
+    from pathlib import Path
+
     path = sanitize_text_param(str(p.get("path", "lut.cube")))
     intensity = float(p.get("intensity", 1.0))
+
+    # Auto-resolve short names: if path has no separator, search luts/ folder
+    if "/" not in path and "\\" not in path:
+        luts_dir = Path(__file__).resolve().parent.parent / "luts"
+        # Try exact match first, then fuzzy
+        for ext in (".cube", ".3dl", ""):
+            candidate = luts_dir / f"{path}{ext}"
+            if candidate.is_file():
+                path = str(candidate)
+                break
+        else:
+            # Try case-insensitive partial match
+            if luts_dir.is_dir():
+                for f in luts_dir.iterdir():
+                    if f.suffix.lower() in (".cube", ".3dl") and path.lower() in f.stem.lower():
+                        path = str(f)
+                        break
+
     if intensity >= 1.0:
         # Full LUT, no blending needed
         vf = f"lut3d=file='{path}'"

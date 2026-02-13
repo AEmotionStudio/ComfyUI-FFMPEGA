@@ -22,6 +22,7 @@ class PipelineGenerator:
             registry: Optional SkillRegistry for retry prompts and agentic tools.
         """
         self._registry = registry
+        self.last_token_usage: dict | None = None
 
     @property
     def registry(self):
@@ -144,6 +145,7 @@ class PipelineGenerator:
         video_metadata: str,
         connected_inputs: str = "",
         video_path: str = "",
+        use_vision: bool = True,
     ) -> dict:
         """Generate a pipeline spec, with auto-retry on invalid JSON.
 
@@ -153,6 +155,8 @@ class PipelineGenerator:
             video_metadata: Video analysis string.
             connected_inputs: Summary of connected inputs.
             video_path: Absolute path to the input video for frame extraction.
+            use_vision: Whether to embed frames as images (True) or use
+                color analysis fallback (False).
 
         Returns:
             Parsed pipeline dict.
@@ -165,6 +169,7 @@ class PipelineGenerator:
             raw_response = await self._generate_agentic(
                 connector, prompt, video_metadata, connected_inputs,
                 video_path=video_path,
+                use_vision=use_vision,
             )
         except NotImplementedError:
             raw_response = await self._generate_single_shot(
@@ -244,27 +249,33 @@ class PipelineGenerator:
         connected_inputs: str = "",
         max_iterations: int = 10,
         video_path: str = "",
+        use_vision: bool = True,
     ) -> str:
-        """Agentic pipeline generation with tool calling.
+        """Agentic pipeline generation with tool calling."""
+        from ..core.token_tracker import TokenTracker  # type: ignore[import-not-found]
+        import time as _time
 
-        Args:
-            video_path: Absolute path to the input video for frame extraction.
-
-        Raises:
-            NotImplementedError: If connector doesn't support tool calling.
-        """
         from ..prompts.system import get_agentic_system_prompt  # type: ignore[import-not-found]
         from ..prompts.generation import get_generation_prompt  # type: ignore[import-not-found]
         from ..mcp.tool_defs import TOOL_DEFINITIONS  # type: ignore[import-not-found]
         from ..mcp.tools import (  # type: ignore[import-not-found]
             analyze_video,
+            analyze_colors,
+            analyze_audio,
             build_pipeline,
             list_skills,
             search_skills,
             get_skill_details,
             extract_frames,
             cleanup_vision_frames,
+            list_luts,
         )
+        from ..mcp.vision import (  # type: ignore[import-not-found]
+            frames_to_base64,
+            frames_to_base64_raw_strings,
+        )
+        from ..core.llm.cli_base import CLIConnectorBase  # type: ignore[import-not-found]
+        from ..core.llm.ollama import OllamaConnector  # type: ignore[import-not-found]
 
         system_prompt = get_agentic_system_prompt(
             video_metadata=video_metadata,
@@ -280,6 +291,13 @@ class PipelineGenerator:
         # Resolve video path for extract_frames tool
         _vid = video_path or ""
         _vision_run_ids: list[str] = []  # Track per-run frame folders
+
+        # Token usage tracking
+        _model = getattr(connector, 'config', None)
+        _model_name = getattr(_model, 'model', 'unknown') if _model else 'unknown'
+        _provider_name = getattr(_model, 'provider', 'unknown') if _model else 'unknown'
+        _provider_str = _provider_name.value if hasattr(_provider_name, 'value') else str(_provider_name)
+        tracker = TokenTracker(model=_model_name, provider=_provider_str)
 
         def _extract_frames_handler(args: dict) -> dict:
             result = extract_frames(
@@ -304,15 +322,34 @@ class PipelineGenerator:
                 output_path=args.get("output_path", "/tmp/output.mp4"),
             ),
             "extract_frames": _extract_frames_handler,
+            "analyze_colors": lambda args: analyze_colors(
+                video_path=args.get("video_path", _vid) or _vid,
+                start=args.get("start", 0.0),
+                duration=args.get("duration", 5.0),
+            ),
+            "list_luts": lambda args: list_luts(),
+            "analyze_audio": lambda args: analyze_audio(
+                video_path=args.get("video_path", _vid) or _vid,
+                start=args.get("start", 0.0),
+                duration=args.get("duration", 10.0),
+            ),
         }
+
+        # Determine connector type for vision routing
+        _is_cli = isinstance(connector, CLIConnectorBase)
+        _is_ollama = isinstance(connector, OllamaConnector)
 
         try:
             for iteration in range(max_iterations):
+                _call_start = _time.time()
+                _tool_names_this_iter: list[str] = []
                 response = await connector.chat_with_tools(messages, TOOL_DEFINITIONS)
 
                 if not response.tool_calls:
+                    tracker.record(response, iteration + 1, call_start=_call_start)
                     parsed = self.parse_response(response.content)
                     if parsed is not None:
+                        self.last_token_usage = tracker.summary()
                         return response.content
 
                     logger.warning(
@@ -360,6 +397,7 @@ class PipelineGenerator:
                             func_args = {}
 
                     logger.info(f"Tool call [{iteration+1}]: {func_name}({func_args})")
+                    _tool_names_this_iter.append(func_name)
 
                     handler = tool_handlers.get(func_name)
                     if handler:
@@ -372,12 +410,88 @@ class PipelineGenerator:
                     else:
                         result_str = json.dumps({"error": f"Unknown tool: {func_name}"})
 
-                    tool_result_msg = {
+                    tool_result_msg: dict = {
                         "role": "tool",
                         "content": result_str,
                         "tool_call_id": tool_call.get("id", f"call_{i}"),
                     }
+
+                    # Vision routing: embed images for API/Ollama after
+                    # extract_frames returns successfully
+                    if (
+                        func_name == "extract_frames"
+                        and isinstance(result, dict)
+                        and result.get("paths")
+                    ):
+                        frame_paths = result["paths"]
+                        if not use_vision:
+                            # Vision disabled — always use color analysis
+                            fallback = analyze_colors(
+                                video_path=_vid,
+                                start=func_args.get("start", 0.0),
+                                duration=func_args.get("duration", 5.0),
+                            )
+                            tool_result_msg["content"] = json.dumps(
+                                {**result, "color_analysis": fallback},
+                                indent=2,
+                            )
+                            logger.info("Vision: disabled by user, using color analysis")
+                        elif _is_cli:
+                            # CLI agents read files natively — paths suffice
+                            logger.info(
+                                f"Vision: CLI connector, returning "
+                                f"{len(frame_paths)} frame paths"
+                            )
+                        elif _is_ollama:
+                            # Ollama: add raw base64 strings in 'images' field
+                            b64_strings = frames_to_base64_raw_strings(frame_paths)
+                            if b64_strings:
+                                tool_result_msg["images"] = b64_strings
+                                logger.info(
+                                    f"Vision: embedded {len(b64_strings)} "
+                                    f"frames for Ollama"
+                                )
+                            else:
+                                # Fallback to color analysis
+                                fallback = analyze_colors(
+                                    video_path=_vid,
+                                    start=func_args.get("start", 0.0),
+                                    duration=func_args.get("duration", 5.0),
+                                )
+                                tool_result_msg["content"] = json.dumps(
+                                    {**result, "color_analysis": fallback},
+                                    indent=2,
+                                )
+                                logger.info("Vision: Ollama fallback to color analysis")
+                        else:
+                            # API connectors: embed base64 as multimodal content
+                            image_blocks = frames_to_base64(frame_paths)
+                            if image_blocks:
+                                # Build multimodal content: text + images
+                                tool_result_msg["content"] = [
+                                    {"type": "text", "text": result_str},
+                                    *image_blocks,
+                                ]
+                                logger.info(
+                                    f"Vision: embedded {len(image_blocks)} "
+                                    f"frames for API connector"
+                                )
+                            else:
+                                # Fallback to color analysis
+                                fallback = analyze_colors(
+                                    video_path=_vid,
+                                    start=func_args.get("start", 0.0),
+                                    duration=func_args.get("duration", 5.0),
+                                )
+                                tool_result_msg["content"] = json.dumps(
+                                    {**result, "color_analysis": fallback},
+                                    indent=2,
+                                )
+                                logger.info("Vision: API fallback to color analysis")
+
                     messages.append(tool_result_msg)
+
+                tracker.record(response, iteration + 1, tool_names=_tool_names_this_iter, call_start=_call_start)
 
             # Exhausted iterations
             logger.warning(f"Agentic loop hit max iterations ({max_iterations})")
@@ -389,7 +503,10 @@ class PipelineGenerator:
                     "pipeline now."
                 ),
             })
+            _call_start = _time.time()
             response = await connector.chat_with_tools(messages, [])
+            tracker.record(response, max_iterations + 1, call_start=_call_start)
+            self.last_token_usage = tracker.summary()
             return response.content
         finally:
             # Clean up only this run's extracted vision frames

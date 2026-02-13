@@ -20,13 +20,24 @@
 
 ---
 
-## 🚀 What's New in v2.2.1 (February 13, 2026)
+## 🚀 What's New in v2.3.0 (February 13, 2026)
 
-**Security Sandbox & CLI Vision Support**
+**Token Usage Tracking, LUT Color Grading & Vision System**
 
-*   **🔒 CLI Agent Sandbox**: All CLI agents (Gemini, Claude, Cursor, Qwen) are now sandboxed to the custom node directory — they can no longer access your home directory, SSH keys, or other projects.
-*   **👁️ Vision Frame Access**: CLI agents can now read extracted video frames for visual analysis. Tested: Gemini ✅, Claude ✅, Cursor ✅, Qwen ❌ (upstream limitation).
-*   **📊 Gemini CLI Plans & Limits**: README now documents free/paid tiers, available models, and rate limits to help users choose the right plan.
+*   **📊 Token Usage Tracking**: New opt-in `track_tokens` and `log_usage` toggles — monitor prompt/completion tokens, LLM calls, tool calls, and elapsed time per run. Supports persistent logging to `usage_log.jsonl`.
+*   **🎨 LUT Color Grading**: 8 bundled cinematic `.cube` LUT files (teal-orange, vintage, sci-fi, noir, golden hour, cross-process, bleach bypass, neutral). Drop custom LUTs into `luts/` for automatic discovery.
+*   **�️ Vision System**: New multimodal frame analysis — the agent extracts frames and "sees" the video to make better editing decisions.
+*   **🔊 Audio Analysis**: New `analyze_audio` tool — volume (dB), EBU R128 loudness (LUFS), and silence detection for smarter audio processing.
+*   **🤖 Real Token Stats**: Gemini CLI and Claude CLI now return native token counts via JSON output instead of estimates.
+
+<details>
+<summary><b>Previous: v2.2.1 — Security Sandbox & CLI Vision</b></summary>
+
+*   **🔒 CLI Agent Sandbox**: All CLI agents sandboxed to the custom node directory — they can no longer access your home directory, SSH keys, or other projects.
+*   **👁️ Vision Frame Access**: CLI agents can read extracted video frames for visual analysis. Tested: Gemini ✅, Claude ✅, Cursor ✅, Qwen ❌ (upstream limitation).
+*   **📊 Gemini CLI Plans & Limits**: README documents free/paid tiers, available models, and rate limits.
+
+</details>
 
 <details>
 <summary><b>Previous: v2.2.0 — 200 Skills & Dynamic Inputs</b></summary>
@@ -178,17 +189,6 @@ You can request specific parameter values and the agent will use them directly:
 - **Out-of-range values**: Parameters are auto-clamped to their valid range. If you ask for *"brightness 5.0"* it caps at the max (1.0)
 - **Complex compositing**: Multi-layer effects with precise timing may need to be broken into separate passes
 - **Format-dependent features**: Some effects (like transparency) require specific output formats. H.264/MP4 doesn't support alpha channels
-
-### Tips for AI-Generated Video
-
-AI-generated video often has specific artifacts. Here are targeted prompts:
-
-| Issue | Prompt |
-| :--- | :--- |
-| Heavy color banding | `"Deband with threshold 0.3 and range 32"` |
-| Flickering / temporal noise | `"Denoise with strength strong"` |
-| Low contrast / flat look | `"Cinematic style"` or `"Increase contrast to 1.5"` |
-| Needs sharpening | `"Sharpen with strength 1.5"` |
 
 ## 🎛️ Nodes
 
@@ -617,11 +617,99 @@ FFMPEGA includes a comprehensive skill system with **200 operations** organized 
 
 </details>
 
+### 🧠 Agentic Tools
+
+Beyond the 200+ editing skills, the agent has autonomous tools it calls on its own to analyze media and make better decisions. You don't invoke these directly — the agent uses them automatically based on your prompt.
+
+<details>
+<summary><b>🔍 Analysis & Discovery</b></summary>
+
+| Tool | What It Does |
+| :--- | :--- |
+| `analyze_video` | Probes resolution, duration, codec, FPS, bitrate — the agent calls this to understand your source |
+| `extract_frames` | Extracts PNG frames for vision models to "see" the video content |
+| `analyze_colors` | Numeric color metrics (luminance, saturation, color balance) via ffprobe signalstats — guides color grading decisions without vision |
+| `analyze_audio` | Numeric audio metrics (volume dB, EBU R128 loudness LUFS, silence detection) — guides audio effect decisions |
+| `search_skills` | Searches skills by keyword — the agent **always** calls this to find the right skills |
+| `list_luts` | Lists available LUT files for color grading — called before `lut_apply` to discover available looks |
+
+</details>
+
+<details>
+<summary><b>🎨 LUT Color Grading System</b></summary>
+
+8 bundled LUT files for cinematic color grading. The agent discovers these via `list_luts` and applies them with the `lut_apply` skill.
+
+| LUT | Style |
+| :--- | :--- |
+| `cinematic_teal_orange` | Hollywood teal-orange grade |
+| `warm_vintage` | Warm retro film look |
+| `cool_scifi` | Cool blue sci-fi tone |
+| `film_noir` | Classic noir — desaturated, crushed |
+| `golden_hour` | Warm golden sunlight |
+| `cross_process` | Cross-processed film chemistry |
+| `bleach_bypass` | Bleach bypass — low saturation, high contrast |
+| `neutral_clean` | Subtle clarity enhancement |
+
+**Adding your own LUTs:** Drop `.cube` or `.3dl` files into the `luts/` folder. The agent will discover them via `list_luts` automatically. Short names auto-resolve to full paths (e.g., `cinematic_teal_orange` → `luts/cinematic_teal_orange.cube`).
+
+</details>
+
+<details>
+<summary><b>✅ Output Verification Loop</b></summary>
+
+When `verify_output` is enabled (default: **On**), the agent inspects its own output after execution:
+
+1. Extracts frames from the output video
+2. Runs color and/or audio analysis on the result
+3. Sends analysis to the LLM with the original prompt for quality assessment
+4. If the LLM detects issues, it auto-corrects the pipeline and re-executes once
+
+This closes the feedback loop — the agent can catch and fix mistakes like wrong color grades, failed effects, or audio issues without re-queuing.
+
+</details>
+
+<details>
+<summary><b>🧩 Custom Skills</b></summary>
+
+Create your own skills via YAML — no Python required. Drop a `.yaml` file in `custom_skills/`, restart ComfyUI, and the agent can use it immediately.
+
+```yaml
+# custom_skills/dreamy_blur.yaml
+name: dreamy_blur
+description: "Soft dreamy blur with glow"
+category: visual
+tags: [dream, blur, soft, glow]
+
+parameters:
+  radius:
+    type: int
+    default: 5
+    min: 1
+    max: 30
+
+ffmpeg_template: "gblur=sigma={radius},eq=brightness=0.06"
+```
+
+**Skill packs** — installable collections of related skills, optionally with Python handlers for complex logic:
+```bash
+cd custom_skills/
+git clone https://github.com/someone/ffmpega-retro-pack retro-pack
+```
+
+Two example skills ship in `custom_skills/examples/` — `warm_glow.yaml` (template) and `film_burn.yaml` (pipeline composite).
+
+> 📄 **See [CUSTOM_SKILLS.md](CUSTOM_SKILLS.md) for the full schema reference, skill pack structure, Python handlers, and advanced examples.**
+
+</details>
+
 ---
 
 ## 🤖 LLM Configuration
 
 > **Tested with:** FFMPEGA has been primarily tested using **Gemini CLI** and **Qwen3 8B** (via Ollama). Results may vary with other models.
+>
+> **Author's pick:** The CLI connectors (especially **Gemini CLI**) have been the most reliable option in my experience — they handle tool-calling, structured output, and long context exceptionally well. Highly recommended if you have access.
 
 ### Choosing a Model
 
@@ -825,6 +913,40 @@ Your API keys are **automatically scrubbed** and never stored in output files:
 No configuration needed — this protection is always active when an API key is provided.
 
 > ⚠️ **Safety precaution:** As with any software, always inspect your output files before sharing them publicly — in the unlikely event of a bug or edge case that bypasses the automatic scrubbing.
+
+### 📊 Token Usage Tracking
+
+Monitor your LLM token consumption with opt-in usage tracking. Enable via two toggles on the node:
+
+| Toggle | Default | What It Does |
+| :--- | :--- | :--- |
+| `track_tokens` | Off | Prints a formatted usage summary to the console after each run |
+| `log_usage` | Off | Appends a JSON entry to `usage_log.jsonl` for cumulative tracking |
+
+**Token data sources by connector:**
+
+| Connector | Source | Estimated? |
+| :--- | :--- | :--- |
+| Ollama | Native API (`prompt_eval_count` / `eval_count`) | No |
+| OpenAI / Gemini API | Native API (`usage` field) | No |
+| Anthropic API | Native API (`usage.input_tokens`) | No |
+| **Gemini CLI** | JSON output via `-o json` | No |
+| **Claude CLI** | JSON output via `--output-format json` | No |
+| Other CLIs | Character-based estimation (~4 chars/token) | Yes |
+
+When enabled, the **analysis output** includes a usage breakdown:
+
+```
+Token Usage:
+  Prompt tokens:     4,200
+  Completion tokens: 1,800
+  Total tokens:      6,000
+  LLM calls:         5
+  Tool calls:        3
+  Elapsed:           12.4s
+```
+
+The `usage_log.jsonl` file stores one JSON object per run for historical analysis. It is gitignored by default.
 
 ---
 

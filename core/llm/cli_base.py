@@ -69,6 +69,11 @@ class CLIConnectorBase(LLMConnector):
         """Short tag for log messages.  Defaults to class name."""
         return self.__class__.__name__
 
+    @property
+    def supports_vision(self) -> bool:
+        """CLI agents can view files on disk natively."""
+        return True
+
     # ------------------------------------------------------------------
     # Shared implementation
     # ------------------------------------------------------------------
@@ -130,10 +135,19 @@ class CLIConnectorBase(LLMConnector):
 
         content = stdout.decode("utf-8", errors="replace").strip()
 
+        # Estimate tokens from character length (~4 chars/token)
+        # for CLI connectors that don't provide native token counts
+        _CPC = 4  # chars per token estimate
+        est_prompt = len(stdin_data) // _CPC if stdin_data else 0
+        est_completion = max(1, len(content) // _CPC) if content else 0
+
         return LLMResponse(
             content=content,
             model=self._model_name(),
             provider=self._provider(),
+            prompt_tokens=est_prompt,
+            completion_tokens=est_completion,
+            total_tokens=est_prompt + est_completion,
         )
 
     async def generate_stream(
