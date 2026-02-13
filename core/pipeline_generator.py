@@ -291,7 +291,7 @@ class PipelineGenerator:
                 output_path=args.get("output_path", "/tmp/output.mp4"),
             ),
             "extract_frames": lambda args: extract_frames(
-                video_path=_vid,
+                video_path=args.get("video_path", _vid) or _vid,
                 start=args.get("start", 0.0),
                 duration=args.get("duration", 5.0),
                 fps=args.get("fps", 1.0),

@@ -286,10 +286,12 @@ def extract_frames(
     max_frames = min(max(max_frames, 1), 16)
     fps = max(fps, 0.1)
 
-    # Create temp folder inside the custom node directory
+    # Create a unique per-run subfolder to avoid cross-run interference
+    import uuid
     node_dir = Path(__file__).resolve().parent.parent
-    frames_dir = node_dir / "_vision_frames"
-    frames_dir.mkdir(exist_ok=True)
+    run_id = uuid.uuid4().hex[:8]
+    frames_dir = node_dir / "_vision_frames" / run_id
+    frames_dir.mkdir(parents=True, exist_ok=True)
 
     preview = PreviewGenerator()
 
@@ -313,6 +315,7 @@ def extract_frames(
         "frame_count": len(path_strings),
         "paths": path_strings,
         "folder": str(frames_dir.resolve()),
+        "run_id": run_id,
         "hint": (
             "These are absolute paths to PNG frame images extracted from "
             "the video. You can view them to understand the video content, "
@@ -321,17 +324,28 @@ def extract_frames(
     }
 
 
-def cleanup_vision_frames() -> None:
+def cleanup_vision_frames(run_id: str = "") -> None:
     """Remove the temporary vision frames folder.
+
+    Args:
+        run_id: If provided, removes only the specific run's subfolder.
+                If empty, removes the entire _vision_frames directory.
 
     Called after pipeline generation completes to clean up disk space.
     """
     import shutil
     from pathlib import Path
 
-    frames_dir = Path(__file__).resolve().parent.parent / "_vision_frames"
-    if frames_dir.exists():
-        shutil.rmtree(frames_dir, ignore_errors=True)
+    base_dir = Path(__file__).resolve().parent.parent / "_vision_frames"
+    if run_id:
+        target = base_dir / run_id
+        if target.exists():
+            shutil.rmtree(target, ignore_errors=True)
+        # Remove parent if empty
+        if base_dir.exists() and not any(base_dir.iterdir()):
+            base_dir.rmdir()
+    elif base_dir.exists():
+        shutil.rmtree(base_dir, ignore_errors=True)
 
 
 def validate_skill_params(skill_name: str, params: dict) -> dict:
