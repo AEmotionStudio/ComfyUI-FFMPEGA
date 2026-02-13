@@ -304,7 +304,10 @@ def extract_frames(
             duration=duration,
         )
     except Exception as e:
-        return {"error": f"Frame extraction failed: {e}"}
+        # Clean up the created directory on failure
+        import shutil
+        shutil.rmtree(frames_dir, ignore_errors=True)
+        return {"error": f"Frame extraction failed: {e}", "run_id": run_id}
 
     # Limit to max_frames
     frame_paths = frame_paths[:max_frames]
@@ -341,9 +344,12 @@ def cleanup_vision_frames(run_id: str = "") -> None:
         target = base_dir / run_id
         if target.exists():
             shutil.rmtree(target, ignore_errors=True)
-        # Remove parent if empty
-        if base_dir.exists() and not any(base_dir.iterdir()):
-            base_dir.rmdir()
+        # Remove parent if empty (ignore errors to avoid masking success)
+        try:
+            if base_dir.exists() and not any(base_dir.iterdir()):
+                base_dir.rmdir()
+        except OSError:
+            pass
     elif base_dir.exists():
         shutil.rmtree(base_dir, ignore_errors=True)
 

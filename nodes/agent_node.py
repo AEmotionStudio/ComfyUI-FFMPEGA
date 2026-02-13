@@ -769,6 +769,7 @@ class FFMPEGAgentNode:
                     retry_spec = await self.pipeline_generator.generate(
                         connector, error_prompt, metadata_str,
                         connected_inputs=connected_inputs_str,
+                        video_path=effective_video_path,
                     )
                     # Rebuild pipeline from corrected spec
                     pipeline = Pipeline(
@@ -1164,6 +1165,7 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
             spec = await self.pipeline_generator.generate(
                 connector, prompt, metadata_str,
                 connected_inputs=connected_inputs_str,
+                video_path=valid_files[0] if valid_files else "",
             )
         finally:
             if hasattr(connector, 'close'):
