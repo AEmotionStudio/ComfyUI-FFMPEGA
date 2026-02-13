@@ -2205,7 +2205,7 @@ def _f_blend(p):
 def _f_burn_subtitles(p):
     """Burn/hardcode subtitles from .srt/.ass file into video."""
     path = sanitize_text_param(str(p.get("path", "subtitles.srt")))
-    validate_path(path, ALLOWED_SUBTITLE_EXTENSIONS, must_exist=False)
+    validate_path(path, ALLOWED_SUBTITLE_EXTENSIONS, must_exist=True)
     fontsize = int(p.get("fontsize", 24))
     fontcolor = sanitize_text_param(str(p.get("fontcolor", "white")))
 
