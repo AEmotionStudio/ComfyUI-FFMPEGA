@@ -401,7 +401,7 @@ def _f_mask_blur(p):
 
 def _f_lut_apply(p):
     """Apply a color LUT with intensity blending."""
-    from ..core.sanitize import sanitize_text_param
+    from ...core.sanitize import sanitize_text_param, validate_path, ALLOWED_LUT_EXTENSIONS
     from pathlib import Path
 
     path = sanitize_text_param(str(p.get("path", "lut.cube")))
@@ -409,7 +409,8 @@ def _f_lut_apply(p):
 
     # Auto-resolve short names: if path has no separator, search luts/ folder
     if "/" not in path and "\\" not in path:
-        luts_dir = Path(__file__).resolve().parent.parent / "luts"
+        # skills/handlers/visual.py -> skills/handlers -> skills -> project root
+        luts_dir = Path(__file__).resolve().parent.parent.parent / "luts"
         # Try exact match first, then fuzzy
         for ext in (".cube", ".3dl", ""):
             candidate = luts_dir / f"{path}{ext}"
@@ -423,6 +424,9 @@ def _f_lut_apply(p):
                     if f.suffix.lower() in (".cube", ".3dl") and path.lower() in f.stem.lower():
                         path = str(f)
                         break
+
+    # Validate the LUT file path for security (prevent traversal, enforce extensions)
+    validate_path(path, ALLOWED_LUT_EXTENSIONS, must_exist=True)
 
     if intensity >= 1.0:
         # Full LUT, no blending needed

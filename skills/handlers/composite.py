@@ -4,12 +4,25 @@ Auto-generated from composer.py — do not edit directly.
 """
 
 try:
-    from ...core.sanitize import sanitize_text_param
+    from ...core.sanitize import (
+        sanitize_text_param,
+        validate_path,
+        ALLOWED_SUBTITLE_EXTENSIONS,
+        ALLOWED_FONT_EXTENSIONS,
+    )
 except ImportError:
     try:
-        from core.sanitize import sanitize_text_param
+        from core.sanitize import (
+            sanitize_text_param,
+            validate_path,
+            ALLOWED_SUBTITLE_EXTENSIONS,
+            ALLOWED_FONT_EXTENSIONS,
+        )
     except ImportError:
         def sanitize_text_param(s): return s
+        def validate_path(p, e, must_exist=True): return p
+        ALLOWED_SUBTITLE_EXTENSIONS = set()
+        ALLOWED_FONT_EXTENSIONS = set()
 
 _VIDEO_EXTENSIONS = {".mp4", ".webm", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".ts", ".m4v"}
 
@@ -23,6 +36,11 @@ def _f_add_text(p):
     size = p.get("size", 48)
     color = sanitize_text_param(str(p.get("color", "white")))
     font = sanitize_text_param(str(p.get("font", "Sans")))
+
+    # Validate font path if it looks like a file path
+    if "/" in font or "\\" in font or font.endswith((".ttf", ".otf", ".woff")):
+        validate_path(font, ALLOWED_FONT_EXTENSIONS, must_exist=True)
+
     border = p.get("border", True)
     position = p.get("position", "center")
 
@@ -639,6 +657,8 @@ def _f_pip(p):
 def _f_burn_subtitles(p):
     """Burn/hardcode subtitles from .srt/.ass file into video."""
     path = sanitize_text_param(str(p.get("path", "subtitles.srt")))
+    # Validate subtitle file path for security (prevent traversal, enforce extensions)
+    validate_path(path, ALLOWED_SUBTITLE_EXTENSIONS, must_exist=True)
     fontsize = int(p.get("fontsize", 24))
     fontcolor = sanitize_text_param(str(p.get("fontcolor", "white")))
 
