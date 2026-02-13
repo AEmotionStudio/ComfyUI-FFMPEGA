@@ -65,6 +65,11 @@ class APIConnector(LLMConnector):
         self._auth_prefix = provider_config.get("auth_prefix", "Bearer")
 
     @property
+    def supports_vision(self) -> bool:
+        """All major API providers support vision/image inputs."""
+        return True
+
+    @property
     def client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
         if self._client is None:

@@ -55,6 +55,11 @@ class OllamaConnector(LLMConnector):
             await self._client.aclose()  # type: ignore[union-attr]
             self._client = None
 
+    @property
+    def supports_vision(self) -> bool:
+        """Ollama supports vision via multimodal models (llava, etc.)."""
+        return True
+
     async def generate(
         self,
         prompt: str,

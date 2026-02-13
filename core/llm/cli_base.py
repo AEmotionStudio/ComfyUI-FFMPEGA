@@ -69,6 +69,11 @@ class CLIConnectorBase(LLMConnector):
         """Short tag for log messages.  Defaults to class name."""
         return self.__class__.__name__
 
+    @property
+    def supports_vision(self) -> bool:
+        """CLI agents can view files on disk natively."""
+        return True
+
     # ------------------------------------------------------------------
     # Shared implementation
     # ------------------------------------------------------------------
@@ -130,11 +135,55 @@ class CLIConnectorBase(LLMConnector):
 
         content = stdout.decode("utf-8", errors="replace").strip()
 
+        return self._parse_raw_output(content, stdin_data)
+
+    def _parse_raw_output(
+        self,
+        raw_output: str,
+        stdin_data: Optional[bytes] = None,
+    ) -> LLMResponse:
+        """Parse raw CLI output into an LLMResponse.
+
+        Calls ``_parse_json_output`` (overridden by subclasses to extract
+        structured JSON with native token stats). If that returns ``None``
+        or yields no token counts, falls back to char-based estimation.
+        """
+        response = self._parse_json_output(raw_output)
+        if response is not None:
+            # If JSON parsing yielded token counts, use them directly
+            if response.prompt_tokens is not None or response.completion_tokens is not None:
+                return response
+            # JSON parsed content but no tokens — fill in estimates
+            content = response.content
+        else:
+            content = raw_output
+
+        _CPC = 4  # chars per token estimate
+        est_prompt = len(stdin_data) // _CPC if stdin_data else 0
+        est_completion = max(1, len(content) // _CPC) if content else 0
+
         return LLMResponse(
             content=content,
             model=self._model_name(),
             provider=self._provider(),
+            prompt_tokens=est_prompt,
+            completion_tokens=est_completion,
+            total_tokens=est_prompt + est_completion,
         )
+
+    def _parse_json_output(self, raw_output: str) -> Optional[LLMResponse]:
+        """Parse structured JSON from CLI output.
+
+        Subclasses override this to extract content and native token stats.
+        Return ``None`` if the output is not valid JSON (base class will
+        fall back to char-based estimation).
+        """
+        return None
+
+    @staticmethod
+    def _first_not_none(a: Optional[int], b: Optional[int]) -> Optional[int]:
+        """Return the first non-None value (preserves valid 0)."""
+        return a if a is not None else b
 
     async def generate_stream(
         self,
@@ -189,6 +238,9 @@ class CLIConnectorBase(LLMConnector):
                 content=clean_content,
                 model=response.model,
                 provider=response.provider,
+                prompt_tokens=response.prompt_tokens,
+                completion_tokens=response.completion_tokens,
+                total_tokens=response.total_tokens,
                 tool_calls=tool_calls,
             )
 

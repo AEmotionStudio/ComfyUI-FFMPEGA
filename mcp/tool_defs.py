@@ -148,11 +148,10 @@ TOOL_DEFINITIONS = [
             "name": "extract_frames",
             "description": (
                 "Extract frames from the input video as PNG images for visual "
-                "inspection. Returns absolute file paths to the extracted "
-                "frame images. Use this to SEE the actual video content — "
-                "colors, composition, lighting, subjects — before choosing "
-                "effects or color grading. Only available when using a "
-                "vision-capable model."
+                "inspection. For vision-capable models (API and CLI), the "
+                "frames will be viewable as images. Use this to SEE the actual "
+                "video content — colors, composition, lighting, subjects — "
+                "before choosing effects or color grading."
             ),
             "parameters": {
                 "type": "object",
@@ -189,4 +188,86 @@ TOOL_DEFINITIONS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "analyze_colors",
+            "description": (
+                "Analyze the video's color characteristics using ffprobe "
+                "signalstats. Returns numeric luminance, saturation, and "
+                "color balance data with actionable recommendations. "
+                "Use this for precise color metrics or as a fallback when "
+                "vision is unavailable. Great for color grading decisions."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "start": {
+                        "type": "number",
+                        "description": (
+                            "Start time in seconds to begin analysis "
+                            "(default: 0)"
+                        ),
+                    },
+                    "duration": {
+                        "type": "number",
+                        "description": (
+                            "Duration in seconds to analyze "
+                            "(default: 5)"
+                        ),
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_luts",
+            "description": (
+                "List all available LUT (.cube / .3dl) files that can be "
+                "used with the lut_apply skill. Returns each LUT's name "
+                "and filename. Users can add their own LUTs by dropping "
+                "files into the luts/ folder. Call this before using "
+                "lut_apply to discover available looks."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "analyze_audio",
+            "description": (
+                "Analyze the audio characteristics of a video/audio file. "
+                "Returns numeric volume (dB), EBU R128 loudness (LUFS), "
+                "silence detection, and actionable recommendations. "
+                "Use this before applying audio effects or to verify "
+                "audio output quality."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "start": {
+                        "type": "number",
+                        "description": (
+                            "Start time in seconds to begin analysis "
+                            "(default: 0)"
+                        ),
+                    },
+                    "duration": {
+                        "type": "number",
+                        "description": (
+                            "Duration in seconds to analyze "
+                            "(default: 10)"
+                        ),
+                    },
+                },
+            },
+        },
+    },
 ]
+

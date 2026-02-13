@@ -111,6 +111,16 @@ coverage.xml
 # Gemini
 .gemini/
 
+# Jules
+.jules/
+
+# Agent workflows
+.agent/
+
+# PostScript artifacts (ImageMagick generates these)
+*.ps
+*.eps
+
 # PRD
 PRD.md
 
@@ -120,3 +130,6 @@ custom_skills/*.yml
 custom_skills/*/
 !custom_skills/.gitkeep
 !custom_skills/examples/
+
+# Token usage logs
+usage_log.jsonl

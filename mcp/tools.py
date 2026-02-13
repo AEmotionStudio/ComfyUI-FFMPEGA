@@ -385,3 +385,104 @@ def validate_skill_params(skill_name: str, params: dict) -> dict:
         "skill": skill_name,
         "params": params,
     }
+
+
+def analyze_colors(
+    video_path: str,
+    start: float = 0.0,
+    duration: float = 5.0,
+) -> dict:
+    """Analyze video colors using ffprobe signalstats.
+
+    Provides numeric color data (luminance, chroma, saturation) that
+    the LLM can use for informed color grading without vision.
+
+    Args:
+        video_path: Path to the video file.
+        start: Start time in seconds.
+        duration: Duration in seconds to analyze.
+
+    Returns:
+        Dictionary with color metrics and recommendations.
+    """
+    from .vision import analyze_colors_ffmpeg
+
+    return analyze_colors_ffmpeg(
+        video_path=video_path,
+        start=start,
+        duration=duration,
+    )
+
+
+def list_luts() -> dict:
+    """List available LUT files in the luts/ folder.
+
+    Scans for .cube and .3dl files and returns their names and paths.
+    Users can add their own LUT files to the luts/ folder.
+
+    Returns:
+        Dictionary with list of available LUTs and the folder path.
+    """
+    from pathlib import Path
+
+    luts_dir = Path(__file__).resolve().parent.parent / "luts"
+    if not luts_dir.is_dir():
+        return {
+            "luts": [],
+            "luts_folder": str(luts_dir),
+            "note": "LUTs folder not found.",
+        }
+
+    lut_files = sorted(
+        p for p in luts_dir.iterdir()
+        if p.suffix.lower() in (".cube", ".3dl") and p.is_file()
+    )
+
+    luts = []
+    for p in lut_files:
+        name = p.stem  # e.g. "cinematic_teal_orange"
+        display = name.replace("_", " ").title()
+        luts.append({
+            "name": name,
+            "display_name": display,
+            "filename": p.name,
+        })
+
+    return {
+        "luts": luts,
+        "count": len(luts),
+        "luts_folder": str(luts_dir),
+        "usage_hint": (
+            "Use lut_apply skill with path=<name> (e.g. "
+            "lut_apply:path=cinematic_teal_orange). "
+            "Short names auto-resolve to full paths."
+        ),
+    }
+
+
+def analyze_audio(
+    video_path: str,
+    start: float = 0.0,
+    duration: float = 10.0,
+) -> dict:
+    """Analyze audio characteristics using ffmpeg filters.
+
+    Provides numeric audio data (volume, loudness, silence) that
+    the LLM can use for informed audio editing decisions.
+
+    Args:
+        video_path: Path to the video/audio file.
+        start: Start time in seconds.
+        duration: Duration in seconds to analyze.
+
+    Returns:
+        Dictionary with audio metrics and recommendations.
+    """
+    from .vision import analyze_audio_ffmpeg
+
+    return analyze_audio_ffmpeg(
+        video_path=video_path,
+        start=start,
+        duration=duration,
+    )
+

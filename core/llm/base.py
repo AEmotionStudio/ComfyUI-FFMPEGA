@@ -70,6 +70,11 @@ class LLMConnector(ABC):
         """
         self.config = config
 
+    @property
+    def supports_vision(self) -> bool:
+        """Whether this connector supports vision/image inputs."""
+        return False
+
     @abstractmethod
     async def generate(
         self,

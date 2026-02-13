@@ -187,6 +187,18 @@ class FFMPEGAgentNode:
                     "default": "auto",
                     "tooltip": "Override x264/x265 encoding speed preset. Slower = better compression. 'auto' uses the quality_preset value.",
                 }),
+                "use_vision": ("BOOLEAN", {
+                    "default": True,
+                    "label_on": "Vision On",
+                    "label_off": "Vision Off",
+                    "tooltip": "When On, embeds video frames as images for vision-capable models (uses more tokens). When Off, uses numeric color analysis instead (cheaper, works with all models).",
+                }),
+                "verify_output": ("BOOLEAN", {
+                    "default": True,
+                    "label_on": "Verify On",
+                    "label_off": "Verify Off",
+                    "tooltip": "When On, the agent inspects the output video after rendering and auto-corrects if it doesn't match intent. Adds one extra LLM call (more tokens/time). Best for complex edits like overlays, color grading, or animations.",
+                }),
                 "batch_mode": ("BOOLEAN", {
                     "default": False,
                     "label_on": "Batch",
@@ -209,6 +221,18 @@ class FFMPEGAgentNode:
                     "max": 16,
                     "step": 1,
                     "tooltip": "Maximum number of videos to process simultaneously in batch mode. Higher values use more CPU/GPU.",
+                }),
+                "track_tokens": ("BOOLEAN", {
+                    "default": False,
+                    "label_on": "Track On",
+                    "label_off": "Track Off",
+                    "tooltip": "When On, prints token usage summary (prompt tokens, completion tokens, LLM calls) to the console after each run. Useful for monitoring costs with paid APIs.",
+                }),
+                "log_usage": ("BOOLEAN", {
+                    "default": False,
+                    "label_on": "Log On",
+                    "label_off": "Log Off",
+                    "tooltip": "When On, appends a JSON entry to usage_log.jsonl for each run. Useful for tracking cumulative token spend over time.",
                 }),
             },
             "hidden": {
@@ -308,10 +332,14 @@ class FFMPEGAgentNode:
         custom_model: str = "",
         crf: int = -1,
         encoding_preset: str = "auto",
+        use_vision: bool = True,
+        verify_output: bool = True,
         batch_mode: bool = False,
         video_folder: str = "",
         file_pattern: str = "*.mp4",
         max_concurrent: int = 4,
+        track_tokens: bool = False,
+        log_usage: bool = False,
         **kwargs,  # hidden: prompt (PROMPT dict), extra_pnginfo (EXTRA_PNGINFO)
     ) -> tuple[torch.Tensor, dict, str, str, str]:
         """Process the video based on the natural language prompt.
@@ -351,6 +379,8 @@ class FFMPEGAgentNode:
                 max_concurrent=max_concurrent,
                 save_output=save_output,
                 output_path=output_path,
+                use_vision=use_vision,
+                verify_output=verify_output,
             )
 
         # --- Resolve input video ---
@@ -495,6 +525,7 @@ class FFMPEGAgentNode:
                 connector, prompt, metadata_str,
                 connected_inputs=connected_inputs_str,
                 video_path=effective_video_path,
+                use_vision=use_vision,
             )
         except Exception as e:
             if hasattr(connector, 'close'):
@@ -770,6 +801,7 @@ class FFMPEGAgentNode:
                         connector, error_prompt, metadata_str,
                         connected_inputs=connected_inputs_str,
                         video_path=effective_video_path,
+                        use_vision=use_vision,
                     )
                     # Rebuild pipeline from corrected spec
                     pipeline = Pipeline(
@@ -826,7 +858,134 @@ class FFMPEGAgentNode:
                 f"Command: {command.to_string()}"
             )
 
-        # Close LLM connector now that all retries are done
+        # --- Output verification loop ---
+        if verify_output and result.success:
+            logger.info("Output verification enabled — inspecting result...")
+            try:
+                from ..mcp.tools import extract_frames as _extract_frames
+                from ..mcp.tools import analyze_colors as _analyze_colors
+                from ..mcp.tools import cleanup_vision_frames as _cleanup_frames
+                from ..mcp.vision import frames_to_base64 as _frames_to_b64
+                from ..prompts.system import get_verification_prompt
+
+                # Extract 3 frames from output (start, mid, end)
+                verify_frames = _extract_frames(
+                    video_path=output_path,
+                    start=0.0,
+                    duration=9999,  # full video
+                    fps=0.5,
+                    max_frames=3,
+                )
+                verify_run_id = verify_frames.get("run_id")
+
+                # Build output analysis data
+                if use_vision and verify_frames.get("paths"):
+                    b64_data = _frames_to_b64(verify_frames["paths"])
+                    output_data = (
+                        f"Extracted {len(verify_frames['paths'])} frames from output.\n"
+                        f"[Vision frames are embedded in this message]"
+                    )
+                else:
+                    color_data = _analyze_colors(video_path=output_path)
+                    import json as _json
+                    output_data = (
+                        f"Color analysis of output:\n"
+                        f"{_json.dumps(color_data, indent=2)}"
+                    )
+                    b64_data = None
+
+                # Build pipeline summary
+                pipeline_summary = self.composer.explain_pipeline(pipeline)
+
+                # Build verification prompt
+                verify_prompt = get_verification_prompt(
+                    prompt=prompt,
+                    pipeline_summary=pipeline_summary,
+                    output_data=output_data,
+                )
+
+                # Send to LLM (single-shot, not tool-calling)
+                verify_messages = [{"role": "user", "content": verify_prompt}]
+                if b64_data:
+                    # Embed vision frames in the message
+                    content_parts = [{"type": "text", "text": verify_prompt}]
+                    for uri in b64_data:
+                        content_parts.append({
+                            "type": "image_url",
+                            "image_url": {"url": uri},
+                        })
+                    verify_messages = [{"role": "user", "content": content_parts}]
+
+                verify_response = await connector.generate(
+                    verify_prompt if not b64_data else "",
+                    system_prompt="You are a video quality reviewer.",
+                )
+                # If vision, use chat_with_tools without tools for multimodal
+                if b64_data:
+                    from ..mcp.tool_defs import TOOL_DEFINITIONS
+                    verify_response = await connector.chat_with_tools(
+                        verify_messages, tools=[],
+                    )
+
+                verify_text = (verify_response.content or "").strip()
+                logger.info(f"Verification result: {verify_text[:100]}")
+
+                if verify_text.upper() == "PASS":
+                    logger.info("Output verification: PASS — output looks good")
+                else:
+                    # Try to parse corrected pipeline
+                    corrected = self.pipeline_generator.parse_response(verify_text)
+                    if corrected and corrected.get("pipeline"):
+                        logger.warning(
+                            "Output verification: NEEDS CORRECTION — "
+                            "re-executing with corrected pipeline"
+                        )
+                        # Rebuild and re-execute
+                        fix_pipeline = Pipeline(
+                            input_path=effective_video_path,
+                            output_path=output_path,
+                            extra_inputs=pipeline.extra_inputs,
+                            metadata=pipeline.metadata,
+                        )
+                        for step in corrected.get("pipeline", []):
+                            skill_name = step.get("skill")
+                            params = step.get("params", {})
+                            if skill_name:
+                                fix_pipeline.add_step(skill_name, params)
+                        fix_command = self.composer.compose(fix_pipeline)
+                        fix_result = self.process_manager.execute(
+                            fix_command, timeout=600
+                        )
+                        if fix_result.success:
+                            result = fix_result
+                            pipeline = fix_pipeline
+                            command = fix_command
+                            logger.info(
+                                "Verification fix succeeded — using corrected output"
+                            )
+                        else:
+                            logger.warning(
+                                f"Verification fix failed: {fix_result.error_message} "
+                                "— keeping original output"
+                            )
+                    else:
+                        logger.info(
+                            "Verification response was not PASS or valid JSON "
+                            "— keeping original output"
+                        )
+
+                # Cleanup verification frames
+                if verify_run_id:
+                    try:
+                        _cleanup_frames(verify_run_id)
+                    except Exception:
+                        pass
+
+            except Exception as verify_err:
+                logger.warning(f"Output verification failed: {verify_err}")
+                # Non-fatal — keep original output
+
+        # Close LLM connector now that all retries/verification are done
         if hasattr(connector, 'close'):
             await connector.close()
 
@@ -851,6 +1010,50 @@ Pipeline Steps:
 {self.composer.explain_pipeline(pipeline)}
 
 Warnings: {', '.join(warnings) if warnings else 'None'}"""
+
+        # --- Token usage tracking ---
+        token_usage = getattr(self.pipeline_generator, 'last_token_usage', None)
+        if token_usage and (track_tokens or log_usage):
+            est_tag = " (estimated)" if token_usage.get("estimated") else ""
+            analysis += f"""
+
+Token Usage{est_tag}:
+  Prompt tokens:     {token_usage.get('total_prompt_tokens', 0):,}
+  Completion tokens: {token_usage.get('total_completion_tokens', 0):,}
+  Total tokens:      {token_usage.get('total_tokens', 0):,}
+  LLM calls:         {token_usage.get('llm_calls', 0)}
+  Tool calls:        {token_usage.get('tool_calls', 0)}
+  Elapsed:           {token_usage.get('elapsed_sec', 0)}s"""
+
+            if track_tokens:
+                est_label = " (estimated)" if token_usage.get("estimated") else ""
+                logger.info("┌─ Token Usage%s ────────────────────────────┐", est_label)
+                logger.info("│ Model:       %-30s │", token_usage.get("model", "unknown"))
+                logger.info("│ Provider:    %-30s │", token_usage.get("provider", "unknown"))
+                logger.info("│ Prompt:      %-30s │", f"{token_usage.get('total_prompt_tokens', 0):,} tokens")
+                logger.info("│ Completion:  %-30s │", f"{token_usage.get('total_completion_tokens', 0):,} tokens")
+                logger.info("│ Total:       %-30s │", f"{token_usage.get('total_tokens', 0):,} tokens")
+                logger.info("│ LLM calls:   %-30s │", str(token_usage.get("llm_calls", 0)))
+                logger.info("│ Tool calls:  %-30s │", str(token_usage.get("tool_calls", 0)))
+                logger.info("│ Elapsed:     %-30s │", f"{token_usage.get('elapsed_sec', 0)}s")
+                logger.info("└────────────────────────────────────────────┘")
+
+            if log_usage:
+                from ..core.token_tracker import TokenTracker as _TT  # type: ignore[import-not-found]
+                entry = {
+                    "timestamp": __import__("time").strftime("%Y-%m-%dT%H:%M:%S"),
+                    "model": token_usage.get("model", "unknown"),
+                    "provider": token_usage.get("provider", "unknown"),
+                    "prompt_tokens": token_usage.get("total_prompt_tokens", 0),
+                    "completion_tokens": token_usage.get("total_completion_tokens", 0),
+                    "total_tokens": token_usage.get("total_tokens", 0),
+                    "estimated": token_usage.get("estimated", False),
+                    "llm_calls": token_usage.get("llm_calls", 0),
+                    "tool_calls": token_usage.get("tool_calls", 0),
+                    "elapsed_sec": token_usage.get("elapsed_sec", 0),
+                    "prompt_preview": prompt[:120] if prompt else "",
+                }
+                _TT.append_to_log(entry)
 
         # --- Handle audio (respecting audio_source from LLM) ---
         removes_audio = "-an" in command.output_options
@@ -1095,6 +1298,8 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
         max_concurrent: int,
         save_output: bool,
         output_path: str,
+        use_vision: bool = True,
+        verify_output: bool = False,
     ) -> tuple[torch.Tensor, dict, str, str, str]:
         """Process all matching videos in a folder with the same pipeline.
 
@@ -1166,6 +1371,7 @@ Warnings: {', '.join(warnings) if warnings else 'None'}"""
                 connector, prompt, metadata_str,
                 connected_inputs=connected_inputs_str,
                 video_path=valid_files[0] if valid_files else "",
+                use_vision=use_vision,
             )
         finally:
             if hasattr(connector, 'close'):

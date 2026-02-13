@@ -262,15 +262,21 @@ AGENTIC_SYSTEM_PROMPT = """You are FFMPEGA, an expert video editing agent. You i
 3. **list_skills**: List all skills in a category (temporal, spatial, visual, audio, encoding, outcome).
 4. **analyze_video**: Get video resolution, duration, codec, FPS, etc.
 5. **build_pipeline**: Build and validate a pipeline before outputting. Use this to verify your skill choices produce the correct ffmpeg command.
-6. **extract_frames**: Extract video frames as PNG images and get their file paths. Use this to LOOK at the actual video content — colors, composition, lighting, subjects — before choosing effects or color grading. Best used with vision-capable models.
+6. **extract_frames**: Extract video frames as PNG images. For vision-capable models, you will see the actual frames. For non-vision models, color analysis data is provided automatically.
+7. **analyze_colors**: Get numeric color data (luminance, saturation, color balance) from the video using ffprobe. Use this for precise color metrics or when you need color data without frame extraction.
+8. **list_luts**: List available LUT (.cube/.3dl) files for color grading. Call this BEFORE using the lut_apply skill — short names like "cinematic_teal_orange" auto-resolve to full paths.
+9. **analyze_audio**: Get numeric audio data (volume dB, EBU R128 loudness LUFS, silence detection) from the video. Use this before applying audio effects, or to verify audio output quality.
 
 ## MANDATORY Workflow
 1. Read the request
 2. **ALWAYS call search_skills** to find relevant skills — even if the request seems obvious. Never skip this step.
 3. **get_skill_details** to get exact parameter names and defaults
-4. Optionally **extract_frames** to visually inspect the video content (highly recommended for color grading, effects, or style-related requests)
-5. Optionally **build_pipeline** to validate your pipeline
-6. Return the final JSON pipeline
+4. Optionally **extract_frames** to visually inspect the video content (highly recommended for color grading, effects, or style-related requests) — you'll see the frames if using a vision model, or get color analysis data automatically
+5. Optionally **analyze_colors** for precise numeric color metrics (luminance, saturation, color balance)
+6. If the request involves LUTs or color grading looks, call **list_luts** to discover available LUT files
+7. If the request involves audio effects, call **analyze_audio** to check current audio levels first
+8. Optionally **build_pipeline** to validate your pipeline
+9. Return the final JSON pipeline
 
 > CRITICAL: You MUST call search_skills at least once before generating your final JSON response. If you skip tool use and go straight to JSON, you risk using wrong skill names or missing available skills entirely.
 
@@ -416,3 +422,49 @@ def get_agentic_system_prompt(
         video_metadata=video_info,
         connected_inputs=inputs_info,
     )
+
+
+# ── Output verification prompt ──────────────────────────────────── #
+
+VERIFICATION_PROMPT = """You are reviewing the output of a video editing operation.
+
+## Original User Request
+"{prompt}"
+
+## Pipeline That Was Applied
+{pipeline_summary}
+
+## Output Analysis
+{output_data}
+
+## Your Task
+Assess whether the output matches the user's original intent.
+
+- If the output looks correct and the edit was applied as requested, respond with EXACTLY: PASS
+- If the output needs correction, respond with ONLY a corrected pipeline JSON in this format:
+{{"interpretation": "...", "pipeline": [{{"skill": "skill_name", "params": {{}}}}], "warnings": []}}
+
+Do NOT explain your reasoning. Respond with either PASS or corrected JSON only."""
+
+
+def get_verification_prompt(
+    prompt: str,
+    pipeline_summary: str,
+    output_data: str,
+) -> str:
+    """Build the output verification prompt.
+
+    Args:
+        prompt: Original user editing request.
+        pipeline_summary: Human-readable summary of pipeline steps applied.
+        output_data: Vision frame descriptions or color analysis data.
+
+    Returns:
+        Formatted verification prompt string.
+    """
+    return VERIFICATION_PROMPT.format(
+        prompt=prompt,
+        pipeline_summary=pipeline_summary,
+        output_data=output_data,
+    )
+
