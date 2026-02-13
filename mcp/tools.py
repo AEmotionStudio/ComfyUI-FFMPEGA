@@ -286,6 +286,10 @@ def extract_frames(
     max_frames = min(max(max_frames, 1), 16)
     fps = max(fps, 0.1)
 
+    # Limit duration so ffmpeg never extracts more frames than needed
+    max_duration = max_frames / fps
+    duration = min(duration, max_duration)
+
     # Create a unique per-run subfolder to avoid cross-run interference
     import uuid
     node_dir = Path(__file__).resolve().parent.parent
@@ -309,8 +313,11 @@ def extract_frames(
         shutil.rmtree(frames_dir, ignore_errors=True)
         return {"error": f"Frame extraction failed: {e}", "run_id": run_id}
 
-    # Limit to max_frames
-    frame_paths = frame_paths[:max_frames]
+    # Limit to max_frames and remove excess files from disk
+    if len(frame_paths) > max_frames:
+        for excess in frame_paths[max_frames:]:
+            excess.unlink(missing_ok=True)
+        frame_paths = frame_paths[:max_frames]
 
     path_strings = [str(p.resolve()) for p in frame_paths]
 
