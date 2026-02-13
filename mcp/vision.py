@@ -63,6 +63,80 @@ def frames_to_base64(
     return blocks
 
 
+def frames_to_base64_anthropic(
+    paths: list[Path | str],
+    max_size: int = 512,
+) -> list[dict]:
+    """Convert frame images to Anthropic-format base64 content blocks.
+
+    Anthropic expects: {"type": "image", "source": {"type": "base64",
+    "media_type": "image/png", "data": "<base64>"}}
+
+    Args:
+        paths: List of paths to PNG frame images.
+        max_size: Maximum dimension (width or height) in pixels.
+
+    Returns:
+        List of Anthropic-compatible image content blocks.
+    """
+    try:
+        from PIL import Image
+        import io
+    except ImportError:
+        logger.warning(
+            "Pillow not available — sending full-size frames. "
+            "Install Pillow for automatic resizing: pip install Pillow"
+        )
+        return _frames_to_base64_anthropic_raw(paths)
+
+    blocks = []
+    for p in paths:
+        p = Path(p)
+        if not p.exists():
+            continue
+        try:
+            img = Image.open(p)
+            if max(img.size) > max_size:
+                img.thumbnail((max_size, max_size), Image.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format="PNG", optimize=True)
+            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+            blocks.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": b64,
+                },
+            })
+        except Exception as e:
+            logger.warning(f"Failed to encode frame {p}: {e}")
+    return blocks
+
+
+def _frames_to_base64_anthropic_raw(paths: list[Path | str]) -> list[dict]:
+    """Anthropic-format base64 blocks without Pillow resizing."""
+    blocks = []
+    for p in paths:
+        p = Path(p)
+        if not p.exists():
+            continue
+        try:
+            raw = p.read_bytes()
+            b64 = base64.b64encode(raw).decode("ascii")
+            blocks.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": b64,
+                },
+            })
+        except Exception as e:
+            logger.warning(f"Failed to read frame {p}: {e}")
+    return blocks
+
+
 def frames_to_base64_raw_strings(
     paths: list[Path | str],
     max_size: int = 512,

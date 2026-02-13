@@ -78,7 +78,21 @@ class GeminiCLIConnector(CLIConnectorBase):
         stdin_data: Optional[bytes] = None,
     ) -> LLMResponse:
         """Parse Gemini CLI JSON output for content and native token stats."""
-        return self._parse_json_output(raw_output)
+        response = self._parse_json_output(raw_output)
+        # If JSON parsing didn't yield token counts, use char-based estimation
+        if response.prompt_tokens is None and response.completion_tokens is None:
+            _CPC = 4
+            est_prompt = len(stdin_data) // _CPC if stdin_data else 0
+            est_completion = max(1, len(response.content) // _CPC) if response.content else 0
+            return LLMResponse(
+                content=response.content,
+                model=response.model,
+                provider=response.provider,
+                prompt_tokens=est_prompt,
+                completion_tokens=est_completion,
+                total_tokens=est_prompt + est_completion,
+            )
+        return response
 
     def _parse_json_output(self, raw_output: str) -> LLMResponse:
         """Parse Gemini CLI JSON output, extracting content and token stats.

@@ -78,7 +78,21 @@ class ClaudeCodeCLIConnector(CLIConnectorBase):
         stdin_data: Optional[bytes] = None,
     ) -> LLMResponse:
         """Parse Claude CLI JSON output for content and native token stats."""
-        return self._parse_json_output(raw_output)
+        response = self._parse_json_output(raw_output)
+        # If JSON parsing didn't yield token counts, use char-based estimation
+        if response.prompt_tokens is None and response.completion_tokens is None:
+            _CPC = 4
+            est_prompt = len(stdin_data) // _CPC if stdin_data else 0
+            est_completion = max(1, len(response.content) // _CPC) if response.content else 0
+            return LLMResponse(
+                content=response.content,
+                model=response.model,
+                provider=response.provider,
+                prompt_tokens=est_prompt,
+                completion_tokens=est_completion,
+                total_tokens=est_prompt + est_completion,
+            )
+        return response
 
     def _parse_json_output(self, raw_output: str) -> LLMResponse:
         """Parse Claude CLI JSON output, extracting content and token stats.
@@ -155,6 +169,24 @@ class ClaudeCodeCLIConnector(CLIConnectorBase):
                             or item.get("text", "")
                         )
                 content = "\n".join(p for p in text_parts if p) or raw_output
+                # Extract usage from the last item (most complete)
+                if data and isinstance(data[-1], dict):
+                    usage = (
+                        data[-1].get("usage")
+                        or data[-1].get("stats")
+                        or data[-1].get("token_usage")
+                    )
+                    if isinstance(usage, dict):
+                        prompt_tokens = _first(
+                            usage.get("input_tokens"),
+                            usage.get("prompt_tokens"),
+                        )
+                        completion_tokens = _first(
+                            usage.get("output_tokens"),
+                            usage.get("completion_tokens"),
+                        )
+                    if prompt_tokens is not None or completion_tokens is not None:
+                        total_tokens = (prompt_tokens or 0) + (completion_tokens or 0)
 
         except (json.JSONDecodeError, ValueError, TypeError):
             # Not valid JSON — treat as plain text

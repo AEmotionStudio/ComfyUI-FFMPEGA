@@ -272,6 +272,7 @@ class PipelineGenerator:
         )
         from ..mcp.vision import (  # type: ignore[import-not-found]
             frames_to_base64,
+            frames_to_base64_anthropic,
             frames_to_base64_raw_strings,
         )
         from ..core.llm.cli_base import CLIConnectorBase  # type: ignore[import-not-found]
@@ -466,7 +467,16 @@ class PipelineGenerator:
                                 logger.info("Vision: Ollama fallback to color analysis")
                         else:
                             # API connectors: embed base64 as multimodal content
-                            image_blocks = frames_to_base64(frame_paths)
+                            # Detect Anthropic (needs different image format)
+                            _is_anthropic = (
+                                hasattr(connector, 'config')
+                                and hasattr(connector.config, 'provider')
+                                and str(connector.config.provider) == "anthropic"
+                            )
+                            if _is_anthropic:
+                                image_blocks = frames_to_base64_anthropic(frame_paths)
+                            else:
+                                image_blocks = frames_to_base64(frame_paths)
                             if image_blocks:
                                 # Build multimodal content: text + images
                                 tool_result_msg["content"] = [

@@ -93,19 +93,6 @@ class TokenTracker:
             return 0
         return max(1, len(text) // _CHARS_PER_TOKEN)
 
-    def estimate_prompt_tokens(self, messages: list[dict]) -> int:
-        """Estimate prompt tokens from message history."""
-        total_chars = 0
-        for msg in messages:
-            content = msg.get("content", "")
-            if isinstance(content, str):
-                total_chars += len(content)
-            elif isinstance(content, list):
-                for block in content:
-                    if isinstance(block, dict):
-                        total_chars += len(block.get("text", ""))
-        return max(1, total_chars // _CHARS_PER_TOKEN) if total_chars else 0
-
     # ------------------------------------------------------------------ #
     #  Summaries                                                          #
     # ------------------------------------------------------------------ #
@@ -146,65 +133,9 @@ class TokenTracker:
 
         return result
 
-    def print_summary(self) -> None:
-        """Print a formatted summary to console/logger."""
-        s = self.summary()
-        est_tag = " (estimated)" if s["estimated"] else ""
-        logger.info(
-            "┌─ Token Usage%s ────────────────────────────┐", est_tag
-        )
-        logger.info("│ Model:       %-30s │", s["model"])
-        logger.info("│ Provider:    %-30s │", s["provider"])
-        logger.info(
-            "│ Prompt:      %-30s │",
-            f"{s['total_prompt_tokens']:,} tokens",
-        )
-        logger.info(
-            "│ Completion:  %-30s │",
-            f"{s['total_completion_tokens']:,} tokens",
-        )
-        logger.info(
-            "│ Total:       %-30s │",
-            f"{s['total_tokens']:,} tokens",
-        )
-        logger.info(
-            "│ LLM calls:   %-30s │",
-            str(s["llm_calls"]),
-        )
-        logger.info(
-            "│ Tool calls:  %-30s │",
-            str(s["tool_calls"]),
-        )
-        logger.info(
-            "│ Elapsed:     %-30s │",
-            f"{s['elapsed_sec']}s",
-        )
-        logger.info(
-            "└────────────────────────────────────────────┘"
-        )
-
     # ------------------------------------------------------------------ #
     #  Persistent logging                                                  #
     # ------------------------------------------------------------------ #
-
-    def to_log_entry(self, prompt_preview: str = "") -> dict:
-        """Return a single-line JSON-serialisable log entry."""
-        s = self.summary()
-        entry = {
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "model": s["model"],
-            "provider": s["provider"],
-            "prompt_tokens": s["total_prompt_tokens"],
-            "completion_tokens": s["total_completion_tokens"],
-            "total_tokens": s["total_tokens"],
-            "estimated": s["estimated"],
-            "llm_calls": s["llm_calls"],
-            "tool_calls": s["tool_calls"],
-            "elapsed_sec": s["elapsed_sec"],
-        }
-        if prompt_preview:
-            entry["prompt_preview"] = prompt_preview[:120]
-        return entry
 
     @staticmethod
     def append_to_log(entry: dict, log_dir: Optional[str] = None) -> None:
