@@ -279,6 +279,19 @@ class PipelineGenerator:
 
         # Resolve video path for extract_frames tool
         _vid = video_path or ""
+        _vision_run_ids: list[str] = []  # Track per-run frame folders
+
+        def _extract_frames_handler(args: dict) -> dict:
+            result = extract_frames(
+                video_path=args.get("video_path", _vid) or _vid,
+                start=args.get("start", 0.0),
+                duration=args.get("duration", 5.0),
+                fps=args.get("fps", 1.0),
+                max_frames=args.get("max_frames", 8),
+            )
+            if "run_id" in result:
+                _vision_run_ids.append(result["run_id"])
+            return result
 
         tool_handlers = {
             "list_skills": lambda args: list_skills(args.get("category")),
@@ -290,13 +303,7 @@ class PipelineGenerator:
                 input_path=args.get("input_path", "/tmp/input.mp4"),
                 output_path=args.get("output_path", "/tmp/output.mp4"),
             ),
-            "extract_frames": lambda args: extract_frames(
-                video_path=args.get("video_path", _vid) or _vid,
-                start=args.get("start", 0.0),
-                duration=args.get("duration", 5.0),
-                fps=args.get("fps", 1.0),
-                max_frames=args.get("max_frames", 8),
-            ),
+            "extract_frames": _extract_frames_handler,
         }
 
         try:
@@ -385,8 +392,9 @@ class PipelineGenerator:
             response = await connector.chat_with_tools(messages, [])
             return response.content
         finally:
-            # Always clean up extracted vision frames
-            cleanup_vision_frames()
+            # Clean up only this run's extracted vision frames
+            for rid in _vision_run_ids:
+                cleanup_vision_frames(rid)
 
     # ------------------------------------------------------------------ #
     #  JSON parsing                                                        #
