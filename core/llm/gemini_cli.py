@@ -70,58 +70,14 @@ class GeminiCLIConnector(CLIConnectorBase):
     def _log_tag(self) -> str:
         return "GeminiCLI"
 
-    # --- Override generate to parse JSON output with token stats ---
+    # --- Override _parse_raw_output to extract JSON token stats ---
 
-    async def generate(
+    def _parse_raw_output(
         self,
-        prompt: str,
-        system_prompt: Optional[str] = None,
+        raw_output: str,
+        stdin_data: Optional[bytes] = None,
     ) -> LLMResponse:
-        """Run the CLI binary and parse JSON output for token stats."""
-
-        binary_path = self._resolve_binary()
-        cmd = self._build_cmd(binary_path, prompt, system_prompt)
-        stdin_data = self._prepare_stdin(prompt, system_prompt)
-
-        # Sandbox: restrict CLI agent workspace to the node directory
-        node_dir = str(Path(__file__).resolve().parent.parent.parent)
-
-        logger.debug("[%s] Running: %s (cwd=%s)", self._log_tag(), " ".join(cmd[:3]), node_dir)
-
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=node_dir,
-            )
-
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(input=stdin_data),
-                timeout=self.config.timeout,
-            )
-        except asyncio.TimeoutError:
-            try:
-                proc.kill()
-                await proc.wait()
-            except Exception:
-                pass
-            raise TimeoutError(
-                f"{self._log_tag()} timed out after {self.config.timeout}s"
-            )
-        except FileNotFoundError:
-            raise RuntimeError(self._install_hint())
-
-        if proc.returncode != 0:
-            err = stderr.decode("utf-8", errors="replace").strip()
-            raise RuntimeError(
-                f"{self._log_tag()} failed (exit {proc.returncode}): {err}"
-            )
-
-        raw_output = stdout.decode("utf-8", errors="replace").strip()
-
-        # Try to parse JSON output with token stats
+        """Parse Gemini CLI JSON output for content and native token stats."""
         return self._parse_json_output(raw_output)
 
     def _parse_json_output(self, raw_output: str) -> LLMResponse:
@@ -133,6 +89,10 @@ class GeminiCLIConnector(CLIConnectorBase):
 
         Falls back to treating output as plain text if JSON parsing fails.
         """
+        def _first(a: Optional[int], b: Optional[int]) -> Optional[int]:
+            """Return first non-None value (0 is valid)."""
+            return a if a is not None else b
+
         prompt_tokens: Optional[int] = None
         completion_tokens: Optional[int] = None
         total_tokens: Optional[int] = None
@@ -153,16 +113,16 @@ class GeminiCLIConnector(CLIConnectorBase):
                 if data and isinstance(data[-1], dict):
                     usage = self._find_usage_dict(data[-1])
                     if usage:
-                        prompt_tokens = usage.get("input_tokens") or usage.get("prompt_tokens")
-                        completion_tokens = usage.get("output_tokens") or usage.get("completion_tokens")
+                        prompt_tokens = _first(usage.get("input_tokens"), usage.get("prompt_tokens"))
+                        completion_tokens = _first(usage.get("output_tokens"), usage.get("completion_tokens"))
             elif isinstance(data, dict):
                 content = self._extract_text(data) or raw_output
                 usage = self._find_usage_dict(data)
                 if usage:
-                    prompt_tokens = usage.get("input_tokens") or usage.get("prompt_tokens")
-                    completion_tokens = usage.get("output_tokens") or usage.get("completion_tokens")
+                    prompt_tokens = _first(usage.get("input_tokens"), usage.get("prompt_tokens"))
+                    completion_tokens = _first(usage.get("output_tokens"), usage.get("completion_tokens"))
 
-            if prompt_tokens or completion_tokens:
+            if prompt_tokens is not None or completion_tokens is not None:
                 total_tokens = (prompt_tokens or 0) + (completion_tokens or 0)
 
             logger.debug(

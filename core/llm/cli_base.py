@@ -135,14 +135,26 @@ class CLIConnectorBase(LLMConnector):
 
         content = stdout.decode("utf-8", errors="replace").strip()
 
+        return self._parse_raw_output(content, stdin_data)
+
+    def _parse_raw_output(
+        self,
+        raw_output: str,
+        stdin_data: Optional[bytes] = None,
+    ) -> LLMResponse:
+        """Parse raw CLI output into an LLMResponse.
+
+        Subclasses (e.g. GeminiCLI, ClaudeCLI) override this to extract
+        structured JSON with native token stats. The base implementation
+        returns estimated token counts from character length.
+        """
         # Estimate tokens from character length (~4 chars/token)
-        # for CLI connectors that don't provide native token counts
         _CPC = 4  # chars per token estimate
         est_prompt = len(stdin_data) // _CPC if stdin_data else 0
-        est_completion = max(1, len(content) // _CPC) if content else 0
+        est_completion = max(1, len(raw_output) // _CPC) if raw_output else 0
 
         return LLMResponse(
-            content=content,
+            content=raw_output,
             model=self._model_name(),
             provider=self._provider(),
             prompt_tokens=est_prompt,

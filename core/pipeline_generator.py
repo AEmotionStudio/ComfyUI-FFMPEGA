@@ -401,6 +401,7 @@ class PipelineGenerator:
 
                     handler = tool_handlers.get(func_name)
                     if handler:
+                        result = None
                         try:
                             result = handler(func_args)
                             result_str = json.dumps(result, indent=2)
