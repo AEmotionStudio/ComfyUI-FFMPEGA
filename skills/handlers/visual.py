@@ -4,9 +4,9 @@ Auto-generated from composer.py — do not edit directly.
 """
 
 try:
-    from ...core.sanitize import sanitize_text_param
+    from ...core.sanitize import sanitize_text_param, validate_path, ALLOWED_LUT_EXTENSIONS
 except ImportError:
-    from core.sanitize import sanitize_text_param
+    from core.sanitize import sanitize_text_param, validate_path, ALLOWED_LUT_EXTENSIONS
 
 def _f_brightness(p):
     return [f"eq=brightness={p.get('value', 0)}"], [], []
@@ -404,7 +404,6 @@ def _f_mask_blur(p):
 
 def _f_lut_apply(p):
     """Apply a color LUT with intensity blending."""
-    from ...core.sanitize import sanitize_text_param, validate_path, ALLOWED_LUT_EXTENSIONS
     from pathlib import Path
 
     path = sanitize_text_param(str(p.get("path", "lut.cube")))
