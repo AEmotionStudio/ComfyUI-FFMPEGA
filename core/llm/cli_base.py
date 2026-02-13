@@ -203,6 +203,9 @@ class CLIConnectorBase(LLMConnector):
                 content=clean_content,
                 model=response.model,
                 provider=response.provider,
+                prompt_tokens=response.prompt_tokens,
+                completion_tokens=response.completion_tokens,
+                total_tokens=response.total_tokens,
                 tool_calls=tool_calls,
             )
 

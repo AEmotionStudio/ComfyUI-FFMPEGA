@@ -104,7 +104,7 @@ class TokenTracker:
                 for block in content:
                     if isinstance(block, dict):
                         total_chars += len(block.get("text", ""))
-        return self.estimate_tokens(str(total_chars))
+        return max(1, total_chars // _CHARS_PER_TOKEN) if total_chars else 0
 
     # ------------------------------------------------------------------ #
     #  Summaries                                                          #

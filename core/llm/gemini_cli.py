@@ -148,9 +148,8 @@ class GeminiCLIConnector(CLIConnectorBase):
                 for item in data:
                     if isinstance(item, dict):
                         text_parts.append(self._extract_text(item))
-                        self._extract_usage(item, locals())
-                content = "\n".join(p for p in text_parts if p)
-                # Re-extract usage from the last item (most complete)
+                content = "\n".join(p for p in text_parts if p) or raw_output
+                # Extract usage from the last item (most complete)
                 if data and isinstance(data[-1], dict):
                     usage = self._find_usage_dict(data[-1])
                     if usage:
@@ -217,14 +216,3 @@ class GeminiCLIConnector(CLIConnectorBase):
                     return val
         return None
 
-    def _extract_usage(self, obj: dict, local_vars: dict) -> None:
-        """Extract and accumulate usage from a single response object."""
-        usage = self._find_usage_dict(obj)
-        if not usage:
-            return
-        pt = usage.get("input_tokens") or usage.get("prompt_tokens")
-        ct = usage.get("output_tokens") or usage.get("completion_tokens")
-        if pt:
-            local_vars["prompt_tokens"] = (local_vars.get("prompt_tokens") or 0) + pt
-        if ct:
-            local_vars["completion_tokens"] = (local_vars.get("completion_tokens") or 0) + ct
