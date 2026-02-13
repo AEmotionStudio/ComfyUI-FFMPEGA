@@ -31,6 +31,53 @@ class MediaConverter:
             import av  # type: ignore[import-not-found]
 
             container = av.open(video_path)
+            stream = container.streams.video[0]
+            num_frames = getattr(stream, "frames", 0)
+
+            # Optimization: Pre-allocate tensor if frame count is known to avoid large list overhead
+            if num_frames > 0:
+                frames_iter = container.decode(video=0)
+                try:
+                    first_frame = next(frames_iter)
+                except StopIteration:
+                    container.close()
+                    return torch.zeros(1, 64, 64, 3, dtype=torch.float32)
+
+                # Get dimensions from first frame
+                arr = first_frame.to_ndarray(format="rgb24")
+                h, w, c = arr.shape
+
+                # Allocate full float32 tensor
+                tensor = torch.empty((num_frames, h, w, c), dtype=torch.float32)
+
+                # Fill first frame
+                tensor[0] = torch.from_numpy(arr).float().div_(255.0)
+
+                count = 1
+                overflow = []
+
+                # Fill remaining frames
+                for frame in frames_iter:
+                    arr = frame.to_ndarray(format="rgb24")
+                    frame_tensor = torch.from_numpy(arr).float().div_(255.0)
+                    if count < num_frames:
+                        tensor[count] = frame_tensor
+                    else:
+                        overflow.append(frame_tensor)
+                    count += 1
+
+                container.close()
+
+                # Handle frame count mismatch (common with VFR or corrupt metadata)
+                if count < num_frames:
+                    return tensor[:count]
+                elif overflow:
+                    overflow_tensor = torch.stack(overflow)
+                    return torch.cat([tensor, overflow_tensor], dim=0)
+                else:
+                    return tensor
+
+            # Fallback for unknown frame count: accumulate in list
             frames = []
             for frame in container.decode(video=0):
                 arr = frame.to_ndarray(format="rgb24")
