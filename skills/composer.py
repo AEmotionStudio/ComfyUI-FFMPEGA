@@ -7,10 +7,22 @@ from pathlib import Path
 from .registry import SkillRegistry, Skill, SkillCategory, ParameterType, get_registry
 try:
     from ..core.executor.command_builder import CommandBuilder, FFMPEGCommand
-    from ..core.sanitize import sanitize_text_param
+    from ..core.sanitize import (
+        sanitize_text_param,
+        validate_path,
+        ALLOWED_SUBTITLE_EXTENSIONS,
+        ALLOWED_LUT_EXTENSIONS,
+        ALLOWED_FONT_EXTENSIONS
+    )
 except ImportError:
     from core.executor.command_builder import CommandBuilder, FFMPEGCommand
-    from core.sanitize import sanitize_text_param
+    from core.sanitize import (
+        sanitize_text_param,
+        validate_path,
+        ALLOWED_SUBTITLE_EXTENSIONS,
+        ALLOWED_LUT_EXTENSIONS,
+        ALLOWED_FONT_EXTENSIONS
+    )
 
 
 @dataclass
@@ -723,6 +735,11 @@ def _f_add_text(p):
     size = p.get("size", 48)
     color = sanitize_text_param(str(p.get("color", "white")))
     font = sanitize_text_param(str(p.get("font", "Sans")))
+
+    # Validate font path if it looks like a path
+    if "/" in font or "\\" in font:
+        validate_path(font, ALLOWED_FONT_EXTENSIONS, must_exist=True)
+
     border = p.get("border", True)
     position = p.get("position", "center")
 
@@ -2188,6 +2205,7 @@ def _f_blend(p):
 def _f_burn_subtitles(p):
     """Burn/hardcode subtitles from .srt/.ass file into video."""
     path = sanitize_text_param(str(p.get("path", "subtitles.srt")))
+    validate_path(path, ALLOWED_SUBTITLE_EXTENSIONS, must_exist=True)
     fontsize = int(p.get("fontsize", 24))
     fontcolor = sanitize_text_param(str(p.get("fontcolor", "white")))
 
@@ -2628,6 +2646,9 @@ def _f_lut_apply(p):
                         path = str(f)
                         break
 
+    # Validate the final resolved path
+    validate_path(path, ALLOWED_LUT_EXTENSIONS, must_exist=True)
+
     if intensity >= 1.0:
         # Full LUT, no blending needed
         vf = f"lut3d=file='{path}'"
@@ -2667,4 +2688,3 @@ def _f_audio_crossfade(p):
 
 
 _SKILL_DISPATCH["audio_crossfade"] = _f_audio_crossfade
-

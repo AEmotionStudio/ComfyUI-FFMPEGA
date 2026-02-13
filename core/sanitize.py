@@ -19,6 +19,51 @@ ALLOWED_EXTENSIONS = {
     '.mp3', '.wav', '.aac', '.flac', '.m4a', '.ogg', '.wma', '.opus'
 }
 
+ALLOWED_SUBTITLE_EXTENSIONS = {'.srt', '.ass', '.vtt', '.sub', '.sbv'}
+ALLOWED_LUT_EXTENSIONS = {'.cube', '.3dl', '.csp', '.look', '.vlt'}
+ALLOWED_FONT_EXTENSIONS = {'.ttf', '.otf', '.woff', '.woff2', '.ttc'}
+
+
+def validate_path(path: str, allowed_extensions: set[str], must_exist: bool = True) -> str:
+    """Generic path validator for file inputs.
+
+    Args:
+        path: The path string to validate.
+        allowed_extensions: Set of allowed file extensions (e.g. {'.srt', '.ass'}).
+        must_exist: If True, raises ValueError when the file doesn't exist.
+
+    Returns:
+        The resolved, absolute path string.
+
+    Raises:
+        ValueError: If path is invalid, contains traversal, has invalid extension,
+                    or file doesn't exist (when must_exist=True).
+    """
+    if not path or not path.strip():
+        raise ValueError("Path cannot be empty")
+
+    resolved = Path(path).resolve()
+
+    # Reject paths that try to escape via traversal
+    if ".." in Path(path).parts:
+        raise ValueError(
+            f"Path contains directory traversal (..): {path}"
+        )
+
+    if resolved.suffix.lower() not in allowed_extensions:
+        raise ValueError(
+            f"Invalid file extension: {resolved.suffix}. "
+            f"Allowed: {sorted(list(allowed_extensions))}"
+        )
+
+    if must_exist:
+        if not resolved.exists():
+            raise ValueError(f"File not found: {resolved}")
+        if not resolved.is_file():
+            raise ValueError(f"Path is not a file: {resolved}")
+
+    return str(resolved)
+
 
 def validate_video_path(path: str, must_exist: bool = True) -> str:
     """Validate and resolve a video file path.
@@ -34,30 +79,7 @@ def validate_video_path(path: str, must_exist: bool = True) -> str:
         ValueError: If the path is empty, contains traversal sequences,
                      is not a supported file type, or doesn't exist (when must_exist is True).
     """
-    if not path or not path.strip():
-        raise ValueError("Path cannot be empty")
-
-    resolved = Path(path).resolve()
-
-    # Reject paths that try to escape via traversal
-    if ".." in Path(path).parts:
-        raise ValueError(
-            f"Path contains directory traversal (..): {path}"
-        )
-
-    if resolved.suffix.lower() not in ALLOWED_EXTENSIONS:
-        raise ValueError(
-            f"Invalid file extension: {resolved.suffix}. "
-            f"Allowed: {sorted(list(ALLOWED_EXTENSIONS))}"
-        )
-
-    if must_exist and not resolved.exists():
-        raise ValueError(f"File not found: {resolved}")
-
-    if must_exist and not resolved.is_file():
-        raise ValueError(f"Path is not a file: {resolved}")
-
-    return str(resolved)
+    return validate_path(path, ALLOWED_EXTENSIONS, must_exist=must_exist)
 
 
 def validate_output_path(path: str) -> str:
@@ -102,21 +124,8 @@ def validate_output_file_path(path: str) -> str:
         ValueError: If the path is invalid, contains traversal, or has
                     a disallowed extension.
     """
-    resolved_path = validate_output_path(path)
-    suffix = Path(resolved_path).suffix.lower()
-
-    if not suffix:
-        raise ValueError(
-            f"Output file path must have an extension: {resolved_path}"
-        )
-
-    if suffix not in ALLOWED_EXTENSIONS:
-        raise ValueError(
-            f"Invalid output file extension: {suffix}. "
-            f"Allowed: {sorted(list(ALLOWED_EXTENSIONS))}"
-        )
-
-    return resolved_path
+    # Use validate_path with must_exist=False
+    return validate_path(path, ALLOWED_EXTENSIONS, must_exist=False)
 
 
 def sanitize_text_param(text: str) -> str:
