@@ -71,6 +71,7 @@ tests/fixtures/sample_videos/*.avi
 *.temp
 tmp/
 temp/
+_vision_frames/
 
 # Output files (generated during testing/processing)
 output/

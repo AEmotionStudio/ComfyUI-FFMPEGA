@@ -1,12 +1,2 @@
-# Core
-imageio>=2.31.0
-imageio-ffmpeg>=0.4.8
-
 # LLM Integration
 httpx>=0.25.0
-
-# Data Models
-pydantic>=2.0.0
-
-# Environment
-python-dotenv>=1.0.0

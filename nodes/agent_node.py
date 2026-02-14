@@ -1,5 +1,6 @@
 """FFMPEG Agent node for ComfyUI."""
 
+import asyncio
 import json
 import logging
 import os
@@ -600,8 +601,37 @@ class FFMPEGAgentNode:
             if skill_name:
                 pipeline.add_step(skill_name, params)
 
-        # Add quality preset if not already specified
-        if quality_preset and not any(s.skill_name in ["quality", "compress"] for s in pipeline.steps):
+        # --- Detect format-changing skills and fix output extension ---
+        # Skills like 'gif' or 'container' change the output format, but the
+        # output path was set to .mp4 by default. Rewrite the extension so
+        # ffmpeg uses the correct muxer.
+        _FORMAT_SKILLS = {
+            "gif": ".gif",
+            "webm": ".webm",
+        }
+        new_ext = None
+        for step in pipeline.steps:
+            if step.skill_name in _FORMAT_SKILLS:
+                new_ext = _FORMAT_SKILLS[step.skill_name]
+            elif step.skill_name == "container":
+                fmt = step.params.get("format", "mp4")
+                new_ext = f".{fmt}"
+        if new_ext and not output_path.endswith(new_ext):
+            old_path = output_path
+            output_path = str(Path(output_path).with_suffix(new_ext))
+            pipeline.output_path = output_path
+            logger.debug("Output format changed: %s → %s", old_path, output_path)
+
+        # Add quality preset if not already specified.
+        # Skip for formats incompatible with H.264 (GIF uses palettegen,
+        # WebM uses VP9 — their handlers set their own encoding).
+        _NO_QUALITY_PRESET_SKILLS = {"gif", "webm"}
+        has_incompatible_format = any(
+            s.skill_name in _NO_QUALITY_PRESET_SKILLS for s in pipeline.steps
+        ) or (new_ext and new_ext in {".gif", ".webm"})
+        if quality_preset and not has_incompatible_format and not any(
+            s.skill_name in ["quality", "compress"] for s in pipeline.steps
+        ):
             crf_map = {"draft": 28, "standard": 23, "high": 18, "lossless": 0}
             preset_map = {"draft": "ultrafast", "standard": "medium", "high": "slow", "lossless": "veryslow"}
             effective_crf = crf if crf >= 0 else crf_map.get(quality_preset, 23)
@@ -859,128 +889,29 @@ class FFMPEGAgentNode:
             )
 
         # --- Output verification loop ---
+        _VERIFICATION_TIMEOUT = 60.0  # seconds
         if verify_output and result.success:
             logger.info("Output verification enabled — inspecting result...")
             try:
-                from ..mcp.tools import extract_frames as _extract_frames
-                from ..mcp.tools import analyze_colors as _analyze_colors
-                from ..mcp.tools import cleanup_vision_frames as _cleanup_frames
-                from ..mcp.vision import frames_to_base64 as _frames_to_b64
-                from ..prompts.system import get_verification_prompt
-
-                # Extract 3 frames from output (start, mid, end)
-                verify_frames = _extract_frames(
-                    video_path=output_path,
-                    start=0.0,
-                    duration=9999,  # full video
-                    fps=0.5,
-                    max_frames=3,
+                verification_result = await asyncio.wait_for(
+                    self._verify_output(
+                        connector=connector,
+                        output_path=output_path,
+                        prompt=prompt,
+                        pipeline=pipeline,
+                        effective_video_path=effective_video_path,
+                        use_vision=use_vision,
+                    ),
+                    timeout=_VERIFICATION_TIMEOUT,
                 )
-                verify_run_id = verify_frames.get("run_id")
-
-                # Build output analysis data
-                if use_vision and verify_frames.get("paths"):
-                    b64_data = _frames_to_b64(verify_frames["paths"])
-                    output_data = (
-                        f"Extracted {len(verify_frames['paths'])} frames from output.\n"
-                        f"[Vision frames are embedded in this message]"
-                    )
-                else:
-                    color_data = _analyze_colors(video_path=output_path)
-                    import json as _json
-                    output_data = (
-                        f"Color analysis of output:\n"
-                        f"{_json.dumps(color_data, indent=2)}"
-                    )
-                    b64_data = None
-
-                # Build pipeline summary
-                pipeline_summary = self.composer.explain_pipeline(pipeline)
-
-                # Build verification prompt
-                verify_prompt = get_verification_prompt(
-                    prompt=prompt,
-                    pipeline_summary=pipeline_summary,
-                    output_data=output_data,
+                if verification_result is not None:
+                    result, pipeline, command = verification_result
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Output verification timed out after %.0fs "
+                    "— keeping original output",
+                    _VERIFICATION_TIMEOUT,
                 )
-
-                # Send to LLM (single-shot, not tool-calling)
-                verify_messages = [{"role": "user", "content": verify_prompt}]
-                if b64_data:
-                    # Embed vision frames in the message
-                    content_parts = [{"type": "text", "text": verify_prompt}]
-                    for uri in b64_data:
-                        content_parts.append({
-                            "type": "image_url",
-                            "image_url": {"url": uri},
-                        })
-                    verify_messages = [{"role": "user", "content": content_parts}]
-
-                verify_response = await connector.generate(
-                    verify_prompt if not b64_data else "",
-                    system_prompt="You are a video quality reviewer.",
-                )
-                # If vision, use chat_with_tools without tools for multimodal
-                if b64_data:
-                    from ..mcp.tool_defs import TOOL_DEFINITIONS
-                    verify_response = await connector.chat_with_tools(
-                        verify_messages, tools=[],
-                    )
-
-                verify_text = (verify_response.content or "").strip()
-                logger.info(f"Verification result: {verify_text[:100]}")
-
-                if verify_text.upper() == "PASS":
-                    logger.info("Output verification: PASS — output looks good")
-                else:
-                    # Try to parse corrected pipeline
-                    corrected = self.pipeline_generator.parse_response(verify_text)
-                    if corrected and corrected.get("pipeline"):
-                        logger.warning(
-                            "Output verification: NEEDS CORRECTION — "
-                            "re-executing with corrected pipeline"
-                        )
-                        # Rebuild and re-execute
-                        fix_pipeline = Pipeline(
-                            input_path=effective_video_path,
-                            output_path=output_path,
-                            extra_inputs=pipeline.extra_inputs,
-                            metadata=pipeline.metadata,
-                        )
-                        for step in corrected.get("pipeline", []):
-                            skill_name = step.get("skill")
-                            params = step.get("params", {})
-                            if skill_name:
-                                fix_pipeline.add_step(skill_name, params)
-                        fix_command = self.composer.compose(fix_pipeline)
-                        fix_result = self.process_manager.execute(
-                            fix_command, timeout=600
-                        )
-                        if fix_result.success:
-                            result = fix_result
-                            pipeline = fix_pipeline
-                            command = fix_command
-                            logger.info(
-                                "Verification fix succeeded — using corrected output"
-                            )
-                        else:
-                            logger.warning(
-                                f"Verification fix failed: {fix_result.error_message} "
-                                "— keeping original output"
-                            )
-                    else:
-                        logger.info(
-                            "Verification response was not PASS or valid JSON "
-                            "— keeping original output"
-                        )
-
-                # Cleanup verification frames
-                if verify_run_id:
-                    try:
-                        _cleanup_frames(verify_run_id)
-                    except Exception:
-                        pass
-
             except Exception as verify_err:
                 logger.warning(f"Output verification failed: {verify_err}")
                 # Non-fatal — keep original output
@@ -1149,6 +1080,142 @@ Token Usage{est_tag}:
                 shutil.rmtree(temp_render_dir, ignore_errors=True)
 
         return (images_tensor, audio_out, output_path, command.to_string(), analysis)
+
+    async def _verify_output(
+        self,
+        connector,
+        output_path: str,
+        prompt: str,
+        pipeline,
+        effective_video_path: str,
+        use_vision: bool,
+    ) -> Optional[tuple]:
+        """Run output verification via LLM and optionally correct the pipeline.
+
+        Returns:
+            A tuple of (result, pipeline, command) if a correction was applied,
+            or None if the original output is fine (PASS or unparseable).
+        """
+        from ..mcp.tools import extract_frames as _extract_frames
+        from ..mcp.tools import analyze_colors as _analyze_colors
+        from ..mcp.tools import cleanup_vision_frames as _cleanup_frames
+        from ..mcp.vision import frames_to_base64 as _frames_to_b64
+        from ..prompts.system import get_verification_prompt
+        from ..skills.composer import Pipeline
+
+        # Extract 5 frames from output — start a bit in to skip black/fade
+        verify_frames = _extract_frames(
+            video_path=output_path,
+            start=2.0,
+            duration=9999,  # full video
+            fps=1.0,
+            max_frames=5,
+        )
+        verify_run_id = verify_frames.get("run_id")
+
+        try:
+            # Build output analysis data
+            if use_vision and verify_frames.get("paths"):
+                b64_data = _frames_to_b64(verify_frames["paths"])
+                output_data = (
+                    f"Extracted {len(verify_frames['paths'])} frames from output.\n"
+                    f"[Vision frames are embedded in this message]"
+                )
+            else:
+                color_data = _analyze_colors(video_path=output_path)
+                import json as _json
+                output_data = (
+                    f"Color analysis of output:\n"
+                    f"{_json.dumps(color_data, indent=2)}"
+                )
+                b64_data = None
+
+            # Build pipeline summary
+            pipeline_summary = self.composer.explain_pipeline(pipeline)
+
+            # Build verification prompt
+            verify_prompt = get_verification_prompt(
+                prompt=prompt,
+                pipeline_summary=pipeline_summary,
+                output_data=output_data,
+            )
+
+            # Send to LLM (single-shot, not tool-calling)
+            verify_messages = [{"role": "user", "content": verify_prompt}]
+            if b64_data:
+                # Embed vision frames in the message
+                content_parts = [{"type": "text", "text": verify_prompt}]
+                for uri in b64_data:
+                    content_parts.append({
+                        "type": "image_url",
+                        "image_url": {"url": uri},
+                    })
+                verify_messages = [{"role": "user", "content": content_parts}]
+
+            verify_response = await connector.generate(
+                verify_prompt if not b64_data else "",
+                system_prompt="You are a video quality reviewer.",
+            )
+            # If vision, use chat_with_tools without tools for multimodal
+            if b64_data:
+                verify_response = await connector.chat_with_tools(
+                    verify_messages, tools=[],
+                )
+
+            verify_text = (verify_response.content or "").strip()
+            logger.info(f"Verification result: {verify_text[:100]}")
+
+            if verify_text.upper() == "PASS":
+                logger.info("Output verification: PASS — output looks good")
+                return None
+
+            # Try to parse corrected pipeline
+            corrected = self.pipeline_generator.parse_response(verify_text)
+            if corrected and corrected.get("pipeline"):
+                logger.warning(
+                    "Output verification: NEEDS CORRECTION — "
+                    "re-executing with corrected pipeline"
+                )
+                # Rebuild and re-execute
+                fix_pipeline = Pipeline(
+                    input_path=effective_video_path,
+                    output_path=output_path,
+                    extra_inputs=pipeline.extra_inputs,
+                    metadata=pipeline.metadata,
+                )
+                for step in corrected.get("pipeline", []):
+                    skill_name = step.get("skill")
+                    params = step.get("params", {})
+                    if skill_name:
+                        fix_pipeline.add_step(skill_name, params)
+                fix_command = self.composer.compose(fix_pipeline)
+                fix_result = self.process_manager.execute(
+                    fix_command, timeout=600
+                )
+                if fix_result.success:
+                    logger.info(
+                        "Verification fix succeeded — using corrected output"
+                    )
+                    return (fix_result, fix_pipeline, fix_command)
+                else:
+                    logger.warning(
+                        f"Verification fix failed: {fix_result.error_message} "
+                        "— keeping original output"
+                    )
+                    return None
+            else:
+                logger.info(
+                    "Verification response was not PASS or valid JSON "
+                    "— keeping original output"
+                )
+                return None
+        finally:
+            # Cleanup verification frames
+            if verify_run_id:
+                try:
+                    _cleanup_frames(verify_run_id)
+                except Exception:
+                    pass
 
     @staticmethod
     def _audio_dict_to_wav(audio: dict) -> Optional[str]:

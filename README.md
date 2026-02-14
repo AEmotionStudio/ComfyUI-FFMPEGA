@@ -1014,33 +1014,6 @@ FFMPEGA auto-coerces types (float→int) and clamps out-of-range values. If you 
 
 ---
 
-## 📁 Project Structure
-
-```
-ComfyUI-FFMPEGA/
-├── __init__.py              # ComfyUI entry point
-├── nodes/                   # ComfyUI node definitions
-│   ├── agent_node.py        # FFMPEG Agent main node
-│   ├── preview_node.py      # Preview and info nodes
-│   └── batch_node.py        # Batch processing nodes
-├── core/                    # Core functionality
-│   ├── llm/                 # LLM connectors (Ollama, OpenAI, Anthropic, CLI tools)
-│   ├── executor/            # FFMPEG command building & execution
-│   └── video/               # Video analysis & formats
-├── skills/                  # Skill system
-│   ├── registry.py          # Skill registration & validation
-│   ├── composer.py          # Pipeline composition engine
-│   ├── category/            # Low-level skills (temporal, spatial, visual, audio, encoding)
-│   └── outcome/             # High-level skills (cinematic, vintage, social, creative, effects)
-├── prompts/                 # LLM prompt templates
-├── mcp/                     # MCP server for programmatic access
-├── js/                      # Custom ComfyUI UI widgets
-├── SKILLS_REFERENCE.md      # Complete skill reference
-└── tests/                   # Test suite
-```
-
----
-
 ## 🤝 Contributing
 
 Contributions are welcome! Whether it's bug reports, new skills, or improvements — your help is appreciated.
