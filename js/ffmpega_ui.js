@@ -93,6 +93,35 @@ function updateDynamicSlots(node, prefix, slotType, excludePrefix) {
 }
 
 /**
+ * Helper function to handle clipboard paste
+ * @param {object} node - The node instance
+ * @param {boolean} replace - If true, replaces content (with confirm). If false, appends.
+ */
+function handlePaste(node, replace) {
+    if (navigator.clipboard && navigator.clipboard.readText) {
+        navigator.clipboard.readText()
+            .then(text => {
+                if (text) {
+                    if (replace) {
+                        const promptWidget = node.widgets?.find(w => w.name === "prompt");
+                        if (promptWidget && promptWidget.value && promptWidget.value.trim() !== "") {
+                            if (!confirm("Replace current prompt with clipboard content?")) return;
+                        }
+                    }
+                    // Paste with blue feedback
+                    setPrompt(node, text, replace, "#4a6a8a");
+                }
+            })
+            .catch(err => {
+                console.error("Failed to read clipboard", err);
+                flashNode(node, "#7a4a4a");
+            });
+    } else {
+        flashNode(node, "#7a4a4a");
+    }
+}
+
+/**
  * Helper function to set prompt text on a node
  * @param {object} node - The node instance
  * @param {string} text - The text to set or append
@@ -141,7 +170,7 @@ function flashNode(node, color = "#4a5a7a") {
         }
         node._isFlashing = false;
         node.setDirtyCanvas(true, true);
-    }, 200);
+    }, 350);
 }
 
 // Register FFMPEGA extensions
@@ -539,24 +568,12 @@ app.registerExtension({
                                     }
                                 },
                                 {
-                                    content: "📥 Paste Prompt",
-                                    callback: () => {
-                                        if (navigator.clipboard && navigator.clipboard.readText) {
-                                            navigator.clipboard.readText()
-                                                .then(text => {
-                                                    if (text) {
-                                                        // Append pasted text with blue feedback
-                                                        setPrompt(this, text, false, "#4a6a8a");
-                                                    }
-                                                })
-                                                .catch(err => {
-                                                    console.error("Failed to read clipboard", err);
-                                                    flashNode(this, "#7a4a4a");
-                                                });
-                                        } else {
-                                            flashNode(this, "#7a4a4a");
-                                        }
-                                    }
+                                    content: "📥 Paste (Append)",
+                                    callback: () => handlePaste(this, false)
+                                },
+                                {
+                                    content: "📥 Paste (Replace)",
+                                    callback: () => handlePaste(this, true)
                                 },
                                 {
                                     content: "🗑️ Clear Prompt",
