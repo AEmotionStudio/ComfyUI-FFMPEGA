@@ -81,6 +81,37 @@ class Pipeline:
 class SkillComposer:
     """Composes skills into executable FFMPEG pipelines."""
 
+    # Common aliases LLMs tend to use
+    SKILL_ALIASES = {
+        "overlay": "overlay_image",
+        "stabilize": "deshake",
+        "grayscale": "monochrome",
+        "greyscale": "monochrome",
+        "black_and_white": "monochrome",
+        "bw": "monochrome",
+        "concatenate": "concat",
+        "join": "concat",
+        "transition": "xfade",
+        "splitscreen": "split_screen",
+        "side_by_side": "split_screen",
+        "moving_overlay": "animated_overlay",
+        "chroma_key": "chromakey",
+        "green_screen": "chromakey",
+        "luma_key": "lumakey",
+        "color_hold": "colorhold",
+        "sin_city": "colorhold",
+        "color_key": "colorkey",
+        "de_spill": "despill",
+        "color_spill": "despill",
+        "remove_bg": "remove_background",
+        "background_removal": "remove_background",
+        "text": "text_overlay",
+        "drawtext": "text_overlay",
+        "title": "text_overlay",
+        "subtitle": "text_overlay",
+        "caption": "text_overlay",
+    }
+
     def __init__(self, registry: Optional[SkillRegistry] = None):
         """Initialize the composer.
 
@@ -124,36 +155,7 @@ class SkillComposer:
                 continue
 
             # Resolve common aliases LLMs tend to use
-            _SKILL_ALIASES = {
-                "overlay": "overlay_image",
-                "stabilize": "deshake",
-                "grayscale": "monochrome",
-                "greyscale": "monochrome",
-                "black_and_white": "monochrome",
-                "bw": "monochrome",
-                "concatenate": "concat",
-                "join": "concat",
-                "transition": "xfade",
-                "splitscreen": "split_screen",
-                "side_by_side": "split_screen",
-                "moving_overlay": "animated_overlay",
-                "chroma_key": "chromakey",
-                "green_screen": "chromakey",
-                "luma_key": "lumakey",
-                "color_hold": "colorhold",
-                "sin_city": "colorhold",
-                "color_key": "colorkey",
-                "de_spill": "despill",
-                "color_spill": "despill",
-                "remove_bg": "remove_background",
-                "background_removal": "remove_background",
-                "text": "text_overlay",
-                "drawtext": "text_overlay",
-                "title": "text_overlay",
-                "subtitle": "text_overlay",
-                "caption": "text_overlay",
-            }
-            resolved_name = _SKILL_ALIASES.get(step.skill_name, step.skill_name)
+            resolved_name = self.SKILL_ALIASES.get(step.skill_name, step.skill_name)
             skill = self.registry.get(resolved_name)
             if skill:
                 step.skill_name = resolved_name  # update for debug output
