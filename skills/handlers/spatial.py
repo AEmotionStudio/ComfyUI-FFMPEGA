@@ -15,16 +15,16 @@ def _f_resize(p):
 def _f_crop(p):
     w = p.get("width", "iw")
     h = p.get("height", "ih")
-    x = p.get("x", "(in_w-out_w)/2")
-    y = p.get("y", "(in_h-out_h)/2")
+    x = sanitize_text_param(str(p.get("x", "(in_w-out_w)/2")))
+    y = sanitize_text_param(str(p.get("y", "(in_h-out_h)/2")))
     return [f"crop={w}:{h}:{x}:{y}"], [], []
 
 
 def _f_pad(p):
     w = p.get("width", "iw")
     h = p.get("height", "ih")
-    x = p.get("x", "(ow-iw)/2")
-    y = p.get("y", "(oh-ih)/2")
+    x = sanitize_text_param(str(p.get("x", "(ow-iw)/2")))
+    y = sanitize_text_param(str(p.get("y", "(oh-ih)/2")))
     color = sanitize_text_param(str(p.get("color", "black")))
     return [f"pad={w}:{h}:{x}:{y}:{color}"], [], []
 
