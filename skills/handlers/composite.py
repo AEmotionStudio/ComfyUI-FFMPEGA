@@ -597,8 +597,8 @@ def _f_text_overlay(p):
     }
     cfg = preset_config.get(preset, preset_config["title"])
     fontsize = int(p.get("fontsize", cfg["fontsize"]))
-    x_pos = str(p.get("x", cfg["x"]))
-    y_pos = str(p.get("y", cfg["y"]))
+    x_pos = sanitize_text_param(str(p.get("x", cfg["x"])))
+    y_pos = sanitize_text_param(str(p.get("y", cfg["y"])))
 
     # Build drawtext filter
     dt = (
@@ -680,8 +680,8 @@ def _f_countdown(p):
     start = int(p.get("start_from", 10))
     fontsize = int(p.get("fontsize", 96))
     fontcolor = sanitize_text_param(str(p.get("fontcolor", "white")))
-    x_pos = str(p.get("x", "(w-text_w)/2"))
-    y_pos = str(p.get("y", "(h-text_h)/2"))
+    x_pos = sanitize_text_param(str(p.get("x", "(w-text_w)/2")))
+    y_pos = sanitize_text_param(str(p.get("y", "(h-text_h)/2")))
 
     dt = (
         f"drawtext=text='%{{eif\\:{start}-t\\:d}}':"
@@ -762,7 +762,7 @@ def _f_ticker(p):
     speed = int(p.get("speed", 100))
     fontsize = int(p.get("fontsize", 32))
     fontcolor = sanitize_text_param(str(p.get("fontcolor", "white")))
-    y_pos = str(p.get("y", "h-text_h-20"))
+    y_pos = sanitize_text_param(str(p.get("y", "h-text_h-20")))
     bg = sanitize_text_param(str(p.get("background", "black@0.6")))
 
     dt = (
@@ -826,8 +826,8 @@ def _f_typewriter_text(p):
     fontcolor = sanitize_text_param(str(p.get("fontcolor", "white")))
     speed = float(p.get("speed", 5))  # chars per second
     start = float(p.get("start", 0))
-    x_pos = str(p.get("x", "(w-text_w)/2"))
-    y_pos = str(p.get("y", "(h-text_h)/2"))
+    x_pos = sanitize_text_param(str(p.get("x", "(w-text_w)/2")))
+    y_pos = sanitize_text_param(str(p.get("y", "(h-text_h)/2")))
 
     # Build one drawtext per character with staggered enable times
     filters = []
