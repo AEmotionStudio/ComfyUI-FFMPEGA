@@ -3,7 +3,7 @@ from skills.registry import get_registry
 from skills.composer import SkillComposer, Pipeline
 import pytest
 from skills.handlers.composite import _f_text_overlay, _f_ticker, _f_countdown, _f_typewriter_text
-from skills.handlers.spatial import _f_crop, _f_pad
+from skills.handlers.spatial import _f_crop, _f_pad, _f_resize
 
 def test_vulnerability():
     registry = get_registry()
@@ -111,6 +111,13 @@ def test_crop_injection():
         "x",
         "0:exact=1"
     )
+    # Inject via width
+    assert_param_injection_prevented(
+        _f_crop,
+        {"x": 10, "y": 10},
+        "width",
+        "100:exact=1"
+    )
 
 def test_pad_injection():
     # Inject via x
@@ -119,4 +126,21 @@ def test_pad_injection():
         {"width": 100, "height": 100},
         "x",
         "0:color=red"
+    )
+    # Inject via width
+    assert_param_injection_prevented(
+        _f_pad,
+        {"x": 10, "y": 10},
+        "width",
+        "100:color=red"
+    )
+
+def test_resize_injection():
+    # Inject via width
+    # resize returns [f"scale=..."], so we check the result
+    assert_param_injection_prevented(
+        _f_resize,
+        {"height": 100},
+        "width",
+        "100:interl=1"
     )

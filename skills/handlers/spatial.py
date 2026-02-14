@@ -9,20 +9,22 @@ except ImportError:
     from core.sanitize import sanitize_text_param
 
 def _f_resize(p):
-    return [f"scale={p.get('width', -1)}:{p.get('height', -1)}"], [], []
+    w = sanitize_text_param(str(p.get("width", -1)))
+    h = sanitize_text_param(str(p.get("height", -1)))
+    return [f"scale={w}:{h}"], [], []
 
 
 def _f_crop(p):
-    w = p.get("width", "iw")
-    h = p.get("height", "ih")
+    w = sanitize_text_param(str(p.get("width", "iw")))
+    h = sanitize_text_param(str(p.get("height", "ih")))
     x = sanitize_text_param(str(p.get("x", "(in_w-out_w)/2")))
     y = sanitize_text_param(str(p.get("y", "(in_h-out_h)/2")))
     return [f"crop={w}:{h}:{x}:{y}"], [], []
 
 
 def _f_pad(p):
-    w = p.get("width", "iw")
-    h = p.get("height", "ih")
+    w = sanitize_text_param(str(p.get("width", "iw")))
+    h = sanitize_text_param(str(p.get("height", "ih")))
     x = sanitize_text_param(str(p.get("x", "(ow-iw)/2")))
     y = sanitize_text_param(str(p.get("y", "(oh-ih)/2")))
     color = sanitize_text_param(str(p.get("color", "black")))
