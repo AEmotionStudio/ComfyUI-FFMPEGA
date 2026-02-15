@@ -4,6 +4,7 @@ Handles conversions between ComfyUI tensor formats and video/audio files,
 extracted from FFMPEGAgentNode to keep the node class focused on orchestration.
 """
 
+import concurrent.futures
 import os
 import re
 import shutil
@@ -213,12 +214,17 @@ class MediaConverter:
         num_frames = min(frames.shape[0], max_frames)
         tmp_dir = tempfile.mkdtemp(prefix="ffmpega_frames_")
 
-        paths = []
-        for i in range(num_frames):
-            path = os.path.join(tmp_dir, f"frame_{i:03d}.png")
-            img = Image.fromarray(frames[i])
-            img.save(path)
-            paths.append(path)
+        # Optimization: Parallelize PNG saving (I/O and compression bound)
+        paths = [os.path.join(tmp_dir, f"frame_{i:03d}.png") for i in range(num_frames)]
+
+        def save_one_frame(idx: int) -> None:
+            img = Image.fromarray(frames[idx])
+            img.save(paths[idx])
+
+        # Use ThreadPoolExecutor to save images in parallel
+        # Default workers is usually min(32, os.cpu_count() + 4), which is good for I/O
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            list(executor.map(save_one_frame, range(num_frames)))
 
         return paths
 
