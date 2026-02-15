@@ -4,6 +4,11 @@ from dataclasses import dataclass, field
 from typing import Optional
 from pathlib import Path
 
+try:
+    from ..sanitize import sanitize_text_param
+except ImportError:
+    from core.sanitize import sanitize_text_param
+
 
 @dataclass
 class Filter:
@@ -23,10 +28,18 @@ class Filter:
 
         # Filter name and parameters
         if self.params:
-            param_str = ":".join(
-                f"{k}={v}" if v is not None else k
-                for k, v in self.params.items()
-            )
+            kv_pairs = []
+            for k, v in self.params.items():
+                if v is None:
+                    kv_pairs.append(k)
+                else:
+                    # Sanitize value to escape characters like :, ', etc.
+                    val_str = str(v)
+                    if isinstance(v, str):
+                        val_str = sanitize_text_param(val_str)
+                    kv_pairs.append(f"{k}={val_str}")
+
+            param_str = ":".join(kv_pairs)
             parts.append(f"{self.name}={param_str}")
         else:
             parts.append(self.name)
