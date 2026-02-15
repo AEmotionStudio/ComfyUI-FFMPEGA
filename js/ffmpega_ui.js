@@ -131,6 +131,10 @@ function setPrompt(node, text, replace = false, color = "#4a5a7a") {
     const promptWidget = node.widgets?.find(w => w.name === "prompt");
     if (promptWidget) {
         if (replace) {
+            // Save history if replacing non-empty text
+            if (promptWidget.value && promptWidget.value.trim() !== "") {
+                node._previousPrompt = promptWidget.value;
+            }
             promptWidget.value = text;
         } else {
             const currentText = promptWidget.value;
@@ -314,6 +318,17 @@ app.registerExtension({
             const origGetExtraMenuOptions = nodeType.prototype.getExtraMenuOptions;
             nodeType.prototype.getExtraMenuOptions = function (_, options) {
                 origGetExtraMenuOptions?.apply(this, arguments);
+
+                // Add Restore option if history exists
+                if (this._previousPrompt) {
+                    options.unshift({
+                        content: "↩️ Restore Previous Prompt",
+                        callback: () => {
+                            // Restore and swap (toggle)
+                            setPrompt(this, this._previousPrompt, true, "#4a7a4a");
+                        }
+                    });
+                }
 
                 options.unshift(
                     {
@@ -581,6 +596,7 @@ app.registerExtension({
                                         const promptWidget = this.widgets?.find(w => w.name === "prompt");
                                         if (promptWidget && promptWidget.value && promptWidget.value.trim() !== "") {
                                             if (!confirm("Are you sure you want to clear the prompt?")) return;
+                                            this._previousPrompt = promptWidget.value; // Save history
                                             promptWidget.value = "";
                                             this.setDirtyCanvas(true, true);
                                             flashNode(this, "#7a3a3a");
