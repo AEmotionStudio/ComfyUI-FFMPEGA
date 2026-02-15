@@ -7,3 +7,7 @@
 ## 2026-02-14 - Micro-Feedback Visibility
 **Learning:** Visual feedback durations (like flashes) need to be long enough (e.g., 350ms+) to be reliably perceived, especially in canvas-based UIs where other cues (ARIA live regions) are absent.
 **Action:** Increase duration of visual feedback animations and use explicit text labels (e.g., "Append" vs "Replace") to clarify non-standard behaviors.
+
+## 2026-02-15 - Context Menu Safety Nets
+**Learning:** ComfyUI custom nodes often lack built-in undo/redo for widget values, leading to user frustration when they accidentally clear or replace complex prompts.
+**Action:** Adding a simple "Restore Previous" buffer (`_previousPrompt`) in the node instance provides a high-value safety net with minimal code (<20 lines).
