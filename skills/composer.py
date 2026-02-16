@@ -208,73 +208,71 @@ class SkillComposer:
             # default-fill loop checks whether "kbps" is present.
             step.params = self._normalize_params(skill, step.params)
 
-            # Auto-fill missing params with defaults from skill definition
+            # ⚡ Perf: Single-pass parameter processing — merges default fill,
+            # type coercion, range clamping, CHOICE normalization, and
+            # validation into one iteration over skill.parameters instead
+            # of four separate loops.  Reduces iterations by ~75%.
             for param in skill.parameters:
-                if param.name not in step.params and param.default is not None:
-                    step.params[param.name] = param.default
+                name = param.name
 
-            # Auto-coerce types from LLM (e.g. float 2.0 → int 2)
-            for param in skill.parameters:
-                if param.name in step.params:
-                    val = step.params[param.name]
-                    if param.type == ParameterType.INT:
-                        try:
-                            step.params[param.name] = int(float(val))
-                        except (ValueError, TypeError):
-                            pass
-                    elif param.type == ParameterType.FLOAT:
-                        try:
-                            step.params[param.name] = float(val)
-                        except (ValueError, TypeError):
-                            pass
-                    elif param.type == ParameterType.BOOL:
-                        if isinstance(val, str):
-                            step.params[param.name] = val.lower() in ("true", "1", "yes")
+                # 1. Fill defaults for missing params
+                if name not in step.params:
+                    if param.default is not None:
+                        step.params[name] = param.default
+                    continue  # No value to coerce/clamp/validate
 
-            # Auto-clamp numeric values to valid range
-            for param in skill.parameters:
-                if param.name in step.params:
-                    val = step.params[param.name]
-                    if param.type in (ParameterType.INT, ParameterType.FLOAT):
-                        if isinstance(val, (int, float)):
-                            if param.min_value is not None and val < param.min_value:
-                                step.params[param.name] = type(val)(param.min_value)
-                            if param.max_value is not None and val > param.max_value:
-                                step.params[param.name] = type(val)(param.max_value)
+                val = step.params[name]
 
-            # Validate parameters (warn but don't fail — LLMs are imprecise)
-            is_valid, errors = skill.validate_params(step.params)
-            if not is_valid:
-                import logging
-                logger = logging.getLogger("ffmpega")
-                for err in errors:
-                    logger.warning(f"Skill '{step.skill_name}': {err} (continuing anyway)")
+                # 2. Type coercion (LLMs return imprecise types)
+                if param.type == ParameterType.INT:
+                    try:
+                        val = int(float(val))
+                    except (ValueError, TypeError):
+                        pass
+                elif param.type == ParameterType.FLOAT:
+                    try:
+                        val = float(val)
+                    except (ValueError, TypeError):
+                        pass
+                elif param.type == ParameterType.BOOL:
+                    if isinstance(val, str):
+                        val = val.lower() in ("true", "1", "yes")
 
-            # Enforce validation: Drop invalid parameters to prevent injection
-            # (e.g. invalid CHOICE values used directly in filter strings)
-            for param in skill.parameters:
-                if param.name in step.params:
-                    val = step.params[param.name]
-                    # Normalize CHOICE values: LLMs often send underscores
-                    # where hyphens are expected (bottom_right → bottom-right)
-                    if (param.type == ParameterType.CHOICE
-                            and isinstance(val, str)
-                            and param.choices
-                            and val not in param.choices):
-                        normalized = val.replace("_", "-")
-                        if normalized in param.choices:
-                            step.params[param.name] = normalized
-                            val = normalized
-                    # Note: validate_params already handled auto-correction
-                    p_valid, _ = param.validate(val)
-                    if not p_valid:
-                        import logging
-                        logger = logging.getLogger("ffmpega")
-                        logger.warning(
-                            f"Security/Validation: Dropping invalid parameter '{param.name}' "
-                            f"value '{val}' for skill '{step.skill_name}'. Using default."
-                        )
-                        del step.params[param.name]
+                # 3. Range clamp
+                if param.type in (ParameterType.INT, ParameterType.FLOAT):
+                    if isinstance(val, (int, float)):
+                        if param.min_value is not None and val < param.min_value:
+                            val = type(val)(param.min_value)
+                        if param.max_value is not None and val > param.max_value:
+                            val = type(val)(param.max_value)
+
+                step.params[name] = val
+
+                # 4. Normalize CHOICE values: LLMs often send underscores
+                # where hyphens are expected (bottom_right → bottom-right)
+                if (param.type == ParameterType.CHOICE
+                        and isinstance(val, str)
+                        and param.choices
+                        and val not in param.choices):
+                    normalized = val.replace("_", "-")
+                    if normalized in param.choices:
+                        step.params[name] = normalized
+                        val = normalized
+
+                # 5. Validate & drop invalid params to prevent injection
+                p_valid, p_err = param.validate(val)
+                if p_err and isinstance(p_err, str) and p_err.startswith("__autocorrect__:"):
+                    # Apply auto-corrected value (e.g. fuzzy CHOICE match)
+                    correction = p_err.split(":", 1)[1]
+                    corr_name, corrected_value = correction.split("=", 1)
+                    step.params[corr_name] = corrected_value
+                elif not p_valid:
+                    import logging
+                    logging.getLogger("ffmpega").warning(
+                        f"Security/Validation: Dropping invalid parameter '{name}' "
+                        f"value '{val}' for skill '{step.skill_name}'. Using default."
+                    )
+                    del step.params[name]
 
             # Inject multi-input metadata for handlers that need it
             if pipeline.extra_inputs:
