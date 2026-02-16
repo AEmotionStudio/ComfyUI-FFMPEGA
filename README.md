@@ -934,7 +934,7 @@ Open Cursor IDE → Command Palette → "Install 'cursor' command"
 
 **Start the agent:**
 ```bash
-cursor agent
+agent
 ```
 
 **Use in FFMPEGA:**
