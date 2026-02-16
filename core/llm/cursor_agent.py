@@ -30,7 +30,7 @@ class CursorAgentConnector(CLIConnectorBase):
 
     def _build_cmd(self, binary_path: str, prompt: str,
                    system_prompt: Optional[str]) -> list[str]:
-        return [binary_path, "-p"]
+        return [binary_path, "--trust", "-p"]
 
     def _prepare_stdin(self, prompt: str,
                        system_prompt: Optional[str]) -> Optional[bytes]:
