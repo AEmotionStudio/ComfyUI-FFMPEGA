@@ -467,7 +467,7 @@ class FFMPEGAgentNode:
             effective_video_path = video_path
 
         # Validate input
-        from ..core.sanitize import validate_video_path, validate_output_file_path  # type: ignore[import-not-found]
+        from ..core.sanitize import validate_video_path, validate_output_file_path, validate_output_path as _validate_output_path  # type: ignore[import-not-found]
         effective_video_path = validate_video_path(effective_video_path)
 
         # Pre-mux audio_a into the input video so audio filters
@@ -640,11 +640,12 @@ class FFMPEGAgentNode:
                 output_dir = folder_paths.get_output_directory()
                 output_path = str(Path(output_dir) / f"{stem}{suffix}.mp4")
             elif Path(output_path).is_dir() or output_path.endswith(os.sep):
-                output_dir = output_path.rstrip(os.sep)
+                output_dir = _validate_output_path(output_path.rstrip(os.sep))
                 output_path = str(Path(output_dir) / f"{stem}{suffix}.mp4")
             elif not Path(output_path).suffix:
-                os.makedirs(output_path, exist_ok=True)
-                output_path = str(Path(output_path) / f"{stem}{suffix}.mp4")
+                output_dir = _validate_output_path(output_path)
+                os.makedirs(output_dir, exist_ok=True)
+                output_path = str(Path(output_dir) / f"{stem}{suffix}.mp4")
             else:
                 # User provided a specific file path
                 output_path = validate_output_file_path(output_path)
@@ -1781,7 +1782,7 @@ Token Usage{est_tag}:
         import glob
         from concurrent.futures import ThreadPoolExecutor, as_completed
         from ..skills.composer import Pipeline
-        from ..core.sanitize import validate_video_path as _validate
+        from ..core.sanitize import validate_video_path as _validate, validate_output_path as _validate_out
 
         # --- Validate folder ---
         folder = Path(video_folder)
@@ -1813,7 +1814,7 @@ Token Usage{est_tag}:
 
         # --- Output folder ---
         if save_output and output_path:
-            out_dir = Path(output_path)
+            out_dir = Path(_validate_out(output_path))
         elif save_output:
             out_dir = Path(folder_paths.get_output_directory()) / "ffmpega_batch"
         else:
