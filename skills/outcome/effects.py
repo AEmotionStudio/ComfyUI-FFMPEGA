@@ -1901,10 +1901,27 @@ def register_skills(registry: SkillRegistry) -> None:
                 min_value=0,
                 max_value=200,
             ),
+            SkillParameter(
+                name="border",
+                type=ParameterType.INT,
+                description="Border width in pixels around PiP (0 = no border)",
+                required=False,
+                default=0,
+                min_value=0,
+                max_value=20,
+            ),
+            SkillParameter(
+                name="border_color",
+                type=ParameterType.STRING,
+                description="Border color (e.g. white, black, 0x333333)",
+                required=False,
+                default="white",
+            ),
         ],
         examples=[
             "picture_in_picture - PiP in bottom-right corner",
             "picture_in_picture:position=top_left,scale=0.3 - Larger PiP top-left",
+            "picture_in_picture:scale=0.25,border=4,border_color=white - PiP with white border",
         ],
         tags=["pip", "picture", "overlay", "corner", "webcam", "inset", "compositing"],
     ))

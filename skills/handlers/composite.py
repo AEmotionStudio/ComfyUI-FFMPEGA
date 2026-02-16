@@ -828,9 +828,24 @@ def _f_pip(p):
     position = str(p.get("position", "bottom_right")).lower()
     scale = float(p.get("scale", 0.25))
     margin = int(p.get("margin", 20))
+    border = int(p.get("border", 0))
+    border_color = str(p.get("border_color", "white"))
 
     # Scale the overlay relative to main video
-    scale_expr = f"[1:v]scale=iw*{scale}:-1[pip]"
+    scale_filter = f"[1:v]scale=iw*{scale}:-1"
+
+    # Add border via pad if requested
+    if border > 0:
+        # pad adds border_px on each side; keep the content centered
+        b = border
+        scale_filter += (
+            f"[_pip_scaled];"
+            f"[_pip_scaled]pad="
+            f"iw+{b*2}:ih+{b*2}:{b}:{b}:"
+            f"color={border_color}"
+        )
+
+    scale_filter += "[pip]"
 
     # Position mapping
     pos_map = {
@@ -842,7 +857,7 @@ def _f_pip(p):
     }
     xy = pos_map.get(position, pos_map["bottom_right"])
 
-    fc = f"{scale_expr};[0:v][pip]overlay={xy}:shortest=1"
+    fc = f"{scale_filter};[0:v][pip]overlay={xy}:shortest=1"
     return [], [], [], fc
 
 
