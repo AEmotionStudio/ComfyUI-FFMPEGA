@@ -169,7 +169,7 @@ def _f_glow(p):
     strength = float(p.get("strength", 0.4))
     strength = max(0.1, min(0.8, strength))
     fc = (
-        f"split[a][b];"
+        f"[0:v]split[a][b];"
         f"[b]gblur=sigma={radius}[b];"
         f"[a][b]blend=all_mode=screen:all_opacity={strength}"
     )
@@ -205,7 +205,7 @@ def _f_tilt_shift(p):
     low = max(0, focus - 0.15)
     high = min(1, focus + 0.15)
     fc = (
-        f"split[a][b];"
+        f"[0:v]split[a][b];"
         f"[b]gblur=sigma={blur_amount}[b];"
         f"[a][b]blend=all_expr='if(between(Y/H\\,{low}\\,{high})\\,A\\,B)'"
     )
@@ -259,7 +259,7 @@ def _f_neon_enhanced(p):
     intensity = p.get("intensity", "medium")
     opacity = {"subtle": 0.3, "medium": 0.5, "strong": 0.7}.get(intensity, 0.5)
     fc = (
-        f"split[a][b];"
+        f"[0:v]split[a][b];"
         f"[b]edgedetect=low=0.08:high=0.3:mode=colormix,"
         f"eq=saturation=3:brightness=0.1[b];"
         f"[a][b]blend=all_mode=screen:all_opacity={opacity}"
@@ -284,7 +284,7 @@ def _f_comic_book_enhanced(p):
     step = max(1, 256 // levels)
     lut_expr = f"trunc(val/{step})*{step}"
     fc = (
-        f"split[a][b];"
+        f"[0:v]split[a][b];"
         f"[b]edgedetect=low=0.1:high=0.4,negate[b];"
         f"[a]lutrgb=r='{lut_expr}':g='{lut_expr}':b='{lut_expr}',"
         f"eq=saturation=1.5:contrast=1.3[a];"

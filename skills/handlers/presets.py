@@ -5,7 +5,7 @@ Auto-generated from composer.py — do not edit directly.
 
 def _f_fade_to_black(p):
     in_dur = float(p.get("in_duration", 1.0))
-    out_dur = float(p.get("out_duration", 1.0))
+    out_dur = float(p.get("out_duration", 0))
     vf = []
     if in_dur > 0:
         vf.append(f"fade=t=in:st=0:d={in_dur}")
@@ -26,13 +26,31 @@ def _f_fade_to_white(p):
 
 
 def _f_flash(p):
-    t = float(p.get("time", 0))
+    """Create a brief bright flash effect (like a camera flash).
+
+    Uses geq to boost all channels to white during the flash window with
+    a smooth ramp.  This avoids the permanent-white problem of the fade
+    filter approach.
+    """
+    t = float(p.get("time", p.get("start", 0)))
     duration = float(p.get("duration", 0.3))
-    mid = t + duration / 2
-    return [
-        f"fade=t=out:st={t}:d={duration/2}:c=white,"
-        f"fade=t=in:st={mid}:d={duration/2}:c=white"
-    ], [], []
+    half = duration / 2
+    mid = t + half
+    end = t + duration
+
+    # Use geq (generic equation) to ramp brightness toward white and back.
+    # alpha ramps 0→1 during first half, 1→0 during second half.
+    # pixel = original*(1-alpha) + 255*alpha  =  clip(original + 255*alpha, 0, 255)
+    # We use enable=between so the expensive geq only runs during the flash.
+    ramp_expr = (
+        f"geq="
+        f"r='clip(r(X,Y)+255*if(lt(T,{mid}),(T-{t})/{half},({end}-T)/{half}),0,255)':"
+        f"g='clip(g(X,Y)+255*if(lt(T,{mid}),(T-{t})/{half},({end}-T)/{half}),0,255)':"
+        f"b='clip(b(X,Y)+255*if(lt(T,{mid}),(T-{t})/{half},({end}-T)/{half}),0,255)'"
+        f":enable='between(t,{t},{end})'"
+    )
+
+    return [ramp_expr], [], []
 
 
 def _f_spin(p):

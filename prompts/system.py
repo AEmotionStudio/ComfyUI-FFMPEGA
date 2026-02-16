@@ -32,6 +32,21 @@ When the user references specific inputs by name (audio_a, audio_b, etc.), inclu
 Valid values: "audio_a", "audio_b", "audio_c", ..., or "mix" (blend all connected audio).
 Default is "mix" when multiple audio inputs are connected, or "audio_a" when only one is.
 
+## Audio Duration Mode
+When combining audio with video (especially slideshows), use "audio_mode" in your
+response JSON to control what happens when audio and video have different lengths.
+Valid values:
+- "loop" (DEFAULT): Loop the audio with smooth crossfades to match video length.
+  Best for: slideshows with background music shorter than the total image duration.
+- "pad": Pad shorter audio with silence to match video length.
+  Best for: sound effects or narration that should play once then go silent.
+- "trim": Cut the output to the shorter of audio or video.
+  Best for: music videos where ending with the music is desired.
+
+If the user says "loop the music" or "repeat the audio", use audio_mode "loop".
+If the user says "play the audio once", use audio_mode "pad".
+When audio is connected and the user doesn't specify, default to "loop".
+
 ## Your Task
 Given the user's editing request, you must:
 1. Analyze the request to identify required operations
@@ -63,6 +78,7 @@ ALWAYS respond with a valid JSON object in this exact format:
 - If a request cannot be fulfilled with available skills, explain in warnings
 - Keep the pipeline minimal - only add skills that are explicitly or clearly implicitly requested
 - For overlay, grid, and slideshow skills: the extra images come from the node's image_a/image_b inputs. Do NOT specify file paths in params — just use the skill with positioning/scale params.
+- **concat vs slideshow**: Use **concat** when the user wants to join/concatenate video segments or clips in sequence. Use **slideshow** only for creating presentations from still images with timed transitions. If the user says "concatenate", "join", "combine clips", or "put together" — always use **concat**.
 
 ## Examples
 
@@ -210,6 +226,38 @@ Response:
   "estimated_changes": "Video and images arranged in a 2-column grid"
 }}
 ```
+
+User: "Create a slideshow from these images with 3 seconds per image and fade transitions, add background music from the audio input"
+Response:
+```json
+{{
+  "interpretation": "Create an image slideshow with fade transitions and looping background music",
+  "audio_mode": "loop",
+  "pipeline": [
+    {{"skill": "slideshow", "params": {{"duration_per_image": 3.0, "transition": "fade"}}}}
+  ],
+  "warnings": [],
+  "estimated_changes": "Images shown for 3 seconds each with fade transitions, audio loops to fill duration"
+}}
+```
+
+User: "Concatenate all video segments, overlay the logo in the bottom right at 15% scale, normalize audio, compress for web"
+(Assume: video is main input, image_a has the logo, images_b has a second video)
+Response:
+```json
+{{
+  "interpretation": "Join video inputs in sequence, overlay logo from image_a, normalize audio, optimize for web",
+  "pipeline": [
+    {{"skill": "concat", "params": {{}}}},
+    {{"skill": "overlay_image", "params": {{"position": "bottom-right", "scale": 0.15, "image_source": "image_a"}}}},
+    {{"skill": "normalize", "params": {{}}}},
+    {{"skill": "web_optimize", "params": {{}}}}
+  ],
+  "warnings": [],
+  "estimated_changes": "Videos concatenated, logo in bottom-right, audio normalized, optimized for web"
+}}
+```
+Note: When using overlay_image with other multi-input skills, always set "image_source" to specify which input is the overlay image (e.g. "image_a", "image_b").
 """
 
 
@@ -301,8 +349,11 @@ AGENTIC_SYSTEM_PROMPT = """You are FFMPEGA, an expert video editing agent. You i
   - *Multi-input*: overlay_image, grid, slideshow
 
 ## Skill Selection Rules
+- **Concatenate / join / combine clips** ("concatenate", "join videos", "put together"):
+  → Use **concat** from multi-input. Do NOT use slideshow for video concatenation.
 - **Slideshow / presentation** ("create a slideshow", "slideshow starting with video"):
   → Use **slideshow** from multi-input. Do NOT use ken_burns or zoom for slideshows.
+  → Only use slideshow for *still images*, not for video segments.
 - **Grid / collage / side by side** ("make a grid", "side by side", "comparison"):
   → Use **grid** from multi-input. Set columns based on request.
 - **Logo / watermark / image overlay** ("add logo", "overlay image", "watermark"):
@@ -400,6 +451,12 @@ Respond with valid JSON:
 
 When the user references specific inputs by name (audio_a, audio_b, etc.), include
 "audio_source" in your response JSON. Valid values: "audio_a", "audio_b", etc., or "mix".
+
+Also include "audio_mode" to control audio/video duration mismatch:
+- "loop" (default): Loop audio with crossfades to match video length
+- "pad": Pad audio with silence to match video length
+- "trim": Cut output to shorter stream
+When audio is connected, default to "loop" unless the user specifies otherwise.
 """
 
 
@@ -442,6 +499,19 @@ VERIFICATION_PROMPT = """You are reviewing the output of a video editing operati
 
 ## Your Task
 Assess whether the output matches the user's original intent.
+
+**Video**: Check that visual effects (color, filters, overlays, transitions) were applied correctly based on the frames.
+
+**Audio** (if audio analysis is included above):
+- **Waveform image**: Shows amplitude over time. Look for:
+  - Fade-in/out = amplitude gradually increasing/decreasing at start/end
+  - Silence = flat line sections
+  - Normalization = consistent amplitude throughout (no extreme spikes or quiet sections)
+  - Audio replacement = waveform should look different from a silent/empty track
+- **Spectrogram image**: Shows frequency content (bass=bottom, treble=top). Look for:
+  - EQ changes = boosted/cut frequency bands visible as brighter/darker regions
+  - Noise reduction = reduced high-frequency noise floor
+- **Numeric metrics**: Check LUFS loudness, volume dB, and codec match expectations
 
 - If the output looks correct and the edit was applied as requested, respond with EXACTLY: PASS
 - If the output needs correction, respond with ONLY a corrected pipeline JSON in this format:

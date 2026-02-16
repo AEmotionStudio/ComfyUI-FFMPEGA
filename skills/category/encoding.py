@@ -266,6 +266,7 @@ def register_skills(registry: SkillRegistry) -> None:
                 default=192,
                 min_value=32,
                 max_value=512,
+                aliases=["bitrate", "rate"],
             ),
         ],
         ffmpeg_template="-b:a {kbps}k",

@@ -978,14 +978,33 @@ def register_skills(registry: SkillRegistry) -> None:
                 min_value=0,
                 max_value=100,
             ),
+            SkillParameter(
+                name="animation",
+                type=ParameterType.CHOICE,
+                description="Motion animation preset (none for static)",
+                required=False,
+                default="none",
+                choices=["none", "bounce", "float", "scroll_right", "scroll_left", "scroll_up", "scroll_down", "slide_in", "slide_in_top"],
+            ),
+            SkillParameter(
+                name="animation_speed",
+                type=ParameterType.FLOAT,
+                description="Speed multiplier for animation (0.1-5.0)",
+                required=False,
+                default=1.0,
+                min_value=0.1,
+                max_value=5.0,
+            ),
         ],
         examples=[
             "overlay_image - Overlay image in bottom-right corner at 25% scale",
             "overlay_image:position=top-left,scale=0.15,margin=20 - Small top-left logo",
             "overlay_image:opacity=0.7,position=center,scale=0.5 - Semi-transparent centered overlay",
             "overlay_image:scale=0.2 - Multiple images auto-placed in corners (connect image_a + image_b)",
+            "overlay_image:animation=bounce,scale=0.2 - Bouncing overlay moving corner to corner",
+            "overlay_image:animation=float,scale=0.15,animation_speed=0.5 - Slow floating overlay",
         ],
-        tags=["overlay", "pip", "picture-in-picture", "watermark", "logo", "stamp", "multi"],
+        tags=["overlay", "pip", "picture-in-picture", "watermark", "logo", "stamp", "multi", "bounce", "animated"],
     ))
 
     # ----- Enhanced effects (using advanced FFMPEG filters) ----- #

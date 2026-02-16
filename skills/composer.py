@@ -12,6 +12,14 @@ except ImportError:
     from core.executor.command_builder import CommandBuilder, FFMPEGCommand
     from core.sanitize import sanitize_text_param
 
+_VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".m4v"}
+
+
+def _is_video_file(path: str) -> bool:
+    """Return True if the file extension indicates a video file."""
+    return Path(path).suffix.lower() in _VIDEO_EXTENSIONS
+
+
 
 @dataclass
 class PipelineStep:
@@ -144,11 +152,29 @@ class SkillComposer:
         for extra in pipeline.extra_inputs:
             builder.input(extra)
 
+        # Register image_path inputs as separate -i entries AFTER extra_inputs
+        # so they don't inflate _extra_input_count (which xfade/concat use
+        # to determine segment count).  Their ffmpeg indices start after
+        # input[0] + extra_inputs.
+        _image_paths = pipeline.metadata.get("_image_paths", [])
+        _image_input_start = 1 + len(pipeline.extra_inputs)  # 0=main, 1..N=extras
+        for img_path in _image_paths:
+            builder.input(img_path)
+
         # Process each step
         video_filters = []
         audio_filters = []
         output_options = []
         complex_filters = []  # filter_complex strings from multi-stream skills
+
+        # Pre-scan for skills that handle audio internally (xfade, concat)
+        # so we can skip redundant audio_crossfade steps the LLM may add.
+        _audio_embedded_skills = {"xfade", "concat"}
+        step_names = {
+            self.SKILL_ALIASES.get(s.skill_name, s.skill_name)
+            for s in pipeline.steps if s.enabled
+        }
+        has_audio_embedding_skill = bool(step_names & _audio_embedded_skills)
 
         for step in pipeline.steps:
             if not step.enabled:
@@ -166,6 +192,21 @@ class SkillComposer:
                     "not found in registry"
                 )
                 continue
+
+            # Skip audio_crossfade when xfade/concat already handles audio
+            # internally — LLMs sometimes add both, causing duplicate filters.
+            if resolved_name == "audio_crossfade" and has_audio_embedding_skill:
+                import logging
+                logging.getLogger("ffmpega").info(
+                    "Skipping redundant audio_crossfade — "
+                    "xfade/concat already handles audio crossfade"
+                )
+                continue
+
+            # Resolve parameter aliases before filling defaults — so
+            # "bitrate=128k" is resolved to "kbps=128" before the
+            # default-fill loop checks whether "kbps" is present.
+            step.params = self._normalize_params(skill, step.params)
 
             # Auto-fill missing params with defaults from skill definition
             for param in skill.parameters:
@@ -214,6 +255,16 @@ class SkillComposer:
             for param in skill.parameters:
                 if param.name in step.params:
                     val = step.params[param.name]
+                    # Normalize CHOICE values: LLMs often send underscores
+                    # where hyphens are expected (bottom_right → bottom-right)
+                    if (param.type == ParameterType.CHOICE
+                            and isinstance(val, str)
+                            and param.choices
+                            and val not in param.choices):
+                        normalized = val.replace("_", "-")
+                        if normalized in param.choices:
+                            step.params[param.name] = normalized
+                            val = normalized
                     # Note: validate_params already handled auto-correction
                     p_valid, _ = param.validate(val)
                     if not p_valid:
@@ -236,6 +287,55 @@ class SkillComposer:
             if "_video_duration" in pipeline.metadata:
                 step.params["_video_duration"] = pipeline.metadata["_video_duration"]
 
+            # Inject image_path indices for overlay/animated_overlay handlers
+            # These are separate from extra_inputs (which xfade/concat use)
+            if _image_paths and resolved_name in (
+                "overlay_image", "overlay", "watermark",
+                "animated_overlay", "moving_overlay",
+            ):
+                # Tell overlay handlers about image_path inputs
+                step.params["_image_input_indices"] = list(
+                    range(_image_input_start, _image_input_start + len(_image_paths))
+                )
+                step.params["_image_paths"] = _image_paths
+                # Bump extra_input_count so overlay knows about these inputs
+                current = step.params.get("_extra_input_count", 0)
+                step.params["_extra_input_count"] = current + len(_image_paths)
+
+            # When concat/xfade runs alongside overlay_image, exclude
+            # overlay-reserved inputs from concatenation.  The overlay's
+            # image_source (e.g. "image_a" → ffmpeg input idx 1) should
+            # NOT appear as a concat segment.
+            if resolved_name in ("concat", "xfade", "slideshow"):
+                _source_idx_map = {
+                    "image_a": 1, "image_b": 2, "image_c": 3, "image_d": 4,
+                }
+                _idx_source_map = {v: k for k, v in _source_idx_map.items()}
+                exclude = set()
+                for other in pipeline.steps:
+                    other_name = self.SKILL_ALIASES.get(other.skill_name, other.skill_name)
+                    if other_name == "overlay_image":
+                        src = other.params.get("image_source")
+                        if src and src in _source_idx_map:
+                            exclude.add(_source_idx_map[src])
+                        elif not src and pipeline.extra_inputs:
+                            # LLM didn't specify image_source — auto-infer
+                            # the first image (non-video) extra input.
+                            for ei, path in enumerate(pipeline.extra_inputs):
+                                if not _is_video_file(path):
+                                    inferred_idx = ei + 1
+                                    inferred_src = _idx_source_map.get(
+                                        inferred_idx, "image_a"
+                                    )
+                                    other.params["image_source"] = inferred_src
+                                    exclude.add(inferred_idx)
+                                    break
+                    elif other_name == "animated_overlay":
+                        # animated_overlay always uses [1:v] (image_a)
+                        exclude.add(1)
+                if exclude:
+                    step.params["_exclude_inputs"] = exclude
+
             # Get filters/options for this skill
             vf, af, opts, fc, input_opts = self._skill_to_filters(skill, step.params)
             video_filters.extend(vf)
@@ -247,14 +347,143 @@ class SkillComposer:
                 # Add input options to the main input (index 0)
                 builder.add_input_options(pipeline.input_path, input_opts)
 
-        # If the pipeline strips audio (-an), discard any audio filters to
-        # avoid the -af/-an conflict that causes ffmpeg to include audio.
+        # Resolve conflict between -an and audio filters (-af).
+        # • `remove_audio` is an explicit user intent — it always wins,
+        #   so we clear any audio filters.
+        # • Skills like beat_sync/jump_cut emit -an *defensively* because
+        #   frame-selection may desync audio.  If the pipeline also has
+        #   explicit audio skills (bass, echo, …), the user clearly
+        #   intends to keep audio, so we drop the defensive -an.
         if "-an" in output_options:
-            audio_filters.clear()
+            if "remove_audio" in step_names:
+                # Explicit removal — always honour, drop any audio filters
+                audio_filters.clear()
+            elif audio_filters:
+                # Defensive -an from beat_sync etc. — audio filters win
+                output_options = [o for o in output_options if o != "-an"]
+            else:
+                audio_filters.clear()  # truly strip audio
 
         # Apply filter_complex if any skill needs multi-stream processing
         if complex_filters:
-            fc_graph = ";".join(complex_filters)
+            # Detect whether any skill produces audio inside filter_complex
+            # (concat with a=1, xfade with audio crossfade).
+            _audio_producing_skills = {"xfade", "concat"}
+            audio_in_fc = bool(
+                step_names & _audio_producing_skills
+                and pipeline.metadata.get("_has_embedded_audio", False)
+            )
+
+            # Determine up-front whether we need to fold audio filters
+            # into the filter_complex graph (when concat/xfade produce
+            # audio inside filter_complex, -af would conflict).
+            need_audio_fold = audio_in_fc and bool(audio_filters)
+
+            # Chain multiple filter_complex blocks: when one skill's output
+            # feeds into the next (e.g. concat → overlay), label the first
+            # graph's output and replace [0:v] in subsequent graphs.
+            #
+            # When the first skill produces audio (concat a=1, xfade),
+            # its filter produces TWO output pads (video + audio).
+            # We label both: [_pipe_N_v][_pipe_N_a] so subsequent skills
+            # chain from the video pad, and audio filters can be appended
+            # to the audio pad.
+            _fc_audio_label = None  # Track the audio output label
+
+            if len(complex_filters) > 1:
+                chained = []
+                for ci, fc_block in enumerate(complex_filters):
+                    is_last = (ci == len(complex_filters) - 1)
+
+                    # Detect if this block produces audio (contains concat a=1
+                    # or acrossfade from xfade)
+                    block_has_audio = audio_in_fc and ci == 0 and (
+                        "a=1" in fc_block or "acrossfade" in fc_block
+                    )
+
+                    if ci == 0:
+                        if block_has_audio:
+                            # Dual labels: video + audio output pads
+                            v_label = f"[_pipe_{ci}_v]"
+                            a_label = f"[_pipe_{ci}_a]"
+                            # xfade/concat handlers already produce [_vout]
+                            # and [_aout] labels — REPLACE them with our
+                            # chaining labels instead of appending new ones.
+                            rewired_block = fc_block
+                            if "[_vout]" in rewired_block:
+                                rewired_block = rewired_block.replace("[_vout]", v_label)
+                            if "[_aout]" in rewired_block:
+                                rewired_block = rewired_block.replace("[_aout]", a_label)
+                            if rewired_block != fc_block:
+                                # Labels were replaced — use the rewired block
+                                chained.append(rewired_block)
+                            else:
+                                # No existing labels — append ours
+                                chained.append(fc_block + v_label + a_label)
+                            _fc_audio_label = a_label
+                            # Strip handler's -map opts — we handle
+                            # mapping for chained graphs ourselves.
+                            _strip = {"[_vout]", "[_aout]"}
+                            new_opts = []
+                            skip_next = False
+                            for oi, o in enumerate(output_options):
+                                if skip_next:
+                                    skip_next = False
+                                    continue
+                                if o == "-map" and oi + 1 < len(output_options) and output_options[oi + 1] in _strip:
+                                    skip_next = True
+                                    continue
+                                new_opts.append(o)
+                            output_options = new_opts
+                        else:
+                            pipe_label = f"[_pipe_{ci}]"
+                            chained.append(fc_block + pipe_label)
+                    elif not is_last:
+                        # Middle graphs: consume previous pipe, label output
+                        if _fc_audio_label:
+                            prev_label = f"[_pipe_{ci - 1}_v]"
+                        else:
+                            prev_label = f"[_pipe_{ci - 1}]"
+                        pipe_label = f"[_pipe_{ci}]"
+                        rewired = fc_block.replace("[0:v]", prev_label)
+                        chained.append(rewired + pipe_label)
+                    else:
+                        # Last graph: consume previous pipe
+                        if _fc_audio_label and ci == 1:
+                            prev_label = f"[_pipe_{ci - 1}_v]"
+                        elif ci > 0:
+                            prev_label = f"[_pipe_{ci - 1}]"
+                        else:
+                            prev_label = "[0:v]"
+                        rewired = fc_block.replace("[0:v]", prev_label)
+                        if _fc_audio_label:
+                            # Concat/xfade produced a labeled audio pad;
+                            # we MUST label the final video output so
+                            # both pads can be -mapped.
+                            chained.append(rewired + "[_vfinal]")
+                        else:
+                            chained.append(rewired)
+                fc_graph = ";".join(chained)
+            else:
+                fc_graph = complex_filters[0]
+                # Single filter_complex block that produces audio
+                if audio_in_fc and ("a=1" in fc_graph or "acrossfade" in fc_graph):
+                    if need_audio_fold:
+                        # Label both video and audio outputs
+                        fc_graph += "[_vfinal][_aout_pre]"
+                        _fc_audio_label = "[_aout_pre]"
+
+            # Multi-input skills (xfade, concat, split_screen, grid, slideshow)
+            # handle their own scaling. Drop simple scale/pad video filters
+            # to avoid double-scaling when the LLM adds a redundant resize.
+            _self_scaling_skills = {
+                "xfade", "concat", "split_screen", "grid", "slideshow",
+            }
+            if step_names & _self_scaling_skills:
+                video_filters = [
+                    f for f in video_filters
+                    if not f.startswith("scale=") and not f.startswith("pad=")
+                ]
 
             # Merge simple video filters into the filter_complex graph
             # only when the graph actually references [0:v]
@@ -268,12 +497,23 @@ class SkillComposer:
                     # apply video filters as a separate unlabeled chain
                     fc_graph += f";[0:v]{vf_chain}"
 
-            # If filter_complex consumes [0:a] (e.g. waveform), we cannot
-            # also use -af — fold audio filters into the graph instead.
-            # BUT: skip this when audio is already embedded by xfade/concat
-            # (their filter_complex already produced the final audio stream).
-            audio_embedded = pipeline.metadata.get("_has_embedded_audio", False)
-            if "[0:a]" in fc_graph and audio_filters and not audio_embedded:
+            # Handle audio filters with filter_complex:
+            # When audio-producing skills (concat/xfade) embed audio in the
+            # filter graph, we MUST fold audio filters into the graph —
+            # -af cannot coexist with filter_complex audio output.
+            if _fc_audio_label and audio_filters:
+                af_chain = ",".join(audio_filters)
+                fc_graph += f";{_fc_audio_label}{af_chain}[_aout]"
+                audio_filters = []  # Don't also emit -af
+                # Add -map flags to route the correct output streams
+                output_options.extend(["-map", "[_vfinal]", "-map", "[_aout]"])
+            elif _fc_audio_label and "[_vfinal]" in fc_graph:
+                # Concat/xfade produced audio but no audio filters to fold.
+                # We still need -map to consume both labeled pads.
+                output_options.extend(["-map", "[_vfinal]", "-map", _fc_audio_label])
+            elif "[0:a]" in fc_graph and audio_filters:
+                # Non-audio-producing filter_complex that consumes [0:a]
+                # (e.g. waveform) — fold audio filters into graph
                 af_chain = ",".join(audio_filters)
                 fc_graph += f";[0:a]{af_chain}"
                 audio_filters = []  # Don't also emit -af
@@ -283,11 +523,47 @@ class SkillComposer:
             for af in audio_filters:
                 builder.af(af)
         else:
-            # Apply filters
-            for vf in video_filters:
-                builder.vf(vf)
-            for af in audio_filters:
-                builder.af(af)
+            # When replace_audio is present WITH audio filters, -af would
+            # apply to input 0's audio (original), not input 1's (the
+            # replacement).  Route [1:a] through filter_complex instead.
+            # NOTE: -vf and -filter_complex CANNOT coexist, so when we
+            # use filter_complex for audio, we must also fold video filters
+            # into the graph.
+            if "replace_audio" in step_names and audio_filters:
+                fc_parts = []
+                # Fold video filters into filter_complex
+                if video_filters:
+                    vf_chain = ",".join(video_filters)
+                    fc_parts.append(f"[0:v]{vf_chain}[_vout]")
+                # Fold audio filters into filter_complex
+                af_chain = ",".join(audio_filters)
+                fc_parts.append(f"[1:a]{af_chain}[_aout]")
+                builder.complex_filter(";".join(fc_parts))
+
+                # Replace -map 0:v / -map 1:a with labeled output pads
+                new_opts = []
+                i = 0
+                while i < len(output_options):
+                    if (output_options[i] == "-map"
+                            and i + 1 < len(output_options)):
+                        target = output_options[i + 1]
+                        if target == "1:a":
+                            new_opts.extend(["-map", "[_aout]"])
+                            i += 2
+                            continue
+                        elif target == "0:v" and video_filters:
+                            new_opts.extend(["-map", "[_vout]"])
+                            i += 2
+                            continue
+                    new_opts.append(output_options[i])
+                    i += 1
+                output_options = new_opts
+            else:
+                # Simple path — no filter_complex conflict
+                for vf in video_filters:
+                    builder.vf(vf)
+                for af in audio_filters:
+                    builder.af(af)
 
         # Apply output options — deduplicate key-value flags like -c:v, -crf,
         # -preset etc.  When multiple skills emit the same flag (e.g. two
@@ -322,6 +598,48 @@ class SkillComposer:
 
         return builder.build()
 
+    def _normalize_params(
+        self,
+        skill: Skill,
+        params: dict,
+    ) -> dict:
+        """Resolve parameter aliases and strip unit suffixes.
+
+        - Maps alias names (e.g. ``bitrate``) to the canonical parameter
+          name (e.g. ``kbps``) using ``SkillParameter.aliases``.
+        - Strips trailing unit suffixes like ``k`` / ``K`` / ``M`` from
+          strings when the canonical parameter is INT or FLOAT.
+        """
+        # Build alias → canonical mapping
+        alias_map: dict[str, str] = {}
+        param_map: dict[str, "SkillParameter"] = {}
+        for p in skill.parameters:
+            param_map[p.name] = p
+            if p.aliases:
+                for a in p.aliases:
+                    alias_map[a] = p.name
+
+        normalized: dict[str, object] = {}
+        for key, value in params.items():
+            resolved_key = alias_map.get(key, key)
+            # Strip unit suffixes for numeric parameters
+            if resolved_key in param_map:
+                p = param_map[resolved_key]
+                if isinstance(value, str):
+                    cleaned = value.rstrip("kKmM")
+                    if p.type == ParameterType.INT:
+                        try:
+                            value = int(cleaned)
+                        except ValueError:
+                            pass
+                    elif p.type == ParameterType.FLOAT:
+                        try:
+                            value = float(cleaned)
+                        except ValueError:
+                            pass
+            normalized[resolved_key] = value
+        return normalized
+
     def _skill_to_filters(
         self,
         skill: Skill,
@@ -337,6 +655,9 @@ class SkillComposer:
             Tuple of (video_filters, audio_filters, output_options, filter_complex, input_options).
             filter_complex is an empty string if not needed.
         """
+        # Resolve aliases and strip unit suffixes before anything else
+        params = self._normalize_params(skill, params)
+
         video_filters = []
         audio_filters = []
         output_options = []

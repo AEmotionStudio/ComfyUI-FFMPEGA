@@ -5,6 +5,7 @@
  */
 
 import { app } from "../../scripts/app.js";
+import { api } from "../../scripts/api.js";
 
 // Collection of example prompts for the "Random Example" feature
 const RANDOM_PROMPTS = [
@@ -47,11 +48,13 @@ const SLOT_LABELS = "abcdefghijklmnopqrstuvwxyz";
 
 function updateDynamicSlots(node, prefix, slotType, excludePrefix) {
     // Find all slots matching this prefix (but not excludePrefix)
+    // excludePrefix can be a string or array of strings
+    const excludes = excludePrefix ? (Array.isArray(excludePrefix) ? excludePrefix : [excludePrefix]) : [];
     const matchingIndices = [];
     for (let i = 0; i < node.inputs.length; i++) {
         const name = node.inputs[i].name;
         if (name.startsWith(prefix)) {
-            if (excludePrefix && name.startsWith(excludePrefix)) continue;
+            if (excludes.some(ep => name.startsWith(ep))) continue;
             matchingIndices.push(i);
         }
     }
@@ -295,14 +298,16 @@ app.registerExtension({
 
                 // --- Dynamic input slots (auto-expand) ---
                 // Connect image_a → image_b appears. Connect image_b → image_c appears.
-                // Same for audio_a → audio_b → audio_c, etc.
+                // Same for audio_a → audio_b → audio_c, video_a → video_b, etc.
                 const origOnConnectionsChange = this.onConnectionsChange;
                 this.onConnectionsChange = function (type, slotIndex, isConnected, link, ioSlot) {
                     origOnConnectionsChange?.apply(this, arguments);
                     if (type === LiteGraph.INPUT) {
                         updateDynamicSlots(this, "images_", "IMAGE");
-                        updateDynamicSlots(this, "image_", "IMAGE", "images_");
+                        updateDynamicSlots(this, "image_", "IMAGE", ["images_", "image_path_"]);
                         updateDynamicSlots(this, "audio_", "AUDIO");
+                        updateDynamicSlots(this, "video_", "STRING");
+                        updateDynamicSlots(this, "image_path_", "STRING");
                         fitHeight();
                     }
                 };
@@ -604,6 +609,412 @@ app.registerExtension({
 
                 this.color = "#3a5a3a";
                 this.bgcolor = "#2a4a2a";
+
+                return result;
+            };
+        }
+
+        // Style VideoToPath node
+        if (nodeData.name === "FFMPEGAVideoToPath") {
+            const onNodeCreated = nodeType.prototype.onNodeCreated;
+
+            nodeType.prototype.onNodeCreated = function () {
+                const result = onNodeCreated?.apply(this, arguments);
+
+                this.color = "#3a5a5a";
+                this.bgcolor = "#2a4a4a";
+
+                return result;
+            };
+        }
+
+        // Style LoadVideoPath node + video preview + custom upload widget
+        if (nodeData.name === "FFMPEGALoadVideoPath") {
+            const onNodeCreated = nodeType.prototype.onNodeCreated;
+
+            nodeType.prototype.onNodeCreated = function () {
+                const result = onNodeCreated?.apply(this, arguments);
+                const node = this;
+
+                this.color = "#5a4a2a";
+                this.bgcolor = "#4a3a1a";
+
+                // --- Video preview DOM widget ---
+                const previewContainer = document.createElement("div");
+                previewContainer.style.cssText =
+                    "width:100%;background:#1a1a1a;border-radius:6px;" +
+                    "overflow:hidden;position:relative;";
+
+                const videoEl = document.createElement("video");
+                videoEl.controls = true;
+                videoEl.loop = true;
+                videoEl.muted = true;
+                videoEl.style.cssText = "width:100%;display:block;";
+                videoEl.addEventListener("loadedmetadata", () => {
+                    previewWidget.aspectRatio =
+                        videoEl.videoWidth / videoEl.videoHeight;
+                    // Populate info bar with client-side video metadata
+                    const w = videoEl.videoWidth;
+                    const h = videoEl.videoHeight;
+                    const d = videoEl.duration;
+                    const parts = [];
+                    if (w && h) parts.push(`${w}×${h}`);
+                    if (d && isFinite(d)) {
+                        const m = Math.floor(d / 60);
+                        const s = (d % 60).toFixed(1);
+                        parts.push(m > 0 ? `${m}m ${s}s` : `${s}s`);
+                    }
+                    if (parts.length) {
+                        infoEl.textContent = parts.join(" | ");
+                    }
+                    node.setSize([
+                        node.size[0],
+                        node.computeSize([node.size[0], node.size[1]])[1],
+                    ]);
+                    node?.graph?.setDirtyCanvas(true);
+                });
+                videoEl.addEventListener("error", () => {
+                    previewContainer.style.display = "none";
+                    node.setSize([
+                        node.size[0],
+                        node.computeSize([node.size[0], node.size[1]])[1],
+                    ]);
+                    node?.graph?.setDirtyCanvas(true);
+                });
+
+                // Info overlay
+                const infoEl = document.createElement("div");
+                infoEl.style.cssText =
+                    "padding:4px 8px;font-size:11px;color:#aaa;" +
+                    "font-family:monospace;background:#111;";
+                infoEl.textContent = "No video selected";
+
+                previewContainer.appendChild(videoEl);
+                previewContainer.appendChild(infoEl);
+
+                // Prevent canvas events from going through the preview
+                for (const evt of [
+                    "contextmenu", "pointerdown", "mousewheel",
+                    "pointermove", "pointerup",
+                ]) {
+                    previewContainer.addEventListener(evt, (e) => {
+                        e.stopPropagation();
+                    }, true);
+                }
+
+                const previewWidget = this.addDOMWidget(
+                    "videopreview", "preview", previewContainer,
+                    {
+                        serialize: false,
+                        hideOnZoom: false,
+                        getValue() { return previewContainer.value; },
+                        setValue(v) { previewContainer.value = v; },
+                    }
+                );
+                previewWidget.aspectRatio = null;
+                previewWidget.computeSize = function (width) {
+                    if (this.aspectRatio && previewContainer.style.display !== "none") {
+                        const h = (node.size[0] - 20) / this.aspectRatio + 10;
+                        return [width, Math.max(h, 0) + 30]; // +30 for info bar
+                    }
+                    return [width, 34]; // Just info bar
+                };
+
+                // Function to update preview from filename
+                const updatePreview = (filename) => {
+                    if (!filename) {
+                        previewContainer.style.display = "none";
+                        infoEl.textContent = "No video selected";
+                        return;
+                    }
+                    previewContainer.style.display = "";
+                    const params = new URLSearchParams({
+                        filename: filename,
+                        type: "input",
+                        timestamp: Date.now(),
+                    });
+                    videoEl.src = api.apiURL("/view?" + params.toString());
+                    infoEl.textContent = "Loading...";
+                };
+
+                // --- Custom video upload widget (based on VHS pattern) ---
+                const videoWidget = this.widgets?.find(w => w.name === "video");
+                const videoAccept = [
+                    "video/webm", "video/mp4", "video/x-matroska",
+                    "video/quicktime", "video/x-msvideo", "video/x-flv",
+                    "video/x-ms-wmv", "video/mpeg", "video/3gpp",
+                    "image/gif",
+                ].join(",");
+
+                // Create hidden file input
+                const fileInput = document.createElement("input");
+                Object.assign(fileInput, {
+                    type: "file",
+                    accept: videoAccept,
+                    style: "display: none",
+                    onchange: async () => {
+                        if (!fileInput.files.length) return;
+                        const file = fileInput.files[0];
+
+                        const body = new FormData();
+                        body.append("image", file);
+
+                        try {
+                            const resp = await fetch("/upload/image", {
+                                method: "POST",
+                                body: body,
+                            });
+                            if (resp.status !== 200) {
+                                alert("Upload failed: " + resp.statusText);
+                                return;
+                            }
+                            const data = await resp.json();
+                            const filename = data.name;
+
+                            if (videoWidget) {
+                                if (!videoWidget.options.values.includes(filename)) {
+                                    videoWidget.options.values.push(filename);
+                                }
+                                videoWidget.value = filename;
+                                videoWidget.callback?.(filename);
+                            }
+                            updatePreview(filename);
+                        } catch (err) {
+                            alert("Upload error: " + err);
+                        }
+                    },
+                });
+                document.body.append(fileInput);
+
+                // Cleanup file input when node is removed
+                const origOnRemoved = this.onRemoved;
+                this.onRemoved = function () {
+                    fileInput?.remove();
+                    origOnRemoved?.apply(this, arguments);
+                };
+
+                // Add upload button widget
+                const uploadWidget = this.addWidget(
+                    "button",
+                    "choose video to upload",
+                    "image",
+                    () => {
+                        app.canvas.node_widget = null;
+                        fileInput.click();
+                    }
+                );
+                uploadWidget.options = uploadWidget.options || {};
+                uploadWidget.options.serialize = false;
+
+                // Support drag-and-drop of video files onto the node
+                this.onDragOver = (e) => {
+                    return !!e?.dataTransfer?.types?.includes?.("Files");
+                };
+                this.onDragDrop = async (e) => {
+                    if (!e?.dataTransfer?.types?.includes?.("Files")) return false;
+                    const file = e.dataTransfer?.files?.[0];
+                    if (!file) return false;
+
+                    const ext = file.name.split(".").pop()?.toLowerCase();
+                    const videoExts = [
+                        "mp4", "avi", "mov", "mkv", "webm", "flv",
+                        "wmv", "m4v", "mpg", "mpeg", "ts", "mts", "gif",
+                    ];
+                    if (!videoExts.includes(ext)) return false;
+
+                    const body = new FormData();
+                    body.append("image", file);
+
+                    try {
+                        const resp = await fetch("/upload/image", {
+                            method: "POST",
+                            body: body,
+                        });
+                        if (resp.status !== 200) return false;
+                        const data = await resp.json();
+                        const filename = data.name;
+
+                        if (videoWidget) {
+                            if (!videoWidget.options.values.includes(filename)) {
+                                videoWidget.options.values.push(filename);
+                            }
+                            videoWidget.value = filename;
+                            videoWidget.callback?.(filename);
+                        }
+                        updatePreview(filename);
+                        return true;
+                    } catch {
+                        return false;
+                    }
+                };
+
+                // Watch for dropdown selection changes → update preview
+                if (videoWidget) {
+                    const origCallback = videoWidget.callback;
+                    videoWidget.callback = function (value) {
+                        origCallback?.apply(this, arguments);
+                        updatePreview(value);
+                    };
+                    // Initial preview load if a video is already selected
+                    if (videoWidget.value) {
+                        setTimeout(() => updatePreview(videoWidget.value), 100);
+                    }
+                }
+
+                // Handle execution results (metadata from Python backend)
+                const origOnExecuted = this.onExecuted;
+                this.onExecuted = function (data) {
+                    origOnExecuted?.apply(this, arguments);
+                    if (data?.video_info?.[0]) {
+                        const info = data.video_info[0];
+                        const parts = [];
+                        if (info.source_width && info.source_height) {
+                            parts.push(`${info.source_width}×${info.source_height}`);
+                        }
+                        if (info.effective_fps) {
+                            parts.push(`${info.effective_fps} fps`);
+                        }
+                        if (info.effective_frames) {
+                            parts.push(`${info.effective_frames} frames`);
+                        }
+                        if (info.effective_duration) {
+                            const d = info.effective_duration;
+                            const m = Math.floor(d / 60);
+                            const s = (d % 60).toFixed(1);
+                            parts.push(m > 0 ? `${m}m ${s}s` : `${s}s`);
+                        }
+                        infoEl.textContent = parts.join(" | ") || "No info";
+                        // Show source vs effective if trim is applied
+                        if (info.source_frames !== info.effective_frames) {
+                            infoEl.textContent += ` (of ${info.source_frames})`;
+                        }
+                    }
+                };
+
+                return result;
+            };
+        }
+
+        // Style SaveVideo node + video preview
+        if (nodeData.name === "FFMPEGASaveVideo") {
+            const onNodeCreated = nodeType.prototype.onNodeCreated;
+
+            nodeType.prototype.onNodeCreated = function () {
+                const result = onNodeCreated?.apply(this, arguments);
+                const node = this;
+
+                this.color = "#2a5a3a";
+                this.bgcolor = "#1a4a2a";
+
+                // --- Video preview DOM widget ---
+                const previewContainer = document.createElement("div");
+                previewContainer.style.cssText =
+                    "width:100%;background:#1a1a1a;border-radius:6px;" +
+                    "overflow:hidden;display:none;";
+
+                const videoEl = document.createElement("video");
+                videoEl.controls = true;
+                videoEl.loop = true;
+                videoEl.muted = true;
+                videoEl.style.cssText = "width:100%;display:block;";
+                videoEl.addEventListener("loadedmetadata", () => {
+                    previewWidget.aspectRatio =
+                        videoEl.videoWidth / videoEl.videoHeight;
+                    // Update info bar with video metadata
+                    const w = videoEl.videoWidth;
+                    const h = videoEl.videoHeight;
+                    const d = videoEl.duration;
+                    const parts = [];
+                    if (w && h) parts.push(`${w}×${h}`);
+                    if (d && isFinite(d)) {
+                        const m = Math.floor(d / 60);
+                        const s = (d % 60).toFixed(1);
+                        parts.push(m > 0 ? `${m}m ${s}s` : `${s}s`);
+                    }
+                    if (node._savedFileSize) {
+                        parts.push(node._savedFileSize);
+                    }
+                    if (parts.length) {
+                        infoEl.textContent = parts.join(" | ");
+                    }
+                    node.setSize([
+                        node.size[0],
+                        node.computeSize([node.size[0], node.size[1]])[1],
+                    ]);
+                    node?.graph?.setDirtyCanvas(true);
+                });
+                videoEl.addEventListener("error", () => {
+                    previewContainer.style.display = "none";
+                    node.setSize([
+                        node.size[0],
+                        node.computeSize([node.size[0], node.size[1]])[1],
+                    ]);
+                    node?.graph?.setDirtyCanvas(true);
+                });
+
+                const infoEl = document.createElement("div");
+                infoEl.style.cssText =
+                    "padding:4px 8px;font-size:11px;color:#aaa;" +
+                    "font-family:monospace;background:#111;";
+                infoEl.textContent = "Waiting for execution...";
+
+                previewContainer.appendChild(videoEl);
+                previewContainer.appendChild(infoEl);
+
+                // Prevent canvas events from going through the preview
+                for (const evt of [
+                    "contextmenu", "pointerdown", "mousewheel",
+                    "pointermove", "pointerup",
+                ]) {
+                    previewContainer.addEventListener(evt, (e) => {
+                        e.stopPropagation();
+                    }, true);
+                }
+
+                const previewWidget = this.addDOMWidget(
+                    "videopreview", "preview", previewContainer,
+                    {
+                        serialize: false,
+                        hideOnZoom: false,
+                        getValue() { return previewContainer.value; },
+                        setValue(v) { previewContainer.value = v; },
+                    }
+                );
+                previewWidget.aspectRatio = null;
+                previewWidget.computeSize = function (width) {
+                    if (this.aspectRatio && previewContainer.style.display !== "none") {
+                        const h = (node.size[0] - 20) / this.aspectRatio + 10;
+                        return [width, Math.max(h, 0) + 30];
+                    }
+                    return [width, -4]; // Hidden until first execution
+                };
+
+                // Handle execution results — show preview of saved video
+                const origOnExecuted = this.onExecuted;
+                this.onExecuted = function (data) {
+                    origOnExecuted?.apply(this, arguments);
+                    if (data?.video?.[0]) {
+                        const v = data.video[0];
+                        const params = new URLSearchParams({
+                            filename: v.filename,
+                            subfolder: v.subfolder || "",
+                            type: v.type || "output",
+                            timestamp: Date.now(),
+                        });
+                        previewContainer.style.display = "";
+                        videoEl.src = api.apiURL("/view?" + params.toString());
+
+                        // Store file size for info bar
+                        if (data?.file_size?.[0]) {
+                            node._savedFileSize = data.file_size[0];
+                        }
+
+                        infoEl.textContent = `Saved: ${v.filename}`;
+                        if (node._savedFileSize) {
+                            infoEl.textContent += ` (${node._savedFileSize})`;
+                        }
+                    }
+                };
 
                 return result;
             };

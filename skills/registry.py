@@ -39,6 +39,7 @@ class SkillParameter:
     min_value: float | None = None
     max_value: float | None = None
     choices: list[str] | None = None
+    aliases: list[str] | None = None
 
     def validate(self, value: Any) -> tuple[bool, Optional[str]]:
         """Validate a parameter value.

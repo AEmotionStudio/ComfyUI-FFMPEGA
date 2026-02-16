@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-02-15
+
+### Added
+- **Zero-Memory Image Path Inputs**: Image paths from `image_path_a/b/c` inputs are now passed directly as file paths via `pipeline.metadata['_image_paths']` instead of being decoded into tensors. Overlay and watermark handlers reference the correct ffmpeg input index via `_image_input_indices`, keeping multi-GB images out of GPU memory.
+- **Overlay Animation Support**: `overlay_image` now accepts `animation` and `animation_speed` parameters. When `animation=bounce` (or `float`, `scroll_*`, `slide_in`) is specified, the handler auto-delegates to `animated_overlay` for proper motion using `eval=frame` expressions. This catches the common LLM pattern of choosing `overlay_image` with animation params instead of `animated_overlay`.
+- **Custom X/Y Expression Passthrough**: `overlay_image` detects when the LLM passes custom `x`/`y` ffmpeg expressions (e.g. time-based bounce math) and uses them directly with `eval=frame` instead of the static position map.
+- **Output Format Auto-Adjustment**: Output file extensions and quality preset application are now automatically adjusted based on the skills in the pipeline.
+- **UX: Paste & Replace Feedback**: Improved paste options and visual feedback in the ComfyUI node interface.
+
+### Fixed
+- **Pipeline Chaining (Xfade + Overlay)**: Fixed filter graph chaining bug where xfade's labeled outputs (`[_vout]`, `[_aout]`) were being appended instead of replaced with chaining labels (`[_pipe_0_v]`, `[_pipe_0_a]`), causing triple-label errors. Duplicate `-map` flags from handlers are now stripped when the composer manages chained graphs.
+- **Image/Video Input Separation**: Image paths are no longer added to `all_frame_paths` (which feeds xfade/concat segment lists), preventing images from being incorrectly treated as video segments. Images now get their own `-i` entries after video extra inputs.
+- **Overlay Input Indexing**: `overlay_image` and `animated_overlay` handlers now use `_image_input_indices` for correct ffmpeg input references instead of hardcoded indices, which broke when xfade/concat clips occupied indices 1–4.
+- **FFMPEG Parameter Injection** *(security)*: Extended parameter sanitization to width/height and text/spatial skill parameters to prevent filter injection.
+- **Path Validation** *(security)*: Restored path validation dropped during handler extraction refactoring.
+- **Colorkey/Chromakey Deduplication**: Removed duplicate handler registrations for chroma key skills.
+- **Pydantic Dependency**: Restored pydantic dependency dropped during refactoring.
+
+### Changed
+- **Handler Module Extraction**: Skill handlers extracted from monolithic `composer.py` into dedicated modules under `skills/handlers/` (composite, delivery, presets, etc.) for better maintainability.
+- **Skill Alias Resolution**: Refactored alias resolution to use a class constant (`SKILL_ALIASES`) instead of inline dictionaries.
+- **Performance**: `frames_to_tensor` pre-allocates memory instead of concatenating tensors incrementally.
+
+---
+
 ## [2.3.0] - 2026-02-13
 
 ### Added
