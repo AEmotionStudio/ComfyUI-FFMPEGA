@@ -442,6 +442,10 @@ class FFMPEGAgentNode:
                 pass
         elif video_path and video_path.strip():
             effective_video_path = video_path
+        elif _all_video_paths:
+            # Zero-memory video path inputs: use the first path as the
+            # main input and let the rest go into extra_inputs later.
+            effective_video_path = _all_video_paths.pop(0)
         elif has_extra_images:
             # No main video but extra images are connected (slideshow/grid mode)
             # Generate a short dummy black video as a placeholder base input
