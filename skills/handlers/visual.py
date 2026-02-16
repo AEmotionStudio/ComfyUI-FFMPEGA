@@ -402,6 +402,25 @@ def _f_mask_blur(p):
     return [], [], [], fc
 
 
+def _escape_filter_path(path: str) -> str:
+    """Escape a file path for use inside ffmpeg filter expressions.
+
+    In ffmpeg's filter syntax (both -vf and -filter_complex), the characters
+    ``'``, ``:``, ``\\``, ``[``, ``]``, ``;``, and ``=`` have special meaning.
+    Single-quote wrapping (``file='/path'``) works for simple ``-vf`` usage
+    but breaks when the composer promotes the filter into a ``-filter_complex``
+    graph because ``'`` is the escape delimiter there — causing stream labels
+    like ``[_pre]`` to be swallowed into the quoted string.
+
+    Instead we backslash-escape each special character so the path is safe in
+    both ``-vf`` and ``-filter_complex`` contexts.
+    """
+    # Order matters: escape backslash first to avoid double-escaping
+    for ch in ("\\", "'", ":", ";", "[", "]"):
+        path = path.replace(ch, f"\\{ch}")
+    return path
+
+
 def _f_lut_apply(p):
     """Apply a color LUT with intensity blending."""
     from pathlib import Path
@@ -430,9 +449,12 @@ def _f_lut_apply(p):
     # Validate the LUT file path for security (prevent traversal, enforce extensions)
     validate_path(path, ALLOWED_LUT_EXTENSIONS, must_exist=True)
 
+    # Escape the path for ffmpeg filter syntax (safe in both -vf and -filter_complex)
+    escaped = _escape_filter_path(path)
+
     if intensity >= 1.0:
         # Full LUT, no blending needed
-        vf = f"lut3d=file='{path}'"
+        vf = f"lut3d=file={escaped}"
         return [vf], [], []
     elif intensity <= 0.0:
         # No LUT
@@ -442,7 +464,7 @@ def _f_lut_apply(p):
         inv = 1.0 - intensity
         fc = (
             f"[0:v]split[orig][lut];"
-            f"[lut]lut3d=file='{path}'[graded];"
+            f"[lut]lut3d=file={escaped}[graded];"
             f"[orig][graded]blend=all_mode=normal:all_opacity={intensity}"
         )
         return [], [], [], fc
