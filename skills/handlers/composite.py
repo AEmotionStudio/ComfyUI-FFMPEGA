@@ -829,7 +829,7 @@ def _f_pip(p):
     scale = float(p.get("scale", 0.25))
     margin = int(p.get("margin", 20))
     border = int(p.get("border", 0))
-    border_color = str(p.get("border_color", "white"))
+    border_color = sanitize_text_param(str(p.get("border_color", "white")))
 
     # Scale the overlay relative to main video
     scale_filter = f"[1:v]scale=iw*{scale}:-1"

@@ -778,7 +778,8 @@ class FFMPEGAgentNode:
         MULTI_INPUT_SKILLS = {"grid", "slideshow", "overlay_image", "overlay",
                               "concat", "split_screen", "watermark", "chromakey",
                               "xfade", "transition", "animated_overlay", "moving_overlay",
-                              "picture_in_picture", "pip", "blend"}
+                              "picture_in_picture", "pip", "blend",
+                              "picture-in-picture", "pictureinpicture"}
         needs_multi_input = any(
             s.skill_name in MULTI_INPUT_SKILLS for s in pipeline.steps
         )
