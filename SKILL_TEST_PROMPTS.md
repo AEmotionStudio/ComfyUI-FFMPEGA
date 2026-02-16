@@ -556,9 +556,11 @@ Add chromatic aberration with RGB channel split
 ```
 Turn the video into a pencil sketch drawing
 ```
+
 ```
 Apply an ink line art effect
 ```
+
 ```
 Apply colored edge detection
 ```
@@ -567,6 +569,7 @@ Apply colored edge detection
 ```
 Add a soft bloom glow to the video
 ```
+
 ```
 Apply a strong dreamy glow effect
 ```
@@ -575,6 +578,7 @@ Apply a strong dreamy glow effect
 ```
 Add ghostly motion trails to the video
 ```
+
 ```
 Apply ghost afterimage effect with long persistence
 ```
@@ -583,9 +587,11 @@ Apply ghost afterimage effect with long persistence
 ```
 Swap the red and blue color channels for a surreal look
 ```
+
 ```
 Apply a matrix green channel effect
 ```
+
 ```
 Apply night vision effect
 ```
@@ -594,6 +600,7 @@ Apply night vision effect
 ```
 Apply a tilt-shift effect to make it look like a toy model
 ```
+
 ```
 Add selective blur with focus near the top
 ```
@@ -602,6 +609,7 @@ Add selective blur with focus near the top
 ```
 Blend frames together for a dreamy motion blur
 ```
+
 ```
 Apply heavy long-exposure motion blur
 ```
@@ -610,6 +618,7 @@ Apply heavy long-exposure motion blur
 ```
 Apply a heat map false color effect
 ```
+
 ```
 Apply rainbow pseudocolor
 ```
@@ -768,9 +777,11 @@ Stabilize the shaky footage
 ```
 Show the audio waveform at the bottom of the video
 ```
+
 ```
 Add a cyan audio waveform in the center with line mode
 ```
+
 ```
 Display a tall semi-transparent waveform overlay
 ```
@@ -783,12 +794,15 @@ Display a tall semi-transparent waveform overlay
 ```
 Arrange these images in a 2-column grid collage
 ```
+
 ```
 Create a 3-column grid layout with 8px gaps on a white background
 ```
+
 ```
 Make a mosaic from these images lasting 10 seconds
 ```
+
 ```
 Create a side-by-side comparison
 ```
@@ -797,12 +811,15 @@ Create a side-by-side comparison
 ```
 Create a slideshow from these images with fade transitions
 ```
+
 ```
 Make a photo slideshow with 5 seconds per image and no transitions
 ```
+
 ```
 Create a presentation with slow 1-second fade transitions between slides
 ```
+
 ```
 Create a slideshow starting with the video
 ```
@@ -811,12 +828,15 @@ Create a slideshow starting with the video
 ```
 Overlay the second image as a small watermark in the bottom-right corner
 ```
+
 ```
 Put a transparent logo in the top-left at 15% scale
 ```
+
 ```
 Add a semi-transparent picture-in-picture overlay in the center
 ```
+
 ```
 Overlay images in the corners at 20% scale
 ```
@@ -825,9 +845,11 @@ Overlay images in the corners at 20% scale
 ```
 Concatenate these videos together
 ```
+
 ```
 Join the main video with the extra images into one continuous video
 ```
+
 ```
 Append all connected video inputs sequentially
 ```
@@ -836,12 +858,15 @@ Append all connected video inputs sequentially
 ```
 Create a slideshow with dissolve transitions between each segment
 ```
+
 ```
 Join these clips with a wipe left transition
 ```
+
 ```
 Concatenate with a pixelize transition lasting 2 seconds
 ```
+
 ```
 Add a radial transition between each video segment
 ```
@@ -850,9 +875,11 @@ Add a radial transition between each video segment
 ```
 Show both videos side by side
 ```
+
 ```
 Create a vertical split screen with the video on top and image on bottom
 ```
+
 ```
 Make a horizontal split screen comparison
 ```
@@ -861,12 +888,15 @@ Make a horizontal split screen comparison
 ```
 Add a scrolling logo that moves across the bottom of the video
 ```
+
 ```
 Overlay the image with a floating bounce animation
 ```
+
 ```
 Slide the overlay image in from the left edge
 ```
+
 ```
 Add a moving watermark that floats around the video
 ```
@@ -1101,8 +1131,10 @@ Add a radial zoom blur effect
 ```
 Add subtle cinematic film grain with intensity 20
 ```
-```
 
+```
+Apply heavy film grain at 80% intensity for a gritty look
+```
 ---
 
 ## 🎭 Keying & Masking
@@ -1111,6 +1143,7 @@ Add subtle cinematic film grain with intensity 20
 ```
 Key out the red background and replace with black
 ```
+
 ```
 Remove the blue color from the video and make it transparent
 ```
@@ -1119,6 +1152,7 @@ Remove the blue color from the video and make it transparent
 ```
 Key out the dark areas based on brightness
 ```
+
 ```
 Remove the bright white regions with luma keying
 ```
@@ -1127,6 +1161,7 @@ Remove the bright white regions with luma keying
 ```
 Keep only the red and desaturate everything else — sin city style
 ```
+
 ```
 Isolate the blue tones and grayscale the rest
 ```
@@ -1135,6 +1170,7 @@ Isolate the blue tones and grayscale the rest
 ```
 Clean up the green spill on the actor from the green screen
 ```
+
 ```
 Remove the blue color bleeding from chroma key edges
 ```
@@ -1143,6 +1179,7 @@ Remove the blue color bleeding from chroma key edges
 ```
 Simple green screen removal with black background
 ```
+
 ```
 Quick chroma key with blue screen
 ```
@@ -1151,6 +1188,7 @@ Quick chroma key with blue screen
 ```
 Remove the background from the video automatically
 ```
+
 ```
 Cut out the subject from the background
 ```
@@ -1163,6 +1201,7 @@ Cut out the subject from the background
 ```
 Burn these subtitles into the video
 ```
+
 ```
 Hardcode the SRT file
 ```
@@ -1171,6 +1210,7 @@ Hardcode the SRT file
 ```
 Apply teal and orange color grading
 ```
+
 ```
 Add warm cinematic color grade
 ```
@@ -1179,6 +1219,7 @@ Add warm cinematic color grade
 ```
 Make it warmer
 ```
+
 ```
 Cool down the color temperature
 ```
@@ -1187,6 +1228,7 @@ Cool down the color temperature
 ```
 Deinterlace the footage
 ```
+
 ```
 Remove interlacing artifacts
 ```
@@ -1195,6 +1237,7 @@ Remove interlacing artifacts
 ```
 Deshake the camera movement
 ```
+
 ```
 Quick stabilization for handheld footage
 ```
@@ -1203,6 +1246,7 @@ Quick stabilization for handheld footage
 ```
 Extract the subtitles
 ```
+
 ```
 Save the subtitle track as SRT
 ```
@@ -1211,6 +1255,7 @@ Save the subtitle track as SRT
 ```
 Fill the black borders
 ```
+
 ```
 Mirror-fill the blank edges
 ```
@@ -1219,6 +1264,7 @@ Mirror-fill the blank edges
 ```
 Add film grain
 ```
+
 ```
 Apply subtle film grain texture
 ```
@@ -1227,6 +1273,7 @@ Apply subtle film grain texture
 ```
 Interpolate to 60fps for smooth motion
 ```
+
 ```
 Create smooth slow motion with frame interpolation
 ```
@@ -1235,6 +1282,7 @@ Create smooth slow motion with frame interpolation
 ```
 Package for HLS streaming
 ```
+
 ```
 Create HLS segments for adaptive playback
 ```
@@ -1243,6 +1291,7 @@ Create HLS segments for adaptive playback
 ```
 Fix the barrel distortion
 ```
+
 ```
 Apply lens correction
 ```
@@ -1251,6 +1300,7 @@ Apply lens correction
 ```
 Add cinematic letterbox bars
 ```
+
 ```
 Add widescreen black bars
 ```
@@ -1259,6 +1309,7 @@ Add widescreen black bars
 ```
 Apply this LUT file
 ```
+
 ```
 Load a .cube LUT for color grading
 ```
@@ -1267,6 +1318,7 @@ Load a .cube LUT for color grading
 ```
 Make it black and white
 ```
+
 ```
 Apply a warm monochrome look
 ```
@@ -1275,6 +1327,7 @@ Apply a warm monochrome look
 ```
 Add perspective tilt
 ```
+
 ```
 Apply keystoning effect
 ```
@@ -1283,6 +1336,7 @@ Apply keystoning effect
 ```
 Create a filmstrip preview
 ```
+
 ```
 Generate a thumbnail strip
 ```
@@ -1291,6 +1345,7 @@ Generate a thumbnail strip
 ```
 Replace the audio with this track
 ```
+
 ```
 Swap out the audio
 ```
@@ -1299,6 +1354,7 @@ Swap out the audio
 ```
 Scroll the video upward
 ```
+
 ```
 Add a horizontal scroll
 ```
@@ -1307,6 +1363,7 @@ Add a horizontal scroll
 ```
 Make only the red pop
 ```
+
 ```
 Desaturate everything except blue
 ```
@@ -1315,6 +1372,7 @@ Desaturate everything except blue
 ```
 Create a sprite sheet
 ```
+
 ```
 Generate a contact sheet of frames
 ```
@@ -1323,6 +1381,7 @@ Generate a contact sheet of frames
 ```
 Encode with two-pass at 5M bitrate
 ```
+
 ```
 Use two-pass encoding for best quality
 ```
