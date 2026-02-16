@@ -675,14 +675,14 @@ def _f_animated_overlay(p):
     px_per_frame = max(1, int(2 * speed))
 
     motion_presets = {
-        "scroll_right": f"x=mod(n*{px_per_frame},W):y=H-h-20",
-        "scroll_left": f"x=W-mod(n*{px_per_frame},W+w):y=H-h-20",
-        "scroll_up": f"x=W-w-20:y=H-mod(n*{px_per_frame},H+h)",
-        "scroll_down": f"x=W-w-20:y=mod(n*{px_per_frame},H+h)-h",
-        "float": f"x=W/2-w/2+sin(n*0.02*{speed})*W/4:y=H/2-h/2+cos(n*0.03*{speed})*H/4",
-        "bounce": f"x=abs(mod(n*{px_per_frame},2*(W-w))-(W-w)):y=abs(mod(n*{px_per_frame+1},2*(H-h))-(H-h))",
-        "slide_in": f"x=min(n*{px_per_frame},W-w-20):y=H-h-20",
-        "slide_in_top": f"x=W/2-w/2:y=min(n*{px_per_frame}-h,20)",
+        "scroll_right": f"x='mod(n*{px_per_frame},W)':y='H-h-20'",
+        "scroll_left": f"x='W-mod(n*{px_per_frame},W+w)':y='H-h-20'",
+        "scroll_up": f"x='W-w-20':y='H-mod(n*{px_per_frame},H+h)'",
+        "scroll_down": f"x='W-w-20':y='mod(n*{px_per_frame},H+h)-h'",
+        "float": f"x='W/2-w/2+sin(n*0.02*{speed})*W/4':y='H/2-h/2+cos(n*0.03*{speed})*H/4'",
+        "bounce": f"x='abs(mod(n*{px_per_frame},2*(W-w))-(W-w))':y='abs(mod(n*{px_per_frame+1},2*(H-h))-(H-h))'",
+        "slide_in": f"x='min(n*{px_per_frame},W-w-20)':y='H-h-20'",
+        "slide_in_top": f"x='W/2-w/2':y='min(n*{px_per_frame}-h,20)'",
     }
 
     motion = motion_presets.get(animation, motion_presets["scroll_right"])

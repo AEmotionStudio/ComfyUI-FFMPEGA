@@ -842,7 +842,12 @@ class FFMPEGAgentNode:
                     if paths:
                         temp_frames_dirs.add(os.path.dirname(paths[0]))
 
-                # Release tensor memory immediately after conversion
+                # Release tensor memory immediately after conversion.
+                # Null out the list entry so all_image_keys no longer
+                # holds a reference — without this, `del tensor` only
+                # removes the loop variable while the tuple ref keeps
+                # the tensor alive until the list itself is deleted.
+                all_image_keys[ti] = (tkey, None)
                 del tensor
                 # Clear the reference from kwargs too
                 if tkey == '__image_a__':

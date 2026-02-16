@@ -12,7 +12,7 @@ except ImportError:
     from core.executor.command_builder import CommandBuilder, FFMPEGCommand
     from core.sanitize import sanitize_text_param
 
-_VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".m4v"}
+_VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".ts", ".m4v"}
 
 
 def _is_video_file(path: str) -> bool:
