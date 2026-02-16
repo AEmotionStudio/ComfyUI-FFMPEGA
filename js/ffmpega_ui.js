@@ -755,6 +755,18 @@ app.registerExtension({
                 };
 
                 // --- Custom video upload widget (based on VHS pattern) ---
+                // Helper to show errors without blocking alerts
+                const showError = (msg) => {
+                    flashNode(node, "#7a4a4a");
+                    infoEl.textContent = msg;
+                    previewContainer.style.display = "";
+                    node.setSize([
+                        node.size[0],
+                        node.computeSize([node.size[0], node.size[1]])[1],
+                    ]);
+                    node?.graph?.setDirtyCanvas(true);
+                };
+
                 const videoWidget = this.widgets?.find(w => w.name === "video");
                 const videoAccept = [
                     "video/webm", "video/mp4", "video/x-matroska",
@@ -782,7 +794,7 @@ app.registerExtension({
                                 body: body,
                             });
                             if (resp.status !== 200) {
-                                alert("Upload failed: " + resp.statusText);
+                                showError("Upload failed: " + resp.statusText);
                                 return;
                             }
                             const data = await resp.json();
@@ -797,7 +809,7 @@ app.registerExtension({
                             }
                             updatePreview(filename);
                         } catch (err) {
-                            alert("Upload error: " + err);
+                            showError("Upload error: " + err);
                         }
                     },
                 });
@@ -838,7 +850,7 @@ app.registerExtension({
                         "wmv", "m4v", "mpg", "mpeg", "ts", "mts", "gif",
                     ];
                     if (!videoExts.includes(ext)) {
-                        flashNode(node, "#7a4a4a");
+                        showError("Invalid file type: " + ext);
                         return false;
                     }
 
@@ -852,7 +864,7 @@ app.registerExtension({
                         });
                         if (resp.status !== 200) {
                             console.warn("FFMPEGA: Upload rejected", resp.status, resp.statusText);
-                            flashNode(node, "#7a4a4a");
+                            showError("Upload rejected: " + resp.statusText);
                             return false;
                         }
                         const data = await resp.json();
@@ -869,7 +881,7 @@ app.registerExtension({
                         return true;
                     } catch (err) {
                         console.warn("FFMPEGA: Video upload failed", err);
-                        flashNode(node, "#7a4a4a");
+                        showError("Upload failed: " + err);
                         return false;
                     }
                 };
