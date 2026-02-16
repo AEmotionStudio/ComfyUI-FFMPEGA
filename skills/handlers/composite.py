@@ -25,6 +25,19 @@ def _is_video_file(path):
     import os
     return os.path.splitext(path)[1].lower() in _VIDEO_EXTENSIONS
 
+
+def _probe_duration(path):
+    """Get the duration of a media file in seconds using ffprobe.
+
+    Returns 0.0 on any failure (missing ffprobe, invalid file, etc.).
+    Delegates to MediaConverter._probe_media_duration to avoid duplication.
+    """
+    try:
+        from core.media_converter import MediaConverter
+        return MediaConverter._probe_media_duration(str(path))
+    except Exception:
+        return 0.0
+
 def _f_add_text(p):
     text = sanitize_text_param(str(p.get("text", "")))
     size = p.get("size", 48)
@@ -80,16 +93,20 @@ def _f_grid(p):
     if total < 2:
         return [], [], [], ""
 
-    fps = 25
-    # Scale all inputs to same cell size (maintain aspect ratio + pad)
-    # Still images need loop+setpts to produce frames for the full duration.
+    fps = int(p.get("_input_fps", 25))
+    extra_paths = p.get("_extra_input_paths", [])
+    # Scale all inputs to same cell size (maintain aspect ratio + pad).
+    # Video inputs play normally; still images are looped for `duration`.
     parts = []
     for i, idx in enumerate(cells):
-        if idx == 0 and include_video:
-            # Main video: just scale, it already has frames
+        is_video = (idx == 0) or (
+            idx - 1 < len(extra_paths) and _is_video_file(extra_paths[idx - 1])
+        )
+        if is_video:
+            # Video input: scale, it already has frames
             parts.append(
                 f"[{idx}:v]scale={cell_w}:{cell_h}:force_original_aspect_ratio=decrease,"
-                f"pad={cell_w}:{cell_h}:(ow-iw)/2:(oh-ih)/2:{bg},setsar=1[_g{i}]"
+                f"pad={cell_w}:{cell_h}:(ow-iw)/2:(oh-ih)/2:{bg},setsar=1,fps={fps}[_g{i}]"
             )
         else:
             # Still image: loop to create video frames for `duration` seconds
@@ -186,12 +203,33 @@ def _f_overlay_image(p):
     """Overlay extra input images on the main video (picture-in-picture).
 
     Supports multiple overlays — each extra input gets its own position.
+    When `image_source` is specified (e.g. "image_a"), only that input
+    is used as the overlay.
+
+    When `animation` is specified, delegates to _f_animated_overlay which
+    has proper motion presets (bounce, float, scroll, etc).
     """
+    # Auto-delegate to animated_overlay when animation is requested
+    animation = p.get("animation", None)
+    import logging
+    _log = logging.getLogger("ffmpega")
+    _log.debug("[overlay_image] params keys=%s, animation=%r", list(p.keys()), animation)
+    if animation and str(animation).lower() not in ("none", "static", ""):
+        # Map animation_speed → speed for animated_overlay
+        if "animation_speed" in p and "speed" not in p:
+            p["speed"] = p["animation_speed"]
+        _log.info("[overlay_image] Delegating to animated_overlay (animation=%s)", animation)
+        return _f_animated_overlay(p)
+
     position = p.get("position", "bottom-right")
+    # Normalize underscore-separated positions (LLMs often send bottom_right)
+    if isinstance(position, str):
+        position = position.replace("_", "-")
     scale = float(p.get("scale", 0.25))
     opacity = float(p.get("opacity", 1.0))
     margin = int(p.get("margin", 10))
     n = int(p.get("_extra_input_count", 0))
+    image_source = p.get("image_source", None)
 
     if n < 1:
         return [], [], [], ""
@@ -204,26 +242,60 @@ def _f_overlay_image(p):
         "center": "(W-w)/2:(H-h)/2",
     }
 
-    # Auto-assign positions when multiple overlays
-    corner_cycle = ["top-left", "top-right", "bottom-right", "bottom-left"]
-    if n == 1:
-        positions = [position]
+    # Determine which extra inputs to overlay
+    # When _image_input_indices is set (from image_path_a/b/c...),
+    # use those exact ffmpeg indices instead of the 1-4 source map.
+    image_input_indices = p.get("_image_input_indices", [])
+
+    if image_input_indices:
+        # image_path inputs — use exact ffmpeg indices
+        if n == 1 or len(image_input_indices) == 1:
+            overlay_inputs = [(image_input_indices[0], position)]
+        else:
+            corner_cycle = ["top-left", "top-right", "bottom-right", "bottom-left"]
+            overlay_inputs = []
+            try:
+                start_idx = corner_cycle.index(position)
+            except ValueError:
+                start_idx = 0
+            for i, ffmpeg_idx in enumerate(image_input_indices):
+                pos = corner_cycle[(start_idx + i) % len(corner_cycle)]
+                overlay_inputs.append((ffmpeg_idx, pos))
+    elif image_source and isinstance(image_source, str):
+        # When image_source is specified (e.g. "image_a"), overlay only that input
+        # Map image_a → index 1, image_b → index 2, etc.
+        source_map = {"image_a": 1, "image_b": 2, "image_c": 3, "image_d": 4}
+        target_idx = source_map.get(image_source)
+        if target_idx and target_idx <= n:
+            overlay_inputs = [(target_idx, position)]
+        else:
+            # Fallback: overlay the first extra input
+            overlay_inputs = [(1, position)]
     else:
-        # First overlay gets the requested position, rest cycle through corners
-        positions = []
-        # Start cycling from the requested position
-        try:
-            start_idx = corner_cycle.index(position)
-        except ValueError:
-            start_idx = 0
-        for i in range(n):
-            pos = corner_cycle[(start_idx + i) % len(corner_cycle)]
-            positions.append(pos)
+        # No specific source — overlay all extras
+        # Auto-assign positions when multiple overlays
+        corner_cycle = ["top-left", "top-right", "bottom-right", "bottom-left"]
+        if n == 1:
+            overlay_inputs = [(1, position)]
+        else:
+            overlay_inputs = []
+            try:
+                start_idx = corner_cycle.index(position)
+            except ValueError:
+                start_idx = 0
+            for i in range(n):
+                pos = corner_cycle[(start_idx + i) % len(corner_cycle)]
+                overlay_inputs.append((i + 1, pos))
+
+    # Check for custom x/y expressions (LLM sometimes passes ffmpeg
+    # expressions for animation even when using overlay_image)
+    custom_x = p.get("x", None)
+    custom_y = p.get("y", None)
+    has_custom_xy = custom_x is not None and custom_y is not None
 
     fc_parts = []
-    for i in range(n):
-        idx = i + 1  # extra inputs: [1:v], [2:v], ...
-        ovl_label = f"[_ovl{i}]"
+    for oi, (idx, pos) in enumerate(overlay_inputs):
+        ovl_label = f"[_ovl{oi}]"
 
         # Scale the overlay — always preserve alpha for PNG transparency
         scale_expr = f"[{idx}:v]format=rgba,scale=iw*{scale}:ih*{scale}"
@@ -233,15 +305,20 @@ def _f_overlay_image(p):
         fc_parts.append(scale_expr)
 
         # Chain: first overlay takes [0:v], subsequent take previous output
-        xy = pos_map.get(positions[i], pos_map["bottom-right"])
-        if i == 0:
+        if has_custom_xy:
+            # Use custom expressions with eval=frame for animation
+            xy = f"x={custom_x}:y={custom_y}:eval=frame"
+        else:
+            xy = pos_map.get(pos, pos_map["bottom-right"])
+
+        if oi == 0:
             src = "[0:v]"
         else:
-            src = f"[_tmp{i - 1}]"
+            src = f"[_tmp{oi - 1}]"
 
-        if i < n - 1:
+        if oi < len(overlay_inputs) - 1:
             # Intermediate: label the output for next overlay
-            fc_parts.append(f"{src}{ovl_label}overlay={xy}[_tmp{i}]")
+            fc_parts.append(f"{src}{ovl_label}overlay={xy}[_tmp{oi}]")
         else:
             # Last overlay: no output label (becomes final output)
             fc_parts.append(f"{src}{ovl_label}overlay={xy}")
@@ -277,18 +354,28 @@ def _f_concat(p):
         width:          Output width (default 1920)
         height:         Output height (default 1080)
         still_duration: Seconds to display each still image (default 5)
+        transition:     If specified, auto-redirect to xfade handler
     """
+    # Auto-redirect to xfade when a transition is requested
+    transition = p.get("transition")
+    if transition and str(transition).lower() not in ("none", "cut", ""):
+        return _f_xfade(p)
     width = int(p.get("width", 1920))
     height = int(p.get("height", 1080))
     still_dur = float(p.get("still_duration", 5.0))
     n_extra = int(p.get("_extra_input_count", 0))
 
     # Build segment list: main video (idx=0) + extras (idx=1,2,...)
+    # Skip inputs reserved by other skills (e.g. overlay_image's image_source)
+    exclude = p.get("_exclude_inputs", set())
     extra_paths = p.get("_extra_input_paths", [])
     segments = [(0, True)]  # (ffmpeg_idx, is_video)
     for i in range(n_extra):
+        ffmpeg_idx = i + 1
+        if ffmpeg_idx in exclude:
+            continue  # Reserved by another skill (e.g. overlay)
         is_video = _is_video_file(extra_paths[i]) if i < len(extra_paths) else False
-        segments.append((i + 1, is_video))
+        segments.append((ffmpeg_idx, is_video))
 
     total = len(segments)
     if total < 2:
@@ -321,8 +408,15 @@ def _f_concat(p):
 
         if has_audio:
             albl = f"[_ca{i}]"
-            # Audio is embedded in the video — just read it
-            parts.append(f"[{idx}:a]aresample=44100,asetpts=PTS-STARTPTS{albl}")
+            if is_video:
+                # Video input: read its embedded audio
+                parts.append(f"[{idx}:a]aresample=44100,asetpts=PTS-STARTPTS{albl}")
+            else:
+                # Still image: no audio stream — generate silence
+                dur = still_dur
+                parts.append(
+                    f"anullsrc=r=44100:cl=stereo,atrim=0:{dur},asetpts=PTS-STARTPTS{albl}"
+                )
             concat_labels.append(albl)
 
     concat_input = "".join(concat_labels)
@@ -356,10 +450,14 @@ def _f_xfade(p):
     n_extra = int(p.get("_extra_input_count", 0))
 
     extra_paths = p.get("_extra_input_paths", [])
+    exclude = p.get("_exclude_inputs", set())
     segments = [(0, True)]
     for i in range(n_extra):
+        ffmpeg_idx = i + 1
+        if ffmpeg_idx in exclude:
+            continue  # Reserved by another skill (e.g. overlay)
         is_video = _is_video_file(extra_paths[i]) if i < len(extra_paths) else False
-        segments.append((i + 1, is_video))
+        segments.append((ffmpeg_idx, is_video))
 
     total = len(segments)
     if total < 2:
@@ -385,13 +483,32 @@ def _f_xfade(p):
                 f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1{lbl}"
             )
 
-    # Step 2: Chain xfade transitions (video)
-    # xfade takes exactly 2 inputs and produces 1 output. Chain them:
-    # [_xv0][_xv1] xfade → [_xf0]; [_xf0][_xv2] xfade → [_xf1]; etc.
-    # The offset for each xfade is: cumulative_duration - transition_duration
+    # Build per-segment durations for accurate offset calculation.
+    # Segment 0 = main video (_video_duration); segments 1+ = extra inputs.
     video_dur = float(p.get("_video_duration", still_dur))
-    cumulative = video_dur if segments[0][1] else still_dur
+    seg_durations = []
+    for i, (idx, is_video) in enumerate(segments):
+        if i == 0:
+            seg_durations.append(video_dur if is_video else still_dur)
+        elif is_video and idx - 1 < len(extra_paths):
+            probed = _probe_duration(extra_paths[idx - 1])
+            seg_durations.append(probed if probed > 0 else video_dur)
+        else:
+            seg_durations.append(still_dur)
+
+    cumulative = seg_durations[0]
     prev_label = "[_xv0]"
+
+    # Determine if we'll have audio crossfade — if so, we need explicit
+    # output labels + -map flags because ffmpeg can't auto-bind two
+    # unlabeled outputs.
+    has_audio = bool(p.get("_has_embedded_audio", False))
+    audio_segments = []
+    if has_audio:
+        for i, (idx, is_video) in enumerate(segments):
+            if is_video:
+                audio_segments.append((i, idx))
+    need_map = has_audio and len(audio_segments) >= 2
 
     for i in range(1, total):
         next_label = f"[_xv{i}]"
@@ -404,48 +521,49 @@ def _f_xfade(p):
             )
             prev_label = out_label
         else:
-            # Last xfade: no output label (goes to default output)
-            parts.append(
-                f"{prev_label}{next_label}xfade=transition={transition}:"
-                f"duration={trans_dur}:offset={offset}"
-            )
-        cumulative += still_dur - trans_dur
+            # Last xfade — label the output when audio crossfade follows
+            if need_map:
+                parts.append(
+                    f"{prev_label}{next_label}xfade=transition={transition}:"
+                    f"duration={trans_dur}:offset={offset}[_vout]"
+                )
+            else:
+                parts.append(
+                    f"{prev_label}{next_label}xfade=transition={transition}:"
+                    f"duration={trans_dur}:offset={offset}"
+                )
+        cumulative += seg_durations[i] - trans_dur
 
     # Step 3: Audio crossfade (when audio is embedded in video inputs)
-    has_audio = bool(p.get("_has_embedded_audio", False))
-    if has_audio:
-        # Filter to only segments that actually have an audio stream
-        audio_segments = []
-        for i, (idx, is_video) in enumerate(segments):
-            if is_video:
-                audio_segments.append((i, idx))
-        # Only do audio crossfade if at least 2 segments have audio
-        if len(audio_segments) >= 2:
-            # Prepare audio streams (only for segments with audio)
-            for ai, (orig_i, idx) in enumerate(audio_segments):
+    opts = []
+    if need_map:
+        # Prepare audio streams (only for segments with audio)
+        for ai, (orig_i, idx) in enumerate(audio_segments):
+            parts.append(
+                f"[{idx}:a]aresample=44100,asetpts=PTS-STARTPTS[_xa{ai}]"
+            )
+
+        # Chain acrossfade transitions
+        n_audio = len(audio_segments)
+        prev_alabel = "[_xa0]"
+        for i in range(1, n_audio):
+            next_alabel = f"[_xa{i}]"
+            if i < n_audio - 1:
+                out_alabel = f"[_xaf{i}]"
                 parts.append(
-                    f"[{idx}:a]aresample=44100,asetpts=PTS-STARTPTS[_xa{ai}]"
+                    f"{prev_alabel}{next_alabel}acrossfade=d={trans_dur}:"
+                    f"c1=tri:c2=tri{out_alabel}"
+                )
+                prev_alabel = out_alabel
+            else:
+                parts.append(
+                    f"{prev_alabel}{next_alabel}acrossfade=d={trans_dur}:"
+                    f"c1=tri:c2=tri[_aout]"
                 )
 
-            # Chain acrossfade transitions
-            n_audio = len(audio_segments)
-            prev_alabel = "[_xa0]"
-            for i in range(1, n_audio):
-                next_alabel = f"[_xa{i}]"
-                if i < n_audio - 1:
-                    out_alabel = f"[_xaf{i}]"
-                    parts.append(
-                        f"{prev_alabel}{next_alabel}acrossfade=d={trans_dur}:"
-                        f"c1=tri:c2=tri{out_alabel}"
-                    )
-                    prev_alabel = out_alabel
-                else:
-                    parts.append(
-                        f"{prev_alabel}{next_alabel}acrossfade=d={trans_dur}:"
-                        f"c1=tri:c2=tri"
-                    )
+        opts = ["-map", "[_vout]", "-map", "[_aout]"]
 
-    return [], [], [], ";".join(parts)
+    return [], [], opts, ";".join(parts)
 
 
 def _f_split_screen(p):
@@ -528,12 +646,16 @@ def _f_animated_overlay(p):
     if n < 1:
         return [], [], [], ""
 
+    # Determine the ffmpeg input index for the overlay image
+    image_input_indices = p.get("_image_input_indices", [])
+    ovl_idx = image_input_indices[0] if image_input_indices else 1
+
     # Scale the overlay image relative to main video width
-    # [0:v] = main video, [1:v] = overlay image
+    # [0:v] = main video, [ovl_idx:v] = overlay image
     fc_parts = []
 
     # Apply opacity to overlay if < 1.0
-    ovl_prep = f"[1:v]scale=iw*{scale}:ih*{scale}"
+    ovl_prep = f"[{ovl_idx}:v]scale=iw*{scale}:ih*{scale}"
     if opacity < 1.0:
         ovl_prep += f",format=rgba,colorchannelmixer=aa={opacity}"
     ovl_prep += "[_ovl]"
@@ -563,49 +685,88 @@ def _f_animated_overlay(p):
 def _f_text_overlay(p):
     """Draw text on the video using ffmpeg's drawtext filter.
 
-    Parameters:
+    Parameters (matching skill definition):
         text:       Text to display (required)
-        preset:     Style preset: title, subtitle, lower_third, caption (default "title")
+        position:   Position: center, top, bottom, top_left, top_right,
+                    bottom_left, bottom_right (default "center")
+        color:      Text color name or hex (default "white")
+        size:       Font size in pixels (default 48)
         font:       Font family (default "sans")
-        fontsize:   Font size in pixels (default auto based on preset)
-        fontcolor:  Text color (default "white")
-        borderw:    Text border/outline width (default 2)
-        bordercolor: Border color (default "black")
-        x:          Horizontal position expression (default auto)
-        y:          Vertical position expression (default auto)
+        border:     Add black border/shadow (default True)
+        blink:      Blink/flash interval in seconds (0 = no blink, default 0)
         start:      Start time in seconds (default 0)
         duration:   Display duration in seconds (0 = entire video, default 0)
         background: Background box color (default "" = none)
+
+    Legacy parameters (also accepted):
+        fontcolor, fontsize, preset, borderw, bordercolor, x, y
     """
     text = sanitize_text_param(str(p.get("text", "Hello")))
-    preset = str(p.get("preset", "title")).lower()
     font = sanitize_text_param(str(p.get("font", "sans")))
-    fontcolor = sanitize_text_param(str(p.get("fontcolor", "white")))
-    borderw = int(p.get("borderw", 2))
+
+    # Color: prefer 'color' (skill definition), fall back to 'fontcolor' (legacy)
+    color = p.get("color") or p.get("font_color") or p.get("fontcolor") or "white"
+    color = sanitize_text_param(str(color))
+
+    # Size: prefer 'size' (skill definition), fall back to 'fontsize' (legacy)
+    fontsize = int(p.get("size", p.get("fontsize", 48)))
+
+    # Border
+    border = p.get("border", True)
+    if isinstance(border, str):
+        border = border.lower() not in ("false", "0", "no", "off")
+    borderw = int(p.get("borderw", 2 if border else 0))
     bordercolor = sanitize_text_param(str(p.get("bordercolor", "black")))
+
     bg = sanitize_text_param(str(p.get("background", "")))
     start = float(p.get("start", 0))
     duration = float(p.get("duration", 0))
+    blink = float(p.get("blink", 0))
 
-    # Preset defaults
-    preset_config = {
-        "title": {"fontsize": 72, "x": "(w-text_w)/2", "y": "(h-text_h)/2"},
-        "subtitle": {"fontsize": 36, "x": "(w-text_w)/2", "y": "h-text_h-60"},
-        "lower_third": {"fontsize": 32, "x": "40", "y": "h-text_h-40"},
-        "caption": {"fontsize": 28, "x": "(w-text_w)/2", "y": "h-text_h-30"},
-        "top": {"fontsize": 48, "x": "(w-text_w)/2", "y": "40"},
+    # Margin for edge positions
+    margin_x = int(p.get("margin_x", 24))
+    margin_y = int(p.get("margin_y", 24))
+
+    # Position mapping — "position" param (skill definition) takes priority,
+    # then fall back to "preset" (legacy) or explicit x/y.
+    position = p.get("position", "").lower()
+    preset = str(p.get("preset", "")).lower()
+
+    _POSITION_MAP = {
+        "center":       ("(w-text_w)/2", "(h-text_h)/2"),
+        "top":          ("(w-text_w)/2", str(margin_y)),
+        "bottom":       ("(w-text_w)/2", f"h-text_h-{margin_y}"),
+        "top_left":     (str(margin_x), str(margin_y)),
+        "top_right":    (f"w-text_w-{margin_x}", str(margin_y)),
+        "bottom_left":  (str(margin_x), f"h-text_h-{margin_y}"),
+        "bottom_right": (f"w-text_w-{margin_x}", f"h-text_h-{margin_y}"),
     }
-    cfg = preset_config.get(preset, preset_config["title"])
-    fontsize = int(p.get("fontsize", cfg["fontsize"]))
-    x_pos = sanitize_text_param(str(p.get("x", cfg["x"])))
-    y_pos = sanitize_text_param(str(p.get("y", cfg["y"])))
+    _PRESET_MAP = {
+        "title":       "center",
+        "subtitle":    "bottom",
+        "lower_third": "bottom_left",
+        "caption":     "bottom",
+        "top":         "top",
+    }
+
+    # Resolve position
+    if position in _POSITION_MAP:
+        x_pos, y_pos = _POSITION_MAP[position]
+    elif preset in _PRESET_MAP:
+        x_pos, y_pos = _POSITION_MAP[_PRESET_MAP[preset]]
+    else:
+        x_pos, y_pos = _POSITION_MAP["center"]
+
+    # Allow explicit x/y override
+    x_pos = sanitize_text_param(str(p.get("x", x_pos)))
+    y_pos = sanitize_text_param(str(p.get("y", y_pos)))
 
     # Build drawtext filter
     dt = (
         f"drawtext=text='{text}':"
         f"font='{font}':"
         f"fontsize={fontsize}:"
-        f"fontcolor={fontcolor}:"
+        f"fontcolor={color}:"
         f"borderw={borderw}:"
         f"bordercolor={bordercolor}:"
         f"x={x_pos}:y={y_pos}"
@@ -615,12 +776,24 @@ def _f_text_overlay(p):
     if bg:
         dt += f":box=1:boxcolor={bg}:boxborderw=8"
 
-    # Time-based enable/disable
-    if duration > 0:
-        end = start + duration
-        dt += f":enable='between(t,{start},{end})'"
-    elif start > 0:
-        dt += f":enable='gte(t,{start})'"
+    # Blink/flash effect — toggle visibility with enable expression
+    if blink > 0:
+        # Use lt(mod(t,interval),interval/2) to create on/off flashing
+        half = blink / 2
+        dt += f":enable='lt(mod(t\\,{blink})\\,{half})'"
+    elif p.get("enable"):
+        # LLM may pass a raw ffmpeg enable expression directly
+        enable_expr = str(p["enable"]).strip("'\"")
+        # Escape commas for ffmpeg filter graph
+        enable_expr = enable_expr.replace(",", "\\,")
+        dt += f":enable='{enable_expr}'"
+    else:
+        # Time-based enable/disable (no blink)
+        if duration > 0:
+            end = start + duration
+            dt += f":enable='between(t,{start},{end})'"
+        elif start > 0:
+            dt += f":enable='gte(t,{start})'"
 
     return [dt], [], []
 
@@ -820,42 +993,70 @@ def _f_lower_third(p):
 
 
 def _f_typewriter_text(p):
-    """Character-by-character reveal using text length + enable timing."""
+    """Character-by-character typewriter text reveal using progressive prefixes.
+
+    Creates one drawtext per prefix length — each shows progressively more
+    characters and is enabled only during its time window.  This avoids the
+    per-character positioning issues and keeps the text properly aligned.
+    """
     text = sanitize_text_param(str(p.get("text", "Hello World")))
-    fontsize = int(p.get("fontsize", 48))
-    fontcolor = sanitize_text_param(str(p.get("fontcolor", "white")))
+    fontsize = int(p.get("size", p.get("fontsize", 48)))
+    fontcolor = p.get("color") or p.get("font_color") or p.get("fontcolor") or "white"
+    fontcolor = sanitize_text_param(str(fontcolor))
     speed = float(p.get("speed", 5))  # chars per second
     start = float(p.get("start", 0))
-    x_pos = sanitize_text_param(str(p.get("x", "(w-text_w)/2")))
-    y_pos = sanitize_text_param(str(p.get("y", "(h-text_h)/2")))
+    font = sanitize_text_param(str(p.get("font", "sans")))
+    borderw = int(p.get("borderw", 2))
+    bordercolor = sanitize_text_param(str(p.get("bordercolor", "black")))
 
-    # Build one drawtext per character with staggered enable times
+    # Position (same logic as text_overlay)
+    margin_x, margin_y = 24, 24
+    position = p.get("position", "center").lower()
+    _POS = {
+        "center":       ("(w-text_w)/2", "(h-text_h)/2"),
+        "top":          ("(w-text_w)/2", str(margin_y)),
+        "bottom":       ("(w-text_w)/2", f"h-text_h-{margin_y}"),
+        "top_left":     (str(margin_x), str(margin_y)),
+        "top_right":    (f"w-text_w-{margin_x}", str(margin_y)),
+        "bottom_left":  (str(margin_x), f"h-text_h-{margin_y}"),
+        "bottom_right": (f"w-text_w-{margin_x}", f"h-text_h-{margin_y}"),
+    }
+    x_pos, y_pos = _POS.get(position, _POS["center"])
+    x_pos = sanitize_text_param(str(p.get("x", x_pos)))
+    y_pos = sanitize_text_param(str(p.get("y", y_pos)))
+
+    # Build progressive prefix drawtexts.
+    # Each prefix is shown during its time window: [char_start, next_char_start).
+    # The final complete text stays on screen indefinitely.
     filters = []
-    for i, ch in enumerate(text):
-        if ch == ' ':
-            continue  # spaces handled by positioning
-        char_start = start + i / speed
-        ch_safe = sanitize_text_param(ch)
-        char_x = f"{x_pos}+{i}*{fontsize}*0.6"
-        dt = (
-            f"drawtext=text='{ch_safe}':"
-            f"fontsize={fontsize}:"
-            f"fontcolor={fontcolor}:"
-            f"borderw=2:bordercolor=black:"
-            f"x={char_x}:y={y_pos}:"
-            f"enable='gte(t,{char_start})'"
-        )
-        filters.append(dt)
+    chars = list(text)
+    total = len(chars)
 
-    # If no chars, return a simple drawtext
-    if not filters:
+    if total == 0:
+        return [f"drawtext=text='':fontsize={fontsize}:fontcolor={fontcolor}:x={x_pos}:y={y_pos}"], [], []
+
+    for n in range(1, total + 1):
+        prefix = sanitize_text_param(text[:n])
+        t_start = start + (n - 1) / speed
+
         dt = (
-            f"drawtext=text='{text}':"
+            f"drawtext=text='{prefix}':"
+            f"font='{font}':"
             f"fontsize={fontsize}:"
             f"fontcolor={fontcolor}:"
+            f"borderw={borderw}:bordercolor={bordercolor}:"
             f"x={x_pos}:y={y_pos}"
         )
-        filters = [dt]
+
+        if n < total:
+            # Show this prefix only until the next character appears
+            t_end = start + n / speed
+            dt += f":enable='between(t\\,{t_start:.4f}\\,{t_end:.4f})'"
+        else:
+            # Final complete text — stays visible from its start time onward
+            dt += f":enable='gte(t\\,{t_start:.4f})'"
+
+        filters.append(dt)
 
     return filters, [], []
 

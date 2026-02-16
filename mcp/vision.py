@@ -799,3 +799,137 @@ def _generate_audio_recommendations(analysis: dict) -> list[str]:
 
     return recs
 
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Audio visualization for verification
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+def generate_audio_visualization(
+    video_path: str,
+    output_dir: str | Path | None = None,
+) -> dict:
+    """Generate waveform and spectrogram images from a video's audio.
+
+    Uses ffmpeg's ``showwavespic`` and ``showspectrumpic`` filters to
+    create PNG images that visually represent the audio characteristics.
+    These can be sent to a vision LLM alongside video frames during
+    output verification so the LLM can "see" audio effects like fades,
+    normalization, EQ changes, and silence.
+
+    Args:
+        video_path: Path to the video/audio file.
+        output_dir: Directory to save PNGs. Defaults to a temp folder
+                     under ``_vision_frames/``.
+
+    Returns:
+        Dictionary with:
+        - waveform_path: Path to waveform PNG (or None on failure)
+        - spectrogram_path: Path to spectrogram PNG (or None on failure)
+        - audio_metrics: Dict with loudness/volume text summary
+    """
+    video_path = str(video_path)
+    if not Path(video_path).exists():
+        return {"error": f"File not found: {video_path}"}
+
+    # Check for audio stream first
+    props = _get_audio_properties(video_path)
+    if not props.get("has_audio"):
+        return {
+            "waveform_path": None,
+            "spectrogram_path": None,
+            "audio_metrics": {"has_audio": False},
+        }
+
+    # Resolve output directory
+    if output_dir is None:
+        import uuid
+        node_dir = Path(__file__).resolve().parent.parent
+        run_id = uuid.uuid4().hex[:8]
+        out = node_dir / "_vision_frames" / f"audio_{run_id}"
+    else:
+        out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    waveform_path: str | None = None
+    spectrogram_path: str | None = None
+
+    # --- Waveform (amplitude over time) ---
+    wf_file = out / "waveform.png"
+    try:
+        cmd_wf = [
+            "ffmpeg", "-y", "-hide_banner",
+            "-i", video_path,
+            "-filter_complex",
+            (
+                "[0:a]showwavespic=s=400x120"
+                ":colors=0x00ccff|0x0088cc"
+                ":scale=sqrt"
+                ":draw=full[wf]"
+            ),
+            "-map", "[wf]",
+            "-frames:v", "1",
+            str(wf_file),
+        ]
+        result = subprocess.run(
+            cmd_wf, capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0 and wf_file.exists():
+            waveform_path = str(wf_file)
+        else:
+            logger.warning(
+                "Waveform generation failed: %s",
+                (result.stderr or "")[-200:],
+            )
+    except Exception as e:
+        logger.warning(f"Waveform generation error: {e}")
+
+    # --- Spectrogram (frequency over time) ---
+    spec_file = out / "spectrogram.png"
+    try:
+        cmd_spec = [
+            "ffmpeg", "-y", "-hide_banner",
+            "-i", video_path,
+            "-filter_complex",
+            (
+                "[0:a]showspectrumpic=s=400x120"
+                ":mode=combined"
+                ":color=intensity"
+                ":scale=log[sp]"
+            ),
+            "-map", "[sp]",
+            "-frames:v", "1",
+            str(spec_file),
+        ]
+        result = subprocess.run(
+            cmd_spec, capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0 and spec_file.exists():
+            spectrogram_path = str(spec_file)
+        else:
+            logger.warning(
+                "Spectrogram generation failed: %s",
+                (result.stderr or "")[-200:],
+            )
+    except Exception as e:
+        logger.warning(f"Spectrogram generation error: {e}")
+
+    # --- Quick audio metrics summary ---
+    metrics: dict = {"has_audio": True, **props}
+    try:
+        volume = _analyze_volume(video_path, 0, 30)
+        if volume:
+            metrics["volume"] = volume
+        loudness = _analyze_loudness(video_path, 0, 30)
+        if loudness:
+            metrics["loudness"] = loudness
+    except Exception as e:
+        logger.warning(f"Audio metrics failed: {e}")
+
+    return {
+        "waveform_path": waveform_path,
+        "spectrogram_path": spectrogram_path,
+        "folder": str(out),
+        "audio_metrics": metrics,
+    }
+

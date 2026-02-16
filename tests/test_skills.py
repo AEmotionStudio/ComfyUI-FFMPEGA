@@ -831,3 +831,495 @@ class TestSkillComposer:
         vf_idx = args.index("-vf")
         assert "colorhold=" in args[vf_idx + 1], f"sin_city should map to colorhold: {args}"
 
+    # ---- Filter graph chaining tests (concat + overlay) ----
+
+    def test_concat_then_overlay_chains_filter_graph(self):
+        """concat + overlay_image must chain: overlay reads concat output, not [0:v]."""
+        composer = SkillComposer()
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+            extra_inputs=["/extra.mp4"],
+        )
+        pipeline.add_step("concat", {})
+        pipeline.add_step("overlay_image", {"position": "bottom-right", "scale": 0.15})
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        assert "filter_complex" in cmd_str, f"Expected filter_complex: {cmd_str}"
+        assert "concat=n=2" in cmd_str, f"Expected concat: {cmd_str}"
+        assert "overlay=" in cmd_str, f"Expected overlay: {cmd_str}"
+        # The concat output should be labeled, and overlay should use it
+        assert "[_pipe_0]" in cmd_str, (
+            f"Concat output should be labeled [_pipe_0] for chaining: {cmd_str}"
+        )
+        # The overlay should NOT reference [0:v] (it should use [_pipe_0] instead)
+        # Count [0:v] occurrences — some are from concat scaling, which is fine.
+        # But the overlay's base should not be [0:v].
+        assert "[_pipe_0]" in cmd_str
+
+    def test_overlay_image_normalizes_underscore_position(self):
+        """overlay_image should accept bottom_right (underscore) as bottom-right."""
+        composer = SkillComposer()
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+            extra_inputs=["/logo.png"],
+        )
+        pipeline.add_step("overlay_image", {"position": "bottom_right", "scale": 0.15})
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        # Should produce the bottom-right overlay position (W-w-10:H-h-10)
+        assert "W-w-" in cmd_str, (
+            f"Expected bottom-right position expression but got: {cmd_str}"
+        )
+        assert "H-h-" in cmd_str, (
+            f"Expected bottom-right position expression but got: {cmd_str}"
+        )
+
+    # ---- Concat + audio filter folding tests ----
+
+    def test_concat_with_audio_then_normalize_folds_into_fc(self):
+        """concat (a=1) + normalize must fold loudnorm into filter_complex, NOT -af."""
+        composer = SkillComposer()
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+            extra_inputs=["/extra.mp4"],
+        )
+        pipeline.metadata["_has_embedded_audio"] = True
+        pipeline.add_step("concat", {})
+        pipeline.add_step("normalize", {})
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+        args = command.to_args()
+
+        assert "filter_complex" in cmd_str, f"Expected filter_complex: {cmd_str}"
+        assert "concat=n=2:v=1:a=1" in cmd_str, f"Expected audio concat: {cmd_str}"
+        # loudnorm MUST be inside filter_complex, NOT as -af
+        assert "loudnorm" in cmd_str, f"Expected loudnorm in command: {cmd_str}"
+        assert "-af" not in args, (
+            f"loudnorm must NOT be emitted via -af when concat produces "
+            f"audio — -af conflicts with -filter_complex audio output: {args}"
+        )
+        # Must have -map flags to route the correct streams
+        assert "-map" in args, f"Expected -map flags for stream routing: {args}"
+
+    def test_concat_overlay_normalize_quality_full_pipeline(self):
+        """Full error scenario: concat + overlay + normalize + web_optimize + quality.
+
+        This is the exact pipeline from the failing prompt:
+        'Concatenate all video segments, overlay the logo in the bottom right
+        at 15% scale, normalize audio, compress for web'
+        """
+        composer = SkillComposer()
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+            extra_inputs=["/logo.png", "/extra.mp4"],
+        )
+        pipeline.metadata["_has_embedded_audio"] = True
+        pipeline.metadata["_input_fps"] = 24
+        pipeline.metadata["_video_duration"] = 8.0
+        pipeline.add_step("concat", {})
+        pipeline.add_step("overlay_image", {
+            "position": "bottom-right",
+            "scale": 0.15,
+            "image_source": "image_a",
+        })
+        pipeline.add_step("normalize", {})
+        pipeline.add_step("web_optimize", {})
+        pipeline.add_step("quality", {"crf": 23, "preset": "medium"})
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+        args = command.to_args()
+
+        # Core structure checks
+        assert "filter_complex" in cmd_str, f"Expected filter_complex: {cmd_str}"
+        assert "concat=" in cmd_str, f"Expected concat: {cmd_str}"
+        assert "overlay=" in cmd_str, f"Expected overlay: {cmd_str}"
+
+        # Audio filter folding: loudnorm MUST be in filter_complex
+        assert "loudnorm" in cmd_str, f"Expected loudnorm: {cmd_str}"
+        assert "-af" not in args, (
+            f"-af must NOT be present when concat produces audio "
+            f"inside filter_complex: {args}"
+        )
+
+        # Stream routing
+        assert "-map" in args, f"Expected -map for stream routing: {args}"
+
+        # Encoding options should be present
+        assert "-c:v" in args, f"Expected video codec: {args}"
+        assert "-movflags" in args, f"Expected faststart: {args}"
+
+        # No args should contain spaces (regression check)
+        for arg in args:
+            assert " " not in arg, (
+                f"FFMPEG arg contains embedded space: '{arg}'"
+            )
+
+    def test_concat_with_audio_no_audio_filter_no_map(self):
+        """concat (a=1) without audio filters should NOT add -map flags."""
+        composer = SkillComposer()
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+            extra_inputs=["/extra.mp4"],
+        )
+        pipeline.metadata["_has_embedded_audio"] = True
+        pipeline.add_step("concat", {})
+
+        command = composer.compose(pipeline)
+        args = command.to_args()
+
+        # No -map needed when there are no audio filters to fold
+        assert "-map" not in args, (
+            f"-map should NOT be present when no audio filters are folded: {args}"
+        )
+        # Should NOT have -af either
+        assert "-af" not in args, f"Unexpected -af: {args}"
+
+    def test_concat_excludes_overlay_reserved_input(self):
+        """concat should skip inputs reserved by overlay_image's image_source.
+
+        With inputs: video (idx 0), logo.png (idx 1), extra.mp4 (idx 2)
+        and overlay_image using image_source=image_a (idx 1),
+        concat should only join idx 0 + idx 2 (n=2), NOT include idx 1.
+        """
+        composer = SkillComposer()
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+            extra_inputs=["/logo.png", "/extra.mp4"],
+        )
+        pipeline.metadata["_has_embedded_audio"] = True
+        pipeline.add_step("concat", {})
+        pipeline.add_step("overlay_image", {
+            "position": "bottom-right",
+            "scale": 0.15,
+            "image_source": "image_a",
+        })
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        # Concat should use n=2 (main video + extra.mp4), NOT n=3
+        assert "concat=n=2" in cmd_str, (
+            f"Expected concat=n=2 (logo excluded) but got: {cmd_str}"
+        )
+        # The overlay should still reference the logo at [1:v]
+        assert "[1:v]format=rgba" in cmd_str, (
+            f"Overlay should still reference [1:v] for the logo: {cmd_str}"
+        )
+
+    def test_animated_overlay_bounce_no_inner_quotes(self):
+        """animated_overlay motion expressions must not contain single quotes.
+
+        Single quotes inside the filter_complex string conflict with
+        shlex.quote() escaping, producing broken sequences like '"'"'.
+        """
+        composer = SkillComposer()
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+            extra_inputs=["/logo.png"],
+        )
+        pipeline.add_step("animated_overlay", {
+            "animation": "bounce",
+            "scale": 0.15,
+            "opacity": 0.5,
+        })
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        # No single quotes inside the filter expression
+        assert "'" not in cmd_str.split("-filter_complex")[-1].split("-c:")[0] if "-c:" in cmd_str else True, (
+            f"Filter expression should not contain single quotes: {cmd_str}"
+        )
+        # Should contain overlay with eval=frame
+        assert "overlay=" in cmd_str, f"Expected overlay: {cmd_str}"
+        assert "eval=frame" in cmd_str, f"Expected eval=frame: {cmd_str}"
+        # Should have bounce expression (abs, mod)
+        assert "abs(mod(" in cmd_str, f"Expected bounce expression: {cmd_str}"
+
+    def test_concat_excludes_animated_overlay_input(self):
+        """concat should skip image_a when animated_overlay is also in pipeline.
+
+        animated_overlay always uses [1:v], so concat should exclude idx 1.
+        """
+        composer = SkillComposer()
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+            extra_inputs=["/logo.png", "/extra.mp4"],
+        )
+        pipeline.metadata["_has_embedded_audio"] = True
+        pipeline.add_step("concat", {})
+        pipeline.add_step("animated_overlay", {
+            "animation": "bounce",
+            "scale": 0.15,
+        })
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        # concat should use n=2 (main + extra.mp4), NOT n=3
+        assert "concat=n=2" in cmd_str, (
+            f"Expected concat=n=2 (logo excluded) but got: {cmd_str}"
+        )
+
+    def test_concat_animated_overlay_with_audio_maps_both_pads(self):
+        """concat(a=1) + animated_overlay needs -map for both video and audio.
+
+        When concat produces dual pads [_pipe_0_v][_pipe_0_a] and
+        animated_overlay chains from the video pad, the audio pad
+        must still be mapped or ffmpeg errors with 'Invalid argument'.
+        """
+        composer = SkillComposer()
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+            extra_inputs=["/logo.png", "/extra.mp4"],
+        )
+        pipeline.metadata["_has_embedded_audio"] = True
+        pipeline.add_step("concat", {})
+        pipeline.add_step("animated_overlay", {
+            "animation": "bounce",
+            "scale": 0.15,
+            "opacity": 0.5,
+        })
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        # Must have -map for both video and audio outputs
+        assert "-map" in cmd_str, (
+            f"Expected -map flags for dual pads but got: {cmd_str}"
+        )
+        assert "[_vfinal]" in cmd_str, (
+            f"Expected [_vfinal] label for video output: {cmd_str}"
+        )
+        assert "[_pipe_0_a]" in cmd_str, (
+            f"Expected [_pipe_0_a] label for audio output: {cmd_str}"
+        )
+        # concat should use n=2 (logo excluded by animated_overlay)
+        assert "concat=n=2" in cmd_str, (
+            f"Expected concat=n=2: {cmd_str}"
+        )
+        # overlay expression should not have inner quotes
+        assert "eval=frame" in cmd_str, (
+            f"Expected eval=frame in overlay: {cmd_str}"
+        )
+
+    def test_concat_overlay_image_auto_infers_image_source(self):
+        """overlay_image without image_source should auto-infer it when alongside concat.
+
+        When the LLM doesn't specify image_source but overlay_image is
+        combined with concat, the composer should auto-detect the first
+        image input and exclude it from concat segments.
+        """
+        composer = SkillComposer()
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+            extra_inputs=["/logo.png", "/extra.mp4"],
+        )
+        pipeline.metadata["_has_embedded_audio"] = True
+        pipeline.add_step("concat", {})
+        pipeline.add_step("overlay_image", {
+            "scale": 0.15,
+            "opacity": 0.5,
+            # NOTE: no image_source specified — should be auto-inferred
+        })
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        # concat should use n=2 (logo at idx 1 auto-excluded)
+        assert "concat=n=2" in cmd_str, (
+            f"Expected concat=n=2 (auto-excluded logo) but got: {cmd_str}"
+        )
+        # overlay should only reference [1:v] (the logo), not [2:v]
+        assert "[1:v]" in cmd_str, (
+            f"Expected [1:v] for logo overlay: {cmd_str}"
+        )
+
+    def test_param_alias_resolves_bitrate_to_kbps(self):
+        """audio_bitrate with bitrate=128 should resolve to kbps=128."""
+        composer = SkillComposer()
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+        )
+        pipeline.add_step("audio_bitrate", {"bitrate": 128})
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        assert "-b:a 128k" in cmd_str, (
+            f"Expected -b:a 128k from alias resolution but got: {cmd_str}"
+        )
+
+    def test_param_alias_strips_unit_suffix(self):
+        """audio_bitrate with bitrate='128k' should strip suffix and produce kbps=128."""
+        composer = SkillComposer()
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+        )
+        pipeline.add_step("audio_bitrate", {"bitrate": "128k"})
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        assert "-b:a 128k" in cmd_str, (
+            f"Expected -b:a 128k from unit suffix strip but got: {cmd_str}"
+        )
+
+    def test_noise_reduction_default_amount(self):
+        """noise_reduction with defaults should produce nr=12 (not 1)."""
+        composer = SkillComposer()
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+        )
+        pipeline.add_step("noise_reduction", {})
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        assert "nr=12" in cmd_str, (
+            f"Expected nr=12 (default) but got: {cmd_str}"
+        )
+        assert "afftdn=" in cmd_str, (
+            f"Expected afftdn filter but got: {cmd_str}"
+        )
+
+    def test_beat_sync_with_audio_filter_keeps_audio(self):
+        """beat_sync + bass should NOT strip audio — audio filters override -an."""
+        composer = SkillComposer()
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+        )
+        pipeline.add_step("beat_sync", {"threshold": 0.15})
+        pipeline.add_step("bass", {"gain": 8.0, "frequency": 100})
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        assert "-an" not in cmd_str, (
+            f"Expected NO -an when audio filters exist: {cmd_str}"
+        )
+        assert "bass=g=8" in cmd_str, (
+            f"Expected bass filter preserved: {cmd_str}"
+        )
+
+    def test_beat_sync_alone_strips_audio(self):
+        """beat_sync without audio filters should still strip audio (-an)."""
+        composer = SkillComposer()
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+        )
+        pipeline.add_step("beat_sync", {"threshold": 0.15})
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        assert "-an" in cmd_str, (
+            f"Expected -an when no audio filters: {cmd_str}"
+        )
+
+    def test_replace_audio_maps_second_input(self):
+        """replace_audio with audio filters routes [1:a] through filter_complex."""
+        composer = SkillComposer()
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+            extra_inputs=["/audio.wav"],
+        )
+        pipeline.add_step("replace_audio", {})
+        pipeline.add_step("normalize", {})
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        assert "-map 0:v" in cmd_str, (
+            f"Expected -map 0:v: {cmd_str}"
+        )
+        # Audio filters must route through [1:a] in filter_complex,
+        # NOT via -af (which targets input 0's audio)
+        assert "[1:a]" in cmd_str, (
+            f"Expected [1:a] in filter_complex: {cmd_str}"
+        )
+        assert "[_aout]" in cmd_str, (
+            f"Expected [_aout] output label: {cmd_str}"
+        )
+        assert "loudnorm" in cmd_str, (
+            f"Expected loudnorm filter preserved: {cmd_str}"
+        )
+        # Direct -map 1:a should NOT be present (replaced by -map [_aout])
+        assert "-map 1:a" not in cmd_str, (
+            f"Direct -map 1:a should be replaced by -map [_aout]: {cmd_str}"
+        )
+
+    def test_replace_audio_alone_maps_directly(self):
+        """replace_audio without audio filters uses direct -map 1:a."""
+        composer = SkillComposer()
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+            extra_inputs=["/audio.wav"],
+        )
+        pipeline.add_step("replace_audio", {})
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        assert "-map 0:v" in cmd_str, f"Expected -map 0:v: {cmd_str}"
+        assert "-map 1:a" in cmd_str, f"Expected -map 1:a: {cmd_str}"
+        assert "-shortest" in cmd_str, f"Expected -shortest: {cmd_str}"
+
+    def test_replace_audio_with_video_and_audio_filters(self):
+        """replace_audio with video+audio filters folds both into filter_complex."""
+        composer = SkillComposer()
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+            extra_inputs=["/audio.wav"],
+        )
+        pipeline.add_step("replace_audio", {})
+        pipeline.add_step("monochrome", {})  # video filter
+        pipeline.add_step("normalize", {})     # audio filter
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        # Both video and audio must be in filter_complex (no -vf allowed)
+        assert "filter_complex" in cmd_str, (
+            f"Expected filter_complex: {cmd_str}"
+        )
+        assert "[0:v]" in cmd_str, (
+            f"Expected [0:v] in filter_complex for video chain: {cmd_str}"
+        )
+        assert "[1:a]" in cmd_str, (
+            f"Expected [1:a] in filter_complex for audio chain: {cmd_str}"
+        )
+        assert "[_vout]" in cmd_str, (
+            f"Expected [_vout] video output label: {cmd_str}"
+        )
+        assert "[_aout]" in cmd_str, (
+            f"Expected [_aout] audio output label: {cmd_str}"
+        )
+        # No -vf should appear (would conflict with filter_complex)
+        assert " -vf " not in cmd_str, (
+            f"-vf must not appear when filter_complex is used: {cmd_str}"
+        )

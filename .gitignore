@@ -92,6 +92,8 @@ output/
 
 # Debug/error notes
 Errors.md
+Agent_Analysis.md
+command_log.md
 
 # Package manager lock files
 uv.lock

@@ -155,9 +155,7 @@ class MediaConverter:
         if not ffmpeg_bin:
             raise RuntimeError("ffmpeg not found in PATH")
 
-        # Optimization: convert to uint8 in torch (faster, avoids float64 intermediate in numpy)
-        frames = (images * 255.0).clamp(0, 255).to(torch.uint8).cpu().numpy()
-        h, w = frames.shape[1], frames.shape[2]
+        h, w = images.shape[1], images.shape[2]
 
         tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
         tmp.close()
@@ -181,8 +179,15 @@ class MediaConverter:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
         )
-        # Optimization: direct write avoids tobytes() copy
-        proc.stdin.write(frames)
+        # Write frames in chunks to avoid materializing the entire tensor
+        # as a single numpy array (~1.2GB for 192 frames at 1080p).
+        CHUNK = 32
+        n_frames = images.shape[0]
+        for start in range(0, n_frames, CHUNK):
+            end = min(start + CHUNK, n_frames)
+            chunk = (images[start:end] * 255.0).clamp(0, 255).to(torch.uint8).cpu().numpy()
+            proc.stdin.write(chunk.tobytes())
+            del chunk
         proc.stdin.close()
         proc.wait()
 
@@ -228,11 +233,44 @@ class MediaConverter:
 
         return paths
 
-    def mux_audio(self, video_path: str, audio: dict) -> None:
+    @staticmethod
+    def _probe_media_duration(path: str) -> float:
+        """Probe duration of a media file in seconds.
+
+        Returns 0.0 if probing fails.
+        """
+        ffprobe_bin = shutil.which("ffprobe")
+        if not ffprobe_bin:
+            return 0.0
+        try:
+            result = subprocess.run(
+                [ffprobe_bin, "-v", "error", "-show_entries",
+                 "format=duration", "-of",
+                 "default=noprint_wrappers=1:nokey=1", path],
+                capture_output=True, text=True, check=True,
+            )
+            return float(result.stdout.strip())
+        except Exception:
+            return 0.0
+
+    def mux_audio(
+        self, video_path: str, audio: dict, audio_mode: str = "loop",
+    ) -> None:
         """Mux a ComfyUI AUDIO dict into an existing video file.
 
         Writes the audio waveform to a temp WAV, then combines it with
         the video using ffmpeg, replacing the file in-place.
+
+        Args:
+            video_path: Path to the video file (replaced in-place).
+            audio: ComfyUI AUDIO dict with 'waveform' and 'sample_rate'.
+            audio_mode: How to handle duration mismatch:
+                - "loop" (default): Loop audio with crossfade to match
+                  video length. If audio is longer, trim to video.
+                - "pad": Pad audio with silence to match video length.
+                  If audio is longer, the full audio plays.
+                - "trim": Use -shortest — output ends at the shorter
+                  stream (original behavior).
         """
         ffmpeg_bin = shutil.which("ffmpeg")
         if not ffmpeg_bin:
@@ -271,21 +309,58 @@ class MediaConverter:
                 capture_output=True,
             )
 
-            subprocess.run(
-                [
-                    ffmpeg_bin, "-y",
-                    "-i", video_path,
-                    "-i", tmp_wav.name,
-                    "-map", "0:v",
-                    "-map", "1:a",
-                    "-c:v", "copy",
-                    "-c:a", "aac",
-                    "-shortest",
-                    tmp_out.name,
-                ],
-                capture_output=True, check=True,
-            )
+            # Build mux command based on audio_mode
+            cmd = [ffmpeg_bin, "-y"]
+            af_filters = []
 
+            if audio_mode == "loop":
+                # Probe durations to decide whether looping is needed
+                vid_dur = self._probe_media_duration(video_path)
+                aud_dur = self._probe_media_duration(tmp_wav.name)
+
+                if aud_dur > 0 and vid_dur > 0 and aud_dur < vid_dur:
+                    # Loop the audio enough times and add crossfade
+                    import math
+                    loops_needed = math.ceil(vid_dur / aud_dur)
+                    # -stream_loop N repeats N *additional* times
+                    cmd.extend(["-i", video_path])
+                    cmd.extend([
+                        "-stream_loop", str(loops_needed - 1),
+                        "-i", tmp_wav.name,
+                    ])
+                    # Crossfade at each loop boundary for smooth transitions
+                    xfade_dur = min(2.0, aud_dur * 0.25)  # 2s or 25% of clip
+                    af_filters.append(
+                        f"afade=t=out:st={aud_dur - xfade_dur}:d={xfade_dur}"
+                    )
+                    # Trim the looped audio to video duration
+                    af_filters.append(f"atrim=0:{vid_dur}")
+                    af_filters.append("asetpts=N/SR/TB")
+                else:
+                    # Audio is longer or equal — just trim to video
+                    cmd.extend(["-i", video_path, "-i", tmp_wav.name])
+                cmd.extend(["-map", "0:v", "-map", "1:a"])
+                cmd.extend(["-c:v", "copy", "-c:a", "aac"])
+                if af_filters:
+                    cmd.extend(["-af", ",".join(af_filters)])
+                cmd.extend(["-shortest", tmp_out.name])
+
+            elif audio_mode == "pad":
+                # Pad audio with silence to match video length
+                cmd.extend(["-i", video_path, "-i", tmp_wav.name])
+                cmd.extend(["-map", "0:v", "-map", "1:a"])
+                cmd.extend(["-c:v", "copy", "-c:a", "aac"])
+                cmd.extend(["-af", "apad"])
+                # Use -shortest so the padded audio stops at video end
+                cmd.extend(["-shortest", tmp_out.name])
+
+            else:  # trim
+                cmd.extend(["-i", video_path, "-i", tmp_wav.name])
+                cmd.extend(["-map", "0:v", "-map", "1:a"])
+                cmd.extend(["-c:v", "copy", "-c:a", "aac"])
+                cmd.extend(["-shortest", tmp_out.name])
+
+            subprocess.run(cmd, capture_output=True, check=True)
             shutil.move(tmp_out.name, video_path)
         except Exception:
             pass  # If muxing fails, keep the original video without audio
@@ -297,16 +372,24 @@ class MediaConverter:
                     except OSError:
                         pass
 
-    def mux_audio_mix(self, video_path: str, audio_dicts: list[dict]) -> None:
+    def mux_audio_mix(
+        self, video_path: str, audio_dicts: list[dict],
+        audio_mode: str = "loop",
+    ) -> None:
         """Mix multiple audio dicts together and mux into a video file.
 
         Uses ffmpeg's amix filter to blend all audio tracks into one,
         then replaces any existing audio in the video.
+
+        Args:
+            video_path: Path to the video file (replaced in-place).
+            audio_dicts: List of ComfyUI AUDIO dicts.
+            audio_mode: Duration mismatch handling (see mux_audio docs).
         """
         if not audio_dicts:
             return
         if len(audio_dicts) == 1:
-            self.mux_audio(video_path, audio_dicts[0])
+            self.mux_audio(video_path, audio_dicts[0], audio_mode=audio_mode)
             return
 
         ffmpeg_bin = shutil.which("ffmpeg")
@@ -355,7 +438,12 @@ class MediaConverter:
             n = len(tmp_wavs)
             # Build filter: mix all audio inputs together
             filter_inputs = "".join(f"[{i+1}:a]" for i in range(n))
-            amix_filter = f"{filter_inputs}amix=inputs={n}:duration=longest[aout]"
+
+            # Duration strategy for amix depends on audio_mode
+            if audio_mode == "pad":
+                amix_filter = f"{filter_inputs}amix=inputs={n}:duration=longest,apad[aout]"
+            else:
+                amix_filter = f"{filter_inputs}amix=inputs={n}:duration=longest[aout]"
 
             cmd.extend([
                 "-filter_complex", amix_filter,
@@ -393,6 +481,45 @@ class MediaConverter:
             return bool(probe.stdout.decode("utf-8", "backslashreplace").strip())
         except subprocess.CalledProcessError:
             return False
+
+    def add_silent_audio(self, video_path: str) -> None:
+        """Add a silent audio stream to a video-only file (in-place).
+
+        Uses ffmpeg's anullsrc filter to generate silence matching the
+        video duration. This ensures [idx:a] references work in concat/xfade
+        filter graphs where all inputs must have audio streams.
+        """
+        ffmpeg_bin = shutil.which("ffmpeg")
+        if not ffmpeg_bin:
+            return
+
+        tmp_out = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+        tmp_out.close()
+
+        try:
+            subprocess.run(
+                [
+                    ffmpeg_bin, "-y",
+                    "-i", video_path,
+                    "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+                    "-map", "0:v",
+                    "-map", "1:a",
+                    "-c:v", "copy",
+                    "-c:a", "aac",
+                    "-shortest",
+                    tmp_out.name,
+                ],
+                capture_output=True, check=True,
+            )
+            shutil.move(tmp_out.name, video_path)
+        except Exception:
+            pass  # If adding silence fails, keep the original video
+        finally:
+            if os.path.exists(tmp_out.name):
+                try:
+                    os.remove(tmp_out.name)
+                except OSError:
+                    pass
 
     @staticmethod
     def _silence() -> dict:

@@ -5,7 +5,7 @@
 **An AI-powered FFMPEG agent node for ComfyUI — edit videos with natural language.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-2.2.1-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-2.4.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-4-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 
@@ -20,37 +20,44 @@
 
 ---
 
-## 🚀 What's New in v2.3.0 (February 13, 2026)
+## 🚀 What's New in v2.4.0 (February 15, 2026)
 
-**Token Usage Tracking, LUT Color Grading & Vision System**
+**Pipeline Chaining, Animated Overlays & Zero-Memory Image Paths**
 
-*   **📊 Token Usage Tracking**: New opt-in `track_tokens` and `log_usage` toggles — monitor prompt/completion tokens, LLM calls, tool calls, and elapsed time per run. Supports persistent logging to `usage_log.jsonl`.
-*   **🎨 LUT Color Grading**: 8 bundled cinematic `.cube` LUT files (teal-orange, vintage, sci-fi, noir, golden hour, cross-process, bleach bypass, neutral). Drop custom LUTs into `luts/` for automatic discovery.
-*   **�️ Vision System**: New multimodal frame analysis — the agent extracts frames and "sees" the video to make better editing decisions.
-*   **🔊 Audio Analysis**: New `analyze_audio` tool — volume (dB), EBU R128 loudness (LUFS), and silence detection for smarter audio processing.
-*   **🤖 Real Token Stats**: Gemini CLI and Claude CLI now return native token counts via JSON output instead of estimates.
+*   **🖼️ Zero-Memory Image Paths**: Image inputs (`image_path_a/b/c`) are now passed as file paths instead of decoded tensors — keeping multi-GB images out of GPU memory while overlay/watermark handlers reference the correct ffmpeg index.
+*   **🎯 Overlay Animation**: `overlay_image` now supports `animation=bounce` (plus `float`, `scroll_*`, `slide_in`) — auto-delegates to `animated_overlay` with `eval=frame` expressions. No more static overlays when you ask for motion.
+*   **🔗 Pipeline Chaining Fixes**: Fixed filter graph chaining for multi-skill pipelines (xfade + overlay, concat + quality). Labeled outputs are now correctly replaced instead of appended, and duplicate `-map` flags are stripped.
+*   **🏗️ Handler Module Extraction**: Skill handlers extracted from monolithic `composer.py` into dedicated modules under `skills/handlers/` for better maintainability.
+*   **🔒 Security Hardening**: Extended FFMPEG parameter sanitization to width/height and text/spatial skills; restored path validation.
+*   **⚡ Performance**: `frames_to_tensor` pre-allocates memory instead of concatenating tensors incrementally.
+
+<details>
+<summary><b>Previous: v2.3.0 — Token Tracking, LUT Color Grading & Vision</b></summary>
+
+*   **📊 Token Usage Tracking**: Opt-in `track_tokens` and `log_usage` toggles — monitor prompt/completion tokens, LLM calls, tool calls, and elapsed time.
+*   **🎨 LUT Color Grading**: 8 bundled cinematic `.cube` LUT files. Drop custom LUTs into `luts/` for automatic discovery.
+*   **🖼️ Vision System**: Multimodal frame analysis — the agent extracts frames and "sees" the video.
+*   **🔊 Audio Analysis**: Volume (dB), EBU R128 loudness (LUFS), and silence detection.
+*   **🤖 Real Token Stats**: Gemini CLI and Claude CLI return native token counts via JSON output.
+
+</details>
 
 <details>
 <summary><b>Previous: v2.2.1 — Security Sandbox & CLI Vision</b></summary>
 
-*   **🔒 CLI Agent Sandbox**: All CLI agents sandboxed to the custom node directory — they can no longer access your home directory, SSH keys, or other projects.
-*   **👁️ Vision Frame Access**: CLI agents can read extracted video frames for visual analysis. Tested: Gemini ✅, Claude ✅, Cursor ✅, Qwen ❌ (upstream limitation).
-*   **📊 Gemini CLI Plans & Limits**: README documents free/paid tiers, available models, and rate limits.
+*   **🔒 CLI Agent Sandbox**: All CLI agents sandboxed to the custom node directory.
+*   **👁️ Vision Frame Access**: CLI agents read extracted video frames. Tested: Gemini ✅, Claude ✅, Cursor ✅, Qwen ❌.
+*   **📊 Gemini CLI Plans & Limits**: Free/paid tier comparison and rate limits.
 
 </details>
 
 <details>
 <summary><b>Previous: v2.2.0 — 200 Skills & Dynamic Inputs</b></summary>
 
-*   **🎯 200 Skills**: Expanded from 127 to **200 skills** — covering every category from professional audio processing to text animations, creative effects, and editing tools.
-*   **🔗 Dynamic Auto-Expanding Inputs**: Connect `image_a` → `image_b` appears → `image_c` appears, and so on. Same for `images_a/b/c...` (video) and `audio_a/b/c...`. No more fixed slot limits.
-*   **🎥 Concat & Transitions**: Concatenate segments with `concat`, or use `xfade` for 18 smooth transitions (fade, dissolve, wipe, pixelize, radial, slide...).
-*   **📺 Split Screen**: Side-by-side (`hstack`) or top-bottom (`vstack`) multi-video layout.
-*   **🎨 Animated Overlay**: Moving image overlay with 8 motion presets — scroll, float, bounce, slide.
-*   **📝 Text & Graphics**: Professional text overlays, animated titles, scrolling credits, news tickers, lower thirds, countdowns, karaoke-style text.
-*   **🔊 Professional Audio**: Broadcast-standard loudness normalization (EBU R128), background noise removal, de-reverb, audio crossfade, ducking, and more.
-*   **✂️ Editing Tools**: Picture-in-picture, region blur for privacy, logo removal, jump cuts, beat-synced cuts, frame extraction, and color matching.
-*   **🎆 Creative Effects**: Datamosh glitch art, radial blur, film grain overlay, and motion-interpolated frame rate conversion.
+*   **🎯 200 Skills**: Expanded to **200 skills** across all categories.
+*   **🔗 Dynamic Auto-Expanding Inputs**: Connect `image_a` → `image_b` appears, and so on.
+*   **🎥 Concat & Transitions**: 18 smooth transition types with `xfade`.
+*   **📺 Split Screen / 🎨 Animated Overlay / 📝 Text & Graphics / 🔊 Audio / ✂️ Editing / 🎆 Effects**
 
 </details>
 
@@ -572,7 +579,7 @@ FFMPEGA includes a comprehensive skill system with **200 operations** organized 
 | :--- | :--- |
 | `grid` | Arrange video + images in a grid layout (xstack). Auto-includes video as first cell. |
 | `slideshow` | Create slideshow from images with fade transitions. Optionally starts with the main video. |
-| `overlay_image` | Picture-in-picture / watermark overlay. Supports multiple overlays auto-placed in corners. |
+| `overlay_image` | Picture-in-picture / watermark overlay. Supports multiple overlays auto-placed in corners. Accepts `animation=bounce` for motion. |
 | `concat` | Concatenate video segments sequentially. Connect multiple videos/images to join them. |
 | `xfade` | Smooth transitions between segments — 18 types: fade, dissolve, wipe, pixelize, radial, etc. |
 | `split_screen` | Side-by-side (horizontal) or top-bottom (vertical) multi-video layout. |

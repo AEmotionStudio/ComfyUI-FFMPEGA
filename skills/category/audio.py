@@ -532,11 +532,12 @@ def register_skills(registry: SkillRegistry) -> None:
             SkillParameter(
                 name="amount",
                 type=ParameterType.FLOAT,
-                description="Noise reduction amount in dB (higher = stronger)",
+                description="Noise reduction strength in dB (12 = standard, 30 = aggressive, 1 = minimal — use at least 10 for audible effect)",
                 required=False,
                 default=12,
                 min_value=1,
                 max_value=50,
+                aliases=["strength", "level", "nr"],
             ),
         ],
         ffmpeg_template="afftdn=nf={floor}:nr={amount}:nt=w",

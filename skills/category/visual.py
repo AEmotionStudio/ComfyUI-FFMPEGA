@@ -406,12 +406,22 @@ def register_skills(registry: SkillRegistry) -> None:
                 required=False,
                 default=True,
             ),
+            SkillParameter(
+                name="blink",
+                type=ParameterType.FLOAT,
+                description="Blink/flash interval in seconds (0 = always visible, 1 = blink every 1s)",
+                required=False,
+                default=0,
+                min_value=0,
+                max_value=10,
+            ),
         ],
         examples=[
             "text_overlay:text=Hello World - Center text",
             "text_overlay:text=Subscribe!,position=bottom,color=yellow,size=72 - Large yellow text at bottom",
+            "text_overlay:text=REC,position=top_left,color=red,blink=1 - Blinking red REC indicator",
         ],
-        tags=["text", "title", "caption", "subtitle", "watermark", "label"],
+        tags=["text", "title", "caption", "subtitle", "watermark", "label", "blink", "flash"],
     ))
 
     # Invert/negative skill
