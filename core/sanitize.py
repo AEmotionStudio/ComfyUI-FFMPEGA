@@ -124,6 +124,18 @@ def validate_output_file_path(path: str) -> str:
         ValueError: If the path is invalid, contains traversal, or has
                     a disallowed extension.
     """
+    # Pre-check: file must have an extension
+    resolved = Path(path).resolve()
+    if not resolved.suffix:
+        raise ValueError(
+            f"Output file path must have an extension: {path}"
+        )
+    # Pre-check: provide output-specific error message for disallowed extensions
+    if resolved.suffix.lower() not in ALLOWED_EXTENSIONS:
+        raise ValueError(
+            f"Invalid output file extension: {resolved.suffix}. "
+            f"Allowed: {sorted(list(ALLOWED_EXTENSIONS))}"
+        )
     # Use validate_path with must_exist=False
     return validate_path(path, ALLOWED_EXTENSIONS, must_exist=False)
 

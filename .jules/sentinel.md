@@ -12,3 +12,8 @@
 **Vulnerability:** User-controlled coordinate parameters (like `x` and `y` in `drawtext`, `crop`, `pad`) were not sanitized, allowing attackers to inject arbitrary FFMPEG filter options by using the `:` delimiter (e.g., `x="0:fontfile='/etc/passwd'"`).
 **Learning:** Parameters expected to be mathematical expressions (like `(w-text_w)/2`) are still strings and can contain malicious delimiters. Simply casting to string is insufficient.
 **Prevention:** Apply `sanitize_text_param` to ALL user-supplied filter parameters. This function correctly escapes `:` and `,`, preventing argument injection while preserving valid expression syntax (assuming commas in expressions are also escaped, which FFMPEG requires).
+
+## 2026-02-16 - API Key Leakage via Streaming Error Paths
+**Vulnerability:** `APIConnector.generate_stream()` in `core/llm/api.py` did not sanitize API keys from HTTP error messages, unlike sibling methods `generate()` and `chat_with_tools()`. A failed streaming request could expose API keys via request headers in error messages.
+**Learning:** When adding new methods that make HTTP calls with auth headers, it's easy to forget the error-sanitization wrapper since the happy path works fine. The inconsistency arose because `generate_stream` had no try/except wrapper at all.
+**Prevention:** Whenever adding new HTTP-calling methods to API connectors, always include the try/except sanitization wrapper. Consider extracting the error-handling pattern into a shared utility.
