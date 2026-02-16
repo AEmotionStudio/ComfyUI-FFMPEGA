@@ -1118,6 +1118,48 @@ class TestSkillComposer:
             f"Expected eval=frame in overlay: {cmd_str}"
         )
 
+    def test_animated_overlay_multi_image_bounce(self):
+        """animated_overlay with 3 images should produce 3 scaled overlays chained together.
+
+        Each image gets a unique label ([_ovl0], [_ovl1], [_ovl2]),
+        unique motion speed, and chained overlay filters via [_tmp0], [_tmp1].
+        """
+        composer = SkillComposer()
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+            extra_inputs=["/extra1.mp4", "/extra2.mp4", "/extra3.mp4"],
+        )
+        pipeline.metadata["_image_paths"] = [
+            "/img/pickup.png", "/img/rabbit.png", "/img/robot.png",
+        ]
+        pipeline.add_step("animated_overlay", {
+            "animation": "bounce",
+            "scale": 0.2,
+        })
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        # Must have 3 unique scale labels
+        assert "[_ovl0]" in cmd_str, f"Expected [_ovl0]: {cmd_str}"
+        assert "[_ovl1]" in cmd_str, f"Expected [_ovl1]: {cmd_str}"
+        assert "[_ovl2]" in cmd_str, f"Expected [_ovl2]: {cmd_str}"
+
+        # Must chain overlays through intermediate labels
+        assert "[_tmp0]" in cmd_str, f"Expected [_tmp0] chaining label: {cmd_str}"
+        assert "[_tmp1]" in cmd_str, f"Expected [_tmp1] chaining label: {cmd_str}"
+
+        # All overlays must have eval=frame
+        assert cmd_str.count("eval=frame") == 3, (
+            f"Expected 3 eval=frame expressions: {cmd_str}"
+        )
+
+        # All overlays must have bounce expressions
+        assert cmd_str.count("abs(mod(") >= 6, (
+            f"Expected at least 6 abs(mod(...)) expressions (2 per overlay): {cmd_str}"
+        )
+
     def test_concat_overlay_image_auto_infers_image_source(self):
         """overlay_image without image_source should auto-infer it when alongside concat.
 

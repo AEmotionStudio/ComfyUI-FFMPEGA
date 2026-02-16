@@ -175,6 +175,7 @@ class SkillComposer:
             for s in pipeline.steps if s.enabled
         }
         has_audio_embedding_skill = bool(step_names & _audio_embedded_skills)
+        _overlay_seen = False  # Track first overlay step to dedup duplicates
 
         for step in pipeline.steps:
             if not step.enabled:
@@ -202,6 +203,21 @@ class SkillComposer:
                     "xfade/concat already handles audio crossfade"
                 )
                 continue
+
+            # Deduplicate overlay steps: when _image_paths provides multiple
+            # images, the handler already processes ALL of them in one call.
+            # LLMs often emit one overlay_image per image — skip duplicates.
+            _overlay_names = {"overlay_image", "overlay", "animated_overlay", "moving_overlay"}
+            if resolved_name in _overlay_names and _image_paths:
+                if _overlay_seen:
+                    import logging
+                    logging.getLogger("ffmpega").info(
+                        "Skipping duplicate %s step — all %d images "
+                        "already handled by first overlay call",
+                        resolved_name, len(_image_paths),
+                    )
+                    continue
+                _overlay_seen = True
 
             # Resolve parameter aliases before filling defaults — so
             # "bitrate=128k" is resolved to "kbps=128" before the

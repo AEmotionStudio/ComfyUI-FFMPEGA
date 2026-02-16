@@ -186,7 +186,7 @@ class MediaConverter:
         for start in range(0, n_frames, CHUNK):
             end = min(start + CHUNK, n_frames)
             chunk = (images[start:end] * 255.0).clamp(0, 255).to(torch.uint8).cpu().numpy()
-            proc.stdin.write(chunk.tobytes())
+            proc.stdin.write(chunk)
             del chunk
         proc.stdin.close()
         proc.wait()

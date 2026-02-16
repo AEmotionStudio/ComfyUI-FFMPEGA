@@ -7,7 +7,7 @@
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
 [![Version](https://img.shields.io/badge/Version-2.4.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
-[![Dependencies](https://img.shields.io/badge/dependencies-4-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
+[![Dependencies](https://img.shields.io/badge/dependencies-1-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 
 [![Last Commit](https://img.shields.io/github/last-commit/AEmotionStudio/ComfyUI-FFMPEGA?style=for-the-badge&label=Last%20Update&color=orange)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/commits)
 [![Activity](https://img.shields.io/github/commit-activity/m/AEmotionStudio/ComfyUI-FFMPEGA?style=for-the-badge&label=Activity&color=yellow)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/commits)
@@ -134,6 +134,8 @@ Restart ComfyUI after installation.
 4. Select your LLM model
 5. Run the workflow
 
+> **💡 Tip:** Right-click the FFMPEG Agent node to open the **FFMPEGA Presets** context menu — 200+ categorized effects you can apply with a single click, no prompt typing needed. Great for quick edits or discovering what's available.
+
 ### Example Prompts
 
 | Prompt | What It Does |
@@ -199,12 +201,11 @@ You can request specific parameter values and the agent will use them directly:
 
 ## 🎛️ Nodes
 
-### FFMPEG Agent
-
-The main node — translates natural language into FFMPEG commands.
+<details>
+<summary><b>FFMPEG Agent</b> — The main node, translates natural language into FFMPEG commands.</summary>
 
 <details>
-<summary><b>Required Inputs</b></summary>
+<summary>Required Inputs</summary>
 
 | Input | Type | Description |
 | :--- | :--- | :--- |
@@ -217,7 +218,7 @@ The main node — translates natural language into FFMPEG commands.
 </details>
 
 <details>
-<summary><b>Optional Inputs</b></summary>
+<summary>Optional Inputs</summary>
 
 | Input | Type | Description |
 | :--- | :--- | :--- |
@@ -236,7 +237,7 @@ The main node — translates natural language into FFMPEG commands.
 </details>
 
 <details>
-<summary><b>Batch Processing Inputs</b></summary>
+<summary>Batch Processing Inputs</summary>
 
 | Input | Type | Description |
 | :--- | :--- | :--- |
@@ -255,11 +256,10 @@ The main node — translates natural language into FFMPEG commands.
 | `command_log` | The ffmpeg command(s) that were executed |
 | `analysis` | LLM interpretation, pipeline steps, and warnings |
 
----
+</details>
 
-### Frame Extract (FFMPEGA)
-
-Standalone node for extracting individual frames from a video as image tensors.
+<details>
+<summary><b>Frame Extract (FFMPEGA)</b> — Extract individual frames from a video as image tensors.</summary>
 
 | Input | Type | Description |
 | :--- | :--- | :--- |
@@ -274,6 +274,74 @@ Standalone node for extracting individual frames from a video as image tensors.
 | `frames` | Extracted video frames as a batched image tensor |
 
 > **Tip:** Connect `frames` output to the FFMPEG Agent's `images_a` input to build pipelines that analyze frames before editing.
+
+</details>
+
+<details>
+<summary><b>Load Image Path (FFMPEGA)</b> — Zero-memory image loader, outputs a file path instead of a tensor.</summary>
+
+Outputs the image file path as a STRING instead of decoding into a ~6 MB IMAGE tensor. Connect to FFMPEGA Agent's `image_path_a` / `image_path_b` / … slots so ffmpeg reads the file directly.
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `image` | FILE PICKER | Select an image from ComfyUI's input directory or upload a new one. |
+
+| Output | Description |
+| :--- | :--- |
+| `image_path` | Absolute file path to the selected image |
+
+</details>
+
+<details>
+<summary><b>Load Video Path (FFMPEGA)</b> — Zero-memory video input with inline preview and metadata.</summary>
+
+Validates the video file exists and outputs the path as a STRING — loads ZERO frames into memory. Features inline video preview, metadata display (fps, duration, resolution), and VHS-style trim parameters.
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `video` | FILE PICKER | Select or upload a video file. |
+| `force_rate` | FLOAT | Override FPS (0 = use source). |
+| `skip_first_frames` | INT | Frames to skip from start. |
+| `frame_load_cap` | INT | Max frames to use (0 = all). |
+| `select_every_nth` | INT | Select every Nth frame (1 = every frame). |
+
+| Output | Description |
+| :--- | :--- |
+| `video_path` | Validated video file path |
+| `frame_count` | Total usable frames after trim |
+| `fps` | Effective FPS |
+| `duration` | Effective duration in seconds |
+
+</details>
+
+<details>
+<summary><b>Save Video (FFMPEGA)</b> — Zero-memory video output with inline preview.</summary>
+
+Takes a video path (from FFMPEGA Agent or Load Video Path), copies the file to ComfyUI's output directory, and shows a preview. No re-encoding — just a file copy.
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `video_path` | STRING | Path to video file (typically from FFMPEGA Agent's output). |
+| `filename_prefix` | STRING | Prefix for saved filename. Supports `%date:yyyy-MM-dd%`. |
+| `overwrite` | BOOLEAN | *(optional)* Overwrite existing file vs auto-increment counter. |
+
+</details>
+
+<details>
+<summary><b>Video to Path (FFMPEGA)</b> — Convert IMAGE tensor to a temp video file path.</summary>
+
+Bridge node between Load Video nodes (which output IMAGE tensors) and FFMPEGA Agent's `video_a`/`video_b`/`video_c` slots. Encodes frames to a temp video file, then releases the tensor so ComfyUI can free the memory.
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `images` | IMAGE | Video frames from a Load Video node. |
+| `fps` | INT | *(optional)* FPS for the output video (default: 24). |
+
+| Output | Description |
+| :--- | :--- |
+| `video_path` | File path to the temp video |
+
+</details>
 
 ---
 
@@ -742,6 +810,7 @@ ollama pull qwen3:8b
 | Model | Size | Speed | Notes |
 | :--- | :--- | :--- | :--- |
 | `qwen3:8b` | 8B | ⚡ Fast | **Tested** — excellent structured output, native tool-calling |
+| `qwen3-vl` | 8B | ⚡ Fast | **Tested** — multimodal vision-language model, sees video frames |
 | `qwen3:14b` | 14B | ⚡ Fast | Sweet spot of speed and quality, tools + thinking tags |
 | `qwen3:30b` | 30B | 🔄 Medium | Best Qwen under 30B, needs 16GB+ VRAM |
 | `qwen2.5:14b` | 14B | ⚡ Fast | Top IFEval scores, strong instruction following |
@@ -850,6 +919,11 @@ Use [Cursor's CLI](https://docs.cursor.com) in agent mode as an LLM backend.
 
 **Install:**
 Open Cursor IDE → Command Palette → "Install 'cursor' command"
+
+**Start the agent:**
+```bash
+cursor agent
+```
 
 **Use in FFMPEGA:**
 ```
@@ -1016,6 +1090,13 @@ This usually means:
 <summary><b>Parameter Validation Errors</b></summary>
 
 FFMPEGA auto-coerces types (float→int) and clamps out-of-range values. If you still see errors, try simplifying your prompt or using a more capable model.
+
+</details>
+
+<details>
+<summary><b>Cancelling a Running Request</b></summary>
+
+If the LLM is taking too long or you want to abort mid-request, **close the terminal/console** running the LLM process instead of using ComfyUI's interrupt button. The interrupt button waits for the current LLM response to complete, which can take a while — closing the console kills it immediately.
 
 </details>
 
