@@ -8,7 +8,7 @@ Tests cover:
 5. End-to-end: ffmpeg LUT application to a real video
 
 Usage:
-    /home/tealdisk/ComfyUI/venv/bin/python tests/test_lut_agents.py
+    python tests/test_lut_agents.py
 """
 
 import asyncio

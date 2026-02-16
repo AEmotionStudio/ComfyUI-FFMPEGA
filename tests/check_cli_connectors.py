@@ -1,7 +1,7 @@
 """Test all CLI connectors — availability, vision support, basic generation.
 
 Usage:
-    /home/tealdisk/ComfyUI/venv/bin/python tests/test_cli_connectors.py
+    python tests/test_cli_connectors.py
 """
 
 import asyncio

@@ -37,8 +37,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/comfyui-ffmpega/ComfyUI-FFMPEGA"
-Repository = "https://github.com/comfyui-ffmpega/ComfyUI-FFMPEGA"
+Homepage = "https://github.com/AEmotionStudio/ComfyUI-FFMPEGA"
+Repository = "https://github.com/AEmotionStudio/ComfyUI-FFMPEGA"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -4,7 +4,7 @@ Sends color analysis data (not images) to a text-only model and verifies
 it can reason about the video's colors from numeric data alone.
 
 Usage:
-    /home/tealdisk/ComfyUI/venv/bin/python tests/test_vision_fallback.py
+    python tests/test_vision_fallback.py
 """
 
 import asyncio
