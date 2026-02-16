@@ -5,7 +5,7 @@
 **An AI-powered FFMPEG agent node for ComfyUI — edit videos with natural language.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-2.4.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-2.5.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-1-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 
@@ -20,16 +20,28 @@
 
 ---
 
-## 🚀 What's New in v2.4.0 (February 15, 2026)
+## 🚀 What's New in v2.5.0 (February 16, 2026)
 
-**Pipeline Chaining, Animated Overlays & Zero-Memory Image Paths**
+**PiP Overlay Fixes, VL Model Vision & Border Support**
 
-*   **🖼️ Zero-Memory Image Paths**: Image inputs (`image_path_a/b/c`) are now passed as file paths instead of decoded tensors — keeping multi-GB images out of GPU memory while overlay/watermark handlers reference the correct ffmpeg index.
-*   **🎯 Overlay Animation**: `overlay_image` now supports `animation=bounce` (plus `float`, `scroll_*`, `slide_in`) — auto-delegates to `animated_overlay` with `eval=frame` expressions. No more static overlays when you ask for motion.
-*   **🔗 Pipeline Chaining Fixes**: Fixed filter graph chaining for multi-skill pipelines (xfade + overlay, concat + quality). Labeled outputs are now correctly replaced instead of appended, and duplicate `-map` flags are stripped.
-*   **🏗️ Handler Module Extraction**: Skill handlers extracted from monolithic `composer.py` into dedicated modules under `skills/handlers/` for better maintainability.
-*   **🔒 Security Hardening**: Extended FFMPEG parameter sanitization to width/height and text/spatial skills; restored path validation.
-*   **⚡ Performance**: `frames_to_tensor` pre-allocates memory instead of concatenating tensors incrementally.
+*   **🖼️ PiP Border Support**: `picture_in_picture` now accepts `border` and `border_color` parameters — frame your PiP overlay with a clean border.
+*   **👁️ Ollama VL Auto-Embedding**: Vision-language models (e.g. `qwen3-vl`) automatically receive 3 video frames in the initial message — the model "sees" the video from the start.
+*   **🔗 PiP Alias Fix**: Models using `pip`, `picture-in-picture`, or `pictureinpicture` now correctly resolve to `picture_in_picture`. Previously these were silently skipped.
+*   **🎬 Multi-Input Gate Fix**: `picture_in_picture`, `pip`, and `blend` added to `MULTI_INPUT_SKILLS` — extra video inputs now correctly appear in the ffmpeg command.
+*   **🔧 Ollama VL Verification**: Fixed 400 error when verifying output with Ollama VL models — now uses native Ollama image format.
+*   **📝 Improved Prompts**: `extract_frames` strongly recommended for visual requests; PiP guidance added to system prompt.
+
+<details>
+<summary><b>Previous: v2.4.0 — Pipeline Chaining, Animated Overlays & Zero-Memory Image Paths</b></summary>
+
+*   **🖼️ Zero-Memory Image Paths**: Image inputs passed as file paths instead of decoded tensors.
+*   **🎯 Overlay Animation**: `overlay_image` supports `animation=bounce` and more motion presets.
+*   **🔗 Pipeline Chaining Fixes**: Fixed filter graph chaining for multi-skill pipelines.
+*   **🏗️ Handler Module Extraction**: Skill handlers split into `skills/handlers/` modules.
+*   **🔒 Security Hardening**: Extended FFMPEG parameter sanitization.
+*   **⚡ Performance**: `frames_to_tensor` pre-allocates memory.
+
+</details>
 
 <details>
 <summary><b>Previous: v2.3.0 — Token Tracking, LUT Color Grading & Vision</b></summary>
@@ -677,7 +689,7 @@ FFMPEGA includes a comprehensive skill system with **200 operations** organized 
 
 | Skill | Description |
 | :--- | :--- |
-| `picture_in_picture` | PiP overlay window |
+| `picture_in_picture` | PiP overlay window with optional border |
 | `blend` | Blend two video inputs |
 | `delogo` | Remove logo from a region |
 | `remove_dup_frames` | Strip duplicate/stuttered frames |

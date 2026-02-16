@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2026-02-16
+
+### Added
+- **PiP Border Support**: `picture_in_picture` skill now accepts `border` (0–20px) and `border_color` (e.g. white, black, 0x333333) parameters. Uses ffmpeg's `pad` filter to frame the overlay with a colored border.
+- **Ollama VL Auto-Embedding**: When using an Ollama vision-language model (e.g. `qwen3-vl`), the first 3 video frames are automatically embedded into the initial user message so the model "sees" the video from the start — no need for the agent to call `extract_frames` first.
+- **PiP Skill Selection Guidance**: Agentic system prompt now includes explicit guidance for PiP/webcam overlay requests, directing models to use `picture_in_picture`.
+
+### Fixed
+- **PiP Alias Resolution**: Models using `pip`, `picture-in-picture`, or `pictureinpicture` as the skill name now correctly resolve to `picture_in_picture` via `SKILL_ALIASES`. Previously these were skipped as "Unknown skill", producing no overlay.
+- **PiP/Blend Missing Input**: Added `picture_in_picture`, `pip`, and `blend` to `MULTI_INPUT_SKILLS` gate in `agent_node.py`. Without this, extra video inputs (`video_a`) were never collected, causing ffmpeg `Error binding filtergraph inputs/outputs` because `[1:v]` referenced a non-existent input.
+- **Ollama VL Verification 400 Error**: Fixed Ollama VL verification sending OpenAI-format multimodal content blocks. Now correctly sends raw base64 strings in the `images` field per Ollama's API.
+- **`extract_frames` Guidance**: Changed from "optional" to "STRONGLY RECOMMENDED" for visual requests in the agentic system prompt, improving VL model behavior.
+
+---
+
 ## [2.4.0] - 2026-02-15
 
 ### Added

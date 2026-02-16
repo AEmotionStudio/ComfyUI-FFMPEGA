@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "comfyui-ffmpega"
-version = "2.0.0"
+version = "2.5.0"
 description = "Intelligent FFMPEG agent node for ComfyUI with natural language video editing"
 readme = "README.md"
 license = {text = "GPL-3.0"}
