@@ -92,6 +92,9 @@ class SkillComposer:
     # Common aliases LLMs tend to use
     SKILL_ALIASES = {
         "overlay": "overlay_image",
+        "pip": "picture_in_picture",
+        "picture-in-picture": "picture_in_picture",
+        "pictureinpicture": "picture_in_picture",
         "stabilize": "deshake",
         "grayscale": "monochrome",
         "greyscale": "monochrome",
