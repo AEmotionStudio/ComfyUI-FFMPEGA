@@ -803,7 +803,7 @@ class FFMPEGAgentNode:
             if image_a is not None:
                 all_image_keys.append(('__image_a__', image_a))
             for k in sorted(kwargs):
-                if k.startswith("image_") and not k.startswith("images_") and kwargs[k] is not None:
+                if k.startswith("image_") and not k.startswith("images_") and not k.startswith("image_path_") and kwargs[k] is not None:
                     all_image_keys.append((k, kwargs[k]))
 
             # Also collect images_b, images_c, ... (additional video inputs)

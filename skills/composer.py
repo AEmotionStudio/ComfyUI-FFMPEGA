@@ -469,8 +469,19 @@ class SkillComposer:
                 # Single filter_complex block that produces audio
                 if audio_in_fc and ("a=1" in fc_graph or "acrossfade" in fc_graph):
                     if need_audio_fold:
-                        # Label both video and audio outputs
-                        fc_graph += "[_vfinal][_aout_pre]"
+                        # Replace existing labels — xfade/concat handlers
+                        # already produce [_vout] and [_aout] labels.  We
+                        # must replace them rather than append, otherwise
+                        # the acrossfade filter ends up with multiple
+                        # output labels (invalid ffmpeg syntax).
+                        if "[_vout]" in fc_graph:
+                            fc_graph = fc_graph.replace("[_vout]", "[_vfinal]")
+                        else:
+                            fc_graph += "[_vfinal]"
+                        if "[_aout]" in fc_graph:
+                            fc_graph = fc_graph.replace("[_aout]", "[_aout_pre]")
+                        else:
+                            fc_graph += "[_aout_pre]"
                         _fc_audio_label = "[_aout_pre]"
 
             # Multi-input skills (xfade, concat, split_screen, grid, slideshow)
@@ -655,8 +666,8 @@ class SkillComposer:
             Tuple of (video_filters, audio_filters, output_options, filter_complex, input_options).
             filter_complex is an empty string if not needed.
         """
-        # Resolve aliases and strip unit suffixes before anything else
-        params = self._normalize_params(skill, params)
+        # Note: _normalize_params is already called in compose() before
+        # reaching here, so we skip it to avoid redundant processing.
 
         video_filters = []
         audio_filters = []

@@ -459,10 +459,14 @@ def _f_xfade(p):
     n_extra = int(p.get("_extra_input_count", 0))
 
     extra_paths = p.get("_extra_input_paths", [])
+    exclude = p.get("_exclude_inputs", set())
     segments = [(0, True)]
     for i in range(n_extra):
+        ffmpeg_idx = i + 1
+        if ffmpeg_idx in exclude:
+            continue  # Reserved by another skill (e.g. overlay)
         is_video = _is_video_file(extra_paths[i]) if i < len(extra_paths) else False
-        segments.append((i + 1, is_video))
+        segments.append((ffmpeg_idx, is_video))
 
     total = len(segments)
     if total < 2:
