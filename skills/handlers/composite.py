@@ -499,8 +499,8 @@ def _f_xfade(p):
     for i, (idx, is_video) in enumerate(segments):
         if i == 0:
             seg_durations.append(video_dur if is_video else still_dur)
-        elif is_video and i - 1 < len(extra_paths):
-            probed = _probe_duration(extra_paths[i - 1])
+        elif is_video and idx - 1 < len(extra_paths):
+            probed = _probe_duration(extra_paths[idx - 1])
             seg_durations.append(probed if probed > 0 else video_dur)
         else:
             seg_durations.append(still_dur)

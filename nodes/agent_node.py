@@ -253,7 +253,7 @@ class FFMPEGAgentNode:
     RETURN_TYPES = ("IMAGE", "AUDIO", "STRING", "STRING", "STRING")
     RETURN_NAMES = ("images", "audio", "video_path", "command_log", "analysis")
     OUTPUT_TOOLTIPS = (
-        "All frames from the output video as a batched image tensor.",
+        "First frame from the output video as an image tensor (thumbnail/preview). Use Frame Extract or VHS Load for all frames.",
         "Audio extracted from the output video (or passed through from audio_a) in ComfyUI AUDIO format.",
         "Absolute path to the rendered output video file.",
         "The ffmpeg command that was executed.",
@@ -866,7 +866,10 @@ class FFMPEGAgentNode:
                     temp_frames_dirs.add(os.path.dirname(all_frame_paths[0]))
 
             if all_frame_paths:
-                pipeline.extra_inputs = all_frame_paths
+                # Preserve any pre-existing extra_inputs (e.g. replace_audio's
+                # WAV inserted at index 0) by prepending them.
+                existing = pipeline.extra_inputs or []
+                pipeline.extra_inputs = existing + all_frame_paths
                 pipeline.metadata["frame_count"] = len(all_frame_paths)
 
             # Auto-set include_video for slideshow/grid based on whether
