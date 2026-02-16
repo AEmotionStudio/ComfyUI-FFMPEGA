@@ -665,6 +665,7 @@ app.registerExtension({
                 videoEl.controls = true;
                 videoEl.loop = true;
                 videoEl.muted = true;
+                videoEl.setAttribute("aria-label", "Video preview");
                 videoEl.style.cssText = "width:100%;display:block;";
                 videoEl.addEventListener("loadedmetadata", () => {
                     previewWidget.aspectRatio =
@@ -836,7 +837,10 @@ app.registerExtension({
                         "mp4", "avi", "mov", "mkv", "webm", "flv",
                         "wmv", "m4v", "mpg", "mpeg", "ts", "mts", "gif",
                     ];
-                    if (!videoExts.includes(ext)) return false;
+                    if (!videoExts.includes(ext)) {
+                        flashNode(node, "#7a4a4a");
+                        return false;
+                    }
 
                     const body = new FormData();
                     body.append("image", file);
@@ -846,7 +850,11 @@ app.registerExtension({
                             method: "POST",
                             body: body,
                         });
-                        if (resp.status !== 200) return false;
+                        if (resp.status !== 200) {
+                            console.warn("FFMPEGA: Upload rejected", resp.status, resp.statusText);
+                            flashNode(node, "#7a4a4a");
+                            return false;
+                        }
                         const data = await resp.json();
                         const filename = data.name;
 
@@ -859,7 +867,9 @@ app.registerExtension({
                         }
                         updatePreview(filename);
                         return true;
-                    } catch {
+                    } catch (err) {
+                        console.warn("FFMPEGA: Video upload failed", err);
+                        flashNode(node, "#7a4a4a");
                         return false;
                     }
                 };
@@ -932,6 +942,7 @@ app.registerExtension({
                 videoEl.controls = true;
                 videoEl.loop = true;
                 videoEl.muted = true;
+                videoEl.setAttribute("aria-label", "Output video preview");
                 videoEl.style.cssText = "width:100%;display:block;";
                 videoEl.addEventListener("loadedmetadata", () => {
                     previewWidget.aspectRatio =
