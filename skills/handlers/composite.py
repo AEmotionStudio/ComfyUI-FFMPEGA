@@ -30,11 +30,20 @@ def _probe_duration(path):
     """Get the duration of a media file in seconds using ffprobe.
 
     Returns 0.0 on any failure (missing ffprobe, invalid file, etc.).
-    Delegates to MediaConverter._probe_media_duration to avoid duplication.
     """
+    import shutil
+    import subprocess
+    ffprobe_bin = shutil.which("ffprobe")
+    if not ffprobe_bin:
+        return 0.0
     try:
-        from core.media_converter import MediaConverter
-        return MediaConverter._probe_media_duration(str(path))
+        result = subprocess.run(
+            [ffprobe_bin, "-v", "error", "-show_entries",
+             "format=duration", "-of",
+             "default=noprint_wrappers=1:nokey=1", str(path)],
+            capture_output=True, text=True, check=True,
+        )
+        return float(result.stdout.strip())
     except Exception:
         return 0.0
 
