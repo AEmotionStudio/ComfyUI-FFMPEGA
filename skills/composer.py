@@ -303,36 +303,72 @@ class SkillComposer:
                 step.params["_extra_input_count"] = current + len(_image_paths)
 
             # When concat/xfade runs alongside overlay_image, exclude
-            # overlay-reserved inputs from concatenation.  The overlay's
-            # image_source (e.g. "image_a" → ffmpeg input idx 1) should
-            # NOT appear as a concat segment.
+            # overlay-reserved inputs from concatenation.
+            #
+            # Two image input patterns exist:
+            #   (a) Zero-memory path: images come via _image_paths and are
+            #       added as ffmpeg inputs AFTER extra_inputs, starting
+            #       at _image_input_start.
+            #   (b) Legacy path: images are mixed into extra_inputs
+            #       (e.g. /logo.png at extra_inputs[0] → ffmpeg idx 1).
             if resolved_name in ("concat", "xfade", "slideshow"):
-                _source_idx_map = {
-                    "image_a": 1, "image_b": 2, "image_c": 3, "image_d": 4,
-                }
-                _idx_source_map = {v: k for k, v in _source_idx_map.items()}
                 exclude = set()
-                for other in pipeline.steps:
-                    other_name = self.SKILL_ALIASES.get(other.skill_name, other.skill_name)
-                    if other_name == "overlay_image":
-                        src = other.params.get("image_source")
-                        if src and src in _source_idx_map:
-                            exclude.add(_source_idx_map[src])
-                        elif not src and pipeline.extra_inputs:
-                            # LLM didn't specify image_source — auto-infer
-                            # the first image (non-video) extra input.
-                            for ei, path in enumerate(pipeline.extra_inputs):
-                                if not _is_video_file(path):
-                                    inferred_idx = ei + 1
-                                    inferred_src = _idx_source_map.get(
-                                        inferred_idx, "image_a"
-                                    )
-                                    other.params["image_source"] = inferred_src
-                                    exclude.add(inferred_idx)
-                                    break
-                    elif other_name == "animated_overlay":
-                        # animated_overlay always uses [1:v] (image_a)
-                        exclude.add(1)
+
+                if _image_paths:
+                    # --- Pattern (a): zero-memory image_path inputs ---
+                    _source_idx_map = {}
+                    _source_names = ["image_a", "image_b", "image_c", "image_d"]
+                    for si, src_name in enumerate(_source_names):
+                        if si < len(_image_paths):
+                            _source_idx_map[src_name] = _image_input_start + si
+
+                    for other in pipeline.steps:
+                        other_name = self.SKILL_ALIASES.get(other.skill_name, other.skill_name)
+                        if other_name == "overlay_image":
+                            src = other.params.get("image_source")
+                            if src and src in _source_idx_map:
+                                exclude.add(_source_idx_map[src])
+                            else:
+                                # Auto-infer first image input
+                                other.params["image_source"] = _source_names[0]
+                                exclude.add(_image_input_start)
+                        elif other_name == "animated_overlay":
+                            for img_idx in range(
+                                _image_input_start,
+                                _image_input_start + len(_image_paths),
+                            ):
+                                exclude.add(img_idx)
+                else:
+                    # --- Pattern (b): images mixed into extra_inputs ---
+                    _source_idx_map = {
+                        "image_a": 1, "image_b": 2, "image_c": 3, "image_d": 4,
+                    }
+                    _idx_source_map = {v: k for k, v in _source_idx_map.items()}
+
+                    for other in pipeline.steps:
+                        other_name = self.SKILL_ALIASES.get(other.skill_name, other.skill_name)
+                        if other_name == "overlay_image":
+                            src = other.params.get("image_source")
+                            if src and src in _source_idx_map:
+                                exclude.add(_source_idx_map[src])
+                            elif not src and pipeline.extra_inputs:
+                                for ei, path in enumerate(pipeline.extra_inputs):
+                                    if not _is_video_file(path):
+                                        inferred_idx = ei + 1
+                                        inferred_src = _idx_source_map.get(
+                                            inferred_idx, "image_a"
+                                        )
+                                        other.params["image_source"] = inferred_src
+                                        exclude.add(inferred_idx)
+                                        break
+                        elif other_name == "animated_overlay":
+                            # Scan extra_inputs for the first non-video file
+                            if pipeline.extra_inputs:
+                                for ei, path in enumerate(pipeline.extra_inputs):
+                                    if not _is_video_file(path):
+                                        exclude.add(ei + 1)
+                                        break
+
                 if exclude:
                     step.params["_exclude_inputs"] = exclude
 
