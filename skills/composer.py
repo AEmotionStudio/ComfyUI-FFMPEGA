@@ -674,14 +674,9 @@ class SkillComposer:
         - Strips trailing unit suffixes like ``k`` / ``K`` / ``M`` from
           strings when the canonical parameter is INT or FLOAT.
         """
-        # Build alias → canonical mapping
-        alias_map: dict[str, str] = {}
-        param_map: dict[str, "SkillParameter"] = {}
-        for p in skill.parameters:
-            param_map[p.name] = p
-            if p.aliases:
-                for a in p.aliases:
-                    alias_map[a] = p.name
+        # Use cached mappings from skill object
+        alias_map = skill._alias_map
+        param_map = skill._param_map
 
         normalized: dict[str, object] = {}
         for key, value in params.items():

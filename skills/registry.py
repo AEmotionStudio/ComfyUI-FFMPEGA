@@ -124,13 +124,24 @@ class Skill:
     examples: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
     _search_text: str = field(init=False, repr=False, default="")
+    _param_map: dict[str, SkillParameter] = field(init=False, repr=False, default_factory=dict)
+    _alias_map: dict[str, str] = field(init=False, repr=False, default_factory=dict)
 
     def __post_init__(self):
-        """Pre-compute search text for faster lookups."""
+        """Pre-compute search text and parameter maps for faster lookups."""
         # Ensure tags is a list even if initialized with None
         tags = self.tags if self.tags is not None else []
         parts = [str(self.name), str(self.description)] + tags
         self._search_text = " ".join(parts).lower()
+
+        # Build parameter maps
+        self._param_map = {}
+        self._alias_map = {}
+        for p in self.parameters:
+            self._param_map[p.name] = p
+            if p.aliases:
+                for alias in p.aliases:
+                    self._alias_map[alias] = p.name
 
     def validate_params(self, params: dict) -> tuple[bool, list[str]]:
         """Validate parameters for this skill.
