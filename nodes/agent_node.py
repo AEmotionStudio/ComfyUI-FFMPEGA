@@ -864,11 +864,6 @@ class FFMPEGAgentNode:
             except Exception:
                 pass
 
-            # Fallback: primary images_a tensor with multiple frames
-            if not all_frame_paths and images_a is not None and images_a.shape[0] > 1:
-                all_frame_paths = self.media_converter.save_frames_as_images(images_a)
-                if all_frame_paths:
-                    temp_frames_dirs.add(os.path.dirname(all_frame_paths[0]))
 
             if all_frame_paths:
                 # Preserve any pre-existing extra_inputs (e.g. replace_audio's
@@ -915,8 +910,16 @@ class FFMPEGAgentNode:
                             f"Could not mux audio {ai} into {vid_path}: {e}"
                         )
 
-            # Build video_segments list for audio detection below
-            video_segments = [effective_video_path] + list(pipeline.extra_inputs)
+            # Build video_segments list for audio detection below.
+            # Filter to actual video files only — PNGs (from ≤10 frame
+            # tensors) and WAVs (from replace_audio) always fail
+            # has_audio_stream and would prevent _has_embedded_audio
+            # from being set.
+            _vid_exts = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".ts", ".m4v"}
+            video_segments = [
+                p for p in [effective_video_path] + list(pipeline.extra_inputs)
+                if p and os.path.splitext(p)[1].lower() in _vid_exts
+            ]
 
             # --- Detect embedded audio in video files (zero-memory path) ---
             # When using video_path STRING inputs, the video files already
