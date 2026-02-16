@@ -11,3 +11,7 @@
 ## 2026-02-15 - Context Menu Safety Nets
 **Learning:** ComfyUI custom nodes often lack built-in undo/redo for widget values, leading to user frustration when they accidentally clear or replace complex prompts.
 **Action:** Adding a simple "Restore Previous" buffer (`_previousPrompt`) in the node instance provides a high-value safety net with minimal code (<20 lines).
+
+## 2026-03-01 - Non-Blocking Node Feedback
+**Learning:** ComfyUI custom nodes often default to blocking `alert()` calls for errors due to lack of standard UI. Using `flashNode` combined with DOM widget text updates provides integrated, non-blocking feedback.
+**Action:** Replace `alert()` with `flashNode()` (red for errors) and update an info/status label on the node to communicate the specific error message.
