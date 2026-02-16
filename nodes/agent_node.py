@@ -891,6 +891,40 @@ class FFMPEGAgentNode:
                 if k.startswith("audio_") and k != "audio_a" and kwargs[k] is not None:
                     all_audio_dicts.append(kwargs[k])
 
+            # --- Copy-on-write: protect user's original files ---
+            # mux_audio and add_silent_audio modify files in-place via
+            # shutil.move.  If the paths come from user STRING inputs
+            # (video_a, video_b, etc.) we must not mutate the originals.
+            # Copy non-temp files to temp copies before any modification.
+            _tmpdir = tempfile.gettempdir()
+            def _ensure_temp_copy(filepath: str) -> str:
+                """Return a temp copy of *filepath* if it's a user file."""
+                if not filepath or not os.path.isfile(filepath):
+                    return filepath
+                # Already a temp file — safe to modify in-place
+                if os.path.commonpath([filepath, _tmpdir]) == _tmpdir:
+                    return filepath
+                ext = os.path.splitext(filepath)[1] or ".mp4"
+                tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
+                tmp.close()
+                import shutil as _shutil
+                _shutil.copy2(filepath, tmp.name)
+                return tmp.name
+
+            if all_audio_dicts or any(
+                s.skill_name in ("concat", "xfade")
+                for s in pipeline.steps
+            ):
+                # Copy effective_video_path if needed
+                new_evp = _ensure_temp_copy(effective_video_path)
+                if new_evp != effective_video_path:
+                    effective_video_path = new_evp
+                # Copy extra_inputs in-place
+                new_extras = []
+                for ep in pipeline.extra_inputs:
+                    new_extras.append(_ensure_temp_copy(ep))
+                pipeline.extra_inputs = new_extras
+
             if all_audio_dicts:
                 video_segments = [effective_video_path] + list(pipeline.extra_inputs)
                 for ai, audio_dict in enumerate(all_audio_dicts):
