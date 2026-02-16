@@ -635,10 +635,10 @@ def _f_split_screen(p):
 
 
 def _f_animated_overlay(p):
-    """Overlay an extra image with time-based animated motion.
+    """Overlay extra images with time-based animated motion.
 
-    The overlay image (from image_a) moves across the frame using
-    eval=frame expressions in the overlay filter.
+    Supports multiple overlay images — each gets its own motion with
+    staggered speeds so they move independently.
 
     Parameters:
         animation:  Motion preset (default "scroll_right")
@@ -655,38 +655,54 @@ def _f_animated_overlay(p):
     if n < 1:
         return [], [], [], ""
 
-    # Determine the ffmpeg input index for the overlay image
+    # Determine the ffmpeg input indices for overlay images
     image_input_indices = p.get("_image_input_indices", [])
-    ovl_idx = image_input_indices[0] if image_input_indices else 1
+    if not image_input_indices:
+        image_input_indices = [1]
 
-    # Scale the overlay image relative to main video width
-    # [0:v] = main video, [ovl_idx:v] = overlay image
     fc_parts = []
 
-    # Apply opacity to overlay if < 1.0
-    ovl_prep = f"[{ovl_idx}:v]scale=iw*{scale}:ih*{scale}"
-    if opacity < 1.0:
-        ovl_prep += f",format=rgba,colorchannelmixer=aa={opacity}"
-    ovl_prep += "[_ovl]"
-    fc_parts.append(ovl_prep)
+    # Scale each overlay image
+    for oi, ovl_idx in enumerate(image_input_indices):
+        ovl_label = f"[_ovl{oi}]"
+        ovl_prep = f"[{ovl_idx}:v]scale=iw*{scale}:ih*{scale}"
+        if opacity < 1.0:
+            ovl_prep += f",format=rgba,colorchannelmixer=aa={opacity}"
+        ovl_prep += ovl_label
+        fc_parts.append(ovl_prep)
 
-    # Build motion expression based on animation preset
-    # All use overlay's eval=frame mode for per-frame position updates
-    px_per_frame = max(1, int(2 * speed))
+    # Build chained overlay filters — each image gets staggered motion
+    for oi, _ovl_idx in enumerate(image_input_indices):
+        # Stagger speed per overlay so they move independently
+        px = max(1, int(2 * speed) + oi)
+        py = px + 1
 
-    motion_presets = {
-        "scroll_right": f"x='mod(n*{px_per_frame},W)':y='H-h-20'",
-        "scroll_left": f"x='W-mod(n*{px_per_frame},W+w)':y='H-h-20'",
-        "scroll_up": f"x='W-w-20':y='H-mod(n*{px_per_frame},H+h)'",
-        "scroll_down": f"x='W-w-20':y='mod(n*{px_per_frame},H+h)-h'",
-        "float": f"x='W/2-w/2+sin(n*0.02*{speed})*W/4':y='H/2-h/2+cos(n*0.03*{speed})*H/4'",
-        "bounce": f"x='abs(mod(n*{px_per_frame},2*(W-w))-(W-w))':y='abs(mod(n*{px_per_frame+1},2*(H-h))-(H-h))'",
-        "slide_in": f"x='min(n*{px_per_frame},W-w-20)':y='H-h-20'",
-        "slide_in_top": f"x='W/2-w/2':y='min(n*{px_per_frame}-h,20)'",
-    }
+        motion_presets = {
+            "scroll_right": f"x=mod(n*{px}\\,W):y=H-h-20",
+            "scroll_left": f"x=W-mod(n*{px}\\,W+w):y=H-h-20",
+            "scroll_up": f"x=W-w-20:y=H-mod(n*{px}\\,H+h)",
+            "scroll_down": f"x=W-w-20:y=mod(n*{px}\\,H+h)-h",
+            "float": f"x=W/2-w/2+sin(n*0.02*{speed + oi * 0.3})*W/4:y=H/2-h/2+cos(n*0.03*{speed + oi * 0.3})*H/4",
+            "bounce": f"x=abs(mod(n*{px}\\,2*(W-w))-(W-w)):y=abs(mod(n*{py}\\,2*(H-h))-(H-h))",
+            "slide_in": f"x=min(n*{px}\\,W-w-20):y=H-h-20",
+            "slide_in_top": f"x=W/2-w/2:y=min(n*{px}-h\\,20)",
+        }
 
-    motion = motion_presets.get(animation, motion_presets["scroll_right"])
-    fc_parts.append(f"[0:v][_ovl]overlay={motion}:eval=frame")
+        motion = motion_presets.get(animation, motion_presets["scroll_right"])
+        ovl_label = f"[_ovl{oi}]"
+
+        # Chain: first overlay takes [0:v], subsequent take previous output
+        if oi == 0:
+            src = "[0:v]"
+        else:
+            src = f"[_tmp{oi - 1}]"
+
+        if oi < len(image_input_indices) - 1:
+            # Intermediate: label the output for next overlay
+            fc_parts.append(f"{src}{ovl_label}overlay={motion}:eval=frame[_tmp{oi}]")
+        else:
+            # Last overlay: no output label (becomes final output)
+            fc_parts.append(f"{src}{ovl_label}overlay={motion}:eval=frame")
 
     return [], [], [], ";".join(fc_parts)
 

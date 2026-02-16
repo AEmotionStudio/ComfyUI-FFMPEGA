@@ -340,6 +340,32 @@ class PipelineGenerator:
         _is_cli = isinstance(connector, CLIConnectorBase)
         _is_ollama = isinstance(connector, OllamaConnector)
 
+        # Auto-embed initial frames for Ollama VL models so the model
+        # sees the video content from the very first message.  Without
+        # this, VL models operate text-only unless they voluntarily
+        # call extract_frames (which they often skip).
+        if use_vision and _is_ollama and _vid:
+            try:
+                init_frames = extract_frames(
+                    video_path=_vid, start=0.0,
+                    duration=9999, fps=0.5, max_frames=3,
+                )
+                if init_frames.get("paths"):
+                    if init_frames.get("run_id"):
+                        _vision_run_ids.append(init_frames["run_id"])
+                    raw_b64 = frames_to_base64_raw_strings(
+                        init_frames["paths"], max_size=256,
+                    )
+                    if raw_b64:
+                        messages[1]["images"] = raw_b64
+                        logger.info(
+                            "Vision: auto-embedded %d initial frames "
+                            "for Ollama VL model",
+                            len(raw_b64),
+                        )
+            except Exception as e:
+                logger.warning("Auto-frame embedding failed: %s", e)
+
         try:
             for iteration in range(max_iterations):
                 _call_start = _time.time()

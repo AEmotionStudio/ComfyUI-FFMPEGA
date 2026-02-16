@@ -1353,9 +1353,11 @@ Token Usage{est_tag}:
         from ..mcp.tools import analyze_colors as _analyze_colors
         from ..mcp.tools import cleanup_vision_frames as _cleanup_frames
         from ..mcp.vision import frames_to_base64 as _frames_to_b64
+        from ..mcp.vision import frames_to_base64_raw_strings as _frames_to_b64_raw
         from ..mcp.vision import generate_audio_visualization as _gen_audio_viz
         from ..prompts.system import get_verification_prompt
         from ..skills.composer import Pipeline
+        from ..core.llm.ollama import OllamaConnector as _OllamaConnector
 
         # Extract 3 frames from output — fewer to save tokens for audio viz
         verify_frames = _extract_frames(
@@ -1454,10 +1456,41 @@ Token Usage{est_tag}:
             # Send to LLM — use chat_with_tools for vision (multimodal),
             # or generate() for text-only
             if b64_data:
-                content_parts = [{"type": "text", "text": verify_prompt}]
-                for img_block in b64_data:
-                    content_parts.append(img_block)
-                verify_messages = [{"role": "user", "content": content_parts}]
+                _is_ollama = isinstance(connector, _OllamaConnector)
+                if _is_ollama:
+                    # Ollama requires raw base64 strings in an 'images'
+                    # field — NOT OpenAI-style multimodal content blocks.
+                    raw_b64 = _frames_to_b64_raw(
+                        verify_frames["paths"], max_size=256
+                    )
+                    # Add audio viz frames if available
+                    if audio_viz:
+                        audio_paths = []
+                        if audio_viz.get("waveform_path"):
+                            audio_paths.append(audio_viz["waveform_path"])
+                        if audio_viz.get("spectrogram_path"):
+                            audio_paths.append(audio_viz["spectrogram_path"])
+                        if audio_paths:
+                            raw_b64.extend(_frames_to_b64_raw(
+                                audio_paths, max_size=256
+                            ))
+                    verify_msg = {
+                        "role": "user",
+                        "content": verify_prompt,
+                        "images": raw_b64,
+                    }
+                    verify_messages = [verify_msg]
+                    logger.info(
+                        "Verification: sending %d images via Ollama "
+                        "native format", len(raw_b64),
+                    )
+                else:
+                    content_parts = [{"type": "text", "text": verify_prompt}]
+                    for img_block in b64_data:
+                        content_parts.append(img_block)
+                    verify_messages = [
+                        {"role": "user", "content": content_parts}
+                    ]
                 verify_response = await connector.chat_with_tools(
                     verify_messages, tools=[],
                 )
