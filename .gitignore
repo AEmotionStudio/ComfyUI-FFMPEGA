@@ -142,6 +142,7 @@ tests/test_*_ollama.py
 tests/test_*_local.py
 
 # Stray files from Python REPL / ImageMagick (bare module names)
+/ast
 /json
 /re
 /os
