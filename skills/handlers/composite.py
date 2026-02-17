@@ -736,21 +736,21 @@ def _f_text_overlay(p):
             meta = _json.loads(raw_text)
             if isinstance(meta, dict) and meta.get("mode") in ("overlay", "watermark", "title_card", "auto"):
                 resolved_text = meta.get("text", "")
-                # Inherit settings from text node if not overridden by LLM
+                # Text node settings override LLM defaults
                 if meta.get("font_size"):
-                    p.setdefault("size", meta["font_size"])
-                    p.setdefault("fontsize", meta["font_size"])
+                    p["size"] = meta["font_size"]
+                    p["fontsize"] = meta["font_size"]
                 if meta.get("font_color"):
-                    p.setdefault("color", meta["font_color"])
-                    p.setdefault("fontcolor", meta["font_color"])
+                    p["color"] = meta["font_color"]
+                    p["fontcolor"] = meta["font_color"]
                 if meta.get("position") and meta["position"] != "auto":
-                    p.setdefault("position", meta["position"])
+                    p["position"] = meta["position"]
                 if meta.get("start_time", 0) > 0:
-                    p.setdefault("start", meta["start_time"])
+                    p["start"] = meta["start_time"]
                 if meta.get("end_time", -1) > 0:
                     duration = meta["end_time"] - meta.get("start_time", 0)
                     if duration > 0:
-                        p.setdefault("duration", duration)
+                        p["duration"] = duration
                 break
         except (_json.JSONDecodeError, TypeError):
             # Plain string — use as overlay text
@@ -909,34 +909,15 @@ def _f_burn_subtitles(p):
     text_content = None
     srt_file_path = None
 
-    # Find the relevant text input
-    for raw_text in text_inputs:
-        try:
-            meta = _json.loads(raw_text)
-            if isinstance(meta, dict) and meta.get("mode") in ("subtitle", "auto"):
-                # Text node with subtitle mode
-                if meta.get("path"):
-                    srt_file_path = meta["path"]
-                elif meta.get("text"):
-                    text_content = meta["text"]
-                    # Use font settings from text node — override LLM defaults
-                    if "font_size" in meta and meta["font_size"]:
-                        p["fontsize"] = meta["font_size"]
-                    if "font_color" in meta and meta["font_color"]:
-                        p["fontcolor"] = meta["font_color"]
-                break
-        except (_json.JSONDecodeError, TypeError):
-            # Plain string text — use it directly
-            text_content = raw_text
-            break
-
     # --- Resolve subtitle file path ---
     path = p.get("path", "")
     _trusted_path = False  # auto-generated paths don't need text sanitization
 
     # Handle LLM passing text input slot reference as path (e.g. path='text_a')
+    # Check explicit slot references FIRST, before scanning all text inputs,
+    # so that when multiple text inputs are connected the correct one is used.
     import re as _re
-    if _re.match(r'^text_[a-z]$', str(path)) and text_inputs and not text_content:
+    if _re.match(r'^text_[a-z]$', str(path)) and text_inputs:
         # LLM referenced a text slot — resolve from _text_inputs
         slot_idx = ord(str(path)[-1]) - ord('a')
         if 0 <= slot_idx < len(text_inputs):
@@ -953,6 +934,28 @@ def _f_burn_subtitles(p):
                 text_content = raw
         path = ""  # Clear the slot reference
 
+    # If no explicit slot was resolved, scan all text inputs
+    if not text_content and not srt_file_path:
+        for raw_text in text_inputs:
+            try:
+                meta = _json.loads(raw_text)
+                if isinstance(meta, dict) and meta.get("mode") in ("subtitle", "auto"):
+                    # Text node with subtitle mode
+                    if meta.get("path"):
+                        srt_file_path = meta["path"]
+                    elif meta.get("text"):
+                        text_content = meta["text"]
+                        # Text node settings override LLM defaults
+                        if "font_size" in meta and meta["font_size"]:
+                            p["fontsize"] = meta["font_size"]
+                        if "font_color" in meta and meta["font_color"]:
+                            p["fontcolor"] = meta["font_color"]
+                    break
+            except (_json.JSONDecodeError, TypeError):
+                # Plain string text — use it directly
+                text_content = raw_text
+                break
+
     if srt_file_path:
         path = srt_file_path
         _trusted_path = True
@@ -960,7 +963,7 @@ def _f_burn_subtitles(p):
         # Auto-generate SRT from text content
         duration = float(p.get("_video_duration", 8.0))
         srt_content = _auto_srt_from_text(text_content, duration)
-        # Write to temp file
+        # Write to temp file and register for cleanup
         tmp = _tmpmod.NamedTemporaryFile(
             mode="w", suffix=".srt", delete=False, encoding="utf-8"
         )
@@ -968,6 +971,9 @@ def _f_burn_subtitles(p):
         tmp.close()
         path = tmp.name
         _trusted_path = True
+        import atexit as _atexit
+        import os as _os
+        _atexit.register(_os.unlink, path)
     elif not path:
         path = "subtitles.srt"
 
@@ -1029,6 +1035,7 @@ def _f_burn_subtitles(p):
         s = s.replace(",", "\\,")
         s = s.replace("[", "\\[")
         s = s.replace("]", "\\]")
+        s = s.replace(" ", "\\ ")
         return s
 
     escaped_path = _ffmpeg_escape(str(path))

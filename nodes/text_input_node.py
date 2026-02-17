@@ -12,49 +12,6 @@ import re
 logger = logging.getLogger("FFMPEGA")
 
 
-def _auto_generate_srt(text: str, duration: float = 8.0) -> str:
-    """Convert plain text into SRT subtitle format.
-
-    If the text already contains SRT timestamps (``-->``), it is returned
-    as-is.  Otherwise each line gets evenly-spaced timing across *duration*
-    seconds.
-
-    Args:
-        text: Raw text or pre-formatted SRT content.
-        duration: Total video duration in seconds for auto-timing.
-
-    Returns:
-        A valid SRT-formatted string.
-    """
-    # Already SRT formatted
-    if "-->" in text:
-        return text
-
-    lines = [ln.strip() for ln in text.strip().splitlines() if ln.strip()]
-    if not lines:
-        return ""
-
-    srt_blocks = []
-    interval = duration / len(lines)
-    for i, line in enumerate(lines):
-        start = i * interval
-        end = min((i + 1) * interval, duration)
-        srt_blocks.append(
-            f"{i + 1}\n"
-            f"{_seconds_to_srt(start)} --> {_seconds_to_srt(end)}\n"
-            f"{line}\n"
-        )
-    return "\n".join(srt_blocks)
-
-
-def _seconds_to_srt(seconds: float) -> str:
-    """Convert seconds to SRT timestamp ``HH:MM:SS,mmm``."""
-    h = int(seconds // 3600)
-    m = int((seconds % 3600) // 60)
-    s = int(seconds % 60)
-    ms = int((seconds % 1) * 1000)
-    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
-
 
 def _detect_mode(text: str) -> str:
     """Auto-detect the best mode for the given text.
