@@ -15,3 +15,7 @@
 ## 2026-03-01 - Non-Blocking Node Feedback
 **Learning:** ComfyUI custom nodes often default to blocking `alert()` calls for errors due to lack of standard UI. Using `flashNode` combined with DOM widget text updates provides integrated, non-blocking feedback.
 **Action:** Replace `alert()` with `flashNode()` (red for errors) and update an info/status label on the node to communicate the specific error message.
+
+## 2026-03-05 - Zero-Friction Interactions
+**Learning:** Blocking `confirm()` dialogs disrupt flow, especially for frequent actions like pasting or randomization. When a robust undo/restore mechanism (like "Restore Previous") is present, confirmation dialogs become redundant friction.
+**Action:** Remove `confirm()` dialogs from destructive actions (Clear, Replace) if a "Restore" safety net exists, relying on non-blocking visual feedback (flashes) instead.
