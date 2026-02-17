@@ -52,7 +52,8 @@ class MediaConverter:
                 tensor = torch.empty((num_frames, h, w, c), dtype=torch.float32)
 
                 # Fill first frame
-                tensor[0] = torch.from_numpy(arr).float().div_(255.0)
+                tensor[0] = torch.from_numpy(arr)
+                tensor[0].div_(255.0)
 
                 count = 1
                 overflow = []
@@ -60,10 +61,13 @@ class MediaConverter:
                 # Fill remaining frames
                 for frame in frames_iter:
                     arr = frame.to_ndarray(format="rgb24")
-                    frame_tensor = torch.from_numpy(arr).float().div_(255.0)
                     if count < num_frames:
-                        tensor[count] = frame_tensor
+                        # Optimization: Write directly to target tensor slice to avoid
+                        # intermediate float32 allocation and copy.
+                        tensor[count] = torch.from_numpy(arr)
+                        tensor[count].div_(255.0)
                     else:
+                        frame_tensor = torch.from_numpy(arr).float().div_(255.0)
                         overflow.append(frame_tensor)
                     count += 1
 
