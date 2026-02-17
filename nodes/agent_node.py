@@ -150,6 +150,16 @@ class FFMPEGAgentNode:
                     "forceInput": True,
                     "tooltip": "File path to an image for overlay, grid, slideshow, or multi-image skills. Uses zero memory vs IMAGE tensor. Connect and more slots appear (image_path_b, image_path_c, ...). Use Load Image Path (FFMPEGA).",
                 }),
+                "text_a": ("STRING", {
+                    "forceInput": True,
+                    "tooltip": "Text input for subtitles, overlays, watermarks, or title cards. Connect an FFMPEGA Text node or any STRING source. More slots appear automatically (text_b, text_c, ...).",
+                }),
+                "subtitle_path": ("STRING", {
+                    "default": "",
+                    "multiline": False,
+                    "placeholder": "Path to .srt or .ass subtitle file",
+                    "tooltip": "Direct path to a subtitle file (.srt or .ass). Alternative to using text_a with subtitle mode.",
+                }),
                 "preview_mode": ("BOOLEAN", {
                     "default": False,
                     "label_on": "Preview",
@@ -335,6 +345,8 @@ class FFMPEGAgentNode:
         audio_a: Optional[dict] = None,
         video_a: str = "",
         image_path_a: str = "",
+        text_a: str = "",
+        subtitle_path: str = "",
         preview_mode: bool = False,
         save_output: bool = False,
         output_path: str = "",
@@ -418,6 +430,33 @@ class FFMPEGAgentNode:
                 if ip and os.path.isfile(ip):
                     _all_image_paths.append(ip)
         has_extra_image_paths = len(_all_image_paths) > 0
+
+        # Collect all text_* inputs (text_a, text_b, text_c, ...)
+        _all_text_inputs = []
+        if text_a and text_a.strip():
+            _all_text_inputs.append(text_a.strip())
+        for k in sorted(kwargs):
+            if k.startswith("text_") and kwargs[k]:
+                tv = str(kwargs[k]).strip()
+                if tv:
+                    _all_text_inputs.append(tv)
+        # Include subtitle_path as a text input if provided
+        if subtitle_path and subtitle_path.strip():
+            import os as _os
+            sp = subtitle_path.strip()
+            if _os.path.isfile(sp):
+                _all_text_inputs.insert(0, json.dumps({
+                    "text": "",
+                    "mode": "subtitle",
+                    "path": sp,
+                    "position": "bottom_center",
+                    "font_size": 24,
+                    "font_color": "white",
+                    "start_time": 0.0,
+                    "end_time": -1.0,
+                    "auto_mode": True,
+                }))
+        has_text_inputs = len(_all_text_inputs) > 0
 
         has_extra_images = (
             image_a is not None
@@ -584,6 +623,37 @@ class FFMPEGAgentNode:
             letter = chr(ord('a') + ii)
             input_lines.append(
                 f"- image_path_{letter} (image file): connected — {ip}"
+            )
+
+        # Text inputs (text_a, text_b, ...)
+        for ti, raw_text in enumerate(_all_text_inputs):
+            letter = chr(ord('a') + ti)
+            # Try to parse JSON metadata from TextInputNode
+            try:
+                meta = json.loads(raw_text)
+                if isinstance(meta, dict) and "mode" in meta:
+                    mode = meta.get("mode", "raw")
+                    text_preview = meta.get("text", "")[:60]
+                    path = meta.get("path", "")
+                    if path:
+                        input_lines.append(
+                            f"- text_{letter} ({mode}): connected — subtitle file: {path}"
+                        )
+                    else:
+                        input_lines.append(
+                            f"- text_{letter} ({mode}): connected — "
+                            f"\"{text_preview}{'...' if len(meta.get('text', '')) > 60 else ''}\" "
+                            f"({len(meta.get('text', ''))} chars)"
+                        )
+                    continue
+            except (json.JSONDecodeError, TypeError):
+                pass
+            # Plain string — show preview
+            preview = raw_text[:60]
+            input_lines.append(
+                f"- text_{letter} (raw text): connected — "
+                f"\"{preview}{'...' if len(raw_text) > 60 else ''}\" "
+                f"({len(raw_text)} chars)"
             )
 
         connected_inputs_str = "\n".join(input_lines) if input_lines else "No extra inputs connected"
@@ -879,12 +949,16 @@ class FFMPEGAgentNode:
                 pipeline.extra_inputs = existing + all_frame_paths
                 pipeline.metadata["frame_count"] = len(all_frame_paths)
 
-            # Auto-set include_video for slideshow/grid based on whether
-            # a real video is connected (not a dummy placeholder).
-            has_real_video = '_images_a_shape' in dir() or images_a is not None or (video_path and video_path.strip())
-            for step in pipeline.steps:
-                if step.skill_name in ("slideshow", "grid"):
-                    step.params["include_video"] = has_real_video
+        # Attach text inputs to the pipeline (always, not just for multi-input)
+        if _all_text_inputs:
+            pipeline.text_inputs = _all_text_inputs
+
+        # Auto-set include_video for slideshow/grid based on whether
+        # a real video is connected (not a dummy placeholder).
+        has_real_video = '_images_a_shape' in dir() or images_a is not None or (video_path and video_path.strip())
+        for step in pipeline.steps:
+            if step.skill_name in ("slideshow", "grid"):
+                step.params["include_video"] = has_real_video
 
         # --- Multi-audio input collection ---
         # Mux each audio directly into its paired video segment so the
@@ -1073,6 +1147,7 @@ class FFMPEGAgentNode:
                         extra_inputs=pipeline.extra_inputs,
                         metadata=pipeline.metadata,
                     )
+                    pipeline.text_inputs = _all_text_inputs
                     for step in retry_spec.get("pipeline", []):
                         skill_name = step.get("skill")
                         params = step.get("params", {})

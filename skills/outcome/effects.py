@@ -2591,17 +2591,8 @@ def register_skills(registry: SkillRegistry) -> None:
                 min_value=1,
                 max_value=80,
             ),
-            SkillParameter(
-                name="seed",
-                type=ParameterType.INT,
-                description="Random seed for reproducible grain",
-                required=False,
-                default=-1,
-                min_value=-1,
-                max_value=99999,
-            ),
         ],
-        ffmpeg_template="noise=alls={intensity}:allf=t:seed={seed}",
+        ffmpeg_template="noise=alls={intensity}:allf=t",
         examples=[
             "grain_overlay - Subtle cinematic grain",
             "grain_overlay:intensity=40 - Heavy gritty grain",
