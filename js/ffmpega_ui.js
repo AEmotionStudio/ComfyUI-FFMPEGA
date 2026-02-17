@@ -41,6 +41,17 @@ const RANDOM_PROMPTS = [
     "Apply golden hour warm glow with a slow Ken Burns zoom"
 ];
 
+// --- Color utility ---
+// Returns black or white depending on background luminance for readable text
+function _contrastColor(hex) {
+    const c = hex.replace("#", "");
+    const r = parseInt(c.substring(0, 2), 16);
+    const g = parseInt(c.substring(2, 4), 16);
+    const b = parseInt(c.substring(4, 6), 16);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.5 ? "#000000" : "#FFFFFF";
+}
+
 // --- Dynamic input slot management ---
 // When you connect image_a, image_b appears. Connect image_b → image_c appears, etc.
 // Same for audio_a, audio_b, audio_c, ...
@@ -180,6 +191,202 @@ function flashNode(node, color = "#4a5a7a") {
     }, 350);
 }
 
+/**
+ * Adds video preview context menu options to a node.
+ * Shared between LoadVideoPath and SaveVideo nodes.
+ * @param {object} node - The node instance
+ * @param {HTMLVideoElement} videoEl - The <video> element
+ * @param {HTMLElement} previewContainer - The preview container div
+ * @param {HTMLElement} previewWidget - The preview widget
+ * @param {Function} getVideoUrl - Returns the current video URL string (or null)
+ */
+function addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, getVideoUrl) {
+    const origGetExtraMenuOptions = node.constructor.prototype._ffmpegaOrigGetExtraMenu;
+    const currentGetExtra = node.getExtraMenuOptions;
+
+    node.getExtraMenuOptions = function (_, options) {
+        currentGetExtra?.apply(this, arguments);
+
+        const optNew = [];
+        const url = getVideoUrl();
+        const hasVideo = !!url && previewContainer.style.display !== "none";
+
+        // --- Sync Preview ---
+        optNew.push({
+            content: "🔄 Sync Preview",
+            callback: () => {
+                for (const container of document.getElementsByClassName("ffmpega_preview")) {
+                    for (const child of container.children) {
+                        if (child.tagName === "VIDEO" && child.src) {
+                            child.currentTime = 0;
+                            child.play().catch(() => { });
+                        }
+                    }
+                }
+                flashNode(node, "#4a6a5a");
+            }
+        });
+
+        if (hasVideo) {
+            // --- Open Preview ---
+            optNew.push({
+                content: "🔗 Open Preview",
+                callback: () => window.open(url, "_blank")
+            });
+
+            // --- Save Preview ---
+            optNew.push({
+                content: "💾 Save Preview",
+                callback: () => {
+                    const a = document.createElement("a");
+                    a.href = url;
+                    // Extract filename from URL params or use default
+                    try {
+                        const params = new URL(a.href, location.origin).searchParams;
+                        a.setAttribute("download", params.get("filename") || "preview.mp4");
+                    } catch {
+                        a.setAttribute("download", "preview.mp4");
+                    }
+                    document.body.append(a);
+                    a.click();
+                    requestAnimationFrame(() => a.remove());
+                }
+            });
+        }
+
+        // --- Pause / Resume ---
+        if (hasVideo) {
+            const isPaused = videoEl.paused;
+            optNew.push({
+                content: isPaused ? "▶️ Resume Preview" : "⏸️ Pause Preview",
+                callback: () => {
+                    if (videoEl.paused) {
+                        videoEl.play().catch(() => { });
+                    } else {
+                        videoEl.pause();
+                    }
+                }
+            });
+        }
+
+        // --- Show / Hide ---
+        const isHidden = previewContainer.style.display === "none";
+        optNew.push({
+            content: isHidden ? "👁️ Show Preview" : "🙈 Hide Preview",
+            callback: () => {
+                if (previewContainer.style.display === "none") {
+                    previewContainer.style.display = "";
+                    if (!videoEl.paused) videoEl.play().catch(() => { });
+                } else {
+                    videoEl.pause();
+                    previewContainer.style.display = "none";
+                }
+                node.setSize([
+                    node.size[0],
+                    node.computeSize([node.size[0], node.size[1]])[1],
+                ]);
+                node?.graph?.setDirtyCanvas(true);
+            }
+        });
+
+        // --- Mute / Unmute ---
+        if (hasVideo) {
+            optNew.push({
+                content: videoEl.muted ? "🔊 Unmute Preview" : "🔇 Mute Preview",
+                callback: () => {
+                    videoEl.muted = !videoEl.muted;
+                }
+            });
+        }
+
+        // --- Copy Video Path ---
+        if (hasVideo) {
+            optNew.push({
+                content: "📋 Copy Video Path",
+                callback: async () => {
+                    try {
+                        const params = new URL(url, location.origin).searchParams;
+                        const filename = params.get("filename") || url;
+                        await navigator.clipboard.writeText(filename);
+                        flashNode(node, "#4a7a4a");
+                    } catch {
+                        flashNode(node, "#7a4a4a");
+                    }
+                }
+            });
+        }
+
+        // --- Separator before extras ---
+        if (optNew.length > 0) optNew.push(null);
+
+        // --- Playback Speed ---
+        if (hasVideo) {
+            optNew.push({
+                content: "⏱️ Playback Speed",
+                submenu: {
+                    options: [
+                        { content: "0.25x", callback: () => { videoEl.playbackRate = 0.25; flashNode(node, "#5a5a3a"); } },
+                        { content: "0.5x", callback: () => { videoEl.playbackRate = 0.5; flashNode(node, "#5a5a3a"); } },
+                        { content: "1x (Normal)", callback: () => { videoEl.playbackRate = 1.0; flashNode(node, "#5a5a3a"); } },
+                        { content: "1.5x", callback: () => { videoEl.playbackRate = 1.5; flashNode(node, "#5a5a3a"); } },
+                        { content: "2x", callback: () => { videoEl.playbackRate = 2.0; flashNode(node, "#5a5a3a"); } },
+                    ]
+                }
+            });
+        }
+
+        // --- Loop On/Off ---
+        if (hasVideo) {
+            optNew.push({
+                content: videoEl.loop ? "🔁 Loop: ON (click to disable)" : "➡️ Loop: OFF (click to enable)",
+                callback: () => {
+                    videoEl.loop = !videoEl.loop;
+                    flashNode(node, "#5a5a3a");
+                }
+            });
+        }
+
+        // --- Screenshot Frame ---
+        if (hasVideo && videoEl.videoWidth) {
+            optNew.push({
+                content: "📸 Screenshot Frame",
+                callback: async () => {
+                    try {
+                        const canvas = document.createElement("canvas");
+                        canvas.width = videoEl.videoWidth;
+                        canvas.height = videoEl.videoHeight;
+                        canvas.getContext("2d").drawImage(videoEl, 0, 0);
+                        const blob = await new Promise(r => canvas.toBlob(r, "image/png"));
+                        if (blob && navigator.clipboard?.write) {
+                            await navigator.clipboard.write([
+                                new ClipboardItem({ "image/png": blob })
+                            ]);
+                            flashNode(node, "#4a7a4a");
+                        } else {
+                            // Fallback: download as file
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement("a");
+                            a.href = url;
+                            a.download = "screenshot.png";
+                            a.click();
+                            URL.revokeObjectURL(url);
+                            flashNode(node, "#4a7a4a");
+                        }
+                    } catch {
+                        flashNode(node, "#7a4a4a");
+                    }
+                }
+            });
+        }
+
+        // Prepend our options with a separator from existing options
+        if (options.length > 0 && options[0] != null && optNew.length > 0) {
+            optNew.push(null);
+        }
+        options.unshift(...optNew);
+    };
+}
+
 // Register FFMPEGA extensions
 app.registerExtension({
     name: "FFMPEGA.UI",
@@ -312,6 +519,7 @@ app.registerExtension({
                         updateDynamicSlots(this, "audio_", "AUDIO");
                         updateDynamicSlots(this, "video_", "STRING");
                         updateDynamicSlots(this, "image_path_", "STRING");
+                        updateDynamicSlots(this, "text_", "STRING");
                         fitHeight();
                     }
                 };
@@ -657,6 +865,7 @@ app.registerExtension({
 
                 // --- Video preview DOM widget ---
                 const previewContainer = document.createElement("div");
+                previewContainer.className = "ffmpega_preview";
                 previewContainer.style.cssText =
                     "width:100%;background:#1a1a1a;border-radius:6px;" +
                     "overflow:hidden;position:relative;";
@@ -929,6 +1138,10 @@ app.registerExtension({
                     }
                 };
 
+                // --- Video preview context menu ---
+                const getVideoUrlLoad = () => videoEl.src || null;
+                addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, getVideoUrlLoad);
+
                 return result;
             };
         }
@@ -946,6 +1159,7 @@ app.registerExtension({
 
                 // --- Video preview DOM widget ---
                 const previewContainer = document.createElement("div");
+                previewContainer.className = "ffmpega_preview";
                 previewContainer.style.cssText =
                     "width:100%;background:#1a1a1a;border-radius:6px;" +
                     "overflow:hidden;display:none;";
@@ -1055,6 +1269,10 @@ app.registerExtension({
                     }
                 };
 
+                // --- Video preview context menu ---
+                const getVideoUrlSave = () => videoEl.src || null;
+                addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, getVideoUrlSave);
+
                 return result;
             };
         }
@@ -1086,6 +1304,107 @@ app.registerExtension({
                 return result;
             };
         }
+        // Style and enhance FFMPEGATextInput node with color picker
+        if (nodeData.name === "FFMPEGATextInput") {
+            const onNodeCreated = nodeType.prototype.onNodeCreated;
+
+            nodeType.prototype.onNodeCreated = function () {
+                const result = onNodeCreated?.apply(this, arguments);
+
+                // Style the node
+                this.color = "#3a4a5a";
+                this.bgcolor = "#2a3a4a";
+
+                // Find and replace the font_color STRING widget with a color picker
+                const colorWidgetIdx = this.widgets?.findIndex(w => w.name === "font_color");
+                if (colorWidgetIdx !== undefined && colorWidgetIdx >= 0) {
+                    const oldWidget = this.widgets[colorWidgetIdx];
+                    const initialColor = oldWidget.value || "#FFFFFF";
+
+                    // Remove the old STRING widget
+                    this.widgets.splice(colorWidgetIdx, 1);
+
+                    // Create DOM container
+                    const container = document.createElement("div");
+                    container.style.cssText = `
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        padding: 2px 4px;
+                        width: 100%;
+                        box-sizing: border-box;
+                    `;
+
+                    // Label
+                    const label = document.createElement("span");
+                    label.textContent = "font_color";
+                    label.style.cssText = `
+                        color: #b0b0b0;
+                        font: 12px Arial, sans-serif;
+                        flex-shrink: 0;
+                    `;
+
+                    // Color input
+                    const colorInput = document.createElement("input");
+                    colorInput.type = "color";
+                    colorInput.value = initialColor;
+                    colorInput.style.cssText = `
+                        width: 36px;
+                        height: 24px;
+                        border: 1px solid #555;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        background: transparent;
+                        padding: 0;
+                        flex-shrink: 0;
+                    `;
+
+                    // Hex display
+                    const hexLabel = document.createElement("span");
+                    hexLabel.textContent = initialColor.toUpperCase();
+                    hexLabel.style.cssText = `
+                        color: #ccc;
+                        font: 11px monospace;
+                        flex-grow: 1;
+                        text-align: right;
+                    `;
+
+                    container.appendChild(label);
+                    container.appendChild(colorInput);
+                    container.appendChild(hexLabel);
+
+                    // Add as DOM widget
+                    const domWidget = this.addDOMWidget("font_color", "custom", container, {
+                        getValue: () => colorInput.value.toUpperCase(),
+                        setValue: (v) => {
+                            if (v && typeof v === "string") {
+                                // Handle both hex (#FFFFFF) and named colors
+                                if (v.startsWith("#")) {
+                                    colorInput.value = v;
+                                    hexLabel.textContent = v.toUpperCase();
+                                }
+                            }
+                        },
+                    });
+                    domWidget.value = initialColor;
+
+                    colorInput.addEventListener("input", (e) => {
+                        domWidget.value = e.target.value.toUpperCase();
+                        hexLabel.textContent = e.target.value.toUpperCase();
+                    });
+
+                    // Move widget to the correct position
+                    const newIdx = this.widgets.indexOf(domWidget);
+                    if (newIdx >= 0 && newIdx !== colorWidgetIdx) {
+                        this.widgets.splice(newIdx, 1);
+                        this.widgets.splice(colorWidgetIdx, 0, domWidget);
+                    }
+                }
+
+                return result;
+            };
+        }
+
     },
 });
 

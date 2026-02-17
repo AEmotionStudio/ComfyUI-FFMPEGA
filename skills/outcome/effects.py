@@ -2601,7 +2601,7 @@ def register_skills(registry: SkillRegistry) -> None:
                 max_value=99999,
             ),
         ],
-        ffmpeg_template="noise=alls={intensity}:allf=t:seed={seed}",
+        ffmpeg_template="noise=alls={intensity}:allf=t",
         examples=[
             "grain_overlay - Subtle cinematic grain",
             "grain_overlay:intensity=40 - Heavy gritty grain",

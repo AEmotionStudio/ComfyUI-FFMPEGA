@@ -38,6 +38,7 @@ class Pipeline:
     output_path: Optional[str] = None
     extra_inputs: list[str] = field(default_factory=list)
     extra_audio_inputs: list[str] = field(default_factory=list)
+    text_inputs: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def add_step(
@@ -297,6 +298,8 @@ class SkillComposer:
             if pipeline.extra_inputs:
                 step.params["_extra_input_count"] = len(pipeline.extra_inputs)
                 step.params["_extra_input_paths"] = pipeline.extra_inputs
+            if pipeline.text_inputs:
+                step.params["_text_inputs"] = pipeline.text_inputs
             if pipeline.metadata.get("_has_embedded_audio"):
                 step.params["_has_embedded_audio"] = True
             if "_input_fps" in pipeline.metadata:

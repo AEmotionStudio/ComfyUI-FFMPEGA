@@ -4,6 +4,7 @@ from .agent_node import FFMPEGAgentNode
 from .frame_extract_node import FrameExtractNode
 from .load_image_path_node import LoadImagePathNode
 from .load_video_path_node import LoadVideoPathNode
+from .text_input_node import TextInputNode
 from .save_video_node import SaveVideoNode
 from .video_to_path_node import VideoToPathNode
 
@@ -15,6 +16,7 @@ NODE_CLASS_MAPPINGS = {
     "FFMPEGALoadVideoPath": LoadVideoPathNode,
     "FFMPEGASaveVideo": SaveVideoNode,
     "FFMPEGAVideoToPath": VideoToPathNode,
+    "FFMPEGATextInput": TextInputNode,
 }
 
 # Display names for nodes
@@ -25,6 +27,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FFMPEGALoadVideoPath": "Load Video Path (FFMPEGA)",
     "FFMPEGASaveVideo": "Save Video (FFMPEGA)",
     "FFMPEGAVideoToPath": "Video to Path (FFMPEGA)",
+    "FFMPEGATextInput": "FFMPEGA Text",
 }
 
 __all__ = [
@@ -34,6 +37,7 @@ __all__ = [
     "LoadVideoPathNode",
     "SaveVideoNode",
     "VideoToPathNode",
+    "TextInputNode",
     "NODE_CLASS_MAPPINGS",
     "NODE_DISPLAY_NAME_MAPPINGS",
 ]
