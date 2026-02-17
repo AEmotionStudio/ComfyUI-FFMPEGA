@@ -293,7 +293,7 @@ def extract_frames(
     # Create a unique per-run subfolder to avoid cross-run interference
     import uuid
     node_dir = Path(__file__).resolve().parent.parent
-    run_id = uuid.uuid4().hex[:8]
+    run_id = uuid.uuid4().hex
     frames_dir = node_dir / "_vision_frames" / run_id
     frames_dir.mkdir(parents=True, exist_ok=True)
 
