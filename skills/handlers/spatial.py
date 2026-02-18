@@ -9,8 +9,16 @@ except ImportError:
     from core.sanitize import sanitize_text_param
 
 def _f_resize(p):
-    w = sanitize_text_param(str(p.get("width", -1)))
-    h = sanitize_text_param(str(p.get("height", -1)))
+    w = str(p.get("width", -2))
+    h = str(p.get("height", -2))
+    # Use -2 instead of -1 for auto-calculated dimensions so ffmpeg
+    # rounds to even numbers (libx264 requires divisible-by-2).
+    if w == "-1":
+        w = "-2"
+    if h == "-1":
+        h = "-2"
+    w = sanitize_text_param(w)
+    h = sanitize_text_param(h)
     return [f"scale={w}:{h}"], [], []
 
 

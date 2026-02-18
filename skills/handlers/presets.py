@@ -6,11 +6,40 @@ Auto-generated from composer.py — do not edit directly.
 def _f_fade_to_black(p):
     in_dur = float(p.get("in_duration", 1.0))
     out_dur = float(p.get("out_duration", 0))
+
+    # Calculate total output duration so fade-out starts at the right time.
+    # For concat/xfade pipelines the total is longer than a single clip.
+    clip_dur = float(p.get("_video_duration", 0))
+    n_extra = int(p.get("_extra_input_count", 0))
+    n_clips = 1 + n_extra  # primary input + extras
+    xfade_dur = float(p.get("_xfade_duration", 1.0))  # per-transition overlap
+    still_dur = float(p.get("still_duration", 4.0))  # per-image duration in xfade
+
+    if n_clips > 1 and clip_dur > 0:
+        # Determine per-extra duration: videos use clip_dur, images use still_dur
+        import os
+        extra_paths = p.get("_extra_input_paths", [])
+        _VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv", ".m4v"}
+        if extra_paths and any(
+            os.path.splitext(ep)[1].lower() in _VIDEO_EXTS for ep in extra_paths
+        ):
+            per_extra = clip_dur  # video extras have the same duration
+        else:
+            per_extra = still_dur  # image extras use still_duration
+        total_dur = clip_dur + n_extra * per_extra - (n_clips - 1) * xfade_dur
+    else:
+        total_dur = clip_dur
+
     vf = []
     if in_dur > 0:
         vf.append(f"fade=t=in:st=0:d={in_dur}")
     if out_dur > 0:
-        vf.append(f"fade=t=out:d={out_dur}")
+        if total_dur > 0:
+            st = max(0, total_dur - out_dur)
+            vf.append(f"fade=t=out:st={st}:d={out_dur}")
+        else:
+            # Fallback: let ffmpeg figure it out (single clip, no duration info)
+            vf.append(f"fade=t=out:d={out_dur}")
     return vf, [], []
 
 

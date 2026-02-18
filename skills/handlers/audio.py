@@ -41,3 +41,17 @@ def _f_audio_crossfade(p):
     return [], [], [], fc
 
 
+def _f_mix_audio(p):
+    """Mix/blend audio from two inputs together using amix."""
+    duration = str(p.get("duration", "longest")).lower()
+    if duration not in ("longest", "shortest", "first"):
+        duration = "longest"
+    weights = str(p.get("weights", "1 1")).strip()
+    dropout = float(p.get("dropout_transition", 2))
+    fc = (
+        f"[0:a][1:a]amix=inputs=2"
+        f":duration={duration}"
+        f":dropout_transition={dropout}"
+        f":weights={weights}"
+    )
+    return [], [], [], fc

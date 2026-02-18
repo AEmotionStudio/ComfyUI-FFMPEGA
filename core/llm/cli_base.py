@@ -13,9 +13,11 @@ individual CLI connectors only need to specify:
 import asyncio
 import json
 import logging
-from pathlib import Path
+import random
 import re
+import time
 from abc import abstractmethod
+from pathlib import Path
 from typing import Optional, AsyncIterator
 
 from .base import LLMConnector, LLMConfig, LLMResponse, LLMProvider
@@ -85,12 +87,75 @@ class CLIConnectorBase(LLMConnector):
             raise RuntimeError(self._install_hint())
         return path
 
+    # Retry settings for transient errors (rate limits, capacity)
+    _MAX_RETRIES = 3
+    _INITIAL_BACKOFF = 5.0  # seconds
+    _BACKOFF_MULTIPLIER = 3.0
+    _BACKOFF_JITTER = 0.25  # ±25%
+
+    @staticmethod
+    def _is_retryable_error(stderr_text: str) -> bool:
+        """Check if stderr indicates a transient rate-limit error."""
+        lower = stderr_text.lower()
+        return any(indicator in lower for indicator in (
+            "429",
+            "resource_exhausted",
+            "capacity_exhausted",
+            "rate limit",
+            "ratelimitexceeded",
+            "no capacity available",
+            "quota",
+        ))
+
+    @staticmethod
+    def _extract_clean_error(stderr_text: str) -> str:
+        """Extract a concise error message from verbose CLI stderr.
+
+        Looks for the most informative line instead of dumping the
+        entire stack trace.  Falls back to the first 200 chars if
+        no clean message can be found.
+        """
+        # Try to extract a JSON error message
+        msg_match = re.search(
+            r'"message"\s*:\s*"([^"]+)"', stderr_text,
+        )
+        if msg_match:
+            return msg_match.group(1)
+
+        # Look for common error summary lines
+        for line in stderr_text.splitlines():
+            stripped = line.strip()
+            # Skip deprecation warnings, stack frames, and empty lines
+            if not stripped:
+                continue
+            if stripped.startswith(("(", "at ", "File ")):
+                continue
+            if "DeprecationWarning" in stripped:
+                continue
+            if "Hook registry" in stripped:
+                continue
+            if "Loaded cached" in stripped:
+                continue
+            # Found a meaningful line
+            if any(kw in stripped.lower() for kw in (
+                "error", "failed", "exhausted", "capacity", "limit",
+                "timeout", "refused", "denied",
+            )):
+                return stripped[:300]
+
+        # Fallback: first 200 chars
+        return stderr_text[:200].strip()
+
     async def generate(
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
     ) -> LLMResponse:
-        """Run the CLI binary and capture text output."""
+        """Run the CLI binary and capture text output.
+
+        Retries up to ``_MAX_RETRIES`` times with exponential backoff
+        when the CLI fails due to transient rate-limit errors.
+        """
 
         binary_path = self._resolve_binary()
         cmd = self._build_cmd(binary_path, prompt, system_prompt)
@@ -102,40 +167,67 @@ class CLIConnectorBase(LLMConnector):
 
         logger.debug("[%s] Running: %s (cwd=%s)", self._log_tag(), " ".join(cmd[:3]), node_dir)
 
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=node_dir,
-            )
+        last_error: Exception | None = None
+        backoff = self._INITIAL_BACKOFF
 
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(input=stdin_data),
-                timeout=self.config.timeout,
-            )
-        except asyncio.TimeoutError:
+        for attempt in range(1, self._MAX_RETRIES + 1):
             try:
-                proc.kill()
-                await proc.wait()
-            except Exception:
-                pass
-            raise TimeoutError(
-                f"{self._log_tag()} timed out after {self.config.timeout}s"
-            )
-        except FileNotFoundError:
-            raise RuntimeError(self._install_hint())
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=node_dir,
+                )
 
-        if proc.returncode != 0:
-            err = stderr.decode("utf-8", errors="replace").strip()
-            raise RuntimeError(
-                f"{self._log_tag()} failed (exit {proc.returncode}): {err}"
-            )
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(input=stdin_data),
+                    timeout=self.config.timeout,
+                )
+            except asyncio.TimeoutError:
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except Exception:
+                    pass
+                raise TimeoutError(
+                    f"{self._log_tag()} timed out after {self.config.timeout}s"
+                )
+            except FileNotFoundError:
+                raise RuntimeError(self._install_hint())
 
-        content = stdout.decode("utf-8", errors="replace").strip()
+            if proc.returncode != 0:
+                err_raw = stderr.decode("utf-8", errors="replace").strip()
 
-        return self._parse_raw_output(content, stdin_data)
+                if self._is_retryable_error(err_raw) and attempt < self._MAX_RETRIES:
+                    clean_msg = self._extract_clean_error(err_raw)
+                    jitter = 1.0 + random.uniform(-self._BACKOFF_JITTER, self._BACKOFF_JITTER)
+                    delay = backoff * jitter
+                    logger.warning(
+                        "[%s] Attempt %d/%d failed (rate limit): %s — retrying in %.1fs",
+                        self._log_tag(), attempt, self._MAX_RETRIES, clean_msg, delay,
+                    )
+                    last_error = RuntimeError(
+                        f"{self._log_tag()} rate-limited: {clean_msg}"
+                    )
+                    await asyncio.sleep(delay)
+                    backoff *= self._BACKOFF_MULTIPLIER
+                    continue
+
+                # Non-retryable or final attempt — raise with clean message
+                clean_msg = self._extract_clean_error(err_raw)
+                raise RuntimeError(
+                    f"{self._log_tag()} failed (exit {proc.returncode}): {clean_msg}"
+                )
+
+            # Success
+            content = stdout.decode("utf-8", errors="replace").strip()
+            if attempt > 1:
+                logger.info("[%s] Succeeded on attempt %d/%d", self._log_tag(), attempt, self._MAX_RETRIES)
+            return self._parse_raw_output(content, stdin_data)
+
+        # Should not reach here, but just in case
+        raise last_error or RuntimeError(f"{self._log_tag()} failed after {self._MAX_RETRIES} attempts")
 
     def _parse_raw_output(
         self,

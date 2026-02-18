@@ -122,6 +122,9 @@ class SkillComposer:
         "title": "text_overlay",
         "subtitle": "text_overlay",
         "caption": "text_overlay",
+        "audio_mix": "mix_audio",
+        "blend_audio": "mix_audio",
+        "combine_audio": "mix_audio",
     }
 
     def __init__(self, registry: Optional[SkillRegistry] = None):
@@ -180,6 +183,8 @@ class SkillComposer:
         }
         has_audio_embedding_skill = bool(step_names & _audio_embedded_skills)
         _overlay_seen = False  # Track first overlay step to dedup duplicates
+        _xfade_transition_dur = None  # Captured from xfade steps for fade_to_black
+        _xfade_still_dur = None  # still_duration from xfade for fade_to_black
 
         for step in pipeline.steps:
             if not step.enabled:
@@ -222,6 +227,11 @@ class SkillComposer:
                     )
                     continue
                 _overlay_seen = True
+
+            # Capture xfade transition duration and still_duration for fade_to_black
+            if resolved_name == "xfade" and _xfade_transition_dur is None:
+                _xfade_transition_dur = float(step.params.get("duration", 1.0))
+                _xfade_still_dur = float(step.params.get("still_duration", 4.0))
 
             # Resolve parameter aliases before filling defaults — so
             # "bitrate=128k" is resolved to "kbps=128" before the
@@ -306,6 +316,16 @@ class SkillComposer:
                 step.params["_input_fps"] = pipeline.metadata["_input_fps"]
             if "_video_duration" in pipeline.metadata:
                 step.params["_video_duration"] = pipeline.metadata["_video_duration"]
+            if "_input_width" in pipeline.metadata:
+                step.params["_input_width"] = pipeline.metadata["_input_width"]
+            if "_input_height" in pipeline.metadata:
+                step.params["_input_height"] = pipeline.metadata["_input_height"]
+            # Propagate xfade transition duration and still_duration so
+            # fade_to_black can calculate the correct total output duration.
+            if _xfade_transition_dur is not None:
+                step.params["_xfade_duration"] = _xfade_transition_dur
+            if _xfade_still_dur is not None:
+                step.params["still_duration"] = _xfade_still_dur
 
             # Inject image_path indices for overlay/animated_overlay handlers
             # These are separate from extra_inputs (which xfade/concat use)
@@ -552,17 +572,55 @@ class SkillComposer:
                     if not f.startswith("scale=") and not f.startswith("pad=")
                 ]
 
-            # Merge simple video filters into the filter_complex graph
-            # only when the graph actually references [0:v]
-            if video_filters:
-                vf_chain = ",".join(video_filters)
+            # Merge simple video filters into the filter_complex graph.
+            # When xfade/concat is present, fade filters must go AFTER the
+            # concat chain output (not before it on [0:v]), otherwise fade-out
+            # only affects the first clip instead of the final result.
+            _concat_skills = {"xfade", "concat"}
+            _has_concat = bool(step_names & _concat_skills)
+
+            if _has_concat and video_filters:
+                # ALL video filters go post-xfade so they apply to the
+                # combined output, not just the first (dummy) segment.
+                pre_filters = []
+                post_filters = list(video_filters)
+            else:
+                pre_filters = video_filters
+                post_filters = []
+
+            if pre_filters:
+                vf_chain = ",".join(pre_filters)
                 if "[0:v]" in fc_graph:
                     # Prepend simple filters before the complex graph
                     fc_graph = f"[0:v]{vf_chain}[_pre];" + fc_graph.replace("[0:v]", "[_pre]")
+                elif "[_vout]" in fc_graph:
+                    # Graph produces a labeled video output (xfade/concat) —
+                    # chain filters from it so they apply to the combined
+                    # output, not to a disconnected input stream.
+                    fc_graph = fc_graph.replace("[_vout]", "[_vout_pre]")
+                    fc_graph += f";[_vout_pre]{vf_chain}[_vout]"
+                elif _has_concat:
+                    # xfade/concat has an unlabeled output — add a label
+                    # so we can chain from it, then apply the filters.
+                    fc_graph += f"[_vout_pre];[_vout_pre]{vf_chain}[_vout]"
                 else:
                     # Graph doesn't use [0:v] (e.g. grid/slideshow) —
                     # apply video filters as a separate unlabeled chain
                     fc_graph += f";[0:v]{vf_chain}"
+
+            if post_filters:
+                # Append fade filters after the final video output label
+                fade_chain = ",".join(post_filters)
+                if "[_vfinal]" in fc_graph:
+                    fc_graph = fc_graph.replace("[_vfinal]", "[_vfade_pre]")
+                    fc_graph += f";[_vfade_pre]{fade_chain}[_vfinal]"
+                elif "[_vout]" in fc_graph:
+                    fc_graph = fc_graph.replace("[_vout]", "[_vfade_pre]")
+                    fc_graph += f";[_vfade_pre]{fade_chain}[_vout]"
+                elif _has_concat:
+                    # xfade/concat has an unlabeled output — add a label
+                    # so we can chain fade from it.
+                    fc_graph += f"[_vfade_pre];[_vfade_pre]{fade_chain}[_vout]"
 
             # Handle audio filters with filter_complex:
             # When audio-producing skills (concat/xfade) embed audio in the
@@ -584,6 +642,13 @@ class SkillComposer:
                 af_chain = ",".join(audio_filters)
                 fc_graph += f";[0:a]{af_chain}"
                 audio_filters = []  # Don't also emit -af
+
+            # When filter_complex produces a labeled [_vout] but no -map
+            # has been added (no audio crossfade), we need to explicitly
+            # map it so ffmpeg routes the video output correctly.
+            # Audio is handled by the post-processing mux step, not here.
+            if "[_vout]" in fc_graph and "-map" not in output_options:
+                output_options.extend(["-map", "[_vout]"])
 
             builder.complex_filter(fc_graph)
             # Audio filters go via -af when not consumed by filter_complex
@@ -931,7 +996,7 @@ def _get_dispatch() -> dict:
         _f_datamosh, _f_mask_blur, _f_lut_apply,
         # audio
         _f_volume, _f_normalize, _f_fade_audio, _f_remove_audio,
-        _f_extract_audio, _f_replace_audio, _f_audio_crossfade,
+        _f_extract_audio, _f_replace_audio, _f_audio_crossfade, _f_mix_audio,
         # encoding
         _f_compress, _f_convert, _f_bitrate, _f_quality, _f_gif,
         _f_container, _f_two_pass, _f_audio_codec, _f_hwaccel,
@@ -1031,6 +1096,10 @@ def _get_dispatch() -> dict:
         "hwaccel": _f_hwaccel,
         "thumbnail": _f_thumbnail,
         "extract_frames": _f_extract_frames,
+        "mix_audio": _f_mix_audio,
+        "audio_mix": _f_mix_audio,
+        "blend_audio": _f_mix_audio,
+        "combine_audio": _f_mix_audio,
         # Composite / Overlay
         "text_overlay": _f_text_overlay,
         "add_text": _f_add_text,

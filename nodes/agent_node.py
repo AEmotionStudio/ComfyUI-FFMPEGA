@@ -104,17 +104,17 @@ class FFMPEGAgentNode:
 
         return {
             "required": {
-                "video_path": ("STRING", {
-                    "default": "",
-                    "multiline": False,
-                    "placeholder": "Path to input video file",
-                    "tooltip": "Absolute path to the source video file. Used as the ffmpeg input unless images are connected.",
-                }),
                 "prompt": ("STRING", {
                     "default": "",
                     "multiline": True,
                     "placeholder": "Describe how you want to edit the video...",
                     "tooltip": "Natural language instruction describing the desired edit. Examples: 'Add a cinematic letterbox', 'Speed up 2x', 'Apply a vintage VHS look'.",
+                }),
+                "video_path": ("STRING", {
+                    "default": "",
+                    "multiline": False,
+                    "placeholder": "Path to input video file",
+                    "tooltip": "Absolute path to the source video file. Used as the ffmpeg input unless images are connected.",
                 }),
                 "llm_model": (all_models, {
                     "default": all_models[0],
@@ -748,6 +748,11 @@ class FFMPEGAgentNode:
         )
         if input_duration:
             pipeline.metadata["_video_duration"] = input_duration
+        # Store input resolution so multi-input handlers (xfade, concat)
+        # default to the source dimensions instead of hardcoded 1920x1080.
+        if video_metadata.primary_video:
+            pipeline.metadata["_input_width"] = video_metadata.primary_video.width
+            pipeline.metadata["_input_height"] = video_metadata.primary_video.height
 
         for step in pipeline_steps:
             skill_name = step.get("skill")
@@ -866,13 +871,32 @@ class FFMPEGAgentNode:
                 logger.debug("File-path video inputs (zero memory): %s", _all_video_paths)
 
             # --- File-path-based image inputs (zero memory cost) ---
-            # Image paths are NOT added to all_frame_paths because that list
-            # feeds _extra_input_paths which xfade/concat treat as video
-            # segments.  Instead, pass them via pipeline metadata so the
-            # composer can add them as separate -i entries for overlay.
+            # Determine where images should be routed:
+            # - For slideshow/xfade/concat: images are SEGMENTS → extra_inputs
+            # - For overlay/watermark: images are LAYERS → _image_paths metadata
+            # When BOTH concat/xfade AND overlay are present, overlay wins
+            # because xfade uses video paths for segments, not images.
+            _SEGMENT_SKILLS = {"xfade", "slideshow", "concat"}
+            _OVERLAY_SKILLS = {
+                "overlay_image", "overlay", "watermark",
+                "animated_overlay", "moving_overlay",
+            }
+            _pipeline_skill_names = {
+                s.skill_name for s in pipeline.steps
+            }
+            _has_overlay = bool(_pipeline_skill_names & _OVERLAY_SKILLS)
+            _has_segments = bool(_pipeline_skill_names & _SEGMENT_SKILLS)
+            _images_are_segments = _has_segments and not _has_overlay
+
             if _all_image_paths:
-                pipeline.metadata["_image_paths"] = _all_image_paths
-                logger.debug("File-path image inputs (zero memory): %s", _all_image_paths)
+                if _images_are_segments:
+                    # Images are slideshow/concat segments — add to extra_inputs
+                    all_frame_paths.extend(_all_image_paths)
+                    logger.debug("Image paths routed as segments: %s", _all_image_paths)
+                else:
+                    # Images are overlay layers — pass via metadata
+                    pipeline.metadata["_image_paths"] = _all_image_paths
+                    logger.debug("Image paths routed for overlay: %s", _all_image_paths)
 
             # Collect all image_* tensors in alphabetical order
             # (exclude images_* which are collected separately as video inputs)
@@ -955,7 +979,7 @@ class FFMPEGAgentNode:
 
         # Auto-set include_video for slideshow/grid based on whether
         # a real video is connected (not a dummy placeholder).
-        has_real_video = '_images_a_shape' in dir() or images_a is not None or (video_path and video_path.strip())
+        has_real_video = '_images_a_shape' in dir() or images_a is not None or (video_path and video_path.strip()) or has_extra_video_paths
         for step in pipeline.steps:
             if step.skill_name in ("slideshow", "grid"):
                 step.params["include_video"] = has_real_video
@@ -1059,13 +1083,16 @@ class FFMPEGAgentNode:
                             logging.getLogger("ffmpega").warning(
                                 f"Could not add silent audio to {vid_path}: {e}"
                             )
-                # Only flag if all segments truly have audio now
-                all_have_audio = all(
-                    self.media_converter.has_audio_stream(vp)
-                    for vp in video_segments
-                    if os.path.isfile(vp)
+                # Only flag if all segments truly have audio now, AND there are
+                # at least 2 video segments with audio (needed for crossfade).
+                # When only 1 segment has audio (e.g. the dummy base video),
+                # there's nothing to crossfade — let post-processing mux the
+                # full audio_a instead.
+                audio_segment_count = sum(
+                    1 for vp in video_segments
+                    if os.path.isfile(vp) and self.media_converter.has_audio_stream(vp)
                 )
-                if all_have_audio:
+                if audio_segment_count >= 2:
                     pipeline.metadata["_has_embedded_audio"] = True
 
         command = self.composer.compose(pipeline)

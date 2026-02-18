@@ -50,8 +50,32 @@ def _f_vignette(p):
 
 def _f_fade(p):
     fade_type = p.get("type", "in")
-    start = p.get("start", 0)
-    duration = p.get("duration", 1)
+    start = float(p.get("start", 0))
+    duration = float(p.get("duration", 1))
+
+    # When fade-out start is 0 (default/unset) and we're in a multi-clip
+    # pipeline, calculate correct start from total output duration so
+    # fade-out happens at the END of the combined video.
+    if fade_type == "out" and start == 0:
+        clip_dur = float(p.get("_video_duration", 0))
+        n_extra = int(p.get("_extra_input_count", 0))
+        if n_extra > 0 and clip_dur > 0:
+            n_clips = 1 + n_extra
+            xfade_dur = float(p.get("_xfade_duration", 1.0))
+            still_dur = float(p.get("still_duration", 4.0))
+            # Videos use clip_dur per extra, images use still_dur
+            import os
+            extra_paths = p.get("_extra_input_paths", [])
+            _VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv", ".m4v"}
+            if extra_paths and any(
+                os.path.splitext(ep)[1].lower() in _VIDEO_EXTS for ep in extra_paths
+            ):
+                per_extra = clip_dur
+            else:
+                per_extra = still_dur
+            total_dur = clip_dur + n_extra * per_extra - (n_clips - 1) * xfade_dur
+            start = max(0, total_dur - duration)
+
     vf = []
     if fade_type == "both":
         vf.append(f"fade=t=in:st=0:d={duration}")

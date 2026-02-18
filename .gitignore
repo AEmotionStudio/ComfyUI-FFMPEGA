@@ -94,6 +94,7 @@ output/
 Errors.md
 Agent_Analysis.md
 command_log.md
+response.json
 
 # Package manager lock files
 uv.lock

@@ -1917,11 +1917,19 @@ def register_skills(registry: SkillRegistry) -> None:
                 required=False,
                 default="white",
             ),
+            SkillParameter(
+                name="audio_mix",
+                type=ParameterType.BOOL,
+                description="Mix audio from both videos together (True = blend, False = main only)",
+                required=False,
+                default=False,
+            ),
         ],
         examples=[
             "picture_in_picture - PiP in bottom-right corner",
             "picture_in_picture:position=top_left,scale=0.3 - Larger PiP top-left",
             "picture_in_picture:scale=0.25,border=4,border_color=white - PiP with white border",
+            "picture_in_picture:audio_mix=true - PiP with blended audio from both videos",
         ],
         tags=["pip", "picture", "overlay", "corner", "webcam", "inset", "compositing"],
     ))
@@ -2665,6 +2673,44 @@ def register_skills(registry: SkillRegistry) -> None:
             "replace_audio - Replace audio with second input",
         ],
         tags=["audio", "replace", "swap", "soundtrack", "music"],
+    ))
+
+    registry.register(Skill(
+        name="mix_audio",
+        category=SkillCategory.AUDIO,
+        description="Mix/blend audio tracks from two video inputs together (both audible simultaneously).",
+        parameters=[
+            SkillParameter(
+                name="duration",
+                type=ParameterType.CHOICE,
+                description="Output duration mode",
+                required=False,
+                default="longest",
+                choices=["longest", "shortest", "first"],
+            ),
+            SkillParameter(
+                name="weights",
+                type=ParameterType.STRING,
+                description="Volume weights per input (e.g. '1 0.5' to keep main louder)",
+                required=False,
+                default="1 1",
+            ),
+            SkillParameter(
+                name="dropout_transition",
+                type=ParameterType.FLOAT,
+                description="Transition duration when an input ends (seconds)",
+                required=False,
+                default=2.0,
+                min_value=0.0,
+                max_value=10.0,
+            ),
+        ],
+        examples=[
+            "mix_audio - Blend audio from both inputs equally",
+            "mix_audio:weights=1 0.3 - Main video louder, overlay quieter",
+            "mix_audio:duration=shortest - Stop when shortest input ends",
+        ],
+        tags=["audio", "mix", "amix", "blend", "combine", "merge", "multi"],
     ))
 
     registry.register(Skill(
