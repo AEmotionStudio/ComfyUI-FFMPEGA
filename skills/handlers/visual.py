@@ -8,6 +8,8 @@ try:
 except ImportError:
     from core.sanitize import sanitize_text_param, validate_path, ALLOWED_LUT_EXTENSIONS
 
+from ._duration_helper import _calc_multiclip_duration
+
 def _f_brightness(p):
     return [f"eq=brightness={p.get('value', 0)}"], [], []
 
@@ -60,20 +62,7 @@ def _f_fade(p):
         clip_dur = float(p.get("_video_duration", 0))
         n_extra = int(p.get("_extra_input_count", 0))
         if n_extra > 0 and clip_dur > 0:
-            n_clips = 1 + n_extra
-            xfade_dur = float(p.get("_xfade_duration", 1.0))
-            still_dur = float(p.get("still_duration", 4.0))
-            # Videos use clip_dur per extra, images use still_dur
-            import os
-            extra_paths = p.get("_extra_input_paths", [])
-            _VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv", ".m4v"}
-            if extra_paths and any(
-                os.path.splitext(ep)[1].lower() in _VIDEO_EXTS for ep in extra_paths
-            ):
-                per_extra = clip_dur
-            else:
-                per_extra = still_dur
-            total_dur = clip_dur + n_extra * per_extra - (n_clips - 1) * xfade_dur
+            total_dur = _calc_multiclip_duration(p, clip_dur, n_extra)
             start = max(0, total_dur - duration)
 
     vf = []

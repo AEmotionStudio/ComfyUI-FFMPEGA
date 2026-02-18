@@ -710,7 +710,9 @@ def _f_pip(p):
     if isinstance(audio_mix, str):
         audio_mix = audio_mix.lower() in ("true", "1", "yes")
     if audio_mix:
+        # Label both video and audio outputs so -map picks up both streams
+        fc = f"{scale_filter};[0:v][pip]overlay={xy}:shortest=1[_vout]"
         fc += ";[0:a][1:a]amix=inputs=2:duration=longest:dropout_transition=2[_aout]"
-        return [], [], ["-map", "[_aout]"], fc
+        return [], [], ["-map", "[_vout]", "-map", "[_aout]"], fc
 
     return [], [], [], fc

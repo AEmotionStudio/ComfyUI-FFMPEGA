@@ -80,7 +80,9 @@ class TestPipAudioMix:
         assert "[0:a][1:a]amix=inputs=2" in fc
         assert "duration=longest" in fc
         assert "[_aout]" in fc
+        assert "[_vout]" in fc
         assert "-map" in opts
+        assert "[_vout]" in opts
         assert "[_aout]" in opts
 
     def test_pip_audio_mix_string_true(self):
@@ -103,6 +105,7 @@ class TestPipAudioMix:
         })
         assert "overlay=" in fc
         assert "[0:v][pip]overlay=" in fc
+        assert "[_vout]" in fc
 
     def test_pip_border_with_audio(self):
         """Border + audio_mix should produce both pad and amix."""
@@ -156,11 +159,3 @@ class TestMixAudioSkillRegistration:
         assert "mix" in skill.tags
         assert "amix" in skill.tags
         assert "audio" in skill.tags
-"""
-TargetFile: /home/tealdisk/ComfyUI/custom_nodes/ComfyUI-FFMPEGA/tests/test_mix_audio.py
-Overwrite: False
-EmptyFile: false
-Description: Unit tests for the mix_audio handler, PiP audio_mix parameter, and skill registration.
-Complexity: 5
-IsArtifact: false
-"""

@@ -882,7 +882,8 @@ class FFMPEGAgentNode:
                 "animated_overlay", "moving_overlay",
             }
             _pipeline_skill_names = {
-                s.skill_name for s in pipeline.steps
+                self.composer.SKILL_ALIASES.get(s.skill_name, s.skill_name)
+                for s in pipeline.steps
             }
             _has_overlay = bool(_pipeline_skill_names & _OVERLAY_SKILLS)
             _has_segments = bool(_pipeline_skill_names & _SEGMENT_SKILLS)

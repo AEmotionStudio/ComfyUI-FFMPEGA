@@ -325,7 +325,7 @@ class SkillComposer:
             if _xfade_transition_dur is not None:
                 step.params["_xfade_duration"] = _xfade_transition_dur
             if _xfade_still_dur is not None:
-                step.params["still_duration"] = _xfade_still_dur
+                step.params["_still_duration"] = _xfade_still_dur
 
             # Inject image_path indices for overlay/animated_overlay handlers
             # These are separate from extra_inputs (which xfade/concat use)

@@ -3,6 +3,8 @@
 Auto-generated from composer.py — do not edit directly.
 """
 
+from ._duration_helper import _calc_multiclip_duration
+
 def _f_fade_to_black(p):
     in_dur = float(p.get("in_duration", 1.0))
     out_dur = float(p.get("out_duration", 0))
@@ -12,21 +14,9 @@ def _f_fade_to_black(p):
     clip_dur = float(p.get("_video_duration", 0))
     n_extra = int(p.get("_extra_input_count", 0))
     n_clips = 1 + n_extra  # primary input + extras
-    xfade_dur = float(p.get("_xfade_duration", 1.0))  # per-transition overlap
-    still_dur = float(p.get("still_duration", 4.0))  # per-image duration in xfade
 
     if n_clips > 1 and clip_dur > 0:
-        # Determine per-extra duration: videos use clip_dur, images use still_dur
-        import os
-        extra_paths = p.get("_extra_input_paths", [])
-        _VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv", ".m4v"}
-        if extra_paths and any(
-            os.path.splitext(ep)[1].lower() in _VIDEO_EXTS for ep in extra_paths
-        ):
-            per_extra = clip_dur  # video extras have the same duration
-        else:
-            per_extra = still_dur  # image extras use still_duration
-        total_dur = clip_dur + n_extra * per_extra - (n_clips - 1) * xfade_dur
+        total_dur = _calc_multiclip_duration(p, clip_dur, n_extra)
     else:
         total_dur = clip_dur
 
