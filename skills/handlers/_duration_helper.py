@@ -5,7 +5,7 @@ Used by _f_fade and _f_fade_to_black to avoid code duplication.
 
 import os
 
-_VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv", ".m4v"}
+_VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv", ".m4v", ".ts"}
 
 
 def _calc_multiclip_duration(p: dict, clip_dur: float, n_extra: int) -> float:

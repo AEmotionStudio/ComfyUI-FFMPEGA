@@ -563,6 +563,24 @@ class SkillComposer:
                         else:
                             fc_graph += "[_aout_pre]"
                         _fc_audio_label = "[_aout_pre]"
+                        # Strip handler's original -map flags — we add our own
+                        # mapping after audio folding (same as multi-block path).
+                        _strip = {"[_vout]", "[_aout]"}
+                        new_opts = []
+                        skip_next = False
+                        for oi, o in enumerate(output_options):
+                            if skip_next:
+                                skip_next = False
+                                continue
+                            if o == "-map" and oi + 1 < len(output_options) and output_options[oi + 1] in _strip:
+                                skip_next = True
+                                continue
+                            new_opts.append(o)
+                        output_options = new_opts
+                    else:
+                        # amix produces labeled audio — track it for -map even
+                        # when there are no audio filters to fold.
+                        _fc_audio_label = "[_aout]"
 
             # Multi-input skills (xfade, concat, split_screen, grid, slideshow)
             # handle their own scaling. Drop simple scale/pad video filters
