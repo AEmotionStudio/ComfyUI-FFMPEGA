@@ -167,10 +167,7 @@ class Skill:
 
     def get_param(self, name: str) -> Optional[SkillParameter]:
         """Get a parameter definition by name."""
-        for param in self.parameters:
-            if param.name == name:
-                return param
-        return None
+        return self._param_map.get(name)
 
 
 class SkillRegistry:

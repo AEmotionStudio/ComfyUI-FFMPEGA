@@ -118,8 +118,9 @@ Process multiple videos with the same instruction. Generate quick low-res previe
 
 - **ComfyUI** (latest)
 - **Python 3.10+**
-- **FFMPEG** installed and in PATH
-- **Ollama** (optional, for local LLM inference)
+- **FFMPEG** installed and in PATH ([install guide](#ffmpeg-not-found))
+- **Node.js 18+** (required for CLI tools: Gemini CLI, Claude CLI, Qwen CLI — [download](https://nodejs.org/))
+- **Ollama** (optional, for local LLM inference — [download](https://ollama.com/download))
 
 ### Option 1: ComfyUI Manager (Recommended)
 1. Open **ComfyUI Manager**
@@ -127,12 +128,32 @@ Process multiple videos with the same instruction. Generate quick low-res previe
 3. Click **Install**
 
 ### Option 2: Manual Install
+
+<details>
+<summary><b>Linux / macOS</b></summary>
+
 ```bash
 cd /path/to/ComfyUI/custom_nodes
 git clone https://github.com/AEmotionStudio/ComfyUI-FFMPEGA.git
 cd ComfyUI-FFMPEGA
-uv pip install -r requirements.txt
+pip install -r requirements.txt
 ```
+
+</details>
+
+<details>
+<summary><b>Windows (PowerShell)</b></summary>
+
+```powershell
+cd C:\path\to\ComfyUI\custom_nodes
+git clone https://github.com/AEmotionStudio/ComfyUI-FFMPEGA.git
+cd ComfyUI-FFMPEGA
+pip install -r requirements.txt
+```
+
+</details>
+
+> **Note:** Use whichever Python package manager your ComfyUI venv uses (`pip`, `uv pip`, etc.). The above commands assume `pip` is available in your ComfyUI virtual environment.
 
 Restart ComfyUI after installation.
 
@@ -780,6 +801,7 @@ ffmpeg_template: "gblur=sigma={radius},eq=brightness=0.06"
 
 **Skill packs** — installable collections of related skills, optionally with Python handlers for complex logic:
 ```bash
+# Linux / macOS / Windows (Git Bash or PowerShell)
 cd custom_skills/
 git clone https://github.com/someone/ffmpega-retro-pack retro-pack
 ```
@@ -810,13 +832,17 @@ FFMPEGA works best with models that have **strong JSON output and instruction-fo
 ### Ollama (Local — Free)
 The default option. Runs locally, no API key needed.
 
+**Install Ollama:** Download from [ollama.com/download](https://ollama.com/download) (available for Linux, macOS, and Windows).
+
 ```bash
-# Install and start Ollama
+# Start Ollama (all platforms)
 ollama serve
 
 # Pull a model
 ollama pull qwen3:8b
 ```
+
+> **Windows users:** After installing Ollama, the `ollama` command is available in both PowerShell and Command Prompt. Ollama also runs as a system tray app.
 
 **Recommended local models (≤30B, consumer GPU friendly):**
 | Model | Size | Speed | Notes |
@@ -852,9 +878,13 @@ api_key: your-google-ai-key
 Use the [Gemini CLI](https://github.com/google-gemini/gemini-cli) to run Gemini models without an API key. Works with any Google account.
 
 **Install:**
-```bash
-pnpm add -g @google/gemini-cli
-```
+
+| Platform | Command |
+| :--- | :--- |
+| **Linux / macOS** | `npm install -g @google/gemini-cli` |
+| **Windows (PowerShell)** | `npm install -g @google/gemini-cli` |
+
+> **Tip:** You can also use `pnpm add -g` or `yarn global add` if you prefer.
 
 **Authenticate** (first time only):
 ```bash
@@ -908,9 +938,13 @@ api_key: your-anthropic-key
 Use the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) as a local LLM backend. Uses its own authentication — no API key needed in FFMPEGA.
 
 **Install:**
-```bash
-pnpm add -g @anthropic-ai/claude-code
-```
+
+| Platform | Command |
+| :--- | :--- |
+| **Linux / macOS** | `npm install -g @anthropic-ai/claude-code` |
+| **Windows (PowerShell)** | `npm install -g @anthropic-ai/claude-code` |
+
+> **Tip:** You can also use `pnpm add -g` or `yarn global add` if you prefer.
 
 **Authenticate** (first time only):
 ```bash
@@ -929,8 +963,8 @@ Auto-detected on PATH. Select `claude-cli` from the model dropdown.
 
 Use [Cursor's CLI](https://docs.cursor.com) in agent mode as an LLM backend.
 
-**Install:**
-Open Cursor IDE → Command Palette → "Install 'cursor' command"
+**Install (all platforms):**
+Open Cursor IDE → Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) → "Install 'cursor' command"
 
 **Start the agent:**
 ```bash
@@ -949,9 +983,13 @@ Auto-detected on PATH. Select `cursor-agent` from the model dropdown.
 Use [Qwen Code](https://qwenlm.github.io/qwen-code-docs/) as a free LLM backend. Powered by Qwen3-Coder with 2,000 free requests/day via OAuth — no credit card required.
 
 **Install:**
-```bash
-pnpm add -g @qwen-code/qwen-code@latest
-```
+
+| Platform | Command |
+| :--- | :--- |
+| **Linux / macOS** | `npm install -g @qwen-code/qwen-code@latest` |
+| **Windows (PowerShell)** | `npm install -g @qwen-code/qwen-code@latest` |
+
+> **Tip:** You can also use `pnpm add -g` or `yarn global add` if you prefer.
 
 **Authenticate** (first time only):
 ```bash
@@ -1052,17 +1090,21 @@ Ensure FFMPEG is installed and in your system PATH:
 ```bash
 ffmpeg -version
 ```
-Install via package manager if missing:
-```bash
-# Ubuntu/Debian
-sudo apt install ffmpeg
 
-# Arch/CachyOS
-sudo pacman -S ffmpeg
+**Install FFMPEG:**
 
-# macOS
-brew install ffmpeg
-```
+| Platform | Command / Method |
+| :--- | :--- |
+| **Ubuntu / Debian** | `sudo apt install ffmpeg` |
+| **Arch / CachyOS** | `sudo pacman -S ffmpeg` |
+| **Fedora** | `sudo dnf install ffmpeg` |
+| **macOS** | `brew install ffmpeg` |
+| **Windows (winget)** | `winget install Gyan.FFmpeg` |
+| **Windows (choco)** | `choco install ffmpeg` |
+| **Windows (scoop)** | `scoop install ffmpeg` |
+| **Windows (manual)** | Download from [ffmpeg.org/download](https://ffmpeg.org/download.html), extract, and add the `bin/` folder to your system PATH |
+
+> **Windows PATH tip:** After installing, open a **new** terminal and run `ffmpeg -version` to verify. If not found, you may need to add ffmpeg's `bin/` directory to your system PATH manually: Settings → System → About → Advanced system settings → Environment Variables → Edit `Path`.
 
 </details>
 

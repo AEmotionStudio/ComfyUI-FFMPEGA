@@ -8,6 +8,8 @@ try:
 except ImportError:
     from core.sanitize import sanitize_text_param, validate_path, ALLOWED_LUT_EXTENSIONS
 
+from ._duration_helper import _calc_multiclip_duration
+
 def _f_brightness(p):
     return [f"eq=brightness={p.get('value', 0)}"], [], []
 
@@ -50,12 +52,23 @@ def _f_vignette(p):
 
 def _f_fade(p):
     fade_type = p.get("type", "in")
-    start = p.get("start", 0)
-    duration = p.get("duration", 1)
+    start = float(p.get("start", 0))
+    duration = float(p.get("duration", 1))
+
+    # When fade-out start is 0 (default/unset) and we're in a multi-clip
+    # pipeline, calculate correct start from total output duration so
+    # fade-out happens at the END of the combined video.
+    if fade_type in ("out", "both") and start == 0:
+        clip_dur = float(p.get("_video_duration", 0))
+        n_extra = int(p.get("_extra_input_count", 0))
+        if n_extra > 0 and clip_dur > 0:
+            total_dur = _calc_multiclip_duration(p, clip_dur, n_extra)
+            start = max(0, total_dur - duration)
+
     vf = []
     if fade_type == "both":
         vf.append(f"fade=t=in:st=0:d={duration}")
-        vf.append(f"fade=t=out:d={duration}")
+        vf.append(f"fade=t=out:st={start}:d={duration}")
     else:
         vf.append(f"fade=t={fade_type}:st={start}:d={duration}")
     return vf, [], []

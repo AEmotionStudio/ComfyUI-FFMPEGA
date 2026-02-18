@@ -98,7 +98,7 @@ class TestAutoSrtGeneration:
 
     @pytest.fixture(autouse=True)
     def _import(self):
-        from skills.handlers.composite import _auto_srt_from_text
+        from skills.handlers.subtitles import _auto_srt_from_text
         self.gen = _auto_srt_from_text
 
     def test_passthrough_existing_srt(self):
@@ -143,7 +143,7 @@ class TestBurnSubtitlesHandler:
 
     @pytest.fixture(autouse=True)
     def _import(self):
-        from skills.handlers.composite import _f_burn_subtitles
+        from skills.handlers.subtitles import _f_burn_subtitles
         self.handler = _f_burn_subtitles
 
     def test_text_input_generates_temp_srt(self):
@@ -293,7 +293,7 @@ class TestTextOverlayHandler:
 
     @pytest.fixture(autouse=True)
     def _import(self):
-        from skills.handlers.composite import _f_text_overlay
+        from skills.handlers.text_handlers import _f_text_overlay
         self.handler = _f_text_overlay
 
     def test_text_from_overlay_mode(self):

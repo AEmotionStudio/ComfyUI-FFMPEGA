@@ -3,25 +3,59 @@
 Auto-generated from composer.py — do not edit directly.
 """
 
+from ._duration_helper import _calc_multiclip_duration
+
 def _f_fade_to_black(p):
     in_dur = float(p.get("in_duration", 1.0))
     out_dur = float(p.get("out_duration", 0))
+
+    # Calculate total output duration so fade-out starts at the right time.
+    # For concat/xfade pipelines the total is longer than a single clip.
+    clip_dur = float(p.get("_video_duration", 0))
+    n_extra = int(p.get("_extra_input_count", 0))
+    n_clips = 1 + n_extra  # primary input + extras
+
+    if n_clips > 1 and clip_dur > 0:
+        total_dur = _calc_multiclip_duration(p, clip_dur, n_extra)
+    else:
+        total_dur = clip_dur
+
     vf = []
     if in_dur > 0:
         vf.append(f"fade=t=in:st=0:d={in_dur}")
     if out_dur > 0:
-        vf.append(f"fade=t=out:d={out_dur}")
+        if total_dur > 0:
+            st = max(0, total_dur - out_dur)
+            vf.append(f"fade=t=out:st={st}:d={out_dur}")
+        else:
+            # Fallback: let ffmpeg figure it out (single clip, no duration info)
+            vf.append(f"fade=t=out:d={out_dur}")
     return vf, [], []
 
 
 def _f_fade_to_white(p):
     in_dur = float(p.get("in_duration", 1.0))
     out_dur = float(p.get("out_duration", 1.0))
+
+    # Calculate total output duration for multi-clip pipelines
+    clip_dur = float(p.get("_video_duration", 0))
+    n_extra = int(p.get("_extra_input_count", 0))
+    n_clips = 1 + n_extra
+
+    if n_clips > 1 and clip_dur > 0:
+        total_dur = _calc_multiclip_duration(p, clip_dur, n_extra)
+    else:
+        total_dur = clip_dur
+
     vf = []
     if in_dur > 0:
         vf.append(f"fade=t=in:st=0:d={in_dur}:c=white")
     if out_dur > 0:
-        vf.append(f"fade=t=out:d={out_dur}:c=white")
+        if total_dur > 0:
+            st = max(0, total_dur - out_dur)
+            vf.append(f"fade=t=out:st={st}:d={out_dur}:c=white")
+        else:
+            vf.append(f"fade=t=out:d={out_dur}:c=white")
     return vf, [], []
 
 

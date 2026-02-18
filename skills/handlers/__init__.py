@@ -8,10 +8,10 @@ from .audio import (  # noqa: F401
     _f_extract_audio,
     _f_replace_audio,
     _f_audio_crossfade,
+    _f_mix_audio,
 )
 
-from .composite import (  # noqa: F401
-    _f_add_text,
+from .multi_input import (  # noqa: F401
     _f_grid,
     _f_slideshow,
     _f_overlay_image,
@@ -20,9 +20,12 @@ from .composite import (  # noqa: F401
     _f_xfade,
     _f_split_screen,
     _f_animated_overlay,
-    _f_text_overlay,
     _f_pip,
-    _f_burn_subtitles,
+)
+
+from .text_handlers import (  # noqa: F401
+    _f_add_text,
+    _f_text_overlay,
     _f_countdown,
     _f_animated_text,
     _f_scrolling_text,
@@ -32,6 +35,10 @@ from .composite import (  # noqa: F401
     _f_bounce_text,
     _f_fade_text,
     _f_karaoke_text,
+)
+
+from .subtitles import (  # noqa: F401
+    _f_burn_subtitles,
 )
 
 from .encoding import (  # noqa: F401

@@ -524,6 +524,26 @@ app.registerExtension({
                     }
                 };
 
+                // --- Restore dynamic slots on workflow load / page refresh ---
+                // onConfigure fires when the node is deserialized from a saved
+                // workflow.  onConnectionsChange does NOT fire for pre-existing
+                // links, so without this the "next empty" slot (e.g. video_b)
+                // would be missing until the user manually reconnects.
+                const origOnConfigure = this.onConfigure;
+                this.onConfigure = function (info) {
+                    origOnConfigure?.apply(this, arguments);
+                    // Defer until links are fully restored by LiteGraph
+                    requestAnimationFrame(() => {
+                        updateDynamicSlots(this, "images_", "IMAGE");
+                        updateDynamicSlots(this, "image_", "IMAGE", ["images_", "image_path_"]);
+                        updateDynamicSlots(this, "audio_", "AUDIO");
+                        updateDynamicSlots(this, "video_", "STRING");
+                        updateDynamicSlots(this, "image_path_", "STRING");
+                        updateDynamicSlots(this, "text_", "STRING");
+                        fitHeight();
+                    });
+                };
+
                 return result;
             };
 
