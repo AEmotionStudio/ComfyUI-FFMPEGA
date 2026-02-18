@@ -1,7 +1,9 @@
-"""FFMPEGA Temporal skill handlers.
+"""FFMPEGA Temporal skill handlers."""
 
-Auto-generated from composer.py — do not edit directly.
-"""
+try:
+    from ..handler_contract import make_result
+except ImportError:
+    from skills.handler_contract import make_result
 
 def _f_trim(p):
     input_opts = []
@@ -32,9 +34,9 @@ def _f_trim(p):
         if start: opts.extend(["-ss", str(start)])
         if end: opts.extend(["-to", str(end)])
         if duration: opts.extend(["-t", str(duration)])
-        return [], [], opts
+        return make_result(opts=opts)
 
-    return [], [], output_opts, "", input_opts
+    return make_result(opts=output_opts, io=input_opts)
 
 
 def _f_speed(p):
@@ -57,25 +59,25 @@ def _f_speed(p):
             remaining /= 2
         af.append(f"atempo={remaining}")
 
-    return vf, af, []
+    return make_result(vf=vf, af=af)
 
 
 def _f_reverse(p):
-    return ["reverse"], ["areverse"], []
+    return make_result(vf=["reverse"], af=["areverse"])
 
 
 def _f_loop(p):
     count = int(p.get("count", 2))
     # -stream_loop N repeats the input N additional times
-    return [], [], [], "", ["-stream_loop", str(count)]
+    return make_result(io=["-stream_loop", str(count)])
 
 
 def _f_boomerang(p):
     loops = int(p.get("loops", 3))
     # Forward + reverse concatenated, then looped
-    return [
+    return make_result(vf=[
         f"split[fwd][rev];[rev]reverse[r];[fwd][r]concat=n=2:v=1:a=0,loop=loop={loops - 1}:size=32767"
-    ], [], []
+    ])
 
 
 def _f_jump_cut(p):
@@ -85,7 +87,7 @@ def _f_jump_cut(p):
     # Select frames where scene change is above threshold (removes static parts)
     vf = f"select='gt(scene,{threshold})',setpts=N/FRAME_RATE/TB"
     # Audio must be removed since we're dropping frames (no audio counterpart for scene)
-    return [vf], [], ["-an"]
+    return make_result(vf=[vf], opts=["-an"])
 
 
 def _f_beat_sync(p):
@@ -95,6 +97,4 @@ def _f_beat_sync(p):
     # Higher threshold => fewer frames kept (more aggressive cut)
     interval = max(1, int(1.0 / max(threshold, 0.01)))
     vf = f"select='not(mod(n,{interval}))',setpts=N/FRAME_RATE/TB"
-    return [vf], [], ["-an"]
-
-
+    return make_result(vf=[vf], opts=["-an"])

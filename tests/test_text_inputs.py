@@ -162,7 +162,7 @@ class TestBurnSubtitlesHandler:
             "_text_inputs": [meta],
             "_video_duration": 8.0,
         }
-        vf, af, opts = self.handler(params)
+        vf, af, opts, _fc, _io = self.handler(params)
         assert len(vf) == 1
         filter_str = vf[0]
         # Should reference a temp .srt file
@@ -183,7 +183,7 @@ class TestBurnSubtitlesHandler:
             "font_color": "white",
         })
         params = {"_text_inputs": [meta], "_video_duration": 5.0}
-        vf, _, _ = self.handler(params)
+        vf, _, _, _fc, _io = self.handler(params)
         # Commas in force_style must be backslash-escaped
         # to prevent ffmpeg's filter parser from splitting the chain
         assert "\\," in vf[0], (
@@ -203,7 +203,7 @@ class TestBurnSubtitlesHandler:
             "font_color": "white",
         })
         params = {"_text_inputs": [meta], "_video_duration": 5.0}
-        vf, _, _ = self.handler(params)
+        vf, _, _, _fc, _io = self.handler(params)
         # The temp path shouldn't have unescaped colons
         # (on Linux /tmp/xxx.srt has no colons, but the test confirms
         #  the pattern is correct; colons from force_style should be escaped)
@@ -218,7 +218,7 @@ class TestBurnSubtitlesHandler:
             srt_path = f.name
         try:
             params = {"path": srt_path}
-            vf, _, _ = self.handler(params)
+            vf, _, _, _fc, _io = self.handler(params)
             assert "subtitles=" in vf[0]
         finally:
             os.remove(srt_path)
@@ -233,7 +233,7 @@ class TestBurnSubtitlesHandler:
         })
         params = {"_text_inputs": [meta], "_video_duration": 8.0}
         # This should NOT raise ValueError about invalid extension
-        vf, _, _ = self.handler(params)
+        vf, _, _, _fc, _io = self.handler(params)
         filter_str = vf[0]
         # Extract the path from the filter — it's between 'subtitles=' and ':'
         # With ffmpeg escaping, colons in path are \: but the path itself is valid
@@ -245,7 +245,7 @@ class TestBurnSubtitlesHandler:
             "_text_inputs": ["Hello from plain text\nSecond line"],
             "_video_duration": 6.0,
         }
-        vf, _, _ = self.handler(params)
+        vf, _, _, _fc, _io = self.handler(params)
         assert "subtitles=" in vf[0]
 
     def test_auto_mode_text_matched(self):
@@ -257,7 +257,7 @@ class TestBurnSubtitlesHandler:
             "font_color": "white",
         })
         params = {"_text_inputs": [meta]}
-        vf, _, _ = self.handler(params)
+        vf, _, _, _fc, _io = self.handler(params)
         assert "subtitles=" in vf[0]
 
     def test_path_text_a_resolves_from_text_inputs(self):
@@ -274,7 +274,7 @@ class TestBurnSubtitlesHandler:
             "_video_duration": 6.0,
         }
         # Should NOT raise ValueError about invalid extension
-        vf, _, _ = self.handler(params)
+        vf, _, _, _fc, _io = self.handler(params)
         assert "subtitles=" in vf[0]
 
     def test_path_text_a_without_text_inputs_falls_through(self):

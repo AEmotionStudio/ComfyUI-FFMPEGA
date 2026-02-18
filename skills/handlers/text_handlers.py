@@ -13,6 +13,11 @@ except ImportError:
         sanitize_text_param,
     )
 
+try:
+    from ..handler_contract import make_result
+except ImportError:
+    from skills.handler_contract import make_result
+
 
 def _f_add_text(p):
     text = sanitize_text_param(str(p.get("text", "")))
@@ -48,28 +53,11 @@ def _f_add_text(p):
         f":fontcolor={color}:font='{font}'"
         f":{xy}{border_style}"
     )
-    return [drawtext], [], []
+    return make_result(vf=[drawtext])
 
 
 def _f_text_overlay(p):
-    """Draw text on the video using ffmpeg's drawtext filter.
-
-    Parameters (matching skill definition):
-        text:       Text to display (required)
-        position:   Position: center, top, bottom, top_left, top_right,
-                    bottom_left, bottom_right (default "center")
-        color:      Text color name or hex (default "white")
-        size:       Font size in pixels (default 48)
-        font:       Font family (default "sans")
-        border:     Add black border/shadow (default True)
-        blink:      Blink/flash interval in seconds (0 = no blink, default 0)
-        start:      Start time in seconds (default 0)
-        duration:   Display duration in seconds (0 = entire video, default 0)
-        background: Background box color (default "" = none)
-
-    Legacy parameters (also accepted):
-        fontcolor, fontsize, preset, borderw, bordercolor, x, y
-    """
+    """Draw text on the video using ffmpeg's drawtext filter."""
     import json as _json
 
     # --- Resolve text from connected text inputs ---
@@ -80,7 +68,6 @@ def _f_text_overlay(p):
             meta = _json.loads(raw_text)
             if isinstance(meta, dict) and meta.get("mode") in ("overlay", "watermark", "title_card", "auto"):
                 resolved_text = meta.get("text", "")
-                # Text node settings override LLM defaults
                 if meta.get("font_size"):
                     p["size"] = meta["font_size"]
                     p["fontsize"] = meta["font_size"]
@@ -97,21 +84,17 @@ def _f_text_overlay(p):
                         p["duration"] = duration
                 break
         except (_json.JSONDecodeError, TypeError):
-            # Plain string — use as overlay text
             resolved_text = raw_text
             break
 
     text = sanitize_text_param(str(resolved_text or p.get("text", "Hello")))
     font = sanitize_text_param(str(p.get("font", "sans")))
 
-    # Color: prefer 'color' (skill definition), fall back to 'fontcolor' (legacy)
     color = p.get("color") or p.get("font_color") or p.get("fontcolor") or "white"
     color = sanitize_text_param(str(color))
 
-    # Size: prefer 'size' (skill definition), fall back to 'fontsize' (legacy)
     fontsize = int(p.get("size", p.get("fontsize", 48)))
 
-    # Border
     border = p.get("border", True)
     if isinstance(border, str):
         border = border.lower() not in ("false", "0", "no", "off")
@@ -123,12 +106,9 @@ def _f_text_overlay(p):
     duration = float(p.get("duration", 0))
     blink = float(p.get("blink", 0))
 
-    # Margin for edge positions
     margin_x = int(p.get("margin_x", 24))
     margin_y = int(p.get("margin_y", 24))
 
-    # Position mapping — "position" param (skill definition) takes priority,
-    # then fall back to "preset" (legacy) or explicit x/y.
     position = p.get("position", "").lower()
     preset = str(p.get("preset", "")).lower()
 
@@ -149,7 +129,6 @@ def _f_text_overlay(p):
         "top":         "top",
     }
 
-    # Resolve position
     if position in _POSITION_MAP:
         x_pos, y_pos = _POSITION_MAP[position]
     elif preset in _PRESET_MAP:
@@ -157,11 +136,9 @@ def _f_text_overlay(p):
     else:
         x_pos, y_pos = _POSITION_MAP["center"]
 
-    # Allow explicit x/y override
     x_pos = sanitize_text_param(str(p.get("x", x_pos)))
     y_pos = sanitize_text_param(str(p.get("y", y_pos)))
 
-    # Build drawtext filter
     dt = (
         f"drawtext=text='{text}':"
         f"font='{font}':"
@@ -172,30 +149,24 @@ def _f_text_overlay(p):
         f"x={x_pos}:y={y_pos}"
     )
 
-    # Background box
     if bg:
         dt += f":box=1:boxcolor={bg}:boxborderw=8"
 
-    # Blink/flash effect — toggle visibility with enable expression
     if blink > 0:
-        # Use lt(mod(t,interval),interval/2) to create on/off flashing
         half = blink / 2
         dt += f":enable='lt(mod(t\\,{blink})\\,{half})'"
     elif p.get("enable"):
-        # LLM may pass a raw ffmpeg enable expression directly
         enable_expr = str(p["enable"]).strip("'\"")
-        # Sanitize to prevent parameter injection (escapes quotes, backslashes, colons, etc.)
         enable_expr = sanitize_text_param(enable_expr)
         dt += f":enable='{enable_expr}'"
     else:
-        # Time-based enable/disable (no blink)
         if duration > 0:
             end = start + duration
             dt += f":enable='between(t,{start},{end})'"
         elif start > 0:
             dt += f":enable='gte(t,{start})'"
 
-    return [dt], [], []
+    return make_result(vf=[dt])
 
 
 def _f_countdown(p):
@@ -214,7 +185,7 @@ def _f_countdown(p):
         f"borderw=3:bordercolor=black:"
         f"enable='lte(t,{start})'"
     )
-    return [dt], [], []
+    return make_result(vf=[dt])
 
 
 def _f_animated_text(p):
@@ -246,7 +217,6 @@ def _f_animated_text(p):
         y_expr = f"y='min((t-{start})*100,60)'"
         base += f":{y_expr}"
     elif animation == "typewriter":
-        # Use text length truncation via enable
         base = (
             f"drawtext=text='{text}':"
             f"fontsize={fontsize}:"
@@ -258,7 +228,7 @@ def _f_animated_text(p):
     else:  # default: centered static
         base += ":y=(h-text_h)/2"
 
-    return [base], [], []
+    return make_result(vf=[base])
 
 
 def _f_scrolling_text(p):
@@ -276,7 +246,7 @@ def _f_scrolling_text(p):
         f"x=(w-text_w)/2:"
         f"y=h-t*{speed}"
     )
-    return [dt], [], []
+    return make_result(vf=[dt])
 
 
 def _f_ticker(p):
@@ -299,7 +269,7 @@ def _f_ticker(p):
     if bg:
         dt += f":box=1:boxcolor={bg}:boxborderw=8"
 
-    return [dt], [], []
+    return make_result(vf=[dt])
 
 
 def _f_lower_third(p):
@@ -313,7 +283,6 @@ def _f_lower_third(p):
     duration = float(p.get("duration", 5))
     end = start + duration
 
-    # Main name text
     dt_main = (
         f"drawtext=text='{text}':"
         f"fontsize={fontsize}:"
@@ -326,7 +295,6 @@ def _f_lower_third(p):
 
     vf = [dt_main]
 
-    # Optional subtext (title/role)
     if subtext:
         sub_fontsize = max(fontsize - 10, 16)
         dt_sub = (
@@ -339,16 +307,11 @@ def _f_lower_third(p):
         )
         vf.append(dt_sub)
 
-    return vf, [], []
+    return make_result(vf=vf)
 
 
 def _f_typewriter_text(p):
-    """Character-by-character typewriter text reveal using progressive prefixes.
-
-    Creates one drawtext per prefix length — each shows progressively more
-    characters and is enabled only during its time window.  This avoids the
-    per-character positioning issues and keeps the text properly aligned.
-    """
+    """Character-by-character typewriter text reveal using progressive prefixes."""
     text = sanitize_text_param(str(p.get("text", "Hello World")))
     fontsize = int(p.get("size", p.get("fontsize", 48)))
     fontcolor = p.get("color") or p.get("font_color") or p.get("fontcolor") or "white"
@@ -359,7 +322,6 @@ def _f_typewriter_text(p):
     borderw = int(p.get("borderw", 2))
     bordercolor = sanitize_text_param(str(p.get("bordercolor", "black")))
 
-    # Position (same logic as text_overlay)
     margin_x, margin_y = 24, 24
     position = p.get("position", "center").lower()
     _POS = {
@@ -375,15 +337,12 @@ def _f_typewriter_text(p):
     x_pos = sanitize_text_param(str(p.get("x", x_pos)))
     y_pos = sanitize_text_param(str(p.get("y", y_pos)))
 
-    # Build progressive prefix drawtexts.
-    # Each prefix is shown during its time window: [char_start, next_char_start).
-    # The final complete text stays on screen indefinitely.
     filters = []
     chars = list(text)
     total = len(chars)
 
     if total == 0:
-        return [f"drawtext=text='':fontsize={fontsize}:fontcolor={fontcolor}:x={x_pos}:y={y_pos}"], [], []
+        return make_result(vf=[f"drawtext=text='':fontsize={fontsize}:fontcolor={fontcolor}:x={x_pos}:y={y_pos}"])
 
     for n in range(1, total + 1):
         prefix = sanitize_text_param(text[:n])
@@ -399,16 +358,14 @@ def _f_typewriter_text(p):
         )
 
         if n < total:
-            # Show this prefix only until the next character appears
             t_end = start + n / speed
             dt += f":enable='between(t\\,{t_start:.4f}\\,{t_end:.4f})'"
         else:
-            # Final complete text — stays visible from its start time onward
             dt += f":enable='gte(t\\,{t_start:.4f})'"
 
         filters.append(dt)
 
-    return filters, [], []
+    return make_result(vf=filters)
 
 
 def _f_bounce_text(p):
@@ -420,7 +377,6 @@ def _f_bounce_text(p):
     duration = float(p.get("duration", 4))
     end = start + duration
 
-    # Bounce uses abs(sin) for elastic ease
     y_expr = (
         f"y='(h-text_h)/2 - "
         f"abs(sin((t-{start})*5)*200*max(0,1-(t-{start})*2))'"
@@ -435,7 +391,7 @@ def _f_bounce_text(p):
         f"{y_expr}:"
         f"enable='between(t,{start},{end})'"
     )
-    return [dt], [], []
+    return make_result(vf=[dt])
 
 
 def _f_fade_text(p):
@@ -448,7 +404,6 @@ def _f_fade_text(p):
     fade_time = float(p.get("fade_time", 1.0))
     end = start + duration
 
-    # Alpha expression: fade in for first fade_time, full, fade out for last fade_time
     alpha = (
         f"alpha='if(lt(t,{start}+{fade_time}),(t-{start})/{fade_time},"
         f"if(gt(t,{end}-{fade_time}),({end}-t)/{fade_time},1))'"
@@ -463,7 +418,7 @@ def _f_fade_text(p):
         f"{alpha}:"
         f"enable='between(t,{start},{end})'"
     )
-    return [dt], [], []
+    return make_result(vf=[dt])
 
 
 def _f_karaoke_text(p):
@@ -476,8 +431,6 @@ def _f_karaoke_text(p):
     duration = float(p.get("duration", 5))
     end = start + duration
 
-    # Two drawtext layers: base (gray) underneath + fill (yellow) with progressive crop via x offset
-    # The fill text is drawn starting from left, advancing rightward over the duration
     dt_base = (
         f"drawtext=text='{text}':"
         f"fontsize={fontsize}:"
@@ -487,8 +440,6 @@ def _f_karaoke_text(p):
         f"enable='between(t,{start},{end})'"
     )
 
-    # Fill layer: use alpha expression that clips horizontally based on time progression
-    # Progress goes from 0 to 1 over the duration, controls alpha via x position
     progress = f"(t-{start})/{duration}"
     dt_fill = (
         f"drawtext=text='{text}':"
@@ -500,4 +451,4 @@ def _f_karaoke_text(p):
         f"enable='between(t,{start},{end})'"
     )
 
-    return [dt_base, dt_fill], [], []
+    return make_result(vf=[dt_base, dt_fill])

@@ -13,6 +13,11 @@ except ImportError:
         sanitize_text_param,
     )
 
+try:
+    from ..handler_contract import make_result
+except ImportError:
+    from skills.handler_contract import make_result
+
 _VIDEO_EXTENSIONS = {".mp4", ".webm", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".ts", ".m4v"}
 
 def _is_video_file(path):
@@ -62,7 +67,7 @@ def _f_grid(p):
 
     total = len(cells)
     if total < 2:
-        return [], [], [], ""
+        return make_result()
 
     fps = int(p.get("_input_fps", 25))
     extra_paths = p.get("_extra_input_paths", [])
@@ -74,13 +79,11 @@ def _f_grid(p):
             idx - 1 < len(extra_paths) and _is_video_file(extra_paths[idx - 1])
         )
         if is_video:
-            # Video input: scale, it already has frames
             parts.append(
                 f"[{idx}:v]scale={cell_w}:{cell_h}:force_original_aspect_ratio=decrease,"
                 f"pad={cell_w}:{cell_h}:(ow-iw)/2:(oh-ih)/2:{bg},setsar=1,fps={fps}[_g{i}]"
             )
         else:
-            # Still image: loop to create video frames for `duration` seconds
             n_frames = int(duration * fps)
             parts.append(
                 f"[{idx}:v]loop=loop={n_frames}:size=1:start=0,"
@@ -89,7 +92,7 @@ def _f_grid(p):
                 f"pad={cell_w}:{cell_h}:(ow-iw)/2:(oh-ih)/2:{bg},setsar=1[_g{i}]"
             )
 
-    # Build xstack layout string — must use literal pixel values (no arithmetic)
+    # Build xstack layout string
     layout_parts = []
     for i in range(total):
         col = i % columns
@@ -106,7 +109,7 @@ def _f_grid(p):
     ]
 
     opts = ["-t", str(duration)]
-    return [], [], opts, ";".join(fc_parts)
+    return make_result(opts=opts, fc=";".join(fc_parts))
 
 
 def _f_slideshow(p):
@@ -119,7 +122,6 @@ def _f_slideshow(p):
     include_video = str(p.get("include_video", "false")).lower() in ("true", "1", "yes")
     n_extra = int(p.get("_extra_input_count", 0))
 
-    # Build ordered list of (ffmpeg_idx, is_video) pairs
     segments = []
     if include_video:
         segments.append((0, True))
@@ -128,20 +130,18 @@ def _f_slideshow(p):
 
     total = len(segments)
     if total < 1:
-        return [], [], [], ""
+        return make_result()
 
     parts = []
     concat_inputs = []
     for i, (idx, is_video) in enumerate(segments):
         label = f"[_s{i}]"
         if is_video:
-            # Use the main video at its natural duration, scaled to target size
             seg = (
                 f"[{idx}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,"
                 f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1"
             )
         else:
-            # Still image: loop to create a video segment of `dur` seconds
             seg = (
                 f"[{idx}:v]loop=loop={int(dur * 25)}:size=1:start=0,"
                 f"setpts=N/25/TB,scale={width}:{height}:force_original_aspect_ratio=decrease,"
@@ -152,10 +152,6 @@ def _f_slideshow(p):
                 seg += f",fade=t=in:st=0:d={trans_dur}"
             if i < total - 1:
                 if is_video:
-                    # Skip fade-out on video — we don't know its duration at
-                    # filter-build time. The next slide's fade-in handles the
-                    # visual transition. Hardcoding a time causes black frames
-                    # if the video is longer, or no effect if shorter.
                     pass
                 else:
                     fade_st = dur - trans_dur
@@ -167,33 +163,23 @@ def _f_slideshow(p):
     concat_str = "".join(concat_inputs)
     parts.append(f"{concat_str}concat=n={total}:v=1:a=0")
 
-    return [], [], [], ";".join(parts)
+    return make_result(fc=";".join(parts))
 
 
 def _f_overlay_image(p):
-    """Overlay extra input images on the main video (picture-in-picture).
-
-    Supports multiple overlays — each extra input gets its own position.
-    When `image_source` is specified (e.g. "image_a"), only that input
-    is used as the overlay.
-
-    When `animation` is specified, delegates to _f_animated_overlay which
-    has proper motion presets (bounce, float, scroll, etc).
-    """
+    """Overlay extra input images on the main video (picture-in-picture)."""
     # Auto-delegate to animated_overlay when animation is requested
     animation = p.get("animation", None)
     import logging
     _log = logging.getLogger("ffmpega")
     _log.debug("[overlay_image] params keys=%s, animation=%r", list(p.keys()), animation)
     if animation and str(animation).lower() not in ("none", "static", ""):
-        # Map animation_speed → speed for animated_overlay
         if "animation_speed" in p and "speed" not in p:
             p["speed"] = p["animation_speed"]
         _log.info("[overlay_image] Delegating to animated_overlay (animation=%s)", animation)
         return _f_animated_overlay(p)
 
     position = p.get("position", "bottom-right")
-    # Normalize underscore-separated positions (LLMs often send bottom_right)
     if isinstance(position, str):
         position = position.replace("_", "-")
     scale = float(p.get("scale", 0.25))
@@ -203,7 +189,7 @@ def _f_overlay_image(p):
     image_source = p.get("image_source", None)
 
     if n < 1:
-        return [], [], [], ""
+        return make_result()
 
     pos_map = {
         "top-left": f"{margin}:{margin}",
@@ -213,13 +199,9 @@ def _f_overlay_image(p):
         "center": "(W-w)/2:(H-h)/2",
     }
 
-    # Determine which extra inputs to overlay
-    # When _image_input_indices is set (from image_path_a/b/c...),
-    # use those exact ffmpeg indices instead of the 1-4 source map.
     image_input_indices = p.get("_image_input_indices", [])
 
     if image_input_indices:
-        # image_path inputs — use exact ffmpeg indices
         if n == 1 or len(image_input_indices) == 1:
             overlay_inputs = [(image_input_indices[0], position)]
         else:
@@ -233,18 +215,13 @@ def _f_overlay_image(p):
                 pos = corner_cycle[(start_idx + i) % len(corner_cycle)]
                 overlay_inputs.append((ffmpeg_idx, pos))
     elif image_source and isinstance(image_source, str):
-        # When image_source is specified (e.g. "image_a"), overlay only that input
-        # Map image_a → index 1, image_b → index 2, etc.
         source_map = {"image_a": 1, "image_b": 2, "image_c": 3, "image_d": 4}
         target_idx = source_map.get(image_source)
         if target_idx and target_idx <= n:
             overlay_inputs = [(target_idx, position)]
         else:
-            # Fallback: overlay the first extra input
             overlay_inputs = [(1, position)]
     else:
-        # No specific source — overlay all extras
-        # Auto-assign positions when multiple overlays
         corner_cycle = ["top-left", "top-right", "bottom-right", "bottom-left"]
         if n == 1:
             overlay_inputs = [(1, position)]
@@ -258,8 +235,6 @@ def _f_overlay_image(p):
                 pos = corner_cycle[(start_idx + i) % len(corner_cycle)]
                 overlay_inputs.append((i + 1, pos))
 
-    # Check for custom x/y expressions (LLM sometimes passes ffmpeg
-    # expressions for animation even when using overlay_image)
     custom_x = p.get("x", None)
     custom_y = p.get("y", None)
     has_custom_xy = custom_x is not None and custom_y is not None
@@ -268,16 +243,13 @@ def _f_overlay_image(p):
     for oi, (idx, pos) in enumerate(overlay_inputs):
         ovl_label = f"[_ovl{oi}]"
 
-        # Scale the overlay — always preserve alpha for PNG transparency
         scale_expr = f"[{idx}:v]format=rgba,scale=iw*{scale}:ih*{scale}"
         if opacity < 1.0:
             scale_expr += f",colorchannelmixer=aa={opacity}"
         scale_expr += ovl_label
         fc_parts.append(scale_expr)
 
-        # Chain: first overlay takes [0:v], subsequent take previous output
         if has_custom_xy:
-            # Use custom expressions with eval=frame for animation
             xy = f"x={custom_x}:y={custom_y}:eval=frame"
         else:
             xy = pos_map.get(pos, pos_map["bottom-right"])
@@ -288,21 +260,15 @@ def _f_overlay_image(p):
             src = f"[_tmp{oi - 1}]"
 
         if oi < len(overlay_inputs) - 1:
-            # Intermediate: label the output for next overlay
             fc_parts.append(f"{src}{ovl_label}overlay={xy}[_tmp{oi}]")
         else:
-            # Last overlay: no output label (becomes final output)
             fc_parts.append(f"{src}{ovl_label}overlay={xy}")
 
-    return [], [], [], ";".join(fc_parts)
+    return make_result(fc=";".join(fc_parts))
 
 
 def _f_watermark(p):
-    """Apply a semi-transparent watermark overlay.
-
-    Thin wrapper around overlay_image with watermark-appropriate defaults.
-    """
-    # Set watermark defaults, but allow user overrides
+    """Apply a semi-transparent watermark overlay."""
     p.setdefault("opacity", 0.3)
     p.setdefault("scale", 0.15)
     p.setdefault("position", "bottom-right")
@@ -311,22 +277,7 @@ def _f_watermark(p):
 
 
 def _f_concat(p):
-    """Concatenate the main video with extra video/image inputs sequentially.
-
-    Each extra input becomes a segment. Still images are looped for
-    `still_duration` seconds. All segments are scaled to the same
-    resolution before concatenation.
-
-    When extra audio inputs are connected (via audio_a, audio_b, ...),
-    audio is included in the concat (a=1). Segments without a matching
-    audio input get silence via anullsrc.
-
-    Parameters:
-        width:          Output width (default 1920)
-        height:         Output height (default 1080)
-        still_duration: Seconds to display each still image (default 5)
-        transition:     If specified, auto-redirect to xfade handler
-    """
+    """Concatenate the main video with extra video/image inputs sequentially."""
     # Auto-redirect to xfade when a transition is requested
     transition = p.get("transition")
     if transition and str(transition).lower() not in ("none", "cut", ""):
@@ -336,23 +287,20 @@ def _f_concat(p):
     still_dur = float(p.get("still_duration", 5.0))
     n_extra = int(p.get("_extra_input_count", 0))
 
-    # Build segment list: main video (idx=0) + extras (idx=1,2,...)
-    # Skip inputs reserved by other skills (e.g. overlay_image's image_source)
     exclude = p.get("_exclude_inputs", set())
     extra_paths = p.get("_extra_input_paths", [])
     segments = [(0, True)]  # (ffmpeg_idx, is_video)
     for i in range(n_extra):
         ffmpeg_idx = i + 1
         if ffmpeg_idx in exclude:
-            continue  # Reserved by another skill (e.g. overlay)
+            continue
         is_video = _is_video_file(extra_paths[i]) if i < len(extra_paths) else False
         segments.append((ffmpeg_idx, is_video))
 
     total = len(segments)
     if total < 2:
-        return [], [], [], ""
+        return make_result()
 
-    # Check if audio was pre-muxed into the video inputs
     has_audio = bool(p.get("_has_embedded_audio", False))
 
     fps = int(p.get("_input_fps", 25))
@@ -380,10 +328,8 @@ def _f_concat(p):
         if has_audio:
             albl = f"[_ca{i}]"
             if is_video:
-                # Video input: read its embedded audio
                 parts.append(f"[{idx}:a]aresample=44100,asetpts=PTS-STARTPTS{albl}")
             else:
-                # Still image: no audio stream — generate silence
                 dur = still_dur
                 parts.append(
                     f"anullsrc=r=44100:cl=stereo,atrim=0:{dur},asetpts=PTS-STARTPTS{albl}"
@@ -396,23 +342,11 @@ def _f_concat(p):
     else:
         parts.append(f"{concat_input}concat=n={total}:v=1:a=0")
 
-    return [], [], [], ";".join(parts)
+    return make_result(fc=";".join(parts))
 
 
 def _f_xfade(p):
-    """Concatenate segments with smooth xfade transitions between them.
-
-    Supports transitions: fade, fadeblack, fadewhite, wipeleft, wiperight,
-    wipeup, wipedown, slideleft, slideright, slideup, slidedown,
-    circlecrop, rectcrop, distance, dissolve, pixelize, radial, smoothleft,
-    smoothright, smoothup, smoothdown, squeezev, squeezeh.
-
-    Parameters:
-        transition: Transition type (default "fade")
-        duration:   Transition duration in seconds (default 1.0)
-        still_duration: Seconds to display each still image (default 4.0)
-        width/height: Output resolution (default 1920x1080)
-    """
+    """Concatenate segments with smooth xfade transitions between them."""
     transition = sanitize_text_param(str(p.get("transition", "fade")))
     trans_dur = float(p.get("duration", 1.0))
     still_dur = float(p.get("still_duration", 4.0))
@@ -426,18 +360,17 @@ def _f_xfade(p):
     for i in range(n_extra):
         ffmpeg_idx = i + 1
         if ffmpeg_idx in exclude:
-            continue  # Reserved by another skill (e.g. overlay)
+            continue
         is_video = _is_video_file(extra_paths[i]) if i < len(extra_paths) else False
         segments.append((ffmpeg_idx, is_video))
 
     total = len(segments)
     if total < 2:
-        return [], [], [], ""
+        return make_result()
 
     fps = int(p.get("_input_fps", 25))
     parts = []
 
-    # Step 1: Scale/prepare all segments
     for i, (idx, is_video) in enumerate(segments):
         lbl = f"[_xv{i}]"
         if is_video:
@@ -454,8 +387,6 @@ def _f_xfade(p):
                 f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1{lbl}"
             )
 
-    # Build per-segment durations for accurate offset calculation.
-    # Segment 0 = main video (_video_duration); segments 1+ = extra inputs.
     video_dur = float(p.get("_video_duration", still_dur))
     seg_durations = []
     for i, (idx, is_video) in enumerate(segments):
@@ -470,9 +401,6 @@ def _f_xfade(p):
     cumulative = seg_durations[0]
     prev_label = "[_xv0]"
 
-    # Determine if we'll have audio crossfade — if so, we need explicit
-    # output labels + -map flags because ffmpeg can't auto-bind two
-    # unlabeled outputs.
     has_audio = bool(p.get("_has_embedded_audio", False))
     audio_segments = []
     if has_audio:
@@ -492,7 +420,6 @@ def _f_xfade(p):
             )
             prev_label = out_label
         else:
-            # Last xfade — label the output when audio crossfade follows
             if need_map:
                 parts.append(
                     f"{prev_label}{next_label}xfade=transition={transition}:"
@@ -505,16 +432,13 @@ def _f_xfade(p):
                 )
         cumulative += seg_durations[i] - trans_dur
 
-    # Step 3: Audio crossfade (when audio is embedded in video inputs)
     opts = []
     if need_map:
-        # Prepare audio streams (only for segments with audio)
         for ai, (orig_i, idx) in enumerate(audio_segments):
             parts.append(
                 f"[{idx}:a]aresample=44100,asetpts=PTS-STARTPTS[_xa{ai}]"
             )
 
-        # Chain acrossfade transitions
         n_audio = len(audio_segments)
         prev_alabel = "[_xa0]"
         for i in range(1, n_audio):
@@ -534,18 +458,11 @@ def _f_xfade(p):
 
         opts = ["-map", "[_vout]", "-map", "[_aout]"]
 
-    return [], [], opts, ";".join(parts)
+    return make_result(opts=opts, fc=";".join(parts))
 
 
 def _f_split_screen(p):
-    """Show videos/images side-by-side or top-to-bottom.
-
-    Parameters:
-        layout: "horizontal" (hstack) or "vertical" (vstack) (default "horizontal")
-        width:  Per-cell width (default 960)
-        height: Per-cell height (default 540)
-        duration: Output duration in seconds for still images (default 10)
-    """
+    """Show videos/images side-by-side or top-to-bottom."""
     layout = str(p.get("layout", "horizontal")).lower()
     cell_w = int(p.get("width", 960))
     cell_h = int(p.get("height", 540))
@@ -558,7 +475,7 @@ def _f_split_screen(p):
 
     total = len(cells)
     if total < 2:
-        return [], [], [], ""
+        return make_result()
 
     fps = 25
     parts = []
@@ -569,13 +486,11 @@ def _f_split_screen(p):
         extra_paths = p.get("_extra_input_paths", [])
         is_video = (idx == 0) or (idx - 1 < len(extra_paths) and _is_video_file(extra_paths[idx - 1]))
         if is_video:
-            # Main video: scale, maintain aspect ratio
             parts.append(
                 f"[{idx}:v]scale={cell_w}:{cell_h}:force_original_aspect_ratio=decrease,"
                 f"pad={cell_w}:{cell_h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1{lbl}"
             )
         else:
-            # Extra: loop still images for the duration
             n_frames = int(duration * fps)
             parts.append(
                 f"[{idx}:v]loop=loop={n_frames}:size=1:start=0,"
@@ -593,21 +508,11 @@ def _f_split_screen(p):
     if duration > 0:
         opts = ["-t", str(duration)]
 
-    return [], [], opts, ";".join(parts)
+    return make_result(opts=opts, fc=";".join(parts))
 
 
 def _f_animated_overlay(p):
-    """Overlay extra images with time-based animated motion.
-
-    Supports multiple overlay images — each gets its own motion with
-    staggered speeds so they move independently.
-
-    Parameters:
-        animation:  Motion preset (default "scroll_right")
-        speed:      Motion speed multiplier (default 1.0)
-        scale:      Overlay size relative to video width (default 0.2)
-        opacity:    Overlay opacity 0.0-1.0 (default 1.0)
-    """
+    """Overlay extra images with time-based animated motion."""
     animation = sanitize_text_param(str(p.get("animation", "scroll_right")))
     speed = float(p.get("speed", 1.0))
     scale = float(p.get("scale", 0.2))
@@ -615,16 +520,14 @@ def _f_animated_overlay(p):
     n = int(p.get("_extra_input_count", 0))
 
     if n < 1:
-        return [], [], [], ""
+        return make_result()
 
-    # Determine the ffmpeg input indices for overlay images
     image_input_indices = p.get("_image_input_indices", [])
     if not image_input_indices:
         image_input_indices = [1]
 
     fc_parts = []
 
-    # Scale each overlay image
     for oi, ovl_idx in enumerate(image_input_indices):
         ovl_label = f"[_ovl{oi}]"
         ovl_prep = f"[{ovl_idx}:v]scale=iw*{scale}:ih*{scale}"
@@ -633,9 +536,7 @@ def _f_animated_overlay(p):
         ovl_prep += ovl_label
         fc_parts.append(ovl_prep)
 
-    # Build chained overlay filters — each image gets staggered motion
     for oi, _ovl_idx in enumerate(image_input_indices):
-        # Stagger speed per overlay so they move independently
         px = max(1, int(2 * speed) + oi)
         py = px + 1
 
@@ -653,20 +554,17 @@ def _f_animated_overlay(p):
         motion = motion_presets.get(animation, motion_presets["scroll_right"])
         ovl_label = f"[_ovl{oi}]"
 
-        # Chain: first overlay takes [0:v], subsequent take previous output
         if oi == 0:
             src = "[0:v]"
         else:
             src = f"[_tmp{oi - 1}]"
 
         if oi < len(image_input_indices) - 1:
-            # Intermediate: label the output for next overlay
             fc_parts.append(f"{src}{ovl_label}overlay={motion}:eval=frame[_tmp{oi}]")
         else:
-            # Last overlay: no output label (becomes final output)
             fc_parts.append(f"{src}{ovl_label}overlay={motion}:eval=frame")
 
-    return [], [], [], ";".join(fc_parts)
+    return make_result(fc=";".join(fc_parts))
 
 
 def _f_pip(p):
@@ -677,12 +575,9 @@ def _f_pip(p):
     border = int(p.get("border", 0))
     border_color = sanitize_text_param(str(p.get("border_color", "white")))
 
-    # Scale the overlay relative to main video
     scale_filter = f"[1:v]scale=iw*{scale}:-1"
 
-    # Add border via pad if requested
     if border > 0:
-        # pad adds border_px on each side; keep the content centered
         b = border
         scale_filter += (
             f"[_pip_scaled];"
@@ -693,7 +588,6 @@ def _f_pip(p):
 
     scale_filter += "[pip]"
 
-    # Position mapping
     pos_map = {
         "bottom_right": f"main_w-overlay_w-{margin}:main_h-overlay_h-{margin}",
         "bottom_left": f"{margin}:main_h-overlay_h-{margin}",
@@ -705,14 +599,12 @@ def _f_pip(p):
 
     fc = f"{scale_filter};[0:v][pip]overlay={xy}:shortest=1"
 
-    # Optional audio mixing — blend audio from both inputs
     audio_mix = p.get("audio_mix", False)
     if isinstance(audio_mix, str):
         audio_mix = audio_mix.lower() in ("true", "1", "yes")
     if audio_mix:
-        # Label both video and audio outputs so -map picks up both streams
         fc = f"{scale_filter};[0:v][pip]overlay={xy}:shortest=1[_vout]"
         fc += ";[0:a][1:a]amix=inputs=2:duration=longest:dropout_transition=2[_aout]"
-        return [], [], ["-map", "[_vout]", "-map", "[_aout]"], fc
+        return make_result(opts=["-map", "[_vout]", "-map", "[_aout]"], fc=fc)
 
-    return [], [], [], fc
+    return make_result(fc=fc)

@@ -1,20 +1,37 @@
 
+import os
 import sys
 from unittest.mock import MagicMock
 import time
 
-# Mock modules that cause import errors due to relative imports or dependencies
-sys.modules["skills.composer"] = MagicMock()
-sys.modules["folder_paths"] = MagicMock()
+import pytest
+
+# Save any real modules so we can restore them after this file's tests run.
+_MOCKED_MODULES = ("skills.composer", "folder_paths")
+_saved = {m: sys.modules.get(m) for m in _MOCKED_MODULES}
+
+for _m in _MOCKED_MODULES:
+    if _m not in sys.modules:
+        sys.modules[_m] = MagicMock()
 
 # Now we can import
 try:
     from skills.registry import SkillRegistry, Skill, SkillCategory
 except ImportError:
-    # If standard import fails, try to modify path
-    import os
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from skills.registry import SkillRegistry, Skill, SkillCategory
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _restore_mocked_modules():
+    """Restore any real modules that were replaced by our test-time mocks."""
+    yield
+    for m, original in _saved.items():
+        if original is None:
+            sys.modules.pop(m, None)
+        else:
+            sys.modules[m] = original
+
 
 def test_skill_registry_caching():
     """Verify that SkillRegistry uses caching and invalidates it correctly."""

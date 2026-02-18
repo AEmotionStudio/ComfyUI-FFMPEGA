@@ -1,9 +1,11 @@
-"""FFMPEGA Presets skill handlers.
-
-Auto-generated from composer.py — do not edit directly.
-"""
+"""FFMPEGA Presets skill handlers."""
 
 from ._duration_helper import _calc_multiclip_duration
+
+try:
+    from ..handler_contract import make_result
+except ImportError:
+    from skills.handler_contract import make_result
 
 def _f_fade_to_black(p):
     in_dur = float(p.get("in_duration", 1.0))
@@ -30,7 +32,7 @@ def _f_fade_to_black(p):
         else:
             # Fallback: let ffmpeg figure it out (single clip, no duration info)
             vf.append(f"fade=t=out:d={out_dur}")
-    return vf, [], []
+    return make_result(vf=vf)
 
 
 def _f_fade_to_white(p):
@@ -56,26 +58,17 @@ def _f_fade_to_white(p):
             vf.append(f"fade=t=out:st={st}:d={out_dur}:c=white")
         else:
             vf.append(f"fade=t=out:d={out_dur}:c=white")
-    return vf, [], []
+    return make_result(vf=vf)
 
 
 def _f_flash(p):
-    """Create a brief bright flash effect (like a camera flash).
-
-    Uses geq to boost all channels to white during the flash window with
-    a smooth ramp.  This avoids the permanent-white problem of the fade
-    filter approach.
-    """
+    """Create a brief bright flash effect (like a camera flash)."""
     t = float(p.get("time", p.get("start", 0)))
     duration = float(p.get("duration", 0.3))
     half = duration / 2
     mid = t + half
     end = t + duration
 
-    # Use geq (generic equation) to ramp brightness toward white and back.
-    # alpha ramps 0→1 during first half, 1→0 during second half.
-    # pixel = original*(1-alpha) + 255*alpha  =  clip(original + 255*alpha, 0, 255)
-    # We use enable=between so the expensive geq only runs during the flash.
     ramp_expr = (
         f"geq="
         f"r='clip(r(X,Y)+255*if(lt(T,{mid}),(T-{t})/{half},({end}-T)/{half}),0,255)':"
@@ -84,7 +77,7 @@ def _f_flash(p):
         f":enable='between(t,{t},{end})'"
     )
 
-    return [ramp_expr], [], []
+    return make_result(vf=[ramp_expr])
 
 
 def _f_spin(p):
@@ -93,19 +86,19 @@ def _f_spin(p):
     rad_per_sec = speed * 3.14159 / 180
     if direction == "ccw":
         rad_per_sec = -rad_per_sec
-    return [f"rotate={rad_per_sec}*t:fillcolor=black"], [], []
+    return make_result(vf=[f"rotate={rad_per_sec}*t:fillcolor=black"])
 
 
 def _f_shake(p):
     intensity = p.get("intensity", "medium")
     shake_map = {"light": 5, "medium": 12, "heavy": 25}
     amount = shake_map.get(intensity, 12)
-    return [
+    return make_result(vf=[
         f"crop=iw-{amount*2}:ih-{amount*2}"
         f":{amount}+{amount}*random(1)"
         f":{amount}+{amount}*random(2),"
         f"scale=iw+{amount*2}:ih+{amount*2}"
-    ], [], []
+    ])
 
 
 def _f_pulse(p):
@@ -113,25 +106,24 @@ def _f_pulse(p):
     amount = float(p.get("amount", 0.05))
     margin = int(amount * 100) + 10
     offset_expr = f"{margin}+{margin}*{amount}*10*sin(2*PI*{rate}*t)"
-    return [
+    return make_result(vf=[
         f"pad=iw+{margin*2}:ih+{margin*2}:{margin}:{margin}:color=black",
         f"crop=iw-{margin*2}:ih-{margin*2}:'{offset_expr}':'{offset_expr}'",
-    ], [], []
+    ])
 
 
 def _f_bounce(p):
     height = int(p.get("height", 30))
     speed = float(p.get("speed", 2.0))
-    return [
+    return make_result(vf=[
         f"pad=iw:ih+{height*2}:(ow-iw)/2:{height}:black,"
         f"crop=iw:ih-{height*2}:0:{height}*abs(sin({speed}*PI*t))"
-    ], [], []
+    ])
 
 
 def _f_drift(p):
     direction = p.get("direction", "right")
     amount = int(p.get("amount", 50))
-    # Speed in px/sec: cover `amount` pixels over ~10s (configurable via amount)
     speed = max(1, amount // 10) if amount > 10 else amount
     d = {
         "right": (
@@ -151,17 +143,17 @@ def _f_drift(p):
             f"crop=iw:ih-{amount}:0:max({amount}-{speed}*t\\,0)"
         ),
     }
-    return [d.get(direction, d["right"])], [], []
+    return make_result(vf=[d.get(direction, d["right"])])
 
 
 def _f_iris_reveal(p):
     duration = float(p.get("duration", 2.0))
-    return [
+    return make_result(vf=[
         f"geq="
         f"lum='if(lte(sqrt(pow(X-W/2,2)+pow(Y-H/2,2)),sqrt(pow(W/2,2)+pow(H/2,2))*min(T/{duration},1)),lum(X,Y),0)'"
         f":cb='if(lte(sqrt(pow(X-W/2,2)+pow(Y-H/2,2)),sqrt(pow(W/2,2)+pow(H/2,2))*min(T/{duration},1)),cb(X,Y),128)'"
         f":cr='if(lte(sqrt(pow(X-W/2,2)+pow(Y-H/2,2)),sqrt(pow(W/2,2)+pow(H/2,2))*min(T/{duration},1)),cr(X,Y),128)'"
-    ], [], []
+    ])
 
 
 def _f_wipe(p):
@@ -174,12 +166,12 @@ def _f_wipe(p):
         "up": f"gte(Y,H*(1-min(T/{duration},1)))",
     }
     cond = cond_map.get(direction, cond_map["left"])
-    return [
+    return make_result(vf=[
         f"geq="
         f"lum='if({cond},lum(X,Y),0)'"
         f":cb='if({cond},cb(X,Y),128)'"
         f":cr='if({cond},cr(X,Y),128)'"
-    ], [], []
+    ])
 
 
 def _f_slide_in(p):
@@ -203,6 +195,4 @@ def _f_slide_in(p):
             f"crop=iw:ih/2:0:ih/2*(1-min(t/{duration}\\,1))"
         ),
     }
-    return [d.get(direction, d["left"])], [], []
-
-
+    return make_result(vf=[d.get(direction, d["left"])])

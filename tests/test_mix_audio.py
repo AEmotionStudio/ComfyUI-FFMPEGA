@@ -23,7 +23,7 @@ class TestMixAudioHandler:
 
     def test_default_params(self):
         """Default call should use amix with duration=longest."""
-        vf, af, opts, fc = _f_mix_audio({})
+        vf, af, opts, fc, _io = _f_mix_audio({})
         assert vf == []
         assert af == []
         assert opts == []
@@ -34,27 +34,27 @@ class TestMixAudioHandler:
 
     def test_duration_shortest(self):
         """Should respect duration=shortest."""
-        _, _, _, fc = _f_mix_audio({"duration": "shortest"})
+        _, _, _, fc, _ = _f_mix_audio({"duration": "shortest"})
         assert "duration=shortest" in fc
 
     def test_duration_first(self):
         """Should respect duration=first."""
-        _, _, _, fc = _f_mix_audio({"duration": "first"})
+        _, _, _, fc, _ = _f_mix_audio({"duration": "first"})
         assert "duration=first" in fc
 
     def test_invalid_duration_defaults_to_longest(self):
         """Invalid duration should fall back to longest."""
-        _, _, _, fc = _f_mix_audio({"duration": "invalid"})
+        _, _, _, fc, _ = _f_mix_audio({"duration": "invalid"})
         assert "duration=longest" in fc
 
     def test_custom_weights(self):
         """Should use custom weights for volume balance."""
-        _, _, _, fc = _f_mix_audio({"weights": "1 0.3"})
+        _, _, _, fc, _ = _f_mix_audio({"weights": "1 0.3"})
         assert "weights=1 0.3" in fc
 
     def test_custom_dropout(self):
         """Should use custom dropout_transition."""
-        _, _, _, fc = _f_mix_audio({"dropout_transition": 5})
+        _, _, _, fc, _ = _f_mix_audio({"dropout_transition": 5})
         assert "dropout_transition=5" in fc
 
 
@@ -65,18 +65,18 @@ class TestPipAudioMix:
 
     def test_pip_default_no_audio(self):
         """Default PiP should NOT include amix."""
-        _, _, opts, fc = _f_pip({"scale": 0.25})
+        _, _, opts, fc, _ = _f_pip({"scale": 0.25})
         assert "amix" not in fc
         assert "-map" not in opts
 
     def test_pip_audio_mix_false(self):
         """audio_mix=False should NOT include amix."""
-        _, _, opts, fc = _f_pip({"scale": 0.25, "audio_mix": False})
+        _, _, opts, fc, _ = _f_pip({"scale": 0.25, "audio_mix": False})
         assert "amix" not in fc
 
     def test_pip_audio_mix_true(self):
         """audio_mix=True should append amix filter and -map."""
-        _, _, opts, fc = _f_pip({"scale": 0.25, "audio_mix": True})
+        _, _, opts, fc, _ = _f_pip({"scale": 0.25, "audio_mix": True})
         assert "[0:a][1:a]amix=inputs=2" in fc
         assert "duration=longest" in fc
         assert "[_aout]" in fc
@@ -87,18 +87,18 @@ class TestPipAudioMix:
 
     def test_pip_audio_mix_string_true(self):
         """audio_mix='true' (string) should work like True."""
-        _, _, opts, fc = _f_pip({"audio_mix": "true"})
+        _, _, opts, fc, _ = _f_pip({"audio_mix": "true"})
         assert "amix" in fc
         assert "-map" in opts
 
     def test_pip_audio_mix_string_yes(self):
         """audio_mix='yes' (string) should work like True."""
-        _, _, opts, fc = _f_pip({"audio_mix": "yes"})
+        _, _, opts, fc, _ = _f_pip({"audio_mix": "yes"})
         assert "amix" in fc
 
     def test_pip_video_overlay_still_present_with_audio(self):
         """Video overlay should still be generated when audio_mix is True."""
-        _, _, _, fc = _f_pip({
+        _, _, _, fc, _ = _f_pip({
             "position": "top_left",
             "scale": 0.3,
             "audio_mix": True,
@@ -109,7 +109,7 @@ class TestPipAudioMix:
 
     def test_pip_border_with_audio(self):
         """Border + audio_mix should produce both pad and amix."""
-        _, _, opts, fc = _f_pip({
+        _, _, opts, fc, _ = _f_pip({
             "border": 5,
             "border_color": "white",
             "audio_mix": True,

@@ -1,12 +1,14 @@
-"""FFMPEGA Spatial skill handlers.
-
-Auto-generated from composer.py — do not edit directly.
-"""
+"""FFMPEGA Spatial skill handlers."""
 
 try:
     from ...core.sanitize import sanitize_text_param
 except ImportError:
     from core.sanitize import sanitize_text_param
+
+try:
+    from ..handler_contract import make_result
+except ImportError:
+    from skills.handler_contract import make_result
 
 def _f_resize(p):
     w = str(p.get("width", -2))
@@ -19,7 +21,7 @@ def _f_resize(p):
         h = "-2"
     w = sanitize_text_param(w)
     h = sanitize_text_param(h)
-    return [f"scale={w}:{h}"], [], []
+    return make_result(vf=[f"scale={w}:{h}"])
 
 
 def _f_crop(p):
@@ -27,7 +29,7 @@ def _f_crop(p):
     h = sanitize_text_param(str(p.get("height", "ih")))
     x = sanitize_text_param(str(p.get("x", "(in_w-out_w)/2")))
     y = sanitize_text_param(str(p.get("y", "(in_h-out_h)/2")))
-    return [f"crop={w}:{h}:{x}:{y}"], [], []
+    return make_result(vf=[f"crop={w}:{h}:{x}:{y}"])
 
 
 def _f_pad(p):
@@ -36,25 +38,25 @@ def _f_pad(p):
     x = sanitize_text_param(str(p.get("x", "(ow-iw)/2")))
     y = sanitize_text_param(str(p.get("y", "(oh-ih)/2")))
     color = sanitize_text_param(str(p.get("color", "black")))
-    return [f"pad={w}:{h}:{x}:{y}:{color}"], [], []
+    return make_result(vf=[f"pad={w}:{h}:{x}:{y}:{color}"])
 
 
 def _f_rotate(p):
     angle = p.get("angle", 0)
     if angle == 90:
-        return ["transpose=1"], [], []
+        return make_result(vf=["transpose=1"])
     elif angle == -90 or angle == 270:
-        return ["transpose=2"], [], []
+        return make_result(vf=["transpose=2"])
     elif angle == 180:
-        return ["transpose=1,transpose=1"], [], []
+        return make_result(vf=["transpose=1,transpose=1"])
     else:
         radians = angle * 3.14159 / 180
-        return [f"rotate={radians}"], [], []
+        return make_result(vf=[f"rotate={radians}"])
 
 
 def _f_flip(p):
     d = p.get("direction", "horizontal")
-    return ["hflip" if d == "horizontal" else "vflip"], [], []
+    return make_result(vf=["hflip" if d == "horizontal" else "vflip"])
 
 
 def _f_zoom(p):
@@ -72,7 +74,7 @@ def _f_zoom(p):
         crop_y = f"(ih-ih/{factor})/2"
     else:
         crop_y = f"ih*{float(y)}-ih/{factor}/2"
-    return [f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale=iw*{factor}:ih*{factor}"], [], []
+    return make_result(vf=[f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale=iw*{factor}:ih*{factor}"])
 
 
 def _f_ken_burns(p):
@@ -88,59 +90,57 @@ def _f_ken_burns(p):
     if direction == "zoom_in":
         # z ramps from 1 → (1+amount) over dur seconds using pzoom
         rate = amount / dur / 25  # per-frame increment at ~25fps
-        return [
+        return make_result(vf=[
             f"scale='trunc(iw/2)*2':'trunc(ih/2)*2',"
             f"zoompan=z='min(max(zoom\\,pzoom)+{rate:.6f}\\,{1+amount})':"
             f"d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=hd720:fps=30"
-        ], [], []
+        ])
     elif direction == "zoom_out":
-        # z starts at (1+amount) and holds (zoompan starts zoomed)
-        # then we reverse by starting high and decreasing
         rate = amount / dur / 25
-        return [
+        return make_result(vf=[
             f"scale='trunc(iw/2)*2':'trunc(ih/2)*2',"
             f"zoompan=z='max(if(eq(on\\,1)\\,{1+amount}\\,zoom)-{rate:.6f}\\,1)':"
             f"d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=hd720:fps=30"
-        ], [], []
+        ])
     elif direction == "pan_right":
         zf = 1 + amount
-        return [
+        return make_result(vf=[
             f"scale='trunc(iw/2)*2':'trunc(ih/2)*2',"
             f"zoompan=z='{zf}':"
             f"d=1:x='min(on*{zf-1:.4f}*iw/{dur}/25\\,(iw-iw/{zf}))':y='ih/2-(ih/zoom/2)':s=hd720:fps=30"
-        ], [], []
+        ])
     elif direction == "pan_left":
         zf = 1 + amount
-        return [
+        return make_result(vf=[
             f"scale='trunc(iw/2)*2':'trunc(ih/2)*2',"
             f"zoompan=z='{zf}':"
             f"d=1:x='max((iw-iw/{zf})-on*{zf-1:.4f}*iw/{dur}/25\\,0)':y='ih/2-(ih/zoom/2)':s=hd720:fps=30"
-        ], [], []
+        ])
     else:
         # Default to zoom_in
         rate = amount / dur / 25
-        return [
+        return make_result(vf=[
             f"scale='trunc(iw/2)*2':'trunc(ih/2)*2',"
             f"zoompan=z='min(max(zoom\\,pzoom)+{rate:.6f}\\,{1+amount})':"
             f"d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=hd720:fps=30"
-        ], [], []
+        ])
 
 
 def _f_mirror(p):
     mode = p.get("mode", "horizontal")
     if mode == "horizontal":
-        return ["crop=iw/2:ih:0:0,split[l][r];[r]hflip[rf];[l][rf]hstack"], [], []
+        return make_result(vf=["crop=iw/2:ih:0:0,split[l][r];[r]hflip[rf];[l][rf]hstack"])
     elif mode == "vertical":
-        return ["crop=iw:ih/2:0:0,split[t][b];[b]vflip[bf];[t][bf]vstack"], [], []
+        return make_result(vf=["crop=iw:ih/2:0:0,split[t][b];[b]vflip[bf];[t][bf]vstack"])
     elif mode == "quad":
-        return [
+        return make_result(vf=[
             "crop=iw/2:ih/2:0:0,split=4[a][b][c][d];"
             "[b]hflip[bh];[c]vflip[cv];[d]hflip,vflip[dh];"
             "[a][bh]hstack[top];[cv][dh]hstack[bot];"
             "[top][bot]vstack"
-        ], [], []
+        ])
     else:
-        return ["hflip"], [], []
+        return make_result(vf=["hflip"])
 
 
 def _f_caption_space(p):
@@ -148,27 +148,27 @@ def _f_caption_space(p):
     height = int(p.get("height", 200))
     color = sanitize_text_param(str(p.get("color", "black")))
     if position == "top":
-        return [f"pad=iw:ih+{height}:0:{height}:{color}"], [], []
+        return make_result(vf=[f"pad=iw:ih+{height}:0:{height}:{color}"])
     else:
-        return [f"pad=iw:ih+{height}:0:0:{color}"], [], []
+        return make_result(vf=[f"pad=iw:ih+{height}:0:0:{color}"])
 
 
 def _f_lens_correction(p):
     k1 = float(p.get("k1", -0.2))
     k2 = float(p.get("k2", 0.0))
-    return [f"lenscorrection=k1={k1}:k2={k2}:i=bilinear"], [], []
+    return make_result(vf=[f"lenscorrection=k1={k1}:k2={k2}:i=bilinear"])
 
 
 def _f_deinterlace(p):
     mode = p.get("mode", "send_frame")
     mode_map = {"send_frame": "0", "send_field": "1"}
-    return [f"yadif=mode={mode_map.get(mode, '0')}"], [], []
+    return make_result(vf=[f"yadif=mode={mode_map.get(mode, '0')}"])
 
 
 def _f_frame_interpolation(p):
     fps = int(p.get("fps", 60))
     mode = p.get("mode", "mci")
-    return [f"minterpolate=fps={fps}:mi_mode={mode}"], [], []
+    return make_result(vf=[f"minterpolate=fps={fps}:mi_mode={mode}"])
 
 
 def _f_scroll(p):
@@ -180,7 +180,7 @@ def _f_scroll(p):
         "left": f"scroll=horizontal=-{speed}",
         "right": f"scroll=horizontal={speed}",
     }
-    return [d.get(direction, d["up"])], [], []
+    return make_result(vf=[d.get(direction, d["up"])])
 
 
 def _f_aspect(p):
@@ -194,11 +194,11 @@ def _f_aspect(p):
     else:
         r = float(ratio)
     if mode == "crop":
-        return [f"crop=if(gt(iw/ih\\,{r})\\,ih*{r}\\,iw):if(gt(iw/ih\\,{r})\\,ih\\,iw/{r})"], [], []
+        return make_result(vf=[f"crop=if(gt(iw/ih\\,{r})\\,ih*{r}\\,iw):if(gt(iw/ih\\,{r})\\,ih\\,iw/{r})"])
     elif mode == "stretch":
-        return [f"scale=if(gt(iw/ih\\,{r})\\,iw\\,ih*{r}):if(gt(iw/ih\\,{r})\\,iw/{r}\\,ih)"], [], []
+        return make_result(vf=[f"scale=if(gt(iw/ih\\,{r})\\,iw\\,ih*{r}):if(gt(iw/ih\\,{r})\\,iw/{r}\\,ih)"])
     else:  # pad
-        return [f"pad=if(gt(iw/ih\\,{r})\\,iw\\,ih*{r}):if(gt(iw/ih\\,{r})\\,iw/{r}\\,ih):(ow-iw)/2:(oh-ih)/2:{color}"], [], []
+        return make_result(vf=[f"pad=if(gt(iw/ih\\,{r})\\,iw\\,ih*{r}):if(gt(iw/ih\\,{r})\\,iw/{r}\\,ih):(ow-iw)/2:(oh-ih)/2:{color}"])
 
 
 def _f_perspective(p):
@@ -215,7 +215,7 @@ def _f_perspective(p):
     # Convert strength 0-1 to pixel expression: strength * W/4 (max 25% offset)
     s = f"W*{strength}/4"
     expr = tmpl.replace("{s}", s)
-    return [f"perspective={expr}:interpolation=linear:sense=source"], [], []
+    return make_result(vf=[f"perspective={expr}:interpolation=linear:sense=source"])
 
 
 def _f_fill_borders(p):
@@ -226,7 +226,7 @@ def _f_fill_borders(p):
     mode = p.get("mode", "smear")
     mode_map = {"smear": 0, "mirror": 1, "fixed": 2, "reflect": 3, "wrap": 4, "fade": 5}
     m = mode_map.get(mode, 0)
-    return [f"fillborders=left={left}:right={right}:top={top}:bottom={bottom}:mode={m}"], [], []
+    return make_result(vf=[f"fillborders=left={left}:right={right}:top={top}:bottom={bottom}:mode={m}"])
 
 
 def _f_deshake(p):
@@ -235,7 +235,7 @@ def _f_deshake(p):
     edge = p.get("edge", "mirror")
     edge_map = {"blank": 0, "original": 1, "clamp": 2, "mirror": 3}
     e = edge_map.get(edge, 3)
-    return [f"deshake=rx={rx}:ry={ry}:edge={e}"], [], []
+    return make_result(vf=[f"deshake=rx={rx}:ry={ry}:edge={e}"])
 
 
 def _f_frame_blend(p):
@@ -243,6 +243,4 @@ def _f_frame_blend(p):
     frames = int(p.get("frames", 5))
     frames = max(2, min(10, frames))
     weights = " ".join(["1"] * frames)
-    return [f"tmix=frames={frames}:weights='{weights}'"], [], []
-
-
+    return make_result(vf=[f"tmix=frames={frames}:weights='{weights}'"])
