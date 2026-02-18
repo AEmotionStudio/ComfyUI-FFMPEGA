@@ -5,7 +5,7 @@
 **An AI-powered FFMPEG agent node for ComfyUI — edit videos with natural language.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-2.5.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-2.6.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-1-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 
@@ -20,16 +20,27 @@
 
 ---
 
-## 🚀 What's New in v2.5.0 (February 16, 2026)
+## 🚀 What's New in v2.6.0 (February 18, 2026)
 
-**PiP Overlay Fixes, VL Model Vision & Border Support**
+**Skill Architecture Refactoring, Audio Mixing, Security Hardening & Test Expansion**
 
-*   **🖼️ PiP Border Support**: `picture_in_picture` now accepts `border` and `border_color` parameters — frame your PiP overlay with a clean border.
-*   **👁️ Ollama VL Auto-Embedding**: Vision-language models (e.g. `qwen3-vl`) automatically receive 3 video frames in the initial message — the model "sees" the video from the start.
-*   **🔗 PiP Alias Fix**: Models using `pip`, `picture-in-picture`, or `pictureinpicture` now correctly resolve to `picture_in_picture`. Previously these were silently skipped.
-*   **🎬 Multi-Input Gate Fix**: `picture_in_picture`, `pip`, and `blend` added to `MULTI_INPUT_SKILLS` — extra video inputs now correctly appear in the ffmpeg command.
-*   **🔧 Ollama VL Verification**: Fixed 400 error when verifying output with Ollama VL models — now uses native Ollama image format.
-*   **📝 Improved Prompts**: `extract_frames` strongly recommended for visual requests; PiP guidance added to system prompt.
+*   **🏗️ HandlerResult Contract**: All 9 handler modules now return a formal `HandlerResult` dataclass, replacing ad-hoc tuples. Backward-compatible with existing code.
+*   **🔧 Compose Decomposition**: Extracted 5 orchestration methods from the 600+ line `compose()` into pure, testable static methods.
+*   **🎵 PiP Audio Mixing**: `picture_in_picture` now supports `audio_mix` to blend both audio tracks via ffmpeg's `amix`.
+*   **🔄 CLI Retry**: CLI connectors retry on transient failures with exponential backoff (3 attempts).
+*   **📝 TextInput Node**: New node for subtitle and text overlay workflows with auto SRT detection.
+*   **🔒 Security**: Sanitized text overlay `enable` parameter, fixed path traversal on output dirs, fixed weak UUID entropy.
+*   **🧪 516 Tests**: Expanded test suite from 481 → 516 with 0 failures. New handler unit tests, skill combination tests, and orchestration helper tests.
+
+<details>
+<summary><b>Previous: v2.5.0 — PiP Overlay Fixes, VL Model Vision & Border Support</b></summary>
+
+*   **🖼️ PiP Border Support**: `picture_in_picture` now accepts `border` and `border_color` parameters.
+*   **👁️ Ollama VL Auto-Embedding**: Vision-language models automatically receive 3 video frames in the initial message.
+*   **🔗 PiP Alias Fix**: Models using `pip`, `picture-in-picture`, etc. now correctly resolve to `picture_in_picture`.
+*   **🔧 Ollama VL Verification**: Fixed 400 error when verifying output with Ollama VL models.
+
+</details>
 
 <details>
 <summary><b>Previous: v2.4.0 — Pipeline Chaining, Animated Overlays & Zero-Memory Image Paths</b></summary>
@@ -357,6 +368,28 @@ Takes a video path (from FFMPEGA Agent or Load Video Path), copies the file to C
 | `video_path` | STRING | Path to video file (typically from FFMPEGA Agent's output). |
 | `filename_prefix` | STRING | Prefix for saved filename. Supports `%date:yyyy-MM-dd%`. |
 | `overwrite` | BOOLEAN | *(optional)* Overwrite existing file vs auto-increment counter. |
+
+</details>
+
+<details>
+<summary><b>Text Input (FFMPEGA)</b> — Flexible text input for subtitles, overlays, and watermarks.</summary>
+
+Auto-detects whether text is SRT subtitles, a short watermark, or overlay text. Outputs JSON-encoded metadata that the FFMPEGA Agent node parses for `burn_subtitles`, `text_overlay`, or `watermark` skills.
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `text` | STRING | Text content — plain text, multi-line subtitles, or full SRT format with timestamps. |
+| `auto_mode` | BOOLEAN | *(optional)* Auto-detect mode from content (default: on). |
+| `mode` | DROPDOWN | *(optional)* Override mode: `subtitle`, `overlay`, `watermark`, `title_card`, `raw`. |
+| `position` | DROPDOWN | *(optional)* Text placement: `center`, `top`, `bottom`, `bottom_right`, etc. `auto` = mode default. |
+| `font_size` | INT | *(optional)* Font size in px (0 = auto: 24 subtitle, 48 overlay, 20 watermark). |
+| `font_color` | STRING | *(optional)* Text color as hex (#RRGGBB, default: white). |
+| `start_time` | FLOAT | *(optional)* Start time in seconds (default: 0). |
+| `end_time` | FLOAT | *(optional)* End time in seconds (-1 = full duration). |
+
+| Output | Description |
+| :--- | :--- |
+| `text_output` | JSON-encoded text with metadata — connect to `text_a`, `text_b`, etc. on the FFMPEGA Agent node |
 
 </details>
 

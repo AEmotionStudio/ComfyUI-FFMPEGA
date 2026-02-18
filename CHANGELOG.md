@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - 2026-02-18
+
+### Added
+- **TextInput Node**: New `TextInputNode` for subtitle and text overlay workflows. Auto-detects SRT vs. plain text, supports `watermark` and `subtitle` modes, and generates valid SRT from plain text with duration-aware timing splits.
+- **Audio Mixing for PiP**: `picture_in_picture` skill now supports `audio_mix` parameter — blend both audio tracks together using ffmpeg's `amix` filter instead of keeping only the main video's audio.
+- **CLI Retry with Backoff**: CLI connectors (Gemini CLI, Claude CLI, Cursor Agent, Qwen CLI) now retry on transient failures with exponential backoff (3 attempts, 1s → 4s delays). Covers timeout, rate-limit, and connection errors.
+- **HandlerResult Contract**: New `skills/handler_contract.py` introduces a formal `HandlerResult` dataclass for all handler return types, replacing ad-hoc 3/4/5-tuples. Backward-compatible via `__iter__`, `__getitem__`, `__len__`, and `__add__` methods.
+- **Orchestration Unit Tests**: 5 pure static methods extracted from `compose()` now have dedicated unit tests: `_resolve_audio_conflicts`, `_chain_filter_complex`, `_dedup_output_options`, `_resolve_overlay_inputs`, `_fold_audio_into_fc`.
+- **Skill Combination Tests**: New `tests/test_skill_combinations.py` with 33 integration and unit tests covering known-fragile multi-skill pipelines (concat+volume, xfade+fade, remove_audio+volume) and orchestration helpers.
+- **Handler Unit Tests**: New `tests/test_handlers_unit.py` with 58 isolated handler tests covering all handler families (spatial, temporal, audio, visual, multi-input, encoding, presets, text, subtitles).
+
+### Fixed
+- **Text Overlay Injection** *(security)*: Sanitized `enable` parameter in `text_overlay` to prevent filter injection via crafted enable expressions.
+- **Path Traversal** *(security)*: Enforced `validate_output_path` check on directory-based output paths in `FFMPEGAgentNode` to prevent path traversal attacks.
+- **UUID Entropy** *(security)*: Fixed weak randomness in vision frame directory IDs — now uses `uuid.uuid4()` instead of predictable naming.
+- **Odd Dimension Scaling**: `resize` handler now uses `scale=-2` instead of `scale=-1` to ensure even dimensions, preventing `libx264` encoding failures with portrait videos.
+- **LUT Path Escaping**: Special characters in LUT file paths are now properly escaped for ffmpeg filter usage.
+- **Test Mock Leak**: Fixed `test_skills_registry_perf.py` permanently poisoning `sys.modules["skills.composer"]` with `MagicMock()`, causing `test_pipeline_has_text_inputs_field` to fail when tests ran in sequence.
+- **Cursor Agent Test**: Updated `test_build_cmd` assertion to match `--trust` flag added to Cursor Agent connector.
+- **Orphaned Seed Parameter**: Removed stale `seed` parameter from `grain_overlay` skill registration.
+- **Subtitle Filter Escaping**: Fixed subtitle filter using shell quotes that broke `subprocess` execution.
+- **amix Map Flags**: Fixed `amix` audio filter producing incorrect `-map` flags when chaining filter graphs.
+
+### Changed
+- **Compose Decomposition**: Extracted 5 orchestration methods from the 600+ line `compose()` method into testable pure static methods, reducing cyclomatic complexity.
+- **All 9 Handlers → HandlerResult**: Every handler module (`audio`, `encoding`, `multi_input`, `presets`, `spatial`, `subtitles`, `temporal`, `text_handlers`, `visual`) now returns `HandlerResult` via `make_result()`.
+- **Non-Blocking UX**: Replaced all blocking `alert()` / `confirm()` calls in the UI with non-blocking node status feedback.
+- **Frame Extraction Optimization**: Optimized `frames_to_tensor` memory allocation and video encoding pipelines.
+- **Skill Cache Optimization**: `Skill` objects now cache parameter maps for O(1) `_normalize_params` lookups.
+- **Test Suite**: Expanded from 481 to **516 passing tests**, 0 failures.
+
+---
+
 ## [2.5.0] - 2026-02-16
 
 ### Added

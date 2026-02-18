@@ -16,15 +16,14 @@ except ImportError:
         ALLOWED_SUBTITLE_EXTENSIONS,
     )
 
+try:
+    from ..handler_contract import make_result
+except ImportError:
+    from skills.handler_contract import make_result
+
 
 def _f_burn_subtitles(p):
-    """Burn/hardcode subtitles from .srt/.ass file or text input into video.
-
-    Supports:
-    - Direct file path via ``path`` param (original behavior)
-    - Text input from connected text_a/text_b via ``_text_inputs``
-    - Auto-generates temp .srt from plain text when no file is available
-    """
+    """Burn/hardcode subtitles from .srt/.ass file or text input into video."""
     import json as _json
     import tempfile as _tmpmod
 
@@ -39,11 +38,8 @@ def _f_burn_subtitles(p):
     _trusted_path = False  # auto-generated paths don't need text sanitization
 
     # Handle LLM passing text input slot reference as path (e.g. path='text_a')
-    # Check explicit slot references FIRST, before scanning all text inputs,
-    # so that when multiple text inputs are connected the correct one is used.
     import re as _re
     if _re.match(r'^text_[a-z]$', str(path)) and text_inputs:
-        # LLM referenced a text slot — resolve from _text_inputs
         slot_idx = ord(str(path)[-1]) - ord('a')
         if 0 <= slot_idx < len(text_inputs):
             raw = text_inputs[slot_idx]
@@ -65,19 +61,16 @@ def _f_burn_subtitles(p):
             try:
                 meta = _json.loads(raw_text)
                 if isinstance(meta, dict) and meta.get("mode") in ("subtitle", "auto"):
-                    # Text node with subtitle mode
                     if meta.get("path"):
                         srt_file_path = meta["path"]
                     elif meta.get("text"):
                         text_content = meta["text"]
-                        # Text node settings override LLM defaults
                         if "font_size" in meta and meta["font_size"]:
                             p["fontsize"] = meta["font_size"]
                         if "font_color" in meta and meta["font_color"]:
                             p["fontcolor"] = meta["font_color"]
                     break
             except (_json.JSONDecodeError, TypeError):
-                # Plain string text — use it directly
                 text_content = raw_text
                 break
 
@@ -85,10 +78,8 @@ def _f_burn_subtitles(p):
         path = srt_file_path
         _trusted_path = True
     elif text_content:
-        # Auto-generate SRT from text content
         duration = float(p.get("_video_duration", 8.0))
         srt_content = _auto_srt_from_text(text_content, duration)
-        # Write to temp file and register for cleanup
         tmp = _tmpmod.NamedTemporaryFile(
             mode="w", suffix=".srt", delete=False, encoding="utf-8"
         )
@@ -102,15 +93,12 @@ def _f_burn_subtitles(p):
     elif not path:
         path = "subtitles.srt"
 
-    # Only sanitize user-provided paths (not auto-generated temp files)
     if not _trusted_path:
         path = sanitize_text_param(str(path))
-    # Validate subtitle file path for security (prevent traversal, enforce extensions)
     validate_path(path, ALLOWED_SUBTITLE_EXTENSIONS, must_exist=True)
     fontsize = int(p.get("fontsize", 24))
     fontcolor = sanitize_text_param(str(p.get("fontcolor", "white")))
 
-    # Map common color names to ASS &HBBGGRR format (BGR, not RGB)
     color_map = {
         "white": "&H00FFFFFF",
         "black": "&H00000000",
@@ -125,33 +113,18 @@ def _f_burn_subtitles(p):
     if fontcolor_lower in color_map:
         ass_color = color_map[fontcolor_lower]
     elif fontcolor_lower.startswith("#") and len(fontcolor_lower) in (7, 9):
-        # Convert #RRGGBB or #AARRGGBB hex to ASS &HBBGGRR format
         hex_val = fontcolor_lower.lstrip("#")
         if len(hex_val) == 6:
             r, g, b = hex_val[0:2], hex_val[2:4], hex_val[4:6]
             ass_color = f"&H00{b}{g}{r}".upper()
-        else:  # 8 chars: AARRGGBB
+        else:
             a, r, g, b = hex_val[0:2], hex_val[2:4], hex_val[4:6], hex_val[6:8]
             ass_color = f"&H{a}{b}{g}{r}".upper()
     elif fontcolor_lower.startswith("&h"):
-        # Already in ASS format — pass through
         ass_color = fontcolor
     else:
         ass_color = "&H00FFFFFF"
 
-    # Escape path and style for ffmpeg's subtitles filter.
-    #
-    # When chained in -vf (e.g. "lut3d=...,noise=...,subtitles=..."),
-    # commas in the force_style value get parsed as filter chain separators.
-    # Similarly, colons and other special chars need escaping.
-    #
-    # ffmpeg filter escaping rules (for subprocess list args — no shell):
-    #   \  →  \\     (literal backslash)
-    #   '  →  \'     (literal single quote)
-    #   :  →  \:     (option separator)
-    #   ,  →  \,     (filter separator — MUST escape in force_style)
-    #   [  →  \[     (link label)
-    #   ]  →  \]     (link label)
     def _ffmpeg_escape(s: str) -> str:
         """Escape special chars for ffmpeg filter option values."""
         s = s.replace("\\", "\\\\")
@@ -167,15 +140,11 @@ def _f_burn_subtitles(p):
     style = f"FontSize={fontsize},PrimaryColour={ass_color}"
     escaped_style = _ffmpeg_escape(style)
     vf = f"subtitles={escaped_path}:force_style={escaped_style}"
-    return [vf], [], []
+    return make_result(vf=[vf])
 
 
 def _auto_srt_from_text(text: str, duration: float = 8.0) -> str:
-    """Convert plain text into SRT subtitle format.
-
-    If the text already contains SRT timestamps (``-->``), return as-is.
-    Otherwise split lines evenly across the video duration.
-    """
+    """Convert plain text into SRT subtitle format."""
     if "-->" in text:
         return text
 

@@ -438,7 +438,7 @@ class TestCursorAgentConnector:
     def test_build_cmd(self):
         c = CursorAgentConnector()
         cmd = c._build_cmd("/usr/bin/agent", "test", None)
-        assert cmd == ["/usr/bin/agent", "-p"]
+        assert cmd == ["/usr/bin/agent", "--trust", "-p"]
 
     def test_prepare_stdin_with_system(self):
         """Cursor pipes system + user via stdin."""

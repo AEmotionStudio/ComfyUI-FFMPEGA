@@ -1,19 +1,21 @@
-"""FFMPEGA Encoding skill handlers.
+"""FFMPEGA Encoding skill handlers."""
 
-Auto-generated from composer.py — do not edit directly.
-"""
+try:
+    from ..handler_contract import make_result
+except ImportError:
+    from skills.handler_contract import make_result
 
 def _f_compress(p):
     preset = p.get("preset", "medium")
     crf_map = {"light": 20, "medium": 23, "heavy": 28}
     crf = crf_map.get(preset, 23)
-    return [], [], ["-c:v", "libx264", "-crf", str(crf), "-preset", "medium"]
+    return make_result(opts=["-c:v", "libx264", "-crf", str(crf), "-preset", "medium"])
 
 
 def _f_convert(p):
     codec = p.get("codec", "h264")
     codec_map = {"h264": "libx264", "h265": "libx265", "vp9": "libvpx-vp9", "av1": "libaom-av1"}
-    return [], [], ["-c:v", codec_map.get(codec, "libx264")]
+    return make_result(opts=["-c:v", codec_map.get(codec, "libx264")])
 
 
 def _f_bitrate(p):
@@ -22,46 +24,46 @@ def _f_bitrate(p):
         opts.extend(["-b:v", p["video"]])
     if p.get("audio"):
         opts.extend(["-b:a", p["audio"]])
-    return [], [], opts
+    return make_result(opts=opts)
 
 
 def _f_quality(p):
     crf = p.get("crf", 23)
     preset = p.get("preset", "medium")
-    return [], [], ["-c:v", "libx264", "-crf", str(crf), "-preset", preset]
+    return make_result(opts=["-c:v", "libx264", "-crf", str(crf), "-preset", preset])
 
 
 def _f_gif(p):
     width = int(p.get("width", 480))
     fps = int(p.get("fps", 15))
     # GIF conversion requires split + palettegen + paletteuse filtergraph
-    return [
+    return make_result(vf=[
         f"fps={fps},scale={width}:-1:flags=lanczos,"
         f"split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse"
-    ], [], []
+    ])
 
 
 def _f_container(p):
     fmt = p.get("format", "mp4")
-    return [], [], ["-f", fmt]
+    return make_result(opts=["-f", fmt])
 
 
 def _f_two_pass(p):
     bitrate = p.get("target_bitrate", "4M")
-    return [], [], ["-b:v", bitrate]
+    return make_result(opts=["-b:v", bitrate])
 
 
 def _f_audio_codec(p):
     codec = p.get("codec", "aac")
     bitrate = p.get("bitrate", "128k")
     if codec == "copy":
-        return [], [], ["-c:a", "copy"]
-    return [], [], ["-c:a", codec, "-b:a", bitrate]
+        return make_result(opts=["-c:a", "copy"])
+    return make_result(opts=["-c:a", codec, "-b:a", bitrate])
 
 
 def _f_hwaccel(p):
     accel_type = p.get("type", "auto")
-    return [], [], [], "", ["-hwaccel", accel_type]
+    return make_result(io=["-hwaccel", accel_type])
 
 
 def _f_thumbnail(p):
@@ -77,13 +79,11 @@ def _f_thumbnail(p):
     else:
         vf = f"thumbnail{scale}"
     vf_list = [vf] if vf else []
-    return vf_list, [], ["-frames:v", "1", "-an"], "", input_opts
+    return make_result(vf=vf_list, opts=["-frames:v", "1", "-an"], io=input_opts)
 
 
 def _f_extract_frames(p):
     """Export frames as image sequence."""
     rate = float(p.get("rate", 1.0))
     vf = f"fps={rate}"
-    return [vf], [], ["-an"]
-
-
+    return make_result(vf=[vf], opts=["-an"])
