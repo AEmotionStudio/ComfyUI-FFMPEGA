@@ -351,7 +351,6 @@ class TestFoldAudioIntoFc:
             ["volume=2"],
             [],
             "[_aout_pre]",
-            True,
         )
         assert "volume=2" in fc
         assert af == []
@@ -363,7 +362,6 @@ class TestFoldAudioIntoFc:
             ["volume=2"],
             [],
             None,
-            False,
         )
         assert af == ["volume=2"]
         assert fc == "[0:v]scale=1280:720"
@@ -374,7 +372,6 @@ class TestFoldAudioIntoFc:
             [],
             [],
             None,
-            False,
         )
         assert "-map" in opts
         assert "[_vout]" in opts
@@ -385,7 +382,6 @@ class TestFoldAudioIntoFc:
             [],
             [],
             "[_aout_pre]",
-            True,
         )
         assert "-map" in opts
         assert "[_vfinal]" in opts

@@ -369,15 +369,12 @@ class SkillComposer:
         audio_filters: list[str],
         output_options: list[str],
         _fc_audio_label: str | None,
-        need_audio_fold: bool,
     ) -> tuple[str, list[str], list[str]]:
         """Fold audio filters into filter_complex when needed.
 
         When concat/xfade produce audio inside filter_complex, ``-af``
-        cannot coexist — we fold audio filters into the graph.
-
-        Also handles relabeling for single-block graphs that need audio
-        folding, and strips handler -map flags when taking over.
+        cannot coexist — we fold audio filters into the graph and
+        set appropriate ``-map`` flags.
 
         Returns:
             Updated (fc_graph, audio_filters, output_options).
@@ -763,7 +760,7 @@ class SkillComposer:
             # Fold audio filters into filter_complex and set -map flags
             fc_graph, audio_filters, output_options = self._fold_audio_into_fc(
                 fc_graph, audio_filters, output_options,
-                _fc_audio_label, need_audio_fold,
+                _fc_audio_label,
             )
 
             builder.complex_filter(fc_graph)
