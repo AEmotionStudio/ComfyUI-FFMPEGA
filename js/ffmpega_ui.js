@@ -116,12 +116,6 @@ function handlePaste(node, replace) {
         navigator.clipboard.readText()
             .then(text => {
                 if (text) {
-                    if (replace) {
-                        const promptWidget = node.widgets?.find(w => w.name === "prompt");
-                        if (promptWidget && promptWidget.value && promptWidget.value.trim() !== "") {
-                            if (!confirm("Replace current prompt with clipboard content?")) return;
-                        }
-                    }
                     // Paste with blue feedback
                     setPrompt(node, text, replace, "#4a6a8a");
                 }
@@ -774,10 +768,6 @@ app.registerExtension({
                                 {
                                     content: "🎲 Random Example",
                                     callback: () => {
-                                        const promptWidget = this.widgets?.find(w => w.name === "prompt");
-                                        if (promptWidget && promptWidget.value && promptWidget.value.trim() !== "") {
-                                            if (!confirm("Replace current prompt with a random example?")) return;
-                                        }
                                         const randomPrompt = RANDOM_PROMPTS[Math.floor(Math.random() * RANDOM_PROMPTS.length)];
                                         // Use purple magic color
                                         setPrompt(this, randomPrompt, true, "#8a4a8a");
@@ -808,7 +798,6 @@ app.registerExtension({
                                     callback: () => {
                                         const promptWidget = this.widgets?.find(w => w.name === "prompt");
                                         if (promptWidget && promptWidget.value && promptWidget.value.trim() !== "") {
-                                            if (!confirm("Are you sure you want to clear the prompt?")) return;
                                             this._previousPrompt = promptWidget.value; // Save history
                                             promptWidget.value = "";
                                             this.setDirtyCanvas(true, true);
