@@ -544,7 +544,10 @@ class SkillComposer:
             else:
                 fc_graph = complex_filters[0]
                 # Single filter_complex block that produces audio
-                if audio_in_fc and ("a=1" in fc_graph or "acrossfade" in fc_graph):
+                if audio_in_fc and (
+                    "a=1" in fc_graph or "acrossfade" in fc_graph
+                    or "amix" in fc_graph
+                ):
                     if need_audio_fold:
                         # Replace existing labels — xfade/concat handlers
                         # already produce [_vout] and [_aout] labels.  We

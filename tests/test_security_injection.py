@@ -2,7 +2,7 @@
 from skills.registry import get_registry
 from skills.composer import SkillComposer, Pipeline
 import pytest
-from skills.handlers.composite import _f_text_overlay, _f_ticker, _f_countdown, _f_typewriter_text
+from skills.handlers.text_handlers import _f_text_overlay, _f_ticker, _f_countdown, _f_typewriter_text
 from skills.handlers.spatial import _f_crop, _f_pad, _f_resize
 
 def test_vulnerability():
