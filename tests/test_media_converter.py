@@ -3,6 +3,7 @@ import pytest
 import torch
 import numpy as np
 import sys
+import os
 from unittest.mock import MagicMock, patch
 
 # Import MediaConverter
@@ -171,6 +172,34 @@ class TestMediaConverter:
 
             assert tensor.shape == (5, 64, 64, 3)
 
+    def test_save_frames_as_images(self):
+        """Test save_frames_as_images with tensor input."""
+        # Create tensor (10 frames)
+        images = torch.rand(10, 64, 64, 3, dtype=torch.float32)
+
+        # Save max 5 frames
+        paths = self.converter.save_frames_as_images(images, max_frames=5)
+
+        assert len(paths) == 5
+        for p in paths:
+            assert os.path.exists(p)
+            assert p.endswith(".png")
+
+        # Clean up
+        for p in paths:
+            os.remove(p)
+        os.rmdir(os.path.dirname(paths[0]))
+
+    def test_save_frames_as_images_full(self):
+        """Test save_frames_as_images with fewer frames than max."""
+        images = torch.rand(3, 64, 64, 3, dtype=torch.float32)
+        paths = self.converter.save_frames_as_images(images, max_frames=5)
+        assert len(paths) == 3
+        # Clean up
+        for p in paths:
+            os.remove(p)
+        os.rmdir(os.path.dirname(paths[0]))
+
 
 class TestMuxAudioMode:
     """Tests for the audio_mode parameter in mux_audio."""
@@ -297,4 +326,3 @@ class TestMuxAudioMode:
             mock_mux.assert_called_once_with(
                 "/tmp/video.mp4", self.audio, audio_mode="pad",
             )
-

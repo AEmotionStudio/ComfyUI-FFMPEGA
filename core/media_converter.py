@@ -189,7 +189,9 @@ class MediaConverter:
         n_frames = images.shape[0]
         for start in range(0, n_frames, CHUNK):
             end = min(start + CHUNK, n_frames)
-            chunk = (images[start:end] * 255.0).clamp(0, 255).to(torch.uint8).cpu().numpy()
+            # Optimization: Use in-place operations (mul, clamp_) to avoid intermediate
+            # float tensor allocation for the chunk scaling step.
+            chunk = images[start:end].mul(255.0).clamp_(0, 255).to(torch.uint8).cpu().numpy()
             proc.stdin.write(chunk)
             del chunk
         proc.stdin.close()
@@ -219,8 +221,15 @@ class MediaConverter:
         """
         from PIL import Image  # type: ignore[import-not-found]
 
-        frames = (images * 255.0).clamp(0, 255).to(torch.uint8).cpu().numpy()
-        num_frames = min(frames.shape[0], max_frames)
+        # Optimization: Slice frames first to avoid processing the entire video
+        # when we only need a few frames (e.g., for previews or overlay inputs).
+        num_frames = min(images.shape[0], max_frames)
+        images_slice = images[:num_frames]
+
+        # Optimization: Use in-place operations to reduce memory allocation
+        # Original: (images * 255.0).clamp(0, 255).to(torch.uint8)
+        frames = images_slice.mul(255.0).clamp_(0, 255).to(torch.uint8).cpu().numpy()
+
         tmp_dir = tempfile.mkdtemp(prefix="ffmpega_frames_")
 
         # Optimization: Parallelize PNG saving (I/O and compression bound)
