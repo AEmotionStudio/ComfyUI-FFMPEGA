@@ -471,10 +471,11 @@ class SkillComposer:
                 for ci, fc_block in enumerate(complex_filters):
                     is_last = (ci == len(complex_filters) - 1)
 
-                    # Detect if this block produces audio (contains concat a=1
-                    # or acrossfade from xfade)
+                    # Detect if this block produces audio (contains concat a=1,
+                    # acrossfade from xfade, or amix from PiP audio mixing)
                     block_has_audio = audio_in_fc and ci == 0 and (
                         "a=1" in fc_block or "acrossfade" in fc_block
+                        or "amix" in fc_block
                     )
 
                     if ci == 0:

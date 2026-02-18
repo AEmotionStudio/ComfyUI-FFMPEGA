@@ -20,7 +20,7 @@ def _calc_multiclip_duration(p: dict, clip_dur: float, n_extra: int) -> float:
         Total estimated output duration in seconds.
     """
     n_clips = 1 + n_extra
-    xfade_dur = float(p.get("_xfade_duration", 1.0))
+    xfade_dur = float(p.get("_xfade_duration", 0.0))
     # Use _still_duration (injected by composer) falling back to still_duration (user param)
     still_dur = float(p.get("_still_duration", p.get("still_duration", 4.0)))
 
