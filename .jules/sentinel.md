@@ -17,3 +17,8 @@
 **Vulnerability:** `APIConnector.generate_stream()` in `core/llm/api.py` did not sanitize API keys from HTTP error messages, unlike sibling methods `generate()` and `chat_with_tools()`. A failed streaming request could expose API keys via request headers in error messages.
 **Learning:** When adding new methods that make HTTP calls with auth headers, it's easy to forget the error-sanitization wrapper since the happy path works fine. The inconsistency arose because `generate_stream` had no try/except wrapper at all.
 **Prevention:** Whenever adding new HTTP-calling methods to API connectors, always include the try/except sanitization wrapper. Consider extracting the error-handling pattern into a shared utility.
+
+## 2026-02-18 - FFMPEG Filter Injection via 'enable' Parameter
+**Vulnerability:** The `enable` parameter in `_f_text_overlay` accepted raw user input, allowing attackers to break out of the single-quoted context (e.g., `1':textfile='/etc/passwd`) and inject arbitrary FFMPEG filter options.
+**Learning:** Even when parameters are seemingly safe "expressions" or "flags", if they are interpolated into a filter string without sanitization, they can be exploited. `enable` is a powerful option that controls filter execution but can also be manipulated.
+**Prevention:** Apply `sanitize_text_param` to ALL dynamic values interpolated into FFMPEG filter strings, including those intended as expressions or flags. This ensures quotes and delimiters are properly escaped.

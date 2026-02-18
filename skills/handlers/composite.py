@@ -840,8 +840,8 @@ def _f_text_overlay(p):
     elif p.get("enable"):
         # LLM may pass a raw ffmpeg enable expression directly
         enable_expr = str(p["enable"]).strip("'\"")
-        # Escape commas for ffmpeg filter graph
-        enable_expr = enable_expr.replace(",", "\\,")
+        # Sanitize to prevent parameter injection (escapes quotes, backslashes, colons, etc.)
+        enable_expr = sanitize_text_param(enable_expr)
         dt += f":enable='{enable_expr}'"
     else:
         # Time-based enable/disable (no blink)
