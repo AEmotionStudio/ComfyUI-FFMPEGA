@@ -443,12 +443,12 @@ class SkillComposer:
         # Apply filter_complex if any skill needs multi-stream processing
         if complex_filters:
             # Detect whether any skill produces audio inside filter_complex
-            # (concat with a=1, xfade with audio crossfade).
+            # (concat with a=1, xfade with audio crossfade, or PiP with amix).
             _audio_producing_skills = {"xfade", "concat"}
             audio_in_fc = bool(
                 step_names & _audio_producing_skills
                 and pipeline.metadata.get("_has_embedded_audio", False)
-            )
+            ) or any("amix" in fc for fc in complex_filters)
 
             # Determine up-front whether we need to fold audio filters
             # into the filter_complex graph (when concat/xfade produce

@@ -36,11 +36,26 @@ def _f_fade_to_black(p):
 def _f_fade_to_white(p):
     in_dur = float(p.get("in_duration", 1.0))
     out_dur = float(p.get("out_duration", 1.0))
+
+    # Calculate total output duration for multi-clip pipelines
+    clip_dur = float(p.get("_video_duration", 0))
+    n_extra = int(p.get("_extra_input_count", 0))
+    n_clips = 1 + n_extra
+
+    if n_clips > 1 and clip_dur > 0:
+        total_dur = _calc_multiclip_duration(p, clip_dur, n_extra)
+    else:
+        total_dur = clip_dur
+
     vf = []
     if in_dur > 0:
         vf.append(f"fade=t=in:st=0:d={in_dur}:c=white")
     if out_dur > 0:
-        vf.append(f"fade=t=out:d={out_dur}:c=white")
+        if total_dur > 0:
+            st = max(0, total_dur - out_dur)
+            vf.append(f"fade=t=out:st={st}:d={out_dur}:c=white")
+        else:
+            vf.append(f"fade=t=out:d={out_dur}:c=white")
     return vf, [], []
 
 
