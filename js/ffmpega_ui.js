@@ -1319,19 +1319,20 @@ app.registerExtension({
 
             nodeType.prototype.onNodeCreated = function () {
                 const result = onNodeCreated?.apply(this, arguments);
+                const node = this;
 
                 // Style the node
-                this.color = "#3a4a5a";
-                this.bgcolor = "#2a3a4a";
+                node.color = "#3a4a5a";
+                node.bgcolor = "#2a3a4a";
 
                 // Find and replace the font_color STRING widget with a color picker
-                const colorWidgetIdx = this.widgets?.findIndex(w => w.name === "font_color");
+                const colorWidgetIdx = node.widgets?.findIndex(w => w.name === "font_color");
                 if (colorWidgetIdx !== undefined && colorWidgetIdx >= 0) {
-                    const oldWidget = this.widgets[colorWidgetIdx];
+                    const oldWidget = node.widgets[colorWidgetIdx];
                     const initialColor = oldWidget.value || "#FFFFFF";
 
                     // Remove the old STRING widget
-                    this.widgets.splice(colorWidgetIdx, 1);
+                    node.widgets.splice(colorWidgetIdx, 1);
 
                     // Create DOM container
                     const container = document.createElement("div");
@@ -1371,19 +1372,48 @@ app.registerExtension({
                     // Hex display
                     const hexLabel = document.createElement("span");
                     hexLabel.textContent = initialColor.toUpperCase();
+                    hexLabel.title = "Click to copy hex code";
                     hexLabel.style.cssText = `
                         color: #ccc;
                         font: 11px monospace;
                         flex-grow: 1;
                         text-align: right;
+                        cursor: pointer;
+                        user-select: none;
                     `;
+
+                    // Click to copy handler
+                    hexLabel.onclick = async () => {
+                        const currentHex = colorInput.value.toUpperCase();
+                        try {
+                            if (navigator.clipboard) {
+                                await navigator.clipboard.writeText(currentHex);
+                                flashNode(node, "#4a7a4a"); // Green flash
+
+                                // Temporary feedback
+                                hexLabel.textContent = "COPIED";
+                                hexLabel.style.color = "#8f8";
+
+                                setTimeout(() => {
+                                    // Only restore if still showing "COPIED"
+                                    if (hexLabel.textContent === "COPIED") {
+                                        hexLabel.textContent = currentHex;
+                                        hexLabel.style.color = "#ccc";
+                                    }
+                                }, 800);
+                            }
+                        } catch (err) {
+                            console.error("Failed to copy hex:", err);
+                            flashNode(node, "#7a3a3a"); // Red flash
+                        }
+                    };
 
                     container.appendChild(label);
                     container.appendChild(colorInput);
                     container.appendChild(hexLabel);
 
                     // Add as DOM widget
-                    const domWidget = this.addDOMWidget("font_color", "custom", container, {
+                    const domWidget = node.addDOMWidget("font_color", "custom", container, {
                         getValue: () => colorInput.value.toUpperCase(),
                         setValue: (v) => {
                             if (v && typeof v === "string") {
@@ -1391,6 +1421,7 @@ app.registerExtension({
                                 if (v.startsWith("#")) {
                                     colorInput.value = v;
                                     hexLabel.textContent = v.toUpperCase();
+                                    hexLabel.style.color = "#ccc"; // Reset color
                                 }
                             }
                         },
@@ -1398,15 +1429,17 @@ app.registerExtension({
                     domWidget.value = initialColor;
 
                     colorInput.addEventListener("input", (e) => {
-                        domWidget.value = e.target.value.toUpperCase();
-                        hexLabel.textContent = e.target.value.toUpperCase();
+                        const val = e.target.value.toUpperCase();
+                        domWidget.value = val;
+                        hexLabel.textContent = val;
+                        hexLabel.style.color = "#ccc"; // Reset color if dragging during feedback
                     });
 
                     // Move widget to the correct position
-                    const newIdx = this.widgets.indexOf(domWidget);
+                    const newIdx = node.widgets.indexOf(domWidget);
                     if (newIdx >= 0 && newIdx !== colorWidgetIdx) {
-                        this.widgets.splice(newIdx, 1);
-                        this.widgets.splice(colorWidgetIdx, 0, domWidget);
+                        node.widgets.splice(newIdx, 1);
+                        node.widgets.splice(colorWidgetIdx, 0, domWidget);
                     }
                 }
 
