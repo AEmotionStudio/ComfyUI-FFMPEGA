@@ -354,6 +354,31 @@ See what FFMPEGA can do — each example shows the prompt used, the input clip, 
 
 ---
 
+### Green Screen Removal
+
+> **Prompt:** `Remove the green screen with chroma key, despill the green edges, sharpen slightly`
+
+<table>
+<tr>
+<td align="center"><b>Before</b></td>
+<td align="center"><b>After</b></td>
+</tr>
+<tr>
+<td>
+
+![Before - Green Screen](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_man_readin_202602102036_s90op.webp)
+
+</td>
+<td>
+
+![After - Green Screen](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEG_00621-audio.webp)
+
+</td>
+</tr>
+</table>
+
+---
+
 ## 📦 Installation
 
 ### Requirements
