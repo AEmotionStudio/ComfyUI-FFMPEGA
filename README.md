@@ -133,13 +133,24 @@ See what FFMPEGA can do — each example shows the prompt used, the input clip, 
 
 > **Prompt:** `Concatenate these clips in a 4x4 grid`
 
-**Before:**
+<table>
+<tr>
+<td align="center"><b>Before</b></td>
+<td align="center"><b>After</b></td>
+</tr>
+<tr>
+<td>
 
-https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_mime_performing_202602150619_a9hdw.mp4
+![Before - 4x4 Grid](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_mime_performing_202602150619_a9hdw.webp)
 
-**After:**
+</td>
+<td>
 
-https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00073.mp4
+![After - 4x4 Grid](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00073.webp)
+
+</td>
+</tr>
+</table>
 
 ---
 
@@ -147,13 +158,24 @@ https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FF
 
 > **Prompt:** `Concatenate these clips with a crossfade transition between each, add a fade in at the start and fade out at the end and a bouncing image_path_a at 10% size and 30% opacity`
 
-**Before:**
+<table>
+<tr>
+<td align="center"><b>Before</b></td>
+<td align="center"><b>After</b></td>
+</tr>
+<tr>
+<td>
 
-https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_lady_dancing_202602170500_f9ayn.mp4
+![Before - Crossfade](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_lady_dancing_202602170500_f9ayn.webp)
 
-**After:**
+</td>
+<td>
 
-https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00074.mp4
+![After - Crossfade](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00074.webp)
+
+</td>
+</tr>
+</table>
 
 ---
 
@@ -161,13 +183,24 @@ https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FF
 
 > **Prompt:** `Color grade with the cinematic teal orange LUT, normalize audio, add a text "water" in the bottom right corner, compress for web at 720p`
 
-**Before:**
+<table>
+<tr>
+<td align="center"><b>Before</b></td>
+<td align="center"><b>After</b></td>
+</tr>
+<tr>
+<td>
 
-https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_cinematic_slowmotion_202602161357_525q5.mp4
+![Before - Color Grade](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_cinematic_slowmotion_202602161357_525q5.webp)
 
-**After:**
+</td>
+<td>
 
-https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00063.mp4
+![After - Color Grade](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00063.webp)
+
+</td>
+</tr>
+</table>
 
 ---
 
