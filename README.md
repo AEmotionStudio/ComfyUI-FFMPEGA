@@ -279,6 +279,81 @@ See what FFMPEGA can do — each example shows the prompt used, the input clip, 
 
 ---
 
+### Cinematic Teal & Orange
+
+> **Prompt:** `Add a cinematic teal and orange color grade, apply a subtle vignette, and fade in from black`
+
+<table>
+<tr>
+<td align="center"><b>Before</b></td>
+<td align="center"><b>After</b></td>
+</tr>
+<tr>
+<td>
+
+![Before - Cinematic](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_cinematic_slowmotion_202602161357_525q5.webp)
+
+</td>
+<td>
+
+![After - Cinematic](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00064.webp)
+
+</td>
+</tr>
+</table>
+
+---
+
+### Neon Glow Edge Detection
+
+> **Prompt:** `Apply a neon glow edge detection effect, add chromatic aberration, and slow the video to 0.5x speed with smooth motion`
+
+<table>
+<tr>
+<td align="center"><b>Before</b></td>
+<td align="center"><b>After</b></td>
+</tr>
+<tr>
+<td>
+
+![Before - Neon Glow](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_cinematic_slowmotion_202602161357_g46ry.webp)
+
+</td>
+<td>
+
+![After - Neon Glow](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00065.webp)
+
+</td>
+</tr>
+</table>
+
+---
+
+### Colorhold Noir
+
+> **Prompt:** `Use colorhold to keep only the red, desaturate everything else, boost contrast to 1.5, add a strong vignette, apply noir style`
+
+<table>
+<tr>
+<td align="center"><b>Before</b></td>
+<td align="center"><b>After</b></td>
+</tr>
+<tr>
+<td>
+
+![Before - Colorhold](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/Fixed_redress_202602190040_uj53t.webp)
+
+</td>
+<td>
+
+![After - Colorhold](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEG_00620-audio.webp)
+
+</td>
+</tr>
+</table>
+
+---
+
 ## 📦 Installation
 
 ### Requirements
