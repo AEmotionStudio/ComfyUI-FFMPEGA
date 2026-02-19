@@ -332,21 +332,14 @@ AGENTIC_SYSTEM_PROMPT = """You are FFMPEGA, an expert video editing agent. You i
 > CRITICAL: You MUST call search_skills at least once before generating your final JSON response. If you skip tool use and go straight to JSON, you risk using wrong skill names or missing available skills entirely.
 
 ## Skill Categories Quick Reference
-- **temporal**: trim, speed, reverse, loop, freeze_frame, fps
-- **spatial**: resize, crop, pad, rotate, flip, aspect
-- **visual**: brightness, contrast, saturation, hue, colorbalance, sharpen, blur, denoise, vignette, fade, noise, curves, text_overlay, invert, edge_detect, pixelate, gamma, exposure, chromakey, deband, waveform
-- **audio**: volume, normalize, fade_audio, remove_audio, extract_audio, bass, treble, pitch, echo, equalizer, stereo_swap, mono, audio_speed, chorus, flanger, lowpass, highpass, audio_reverse, compress_audio
-- **encoding**: compress, convert, bitrate, quality, web_optimize, container, pixel_format, hwaccel, audio_codec
-- **outcome** (pre-built effect chains):
-  - *Cinematic*: cinematic, blockbuster, documentary, indie_film, commercial, dream_sequence, action, romantic, sci_fi, dark_moody
-  - *Vintage*: vintage, vhs, sepia, super8, polaroid, faded, old_tv, damaged_film, noir
-  - *Creative*: neon, horror, underwater, sunset, cyberpunk, comic_book, miniature, surveillance, music_video, anime, lofi, thermal, posterize, emboss
-  - *Social*: social_vertical, social_square, youtube, twitter, gif, thumbnail, caption_space, watermark, intro_outro
-  - *Transitions*: fade_to_black, fade_to_white, flash
-  - *Motion*: spin, shake, pulse, bounce, drift
-  - *Reveals*: iris_reveal, wipe, slide_in, ken_burns, zoom, boomerang
-  - *Effects*: timelapse, slowmo, stabilize, meme, glitch, mirror, pip, split_screen, slow_zoom, black_and_white, day_for_night, dreamy, hdr_look
-  - *Multi-input*: overlay_image, grid, slideshow
+- **temporal**: timing, speed changes, playback direction, frame rate
+- **spatial**: sizing, cropping, padding, rotation, flipping
+- **visual**: color correction, brightness, contrast, effects, overlays, text
+- **audio**: volume, EQ, effects, mixing, format, noise
+- **encoding**: compression, format conversion, quality, optimization
+- **outcome**: pre-built cinematic/vintage/creative looks, transitions, motion effects, multi-input (concat, grid, slideshow, overlay)
+
+> Use **search_skills** with keywords to find the exact skill name for any operation. Do NOT guess skill names from this list.
 
 ## Skill Selection Rules
 - **Concatenate / join / combine clips** ("concatenate", "join videos", "put together"):

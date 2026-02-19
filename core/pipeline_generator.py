@@ -384,19 +384,35 @@ class PipelineGenerator:
                         f"non-JSON, requesting correction..."
                     )
                     messages.append({"role": "assistant", "content": response.content or ""})
-                    messages.append({
-                        "role": "user",
-                        "content": (
-                            "That response was not valid JSON. You MUST respond with "
-                            "ONLY a JSON object like: "
-                            '{"interpretation": "...", "pipeline": '
-                            '[{"skill": "skill_name", "params": {}}], '
-                            '"warnings": [], "estimated_changes": "..."}\n'
-                            "Use get_skill_details to confirm exact skill names "
-                            "before outputting the pipeline. Do NOT explain — "
-                            "just output the JSON."
-                        ),
-                    })
+
+                    # If first iteration and model skipped tools entirely,
+                    # send a stronger nudge to force tool use
+                    if iteration == 0:
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "You have access to these tools: search_skills, "
+                                "get_skill_details, list_skills, build_pipeline. "
+                                "You MUST call search_skills first to find valid "
+                                "skill names. Do NOT guess skill names. Call "
+                                "search_skills now with keywords from the user's "
+                                "request."
+                            ),
+                        })
+                    else:
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "That response was not valid JSON. You MUST respond with "
+                                "ONLY a JSON object like: "
+                                '{"interpretation": "...", "pipeline": '
+                                '[{"skill": "skill_name", "params": {}}], '
+                                '"warnings": [], "estimated_changes": "..."}\n'
+                                "Use get_skill_details to confirm exact skill names "
+                                "before outputting the pipeline. Do NOT explain — "
+                                "just output the JSON."
+                            ),
+                        })
                     continue
 
                 # Process tool calls

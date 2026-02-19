@@ -230,6 +230,55 @@ class TestSkillRegistry:
         results = registry.search("light")
         assert len(results) == 1
 
+    def test_search_multi_word(self):
+        """Multi-word queries should match skills containing ANY word."""
+        registry = SkillRegistry()
+
+        registry.register(Skill(
+            name="vignette",
+            category=SkillCategory.VISUAL,
+            description="Apply vignette effect",
+            tags=["dark", "edges"],
+        ))
+        registry.register(Skill(
+            name="fade",
+            category=SkillCategory.VISUAL,
+            description="Fade in or out",
+            tags=["transition"],
+        ))
+        registry.register(Skill(
+            name="colorbalance",
+            category=SkillCategory.VISUAL,
+            description="Adjust color balance for grading",
+            tags=["color", "grade", "tint"],
+        ))
+        registry.register(Skill(
+            name="resize",
+            category=SkillCategory.SPATIAL,
+            description="Resize video dimensions",
+        ))
+
+        # Multi-word query should find skills matching ANY word
+        results = registry.search("color grade vignette fade")
+        names = {s.name for s in results}
+        assert "vignette" in names
+        assert "fade" in names
+        assert "colorbalance" in names
+        # resize doesn't match any of those words
+        assert "resize" not in names
+
+    def test_search_empty_query(self):
+        """Empty query should return no results."""
+        registry = SkillRegistry()
+        registry.register(Skill(
+            name="brightness",
+            category=SkillCategory.VISUAL,
+            description="Adjust brightness",
+        ))
+
+        assert registry.search("") == []
+        assert registry.search("   ") == []
+
     def test_global_registry(self):
         """Test global registry has default skills."""
         registry = get_registry()

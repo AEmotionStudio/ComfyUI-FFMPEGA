@@ -279,16 +279,23 @@ class SkillRegistry:
     def search(self, query: str) -> list[Skill]:
         """Search for skills by name or description.
 
+        Splits the query into words and returns skills whose search text
+        contains ANY of the words (OR matching).  This ensures multi-word
+        queries like "color grade vignette fade" return relevant results
+        instead of requiring the exact substring.
+
         Args:
-            query: Search query.
+            query: Search query (single or multi-word).
 
         Returns:
             List of matching skills.
         """
-        query = query.lower()
+        words = query.lower().split()
+        if not words:
+            return []
         return [
             skill for skill in self._skills.values()
-            if query in skill._search_text
+            if any(w in skill._search_text for w in words)
         ]
 
     def to_prompt_string(self) -> str:
