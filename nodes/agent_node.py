@@ -257,13 +257,14 @@ class FFMPEGAgentNode:
             "hidden": {
                 "hidden_prompt": "PROMPT",
                 "extra_pnginfo": "EXTRA_PNGINFO",
+                "unique_id": "UNIQUE_ID",
             },
         }
 
     RETURN_TYPES = ("IMAGE", "AUDIO", "STRING", "STRING", "STRING")
     RETURN_NAMES = ("images", "audio", "video_path", "command_log", "analysis")
     OUTPUT_TOOLTIPS = (
-        "First frame from the output video as an image tensor (thumbnail/preview). Use Frame Extract or VHS Load for all frames.",
+        "Image frames from the output video. Returns ALL frames automatically when connected to a downstream node (e.g. VHS Video Combine). Returns only a thumbnail when unconnected (zero-memory preview).",
         "Audio extracted from the output video (or passed through from audio_a) in ComfyUI AUDIO format.",
         "Absolute path to the rendered output video file.",
         "The ffmpeg command that was executed.",
@@ -1384,15 +1385,43 @@ Token Usage{est_tag}:
                     output_path, list(audio_inputs.values()), audio_mode=audio_mode
                 )
 
-        # --- Extract a single thumbnail frame (NOT all frames) ---
-        # Loading all frames into a tensor uses ~6 MB × frame_count
-        # (e.g. 13 GB for 74s @ 30fps 1080p).  For the zero-memory
-        # pipeline (LoadVideoPath → Agent → SaveVideo) this is pure
-        # waste.  We extract only the first frame for the IMAGE output
-        # (used as a thumbnail / workflow PNG preview).  Users who need
-        # all frames should use the Frame Extract node or VHS Load.
-        images_tensor = self._extract_thumbnail_frame(output_path)
-        logger.debug("Output thumbnail shape: %s", images_tensor.shape)
+        # --- Smart frame extraction (auto-detect downstream usage) ---
+        # Check whether the `images` output (index 0) is connected to
+        # any downstream node.  If yes, load ALL frames so nodes like
+        # VHS Video Combine receive the full video.  If not connected,
+        # extract only a single thumbnail for the node preview widget
+        # (zero-memory path — avoids loading ~13 GB for a 74s 1080p video).
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_connected = False
+        if unique_id and hidden_prompt:
+            for node_id, node_data in hidden_prompt.items():
+                if str(node_id) == unique_id:
+                    continue
+                for inp_val in (node_data.get("inputs") or {}).values():
+                    if (
+                        isinstance(inp_val, list)
+                        and len(inp_val) == 2
+                        and str(inp_val[0]) == unique_id
+                        and inp_val[1] == 0
+                    ):
+                        images_connected = True
+                        break
+                if images_connected:
+                    break
+
+        if images_connected:
+            # Full frame extraction — downstream node needs all frames
+            logger.info(
+                "images output is connected — loading all frames "
+                "from output video"
+            )
+            images_tensor = self.media_converter.frames_to_tensor(output_path)
+            logger.debug("Output full frames shape: %s", images_tensor.shape)
+        else:
+            # Thumbnail only — no downstream consumer, save memory
+            images_tensor = self._extract_thumbnail_frame(output_path)
+            logger.debug("Output thumbnail shape: %s", images_tensor.shape)
 
         # --- Extract output audio ---
         if removes_audio:
