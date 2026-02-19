@@ -166,7 +166,7 @@ See what FFMPEGA can do — each example shows the prompt used, the input clip, 
 <tr>
 <td>
 
-![Before - Crossfade](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00106.webp)
+![Before - Crossfade](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00107.webp)
 
 </td>
 <td>
