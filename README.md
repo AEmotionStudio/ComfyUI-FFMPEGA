@@ -139,16 +139,8 @@ See what FFMPEGA can do — each example shows the prompt used, the input clip, 
 <td align="center"><b>After</b></td>
 </tr>
 <tr>
-<td>
-
-https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_mime_performing_202602150619_a9hdw.mp4
-
-</td>
-<td>
-
-https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00073.mp4
-
-</td>
+<td><video src="https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_mime_performing_202602150619_a9hdw.mp4" controls muted loop width="100%"></video></td>
+<td><video src="https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00073.mp4" controls muted loop width="100%"></video></td>
 </tr>
 </table>
 
@@ -164,16 +156,8 @@ https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FF
 <td align="center"><b>After</b></td>
 </tr>
 <tr>
-<td>
-
-https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_lady_dancing_202602170500_f9ayn.mp4
-
-</td>
-<td>
-
-https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00074.mp4
-
-</td>
+<td><video src="https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_lady_dancing_202602170500_f9ayn.mp4" controls muted loop width="100%"></video></td>
+<td><video src="https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00074.mp4" controls muted loop width="100%"></video></td>
 </tr>
 </table>
 
@@ -189,16 +173,8 @@ https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FF
 <td align="center"><b>After</b></td>
 </tr>
 <tr>
-<td>
-
-https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_cinematic_slowmotion_202602161357_525q5.mp4
-
-</td>
-<td>
-
-https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00063.mp4
-
-</td>
+<td><video src="https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_cinematic_slowmotion_202602161357_525q5.mp4" controls muted loop width="100%"></video></td>
+<td><video src="https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00063.mp4" controls muted loop width="100%"></video></td>
 </tr>
 </table>
 
