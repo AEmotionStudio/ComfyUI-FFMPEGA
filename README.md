@@ -90,7 +90,7 @@
 
 ---
 
-[<img src="https://img.youtube.com/vi/VIDEO_ID_HERE/maxresdefault.jpg" width="100%">](https://youtu.be/VIDEO_ID_HERE)
+[<img src="https://img.youtube.com/vi/UV2jBzSyb-k/maxresdefault.jpg" width="100%">](https://youtu.be/UV2jBzSyb-k)
 <p align="center"><i>NotebookLM Overview: Exploring the features and capabilities of ComfyUI-FFMPEGA. (Click to watch on YouTube)</i></p>
 
 ## ✨ Features
