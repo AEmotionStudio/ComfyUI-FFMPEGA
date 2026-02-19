@@ -88,6 +88,9 @@
 
 ---
 
+[<img src="https://img.youtube.com/vi/VIDEO_ID_HERE/maxresdefault.jpg" width="100%">](https://youtu.be/VIDEO_ID_HERE)
+<p align="center"><i>NotebookLM Overview: Exploring the features and capabilities of ComfyUI-FFMPEGA. (Click to watch on YouTube)</i></p>
+
 ## ✨ Features
 
 <table>
@@ -166,7 +169,7 @@ See what FFMPEGA can do — each example shows the prompt used, the input clip, 
 <tr>
 <td>
 
-![Before - Crossfade](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00107.webp)
+![Before - Crossfade](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00109.webp)
 
 </td>
 <td>
