@@ -1,0 +1,390 @@
+{
+  "id": "6f849ca9-0e9f-40b3-8e7e-2953cd382ef3",
+  "revision": 0,
+  "last_node_id": 71,
+  "last_link_id": 86,
+  "nodes": [
+    {
+      "id": 30,
+      "type": "PreviewAny",
+      "pos": [
+        -660,
+        -2110
+      ],
+      "size": [
+        256.5285698427117,
+        320.4182530802907
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 43
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.12.3",
+        "Node name for S&R": "PreviewAny"
+      },
+      "widgets_values": [
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "id": 15,
+      "type": "PreviewAny",
+      "pos": [
+        -920,
+        -2110
+      ],
+      "size": [
+        256.5285698427117,
+        320.4182530802907
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 44
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.12.3",
+        "Node name for S&R": "PreviewAny"
+      },
+      "widgets_values": [
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "id": 71,
+      "type": "FFMPEGATextInput",
+      "pos": [
+        -1674.1848230037867,
+        -2358.4564744264226
+      ],
+      "size": [
+        400,
+        286
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "text_output",
+          "type": "STRING",
+          "links": [
+            86
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "AEmotionStudio/ComfyUI-FFMPEGA",
+        "ver": "34bf0770f214f7af7d9572e06373be9a4fa18add",
+        "Node name for S&R": "FFMPEGATextInput"
+      },
+      "widgets_values": [
+        "1\n00:00:00,000 --> 00:00:03,000\nEdited with ComfyUI-FFMPEGA\n\n2\n00:00:03,500 --> 00:00:06,000\nJust describe what you want\n\n3\n00:00:06,500 --> 00:00:08,000\nAI handles the rest",
+        true,
+        "auto",
+        "auto",
+        0,
+        "#3FABD9",
+        0,
+        -1
+      ],
+      "color": "#3a4a5a",
+      "bgcolor": "#2a3a4a"
+    },
+    {
+      "id": 33,
+      "type": "FFMPEGAgent",
+      "pos": [
+        -890,
+        -2820
+      ],
+      "size": [
+        400,
+        592
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images_a",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "image_a",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "audio_a",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": null
+        },
+        {
+          "name": "video_a",
+          "shape": 7,
+          "type": "STRING",
+          "link": 85
+        },
+        {
+          "name": "image_path_a",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        },
+        {
+          "name": "text_a",
+          "shape": 7,
+          "type": "STRING",
+          "link": 86
+        },
+        {
+          "name": "text_b",
+          "type": "STRING",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": null
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": null
+        },
+        {
+          "name": "video_path",
+          "type": "STRING",
+          "links": [
+            73
+          ]
+        },
+        {
+          "name": "command_log",
+          "type": "STRING",
+          "links": [
+            43
+          ]
+        },
+        {
+          "name": "analysis",
+          "type": "STRING",
+          "links": [
+            44
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "AEmotionStudio/ComfyUI-FFMPEGA",
+        "ver": "2553cb1297cc0152033cb2eae546daeae8218b42",
+        "Node name for S&R": "FFMPEGAgent"
+      },
+      "widgets_values": [
+        "Normalize audio to -14 LUFS, add a warm vintage film look with grain overlay, and burn in these subtitles",
+        "",
+        "gemini-cli",
+        "standard",
+        991267260932123,
+        "randomize",
+        "",
+        false,
+        false,
+        "",
+        "http://localhost:11434",
+        "",
+        "",
+        -1,
+        "auto",
+        true,
+        true,
+        false,
+        "",
+        "*.mp4",
+        4,
+        true,
+        true
+      ],
+      "color": "#2a3a5a",
+      "bgcolor": "#1a2a4a"
+    },
+    {
+      "id": 58,
+      "type": "FFMPEGASaveVideo",
+      "pos": [
+        -422.6084362330532,
+        -2820
+      ],
+      "size": [
+        270,
+        570.4444444444445
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video_path",
+          "type": "STRING",
+          "link": 73
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "aux_id": "AEmotionStudio/ComfyUI-FFMPEGA",
+        "ver": "34bf0770f214f7af7d9572e06373be9a4fa18add",
+        "Node name for S&R": "FFMPEGASaveVideo"
+      },
+      "widgets_values": [
+        "",
+        "",
+        ""
+      ],
+      "color": "#2a5a3a",
+      "bgcolor": "#1a4a2a"
+    },
+    {
+      "id": 69,
+      "type": "FFMPEGALoadVideoPath",
+      "pos": [
+        -1260,
+        -2820
+      ],
+      "size": [
+        288.968359375,
+        760.1659722222222
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "video_path",
+          "type": "STRING",
+          "links": [
+            85
+          ]
+        },
+        {
+          "name": "frame_count",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "fps",
+          "type": "FLOAT",
+          "links": null
+        },
+        {
+          "name": "duration",
+          "type": "FLOAT",
+          "links": null
+        }
+      ],
+      "properties": {
+        "aux_id": "AEmotionStudio/ComfyUI-FFMPEGA",
+        "ver": "34bf0770f214f7af7d9572e06373be9a4fa18add",
+        "Node name for S&R": "FFMPEGALoadVideoPath"
+      },
+      "widgets_values": [
+        "A_person_sitting_202602161340_kfa9m.mp4",
+        0,
+        0,
+        0,
+        1,
+        "",
+        "image"
+      ],
+      "color": "#5a4a2a",
+      "bgcolor": "#4a3a1a"
+    }
+  ],
+  "links": [
+    [
+      43,
+      33,
+      3,
+      30,
+      0,
+      "STRING"
+    ],
+    [
+      44,
+      33,
+      4,
+      15,
+      0,
+      "STRING"
+    ],
+    [
+      73,
+      33,
+      2,
+      58,
+      0,
+      "STRING"
+    ],
+    [
+      85,
+      69,
+      0,
+      33,
+      3,
+      "STRING"
+    ],
+    [
+      86,
+      71,
+      0,
+      33,
+      5,
+      "STRING"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.6934814344943503,
+      "offset": [
+        2297.7163132448186,
+        3040.069708846715
+      ]
+    },
+    "workflowRendererVersion": "LG",
+    "frontendVersion": "1.38.13",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}
