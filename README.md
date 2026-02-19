@@ -191,7 +191,7 @@ See what FFMPEGA can do — each example shows the prompt used, the input clip, 
 <tr>
 <td>
 
-![Before - Color Grade](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_cinematic_slowmotion_202602161357_525q5.webp)
+![Before - Color Grade](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_cinematic_slowmotion_202602161330_ublfo.webp)
 
 </td>
 <td>
