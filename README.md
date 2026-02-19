@@ -133,16 +133,13 @@ See what FFMPEGA can do — each example shows the prompt used, the input clip, 
 
 > **Prompt:** `Concatenate these clips in a 4x4 grid`
 
-<table>
-<tr>
-<td align="center"><b>Before</b></td>
-<td align="center"><b>After</b></td>
-</tr>
-<tr>
-<td><video src="https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_mime_performing_202602150619_a9hdw.mp4" controls muted loop width="100%"></video></td>
-<td><video src="https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00073.mp4" controls muted loop width="100%"></video></td>
-</tr>
-</table>
+**Before:**
+
+https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_mime_performing_202602150619_a9hdw.mp4
+
+**After:**
+
+https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00073.mp4
 
 ---
 
@@ -150,16 +147,13 @@ See what FFMPEGA can do — each example shows the prompt used, the input clip, 
 
 > **Prompt:** `Concatenate these clips with a crossfade transition between each, add a fade in at the start and fade out at the end and a bouncing image_path_a at 10% size and 30% opacity`
 
-<table>
-<tr>
-<td align="center"><b>Before</b></td>
-<td align="center"><b>After</b></td>
-</tr>
-<tr>
-<td><video src="https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_lady_dancing_202602170500_f9ayn.mp4" controls muted loop width="100%"></video></td>
-<td><video src="https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00074.mp4" controls muted loop width="100%"></video></td>
-</tr>
-</table>
+**Before:**
+
+https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_lady_dancing_202602170500_f9ayn.mp4
+
+**After:**
+
+https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00074.mp4
 
 ---
 
@@ -167,16 +161,13 @@ See what FFMPEGA can do — each example shows the prompt used, the input clip, 
 
 > **Prompt:** `Color grade with the cinematic teal orange LUT, normalize audio, add a text "water" in the bottom right corner, compress for web at 720p`
 
-<table>
-<tr>
-<td align="center"><b>Before</b></td>
-<td align="center"><b>After</b></td>
-</tr>
-<tr>
-<td><video src="https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_cinematic_slowmotion_202602161357_525q5.mp4" controls muted loop width="100%"></video></td>
-<td><video src="https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00063.mp4" controls muted loop width="100%"></video></td>
-</tr>
-</table>
+**Before:**
+
+https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_cinematic_slowmotion_202602161357_525q5.mp4
+
+**After:**
+
+https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00063.mp4
 
 ---
 
