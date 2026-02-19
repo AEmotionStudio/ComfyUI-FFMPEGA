@@ -53,7 +53,6 @@ class MediaConverter:
 
                 # Fill first frame
                 tensor[0] = torch.from_numpy(arr)
-                tensor[0].div_(255.0)
 
                 count = 1
                 overflow = []
@@ -65,19 +64,23 @@ class MediaConverter:
                         # Optimization: Write directly to target tensor slice to avoid
                         # intermediate float32 allocation and copy.
                         tensor[count] = torch.from_numpy(arr)
-                        tensor[count].div_(255.0)
                     else:
-                        frame_tensor = torch.from_numpy(arr).float().div_(255.0)
-                        overflow.append(frame_tensor)
+                        # Keep overflow frames as uint8 to save memory until final stack
+                        overflow.append(torch.from_numpy(arr))
                     count += 1
 
                 container.close()
+
+                # Optimization: Vectorized normalization
+                # Perform a single division on the entire tensor at once instead of
+                # N individual divisions per frame. This is significantly faster.
+                tensor.div_(255.0)
 
                 # Handle frame count mismatch (common with VFR or corrupt metadata)
                 if count < num_frames:
                     return tensor[:count]
                 elif overflow:
-                    overflow_tensor = torch.stack(overflow)
+                    overflow_tensor = torch.stack(overflow).float().div_(255.0)
                     return torch.cat([tensor, overflow_tensor], dim=0)
                 else:
                     return tensor
