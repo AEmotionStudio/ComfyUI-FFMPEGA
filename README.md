@@ -141,7 +141,7 @@ See what FFMPEGA can do — each example shows the prompt used, the input clip, 
 <tr>
 <td>
 
-![Before - 4x4 Grid](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_mime_performing_202602150619_a9hdw.webp)
+![Before - 4x4 Grid](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00106.webp)
 
 </td>
 <td>
@@ -166,7 +166,7 @@ See what FFMPEGA can do — each example shows the prompt used, the input clip, 
 <tr>
 <td>
 
-![Before - Crossfade](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_lady_dancing_202602170500_f9ayn.webp)
+![Before - Crossfade](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00106.webp)
 
 </td>
 <td>
