@@ -204,6 +204,81 @@ See what FFMPEGA can do — each example shows the prompt used, the input clip, 
 
 ---
 
+### Picture-in-Picture with Audio Mix
+
+> **Prompt:** `Place video_b in the bottom-right corner at 25% size with a white border over video_a and mix the audio`
+
+<table>
+<tr>
+<td align="center"><b>Before</b></td>
+<td align="center"><b>After</b></td>
+</tr>
+<tr>
+<td>
+
+![Before - PiP](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/Firstperson_view_of_202602170442_hkup9.webp)
+
+</td>
+<td>
+
+![After - PiP](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00062.webp)
+
+</td>
+</tr>
+</table>
+
+---
+
+### Vintage Film Look + Subtitles
+
+> **Prompt:** `Normalize audio to -14 LUFS, add a warm vintage film look with grain overlay, and burn in these subtitles`
+
+<table>
+<tr>
+<td align="center"><b>Before</b></td>
+<td align="center"><b>After</b></td>
+</tr>
+<tr>
+<td>
+
+![Before - Vintage](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_person_sitting_202602161340_kfa9m.webp)
+
+</td>
+<td>
+
+![After - Vintage](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00070.webp)
+
+</td>
+</tr>
+</table>
+
+---
+
+### Datamosh Glitch Effects
+
+> **Prompt:** `Apply datamosh glitch effect, add chromatic aberration with strong RGB split, pixelate slightly, add ghost trails`
+
+<table>
+<tr>
+<td align="center"><b>Before</b></td>
+<td align="center"><b>After</b></td>
+</tr>
+<tr>
+<td>
+
+![Before - Datamosh](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_podcast_on_202602150001_cergk.webp)
+
+</td>
+<td>
+
+![After - Datamosh](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_VHS_00002.webp)
+
+</td>
+</tr>
+</table>
+
+---
+
 ## 📦 Installation
 
 ### Requirements
