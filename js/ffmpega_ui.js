@@ -1371,12 +1371,41 @@ app.registerExtension({
                     // Hex display
                     const hexLabel = document.createElement("span");
                     hexLabel.textContent = initialColor.toUpperCase();
+                    hexLabel.title = "Click to copy hex code";
                     hexLabel.style.cssText = `
                         color: #ccc;
                         font: 11px monospace;
                         flex-grow: 1;
                         text-align: right;
+                        cursor: pointer;
+                        user-select: none;
                     `;
+
+                    // Click to copy handler
+                    hexLabel.onclick = async () => {
+                        const currentHex = colorInput.value.toUpperCase();
+                        try {
+                            if (navigator.clipboard) {
+                                await navigator.clipboard.writeText(currentHex);
+                                flashNode(this, "#4a7a4a"); // Green flash
+
+                                // Temporary feedback
+                                hexLabel.textContent = "COPIED";
+                                hexLabel.style.color = "#8f8";
+
+                                setTimeout(() => {
+                                    // Only restore if still showing "COPIED"
+                                    if (hexLabel.textContent === "COPIED") {
+                                        hexLabel.textContent = currentHex;
+                                        hexLabel.style.color = "#ccc";
+                                    }
+                                }, 800);
+                            }
+                        } catch (err) {
+                            console.error("Failed to copy hex:", err);
+                            flashNode(this, "#7a3a3a"); // Red flash
+                        }
+                    };
 
                     container.appendChild(label);
                     container.appendChild(colorInput);
@@ -1391,6 +1420,7 @@ app.registerExtension({
                                 if (v.startsWith("#")) {
                                     colorInput.value = v;
                                     hexLabel.textContent = v.toUpperCase();
+                                    hexLabel.style.color = "#ccc"; // Reset color
                                 }
                             }
                         },
@@ -1398,8 +1428,10 @@ app.registerExtension({
                     domWidget.value = initialColor;
 
                     colorInput.addEventListener("input", (e) => {
-                        domWidget.value = e.target.value.toUpperCase();
-                        hexLabel.textContent = e.target.value.toUpperCase();
+                        const val = e.target.value.toUpperCase();
+                        domWidget.value = val;
+                        hexLabel.textContent = val;
+                        hexLabel.style.color = "#ccc"; // Reset color if dragging during feedback
                     });
 
                     // Move widget to the correct position
