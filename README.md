@@ -14,7 +14,7 @@
 
 *Describe what you want in plain English — the AI translates your words into precise FFMPEG commands.*
 
-[Features](#-features) • [Installation](#-installation) • [Quick Start](#-quick-start) • [Prompt Guide](#-prompt-guide) • [Skills](#-skill-system) • [LLM Setup](#-llm-configuration) • [Troubleshooting](#-troubleshooting) • [Contributing](#-contributing) • [Changelog](CHANGELOG.md)
+[Features](#-features) • [Examples](#-examples) • [Installation](#-installation) • [Quick Start](#-quick-start) • [Prompt Guide](#-prompt-guide) • [Skills](#-skill-system) • [LLM Setup](#-llm-configuration) • [Troubleshooting](#-troubleshooting) • [Contributing](#-contributing) • [Changelog](CHANGELOG.md)
 
 </div>
 
@@ -116,6 +116,87 @@ Works with **Ollama** (local, free), **OpenAI**, **Anthropic**, **Google Gemini*
 
 ### ⚡ Batch & Preview
 Process multiple videos with the same instruction. Generate quick low-res previews before committing to full renders. Quality presets from draft to lossless.
+
+</td>
+</tr>
+</table>
+
+---
+
+## 🎬 Examples
+
+See what FFMPEGA can do — each example shows the prompt used, the input clip, and the AI-generated result.
+
+---
+
+### 4×4 Video Grid
+
+> **Prompt:** `Concatenate these clips in a 4x4 grid`
+
+<table>
+<tr>
+<td align="center"><b>Before</b></td>
+<td align="center"><b>After</b></td>
+</tr>
+<tr>
+<td>
+
+https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_mime_performing_202602150619_a9hdw.mp4
+
+</td>
+<td>
+
+https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00073.mp4
+
+</td>
+</tr>
+</table>
+
+---
+
+### Crossfade Transitions + Bouncing Logo
+
+> **Prompt:** `Concatenate these clips with a crossfade transition between each, add a fade in at the start and fade out at the end and a bouncing image_path_a at 10% size and 30% opacity`
+
+<table>
+<tr>
+<td align="center"><b>Before</b></td>
+<td align="center"><b>After</b></td>
+</tr>
+<tr>
+<td>
+
+https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_lady_dancing_202602170500_f9ayn.mp4
+
+</td>
+<td>
+
+https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00074.mp4
+
+</td>
+</tr>
+</table>
+
+---
+
+### Color Grade + Text Overlay + Compression
+
+> **Prompt:** `Color grade with the cinematic teal orange LUT, normalize audio, add a text "water" in the bottom right corner, compress for web at 720p`
+
+<table>
+<tr>
+<td align="center"><b>Before</b></td>
+<td align="center"><b>After</b></td>
+</tr>
+<tr>
+<td>
+
+https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/A_cinematic_slowmotion_202602161357_525q5.mp4
+
+</td>
+<td>
+
+https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/FFMPEGA_00063.mp4
 
 </td>
 </tr>
