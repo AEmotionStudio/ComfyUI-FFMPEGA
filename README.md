@@ -14,9 +14,9 @@
 [![Last Commit](https://img.shields.io/github/last-commit/AEmotionStudio/ComfyUI-FFMPEGA?style=for-the-badge&label=Last%20Update&color=orange)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/commits)
 [![Activity](https://img.shields.io/github/commit-activity/m/AEmotionStudio/ComfyUI-FFMPEGA?style=for-the-badge&label=Activity&color=yellow)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/commits)
 
-*Describe what you want in plain English — the AI translates your words into precise FFMPEG commands.*
-
 ![FFMPEGA Showcase](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/Screenshot_20260219_165846.png)
+
+*Describe what you want in plain English — the AI translates your words into precise FFMPEG commands.*
 
 [Features](#-features) • [Examples](#-examples) • [Installation](#-installation) • [Quick Start](#-quick-start) • [Prompt Guide](#-prompt-guide) • [Skills](#-skill-system) • [LLM Setup](#-llm-configuration) • [Troubleshooting](#-troubleshooting) • [Contributing](#-contributing) • [Changelog](CHANGELOG.md)
 
