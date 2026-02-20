@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "comfyui-ffmpega"
-version = "2.5.0"
+version = "2.6.0"
 description = "Intelligent FFMPEG agent node for ComfyUI with natural language video editing"
 readme = "README.md"
 license = {text = "GPL-3.0"}
@@ -48,3 +48,7 @@ include = ["nodes*", "core*", "skills*", "mcp*", "prompts*"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 
+[tool.comfy]
+PublisherId = "aemotionstudio"
+DisplayName = "ComfyUI-FFMPEGA"
+Icon = ""
