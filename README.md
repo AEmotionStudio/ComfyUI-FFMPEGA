@@ -16,6 +16,8 @@
 
 *Describe what you want in plain English — the AI translates your words into precise FFMPEG commands.*
 
+![FFMPEGA Showcase](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/Screenshot_20260219_165846.png)
+
 [Features](#-features) • [Examples](#-examples) • [Installation](#-installation) • [Quick Start](#-quick-start) • [Prompt Guide](#-prompt-guide) • [Skills](#-skill-system) • [LLM Setup](#-llm-configuration) • [Troubleshooting](#-troubleshooting) • [Contributing](#-contributing) • [Changelog](CHANGELOG.md)
 
 </div>
