@@ -40,6 +40,21 @@ class SkillParameter:
     max_value: float | None = None
     choices: list[str] | None = None
     aliases: list[str] | None = None
+    _choice_map: dict[str, str] = field(init=False, repr=False, default_factory=dict)
+
+    def __post_init__(self):
+        """Pre-compute choice map for faster validation."""
+        if self.type == ParameterType.CHOICE and self.choices:
+            for c in self.choices:
+                # Exact match
+                self._choice_map[c] = c
+                # Lowercase match
+                self._choice_map[c.lower()] = c
+                # Underscore -> hyphen normalization (e.g. bottom_right -> bottom-right)
+                normalized = c.replace("-", "_")
+                if normalized != c:
+                    self._choice_map[normalized] = c
+                    self._choice_map[normalized.lower()] = c
 
     def validate(self, value: Any) -> tuple[bool, Optional[str]]:
         """Validate a parameter value.
@@ -85,27 +100,33 @@ class SkillParameter:
 
         elif self.type == ParameterType.CHOICE:
             choices = self.choices
-            if choices is not None and value not in choices:
-                # Try case-insensitive match
-                lower_val = str(value).lower().strip()
+            if choices is not None:
+                if value in choices:
+                    return True, None
+
+                # Try fast O(1) lookup map (covers case-insensitive & underscore variants)
+                val_str = str(value)
+                if val_str in self._choice_map:
+                    match = self._choice_map[val_str]
+                    return True, f"__autocorrect__:{self.name}={match}"
+
+                lower_val = val_str.lower().strip()
+                if lower_val in self._choice_map:
+                    match = self._choice_map[lower_val]
+                    return True, f"__autocorrect__:{self.name}={match}"
+
+                # Fallback to slow prefix/substring match (O(N))
                 match: str | None = None
-                for choice in choices:
-                    if choice.lower() == lower_val:
-                        match = choice
-                        break
-                # Try prefix match
-                if not match:
-                    prefix_matches = [c for c in choices if c.lower().startswith(lower_val)]
-                    if len(prefix_matches) == 1:
-                        match = prefix_matches[0]
-                # Try substring match
+                prefix_matches = [c for c in choices if c.lower().startswith(lower_val)]
+                if len(prefix_matches) == 1:
+                    match = prefix_matches[0]
+
                 if not match:
                     sub_matches = [c for c in choices if lower_val in c.lower()]
                     if len(sub_matches) == 1:
                         match = sub_matches[0]
+
                 if match:
-                    # Auto-correct to valid value — return valid with the corrected value
-                    # Caller should check and update the value
                     return True, f"__autocorrect__:{self.name}={match}"
                 return False, f"Parameter '{self.name}' must be one of {choices}"
 
