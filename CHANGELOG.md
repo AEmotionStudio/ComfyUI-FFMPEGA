@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.2] - 2026-02-20
+
+### Security
+- **Block Writes to System Directories**: Updated `validate_output_path` and `validate_output_file_path` in `core/sanitize.py` to block writes to critical system directories (e.g., `/usr`, `/bin`, `/etc`, `C:\Windows`). Prevents path traversal / arbitrary file overwrite targeting sensitive system files. *(PR #59)*
+
+### Changed
+- **CHOICE Validation O(1) Lookup**: `SkillParameter` now caches a `_choice_map` of normalized choices (exact, lowercase, underscore-to-hyphen variants) in `__post_init__`. `validate()` uses O(1) dictionary lookup instead of O(N) list iteration — ~15% faster for CHOICE parameters. *(PR #60)*
+- **Video Upload Loading Feedback**: Refactored `FFMPEGALoadVideoPath` upload logic in `ffmpega_ui.js` — added `setUploadState` helper to toggle "Uploading…" label, consolidated click and drag-drop into a shared `handleUpload` handler, improved error handling with `try/finally` to ensure UI reset, and hides video preview during upload. *(PR #58)*
+
+---
+
 ## [2.6.1] - 2026-02-19
 
 ### Added
