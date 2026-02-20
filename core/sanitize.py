@@ -23,6 +23,37 @@ ALLOWED_SUBTITLE_EXTENSIONS = {'.srt', '.ass', '.vtt', '.sub', '.sbv'}
 ALLOWED_LUT_EXTENSIONS = {'.cube', '.3dl', '.csp', '.look', '.vlt'}
 ALLOWED_FONT_EXTENSIONS = {'.ttf', '.otf', '.woff', '.woff2', '.ttc'}
 
+# Critical system directories that should be protected from write operations
+UNSAFE_DIRECTORIES = {
+    "/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc",
+    "/root", "/run", "/sbin", "/sys", "/usr", "/var"
+}
+
+
+def _check_unsafe_path(path: Path) -> None:
+    """Check if the path targets a sensitive system directory.
+
+    Args:
+        path: The resolved path to check.
+
+    Raises:
+        ValueError: If path is unsafe.
+    """
+    path_str = str(path)
+    # Check POSIX system paths
+    for unsafe in UNSAFE_DIRECTORIES:
+        # Match directory exactly or as a parent
+        if path_str == unsafe or path_str.startswith(f"{unsafe}{os.sep}"):
+            raise ValueError(f"Path targets unsafe system directory: {path}")
+
+    # Check Windows system paths
+    if os.name == 'nt':
+        lower_path = path_str.lower()
+        if (lower_path.startswith("c:\\windows") or
+                lower_path.startswith("c:\\program files") or
+                lower_path.startswith("c:\\program files (x86)")):
+            raise ValueError(f"Path targets unsafe system directory: {path}")
+
 
 def validate_path(path: str, allowed_extensions: set[str], must_exist: bool = True) -> str:
     """Generic path validator for file inputs.
@@ -86,7 +117,8 @@ def validate_output_path(path: str) -> str:
     """Validate an output file or directory path.
 
     Resolves the path and ensures the parent directory can be created.
-    Does NOT require the file to exist.
+    Does NOT require the file to exist. Also blocks writes to critical
+    system directories.
 
     Args:
         path: The output path string to validate.
@@ -95,7 +127,8 @@ def validate_output_path(path: str) -> str:
         The resolved, absolute path string.
 
     Raises:
-        ValueError: If the path is empty or contains traversal sequences.
+        ValueError: If the path is empty, contains traversal sequences,
+                    or targets a protected system directory.
     """
     if not path or not path.strip():
         raise ValueError("Output path cannot be empty")
@@ -105,7 +138,10 @@ def validate_output_path(path: str) -> str:
             f"Output path contains directory traversal (..): {path}"
         )
 
-    return str(Path(path).resolve())
+    resolved = Path(path).resolve()
+    _check_unsafe_path(resolved)
+
+    return str(resolved)
 
 
 def validate_output_file_path(path: str) -> str:
@@ -136,6 +172,9 @@ def validate_output_file_path(path: str) -> str:
             f"Invalid output file extension: {resolved.suffix}. "
             f"Allowed: {sorted(list(ALLOWED_EXTENSIONS))}"
         )
+
+    _check_unsafe_path(resolved)
+
     # Use validate_path with must_exist=False
     return validate_path(path, ALLOWED_EXTENSIONS, must_exist=False)
 
