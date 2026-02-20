@@ -993,43 +993,12 @@ app.registerExtension({
                     "image/gif",
                 ].join(",");
 
-                // Create hidden file input
+                // Create hidden file input (without onchange yet)
                 const fileInput = document.createElement("input");
                 Object.assign(fileInput, {
                     type: "file",
                     accept: videoAccept,
                     style: "display: none",
-                    onchange: async () => {
-                        if (!fileInput.files.length) return;
-                        const file = fileInput.files[0];
-
-                        const body = new FormData();
-                        body.append("image", file);
-
-                        try {
-                            const resp = await fetch("/upload/image", {
-                                method: "POST",
-                                body: body,
-                            });
-                            if (resp.status !== 200) {
-                                showError("Upload failed: " + resp.statusText);
-                                return;
-                            }
-                            const data = await resp.json();
-                            const filename = data.name;
-
-                            if (videoWidget) {
-                                if (!videoWidget.options.values.includes(filename)) {
-                                    videoWidget.options.values.push(filename);
-                                }
-                                videoWidget.value = filename;
-                                videoWidget.callback?.(filename);
-                            }
-                            updatePreview(filename);
-                        } catch (err) {
-                            showError("Upload error: " + err);
-                        }
-                    },
                 });
                 document.body.append(fileInput);
 
@@ -1053,6 +1022,68 @@ app.registerExtension({
                 uploadWidget.options = uploadWidget.options || {};
                 uploadWidget.options.serialize = false;
 
+                // Helper to set upload state
+                const setUploadState = (isUploading, filename = "") => {
+                    if (isUploading) {
+                        uploadWidget.name = "⏳ Uploading...";
+                        infoEl.textContent = `Uploading ${filename}...`;
+                        previewContainer.style.display = ""; // Ensure info is visible
+                        videoEl.style.display = "none";      // Hide stale video
+                    } else {
+                        uploadWidget.name = "choose video to upload";
+                        videoEl.style.display = "block";     // Restore video visibility
+                    }
+                    node.setDirtyCanvas(true, true);
+                    // Force resize to fit infoEl if needed
+                    node.setSize([
+                        node.size[0],
+                        node.computeSize([node.size[0], node.size[1]])[1],
+                    ]);
+                };
+
+                // Handle file upload (shared logic)
+                const handleUpload = async (file) => {
+                    setUploadState(true, file.name);
+                    const body = new FormData();
+                    body.append("image", file);
+
+                    try {
+                        const resp = await fetch("/upload/image", {
+                            method: "POST",
+                            body: body,
+                        });
+                        if (resp.status !== 200) {
+                            showError("Upload failed: " + resp.statusText);
+                            return false;
+                        }
+                        const data = await resp.json();
+                        const filename = data.name;
+
+                        if (videoWidget) {
+                            if (!videoWidget.options.values.includes(filename)) {
+                                videoWidget.options.values.push(filename);
+                            }
+                            videoWidget.value = filename;
+                            videoWidget.callback?.(filename);
+                        }
+                        updatePreview(filename);
+                        return true;
+                    } catch (err) {
+                        console.warn("FFMPEGA: Video upload failed", err);
+                        showError("Upload error: " + err);
+                        return false;
+                    } finally {
+                        setUploadState(false);
+                    }
+                };
+
+                // Attach handlers
+                fileInput.onchange = async () => {
+                    if (fileInput.files.length) {
+                        await handleUpload(fileInput.files[0]);
+                    }
+                };
+
                 // Support drag-and-drop of video files onto the node
                 this.onDragOver = (e) => {
                     return !!e?.dataTransfer?.types?.includes?.("Files");
@@ -1072,36 +1103,7 @@ app.registerExtension({
                         return false;
                     }
 
-                    const body = new FormData();
-                    body.append("image", file);
-
-                    try {
-                        const resp = await fetch("/upload/image", {
-                            method: "POST",
-                            body: body,
-                        });
-                        if (resp.status !== 200) {
-                            console.warn("FFMPEGA: Upload rejected", resp.status, resp.statusText);
-                            showError("Upload rejected: " + resp.statusText);
-                            return false;
-                        }
-                        const data = await resp.json();
-                        const filename = data.name;
-
-                        if (videoWidget) {
-                            if (!videoWidget.options.values.includes(filename)) {
-                                videoWidget.options.values.push(filename);
-                            }
-                            videoWidget.value = filename;
-                            videoWidget.callback?.(filename);
-                        }
-                        updatePreview(filename);
-                        return true;
-                    } catch (err) {
-                        console.warn("FFMPEGA: Video upload failed", err);
-                        showError("Upload failed: " + err);
-                        return false;
-                    }
+                    return await handleUpload(file);
                 };
 
                 // Watch for dropdown selection changes → update preview
