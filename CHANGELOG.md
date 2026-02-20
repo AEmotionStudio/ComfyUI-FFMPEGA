@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.1] - 2026-02-19
+
+### Added
+- **README Hero Image**: Added a showcase screenshot to the README header, displayed below badges and above the tagline.
+- **README Examples Section**: 10 before/after video examples showcasing various editing capabilities (bouncing logo, crossfade, color grading, PiP, vintage film, datamosh, cinematic teal & orange, neon glow, colorhold noir, green screen removal). Uses animated `.webp` files in HTML tables.
+- **NotebookLM Overview**: Added YouTube video embed section with clickable thumbnail linking to the NotebookLM-generated overview video.
+- **Traffic Stats Badges**: Added dynamic Downloads, Visitors, and Clones badges powered by `shields.io/badge/dynamic/json` — data sourced from the `badges` branch via GitHub Actions.
+- **Traffic Stats Workflow**: New `.github/workflows/git_clones.yml` — runs daily, fetches clone/view/download stats via GitHub API, and pushes `traffic_stats.json` to the `badges` branch.
+- **Comfy Registry Publishing**: New `.github/workflows/publish_action.yml` — auto-publishes to the Comfy Registry when `pyproject.toml` changes on `main`. Added `[tool.comfy]` section to `pyproject.toml` with `PublisherId = "aemotionstudio"`.
+
+---
+
 ## [2.6.0] - 2026-02-18
 
 ### Added
