@@ -1360,6 +1360,7 @@ app.registerExtension({
                     const colorInput = document.createElement("input");
                     colorInput.type = "color";
                     colorInput.value = initialColor;
+                    colorInput.setAttribute("aria-label", "Select font color");
                     colorInput.style.cssText = `
                         width: 36px;
                         height: 24px;
@@ -1374,7 +1375,10 @@ app.registerExtension({
                     // Hex display
                     const hexLabel = document.createElement("span");
                     hexLabel.textContent = initialColor.toUpperCase();
-                    hexLabel.title = "Click to copy hex code";
+                    hexLabel.title = "Click or Press Enter to copy hex code";
+                    hexLabel.setAttribute("role", "button");
+                    hexLabel.setAttribute("tabindex", "0");
+                    hexLabel.setAttribute("aria-label", "Copy color hex code");
                     hexLabel.style.cssText = `
                         color: #ccc;
                         font: 11px monospace;
@@ -1382,10 +1386,17 @@ app.registerExtension({
                         text-align: right;
                         cursor: pointer;
                         user-select: none;
+                        outline: none;
+                        border-radius: 2px;
+                        padding: 2px 4px;
                     `;
 
-                    // Click to copy handler
-                    hexLabel.onclick = async () => {
+                    // Focus styles
+                    hexLabel.onfocus = () => { hexLabel.style.boxShadow = "0 0 0 1px #4a6a8a"; };
+                    hexLabel.onblur = () => { hexLabel.style.boxShadow = "none"; };
+
+                    // Copy handler
+                    const copyHex = async () => {
                         const currentHex = colorInput.value.toUpperCase();
                         try {
                             if (navigator.clipboard) {
@@ -1407,6 +1418,17 @@ app.registerExtension({
                         } catch (err) {
                             console.error("Failed to copy hex:", err);
                             flashNode(node, "#7a3a3a"); // Red flash
+                        }
+                    };
+
+                    // Click to copy handler
+                    hexLabel.onclick = copyHex;
+
+                    // Keyboard handler (Enter or Space)
+                    hexLabel.onkeydown = (e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            copyHex();
                         }
                     };
 
