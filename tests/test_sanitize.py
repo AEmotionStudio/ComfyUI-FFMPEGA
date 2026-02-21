@@ -158,6 +158,10 @@ class TestSanitizeTextParam:
         assert "\\;" in result
         assert "\\\\" in result
 
+    def test_escapes_brackets(self):
+        # Brackets used for stream specifiers must be escaped
+        assert sanitize_text_param("test[0:v]") == "test\\[0\\:v\\]"
+
 
 class TestRedactSecret:
     """Tests for redact_secret."""

@@ -205,6 +205,9 @@ def sanitize_text_param(text: str) -> str:
     text = text.replace("%", "%%")
     # Escape comma (used for filter delimiters)
     text = text.replace(",", "\\,")
+    # Escape brackets (used for stream specifiers)
+    text = text.replace("[", "\\[")
+    text = text.replace("]", "\\]")
 
     return text
 
