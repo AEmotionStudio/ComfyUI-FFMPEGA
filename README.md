@@ -24,11 +24,17 @@
 
 ---
 
-## 🚀 What's New in v2.6.3 (February 21, 2026)
+## 🚀 What's New in v2.6.0 (February 18, 2026)
 
-**Sanitize Performance Optimization**
+**Skill Architecture Refactoring, Audio Mixing, Security Hardening & Test Expansion**
 
-*   **⚡ "Check First" Sanitize**: `sanitize_text_param` now guards each `replace()` call with an `in` check — ~2.5x faster for clean text (the common case). `sanitize_api_key` skips `redact_secret()` entirely when the key is absent.
+*   **🏗️ HandlerResult Contract**: All 9 handler modules now return a formal `HandlerResult` dataclass, replacing ad-hoc tuples. Backward-compatible with existing code.
+*   **🔧 Compose Decomposition**: Extracted 5 orchestration methods from the 600+ line `compose()` into pure, testable static methods.
+*   **🎵 PiP Audio Mixing**: `picture_in_picture` now supports `audio_mix` to blend both audio tracks via ffmpeg's `amix`.
+*   **🔄 CLI Retry**: CLI connectors retry on transient failures with exponential backoff (3 attempts).
+*   **📝 TextInput Node**: New node for subtitle and text overlay workflows with auto SRT detection.
+*   **🔒 Security**: Sanitized text overlay `enable` parameter, fixed path traversal on output dirs, fixed weak UUID entropy.
+*   **🧪 516 Tests**: Expanded test suite from 481 → 516 with 0 failures. New handler unit tests, skill combination tests, and orchestration helper tests.
 
 <details>
 <summary><b>Previous: v2.5.0 — PiP Overlay Fixes, VL Model Vision & Border Support</b></summary>
@@ -1414,7 +1420,7 @@ If using a custom URL, set it in the node's `ollama_url` field.
 
 Pull the required model first:
 ```bash
-ollama pull llama3.1:8b
+ollama pull qwen2.5:8b
 ```
 
 </details>
@@ -1440,7 +1446,7 @@ FFMPEGA auto-coerces types (float→int) and clamps out-of-range values. If you 
 <details>
 <summary><b>Cancelling a Running Request</b></summary>
 
-If the LLM is taking too long or you want to abort mid-request, **close the terminal/console** running the LLM process instead of using ComfyUI's interrupt button. The interrupt button waits for the current LLM response to complete, which can take a while — closing the console kills it immediately.
+If the LLM is taking too long or you want to abort mid-request, **close the ComfyUI terminal or restart ComfyUI** instead of using the interrupt button. The interrupt button waits for the current LLM response to complete, which can take a while — closing/restarting ComfyUI kills it immediately.
 
 </details>
 
