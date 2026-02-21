@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.3] - 2026-02-21
+
+### Security
+- **FFMPEG Stream Specifier Injection Fix**: `sanitize_text_param` in `core/sanitize.py` now escapes square brackets (`[` → `\[`, `]` → `\]`). Unescaped brackets in user-supplied text parameters could be interpreted as FFMPEG stream specifiers (e.g. `[0:v]`), enabling filter graph injection or causing syntax errors. Added `test_escapes_brackets` regression test. *(PR #62)*
+
+### Performance
+- **Sanitize "Check First" Optimization**: `sanitize_text_param` and `sanitize_api_key` now guard each `str.replace()` call with an `if char in text` check. Avoids unnecessary string allocations in the common case (clean text). ~2.5x speedup for `sanitize_text_param` on clean input; `sanitize_api_key` skips `redact_secret()` entirely when the key is absent. *(PR #63)*
+
+### Changed
+- **Color Picker Accessibility**: `FFMPEGATextInput` hex color label in `ffmpega_ui.js` is now keyboard-accessible — added `tabindex="0"`, `role="button"`, and `aria-label` attributes; Enter/Space trigger copy; focus indicator via `box-shadow`. `aria-label="Select font color"` added to the color input itself. *(PR #61)*
+
+---
+
 ## [2.6.2] - 2026-02-20
 
 ### Security

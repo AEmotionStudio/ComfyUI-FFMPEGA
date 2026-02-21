@@ -5,7 +5,7 @@
 **An AI-powered FFMPEG agent node for ComfyUI — edit videos with natural language.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-2.6.2-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-2.6.3-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-1-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 [![Downloads](https://img.shields.io/badge/dynamic/json?color=blueviolet&label=Downloads&query=downloads.smart_count&url=https://raw.githubusercontent.com/AEmotionStudio/ComfyUI-FFMPEGA/refs/heads/badges/traffic_stats.json&style=for-the-badge&logo=github)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
@@ -24,17 +24,11 @@
 
 ---
 
-## 🚀 What's New in v2.6.0 (February 18, 2026)
+## 🚀 What's New in v2.6.3 (February 21, 2026)
 
-**Skill Architecture Refactoring, Audio Mixing, Security Hardening & Test Expansion**
+**Sanitize Performance Optimization**
 
-*   **🏗️ HandlerResult Contract**: All 9 handler modules now return a formal `HandlerResult` dataclass, replacing ad-hoc tuples. Backward-compatible with existing code.
-*   **🔧 Compose Decomposition**: Extracted 5 orchestration methods from the 600+ line `compose()` into pure, testable static methods.
-*   **🎵 PiP Audio Mixing**: `picture_in_picture` now supports `audio_mix` to blend both audio tracks via ffmpeg's `amix`.
-*   **🔄 CLI Retry**: CLI connectors retry on transient failures with exponential backoff (3 attempts).
-*   **📝 TextInput Node**: New node for subtitle and text overlay workflows with auto SRT detection.
-*   **🔒 Security**: Sanitized text overlay `enable` parameter, fixed path traversal on output dirs, fixed weak UUID entropy.
-*   **🧪 516 Tests**: Expanded test suite from 481 → 516 with 0 failures. New handler unit tests, skill combination tests, and orchestration helper tests.
+*   **⚡ "Check First" Sanitize**: `sanitize_text_param` now guards each `replace()` call with an `in` check — ~2.5x faster for clean text (the common case). `sanitize_api_key` skips `redact_secret()` entirely when the key is absent.
 
 <details>
 <summary><b>Previous: v2.5.0 — PiP Overlay Fixes, VL Model Vision & Border Support</b></summary>
