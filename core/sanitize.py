@@ -195,19 +195,28 @@ def sanitize_text_param(text: str) -> str:
     if not text:
         return text
 
+    # Optimization: check for special chars before replacing to avoid
+    # unnecessary string allocations in the common case (clean text).
     # Escape backslashes first (before adding more)
-    text = text.replace("\\", "\\\\")
-    # Escape FFMPEG special characters
-    text = text.replace("'", "\\'")
-    text = text.replace(":", "\\:")
-    text = text.replace(";", "\\;")
+    if "\\" in text:
+        text = text.replace("\\", "\\\\")
+    if "'" in text:
+        text = text.replace("'", "\\'")
+    if ":" in text:
+        text = text.replace(":", "\\:")
+    if ";" in text:
+        text = text.replace(";", "\\;")
     # Escape % (used for time codes in drawtext)
-    text = text.replace("%", "%%")
+    if "%" in text:
+        text = text.replace("%", "%%")
     # Escape comma (used for filter delimiters)
-    text = text.replace(",", "\\,")
+    if "," in text:
+        text = text.replace(",", "\\,")
     # Escape brackets (used for stream specifiers)
-    text = text.replace("[", "\\[")
-    text = text.replace("]", "\\]")
+    if "[" in text:
+        text = text.replace("[", "\\[")
+    if "]" in text:
+        text = text.replace("]", "\\]")
 
     return text
 
@@ -241,4 +250,7 @@ def sanitize_api_key(text: str, api_key: str) -> str:
     """
     if not text or not api_key:
         return text or ""
+    # Optimization: avoid computing redaction if key not present in text
+    if api_key not in text:
+        return text
     return text.replace(api_key, redact_secret(api_key))
