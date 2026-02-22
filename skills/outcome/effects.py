@@ -2318,6 +2318,7 @@ def register_skills(registry: SkillRegistry) -> None:
                 type=ParameterType.STRING,
                 description="Text to reveal",
                 required=True,
+                max_value=200,
             ),
             SkillParameter(
                 name="speed",
