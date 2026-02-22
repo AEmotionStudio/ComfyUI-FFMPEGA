@@ -1409,12 +1409,14 @@ app.registerExtension({
                                 // Temporary feedback
                                 hexLabel.textContent = "COPIED";
                                 hexLabel.style.color = "#8f8";
+                                hexLabel.setAttribute("aria-label", "Copied successfully");
 
                                 setTimeout(() => {
                                     // Only restore if still showing "COPIED"
                                     if (hexLabel.textContent === "COPIED") {
                                         hexLabel.textContent = currentHex;
                                         hexLabel.style.color = "#ccc";
+                                        hexLabel.setAttribute("aria-label", "Copy color hex code");
                                     }
                                 }, 800);
                             }
