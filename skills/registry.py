@@ -93,6 +93,12 @@ class SkillParameter:
         elif self.type == ParameterType.STRING:
             if not isinstance(value, str):
                 return False, f"Parameter '{self.name}' must be a string"
+            min_val = self.min_value
+            max_val = self.max_value
+            if min_val is not None and len(value) < min_val:
+                return False, f"Parameter '{self.name}' must be at least {int(min_val)} characters"
+            if max_val is not None and len(value) > max_val:
+                return False, f"Parameter '{self.name}' must be at most {int(max_val)} characters"
 
         elif self.type == ParameterType.BOOL:
             if not isinstance(value, bool):

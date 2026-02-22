@@ -84,6 +84,30 @@ class TestSkillParameter:
 
         assert param.validate(None)[0]
 
+    def test_string_length_validation_enforced(self):
+        """Verify that string length validation is now enforced."""
+        param = SkillParameter(
+            name="text",
+            type=ParameterType.STRING,
+            description="Text",
+            min_value=5,
+            max_value=10,
+        )
+
+        # Valid case
+        is_valid, _ = param.validate("valid")  # length 5
+        assert is_valid is True
+
+        # Too short
+        is_valid_short, msg_short = param.validate("hi")  # length 2 < 5
+        assert is_valid_short is False
+        assert "must be at least 5 characters" in msg_short
+
+        # Too long
+        is_valid_long, msg_long = param.validate("this string is definitely too long")  # length > 10
+        assert is_valid_long is False
+        assert "must be at most 10 characters" in msg_long
+
 
 class TestSkill:
     """Tests for Skill class."""
@@ -296,6 +320,22 @@ class TestSkillRegistry:
 
         assert "Available Skills" in prompt_str
         assert "temporal" in prompt_str.lower() or "Temporal" in prompt_str
+
+    def test_typewriter_text_max_length(self):
+        """Verify that typewriter_text skill has max_length enforced."""
+        registry = get_registry()
+        skill = registry.get("typewriter_text")
+        assert skill is not None
+
+        # Valid text
+        is_valid, _ = skill.validate_params({"text": "Hello world"})
+        assert is_valid is True
+
+        # Text exceeding 200 chars
+        long_text = "a" * 201
+        is_valid_long, errors = skill.validate_params({"text": long_text})
+        assert is_valid_long is False
+        assert any("at most 200 characters" in e for e in errors)
 
 
 class TestPipeline:
