@@ -19,3 +19,7 @@
 ## 2026-03-05 - Zero-Friction Interactions
 **Learning:** Blocking `confirm()` dialogs disrupt flow, especially for frequent actions like pasting or randomization. When a robust undo/restore mechanism (like "Restore Previous") is present, confirmation dialogs become redundant friction.
 **Action:** Remove `confirm()` dialogs from destructive actions (Clear, Replace) if a "Restore" safety net exists, relying on non-blocking visual feedback (flashes) instead.
+
+## 2026-03-10 - Status Updates for Screen Readers
+**Learning:** While LiteGraph is canvas-based, custom nodes often use DOM overlays for previews and status bars. Adding `role="status"` or `aria-live="polite"` to these DOM elements bridges the gap for screen reader users during async operations (uploads, processing) where visual cues alone are insufficient.
+**Action:** Ensure all dynamic text updates in DOM overlays (like info bars or copy feedback) have appropriate ARIA live region attributes to announce status changes.

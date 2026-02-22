@@ -923,6 +923,7 @@ app.registerExtension({
                     "padding:4px 8px;font-size:11px;color:#aaa;" +
                     "font-family:monospace;background:#111;";
                 infoEl.textContent = "No video selected";
+                infoEl.setAttribute("role", "status");
 
                 previewContainer.appendChild(videoEl);
                 previewContainer.appendChild(infoEl);
@@ -1221,6 +1222,7 @@ app.registerExtension({
                     "padding:4px 8px;font-size:11px;color:#aaa;" +
                     "font-family:monospace;background:#111;";
                 infoEl.textContent = "Waiting for execution...";
+                infoEl.setAttribute("role", "status");
 
                 previewContainer.appendChild(videoEl);
                 previewContainer.appendChild(infoEl);
@@ -1379,6 +1381,7 @@ app.registerExtension({
                     hexLabel.setAttribute("role", "button");
                     hexLabel.setAttribute("tabindex", "0");
                     hexLabel.setAttribute("aria-label", "Copy color hex code");
+                    hexLabel.setAttribute("aria-live", "polite");
                     hexLabel.style.cssText = `
                         color: #ccc;
                         font: 11px monospace;
