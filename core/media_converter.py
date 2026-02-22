@@ -240,7 +240,9 @@ class MediaConverter:
 
         def save_one_frame(idx: int) -> None:
             img = Image.fromarray(frames[idx])
-            img.save(paths[idx])
+            # Optimization: Use compress_level=1 (fastest compression) instead of default (6)
+            # to save CPU time. These are temporary files, so speed > size.
+            img.save(paths[idx], compress_level=1)
 
         # Use ThreadPoolExecutor to save images in parallel
         # Default workers is usually min(32, os.cpu_count() + 4), which is good for I/O
