@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.4] - 2026-02-22
+
+### Security
+- **Typewriter Text DoS Prevention**: Enforced string length validation in `SkillRegistry` and added a `max_value=200` limit to the `typewriter_text` skill's text parameter to prevent resource exhaustion. *(PR #66)*
+
+### Performance
+- **PNG Compression Optimization**: `MediaConverter.save_frames_as_images` now uses `compress_level=1` (fastest) instead of the default level (6) when saving temporary frames for FFMPEG concatenation or overlays. Yields a ~25% speedup with minimal file size impact. *(PR #64)*
+
+### Changed
+- **Aria Live Status Updates**: Added `role="status"` and `aria-live="polite"` regions to UI elements in `ffmpega_ui.js` ensuring screen readers announce status changes during video uploads, processing, and color copying. Dynamically updates `aria-label` to "Copied successfully" on hex code copy. *(PR #65)*
+
+---
+
 ## [2.6.3] - 2026-02-21
 
 ### Security
