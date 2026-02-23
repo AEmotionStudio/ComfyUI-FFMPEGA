@@ -25,7 +25,7 @@ def main():
     print("[FFMPEGA] Installing optional dependencies...")
 
     # --- SAM3 (object segmentation for auto_mask) ---
-    if not is_installed("sam2"):
+    if not is_installed("sam3"):
         print("[FFMPEGA] Installing SAM3 (--no-deps to avoid numpy conflicts)...")
         result = subprocess.run(
             [*pip, "--no-deps", "git+https://github.com/facebookresearch/sam3.git"],
