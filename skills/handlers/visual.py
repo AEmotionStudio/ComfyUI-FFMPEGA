@@ -592,9 +592,9 @@ def _f_auto_mask(p):
     return _build_mask_fc(mask_path, effect, strength, invert)
 
 
-def _auto_mask_fallback(effect: str, strength: int):
-    """Full-frame fallback when SAM3 is unavailable."""
-    effect_filters = {
+def _effect_filter_map(strength: int) -> dict:
+    """Shared effect-to-FFmpeg-filter mapping for auto_mask."""
+    return {
         "blur": f"boxblur={max(1, strength // 5)}",
         "pixelate": f"scale=iw/{max(2, strength // 10)}:ih/{max(2, strength // 10)},"
                     f"scale=iw*{max(2, strength // 10)}:ih*{max(2, strength // 10)}:flags=neighbor,"
@@ -604,6 +604,11 @@ def _auto_mask_fallback(effect: str, strength: int):
         "remove": "drawbox=c=black:t=fill",
         "greenscreen": "drawbox=c=#00FF00:t=fill",
     }
+
+
+def _auto_mask_fallback(effect: str, strength: int):
+    """Full-frame fallback when SAM3 is unavailable."""
+    effect_filters = _effect_filter_map(strength)
     if effect == "transparent":
         # Transparent fallback: output fully transparent frame via WebM
         return make_result(
@@ -654,16 +659,7 @@ def _build_mask_fc(mask_path: str, effect: str, strength: int, invert: bool):
         )
 
     # --- Standard effects (including greenscreen) ---
-    effect_map = {
-        "blur": f"boxblur={max(1, strength // 5)}",
-        "pixelate": f"scale=iw/{max(2, strength // 10)}:ih/{max(2, strength // 10)},"
-                    f"scale=iw*{max(2, strength // 10)}:ih*{max(2, strength // 10)}:flags=neighbor,"
-                    f"scale=iw:ih",
-        "grayscale": "colorchannelmixer=.3:.4:.3:0:.3:.4:.3:0:.3:.4:.3",
-        "highlight": f"eq=brightness={min(0.5, strength / 200.0)}:saturation=1.5",
-        "remove": "drawbox=c=black:t=fill",
-        "greenscreen": "drawbox=c=#00FF00:t=fill",
-    }
+    effect_map = _effect_filter_map(strength)
     fx_filter = effect_map.get(effect, effect_map["blur"])
 
     # Build the filter graph
