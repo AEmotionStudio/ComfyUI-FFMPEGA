@@ -74,6 +74,21 @@ def _load_model(model_size: str = "large-v3", device: str = "gpu"):
     if _model is not None and _model_name == cache_key:
         return _model
 
+    # Free old model before loading a new one to avoid memory leak
+    if _model is not None:
+        logger.info("Freeing previous Whisper model '%s'", _model_name)
+        del _model
+        _model = None
+        _model_name = None
+        import gc
+        gc.collect()
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except ImportError:
+            pass
+
     try:
         import whisper  # type: ignore[import-not-found]
     except ImportError:
@@ -297,6 +312,8 @@ def transcribe_multi_video(
     for i, vpath in enumerate(video_paths):
         if not vpath or not os.path.isfile(vpath):
             logger.warning("Skipping non-existent video: %s", vpath)
+            # Do NOT advance time_offset for skipped videos —
+            # they contribute no content to the timeline.
             continue
 
         logger.info(

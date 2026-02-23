@@ -75,13 +75,19 @@ def _f_auto_transcribe(p):
     whisper_device = p.get("_whisper_device", "gpu")
     whisper_model = p.get("_whisper_model", "large-v3")
 
-    # Prefer connected audio input (audio_a) when available
+    # Prefer connected audio input (audio_a) when available.
+    # When audio_a is connected, it replaces the video's embedded audio,
+    # so we transcribe it directly — its timeline IS the output timeline.
     audio_input_path = p.get("_audio_input_path", "")
     if audio_input_path and os.path.isfile(audio_input_path):
         import logging
-        logging.getLogger("ffmpega").info(
-            "Transcribing connected audio input: %s", audio_input_path
-        )
+        _log = logging.getLogger("ffmpega")
+        _log.info("Transcribing connected audio input: %s", audio_input_path)
+        if len(video_paths) > 1:
+            _log.info(
+                "Note: using connected audio_a for subtitle timing "
+                "(ignoring individual video durations)"
+            )
         result = transcribe_audio(audio_input_path, model_size=whisper_model, device=whisper_device)
     elif len(video_paths) > 1:
         result = transcribe_multi_video(video_paths, model_size=whisper_model, device=whisper_device)
@@ -170,13 +176,19 @@ def _f_karaoke_subtitles(p):
     whisper_device = p.get("_whisper_device", "gpu")
     whisper_model = p.get("_whisper_model", "large-v3")
 
-    # Prefer connected audio input (audio_a) when available
+    # Prefer connected audio input (audio_a) when available.
+    # When audio_a is connected, it replaces the video's embedded audio,
+    # so we transcribe it directly — its timeline IS the output timeline.
     audio_input_path = p.get("_audio_input_path", "")
     if audio_input_path and os.path.isfile(audio_input_path):
         import logging
-        logging.getLogger("ffmpega").info(
-            "Transcribing connected audio input for karaoke: %s", audio_input_path
-        )
+        _log = logging.getLogger("ffmpega")
+        _log.info("Transcribing connected audio input for karaoke: %s", audio_input_path)
+        if len(video_paths) > 1:
+            _log.info(
+                "Note: using connected audio_a for karaoke timing "
+                "(ignoring individual video durations)"
+            )
         result = transcribe_audio(audio_input_path, model_size=whisper_model, device=whisper_device)
     elif len(video_paths) > 1:
         result = transcribe_multi_video(video_paths, model_size=whisper_model, device=whisper_device)

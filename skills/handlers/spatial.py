@@ -190,9 +190,12 @@ def _f_aspect(p):
     # Parse ratio string like "16:9" or "2.35:1"
     parts = ratio.split(":")
     if len(parts) == 2:
-        r = float(parts[0]) / float(parts[1])
+        denom = float(parts[1])
+        if denom == 0:
+            denom = 1.0  # Prevent ZeroDivisionError
+        r = float(parts[0]) / denom
     else:
-        r = float(ratio)
+        r = float(ratio) or 1.0  # Guard against zero
     if mode == "crop":
         # Crop to target aspect ratio (no bars, loses content)
         return make_result(vf=[
@@ -242,17 +245,16 @@ def _f_aspect(p):
                 return make_result()  # no bars needed
         else:
             # Fallback when metadata not available — use expression-based
-            # drawbox with runtime dimension calculation.
-            # Handles both letterbox (bars top/bottom) and pillarbox
-            # (bars left/right).  max(...,0) prevents negative sizes
-            # when the source AR doesn't match the expected direction.
+            # drawbox.  Use if(gt(...)) to only draw the needed pair:
+            # letterbox (top/bottom) when source is taller, or
+            # pillarbox (left/right) when source is wider.
+            bar_h = f"(ih-iw/{r})/2"  # positive when taller than target
+            bar_w = f"(iw-ih*{r})/2"  # positive when wider than target
             return make_result(vf=[
-                # Letterbox bars (top/bottom) — active when source is taller than target
-                f"drawbox=x=0:y=0:w=iw:h=max((ih-iw/{r})/2\\,0):color={color}:t=fill,"
-                f"drawbox=x=0:y=ih-max((ih-iw/{r})/2\\,0):w=iw:h=max((ih-iw/{r})/2\\,0):color={color}:t=fill,"
-                # Pillarbox bars (left/right) — active when source is wider than target
-                f"drawbox=x=0:y=0:w=max((iw-ih*{r})/2\\,0):h=ih:color={color}:t=fill,"
-                f"drawbox=x=iw-max((iw-ih*{r})/2\\,0):y=0:w=max((iw-ih*{r})/2\\,0):h=ih:color={color}:t=fill"
+                f"drawbox=x=0:y=0:w=iw:h=if(gt(ih*{r}\\,iw)\\,{bar_h}\\,0):color={color}:t=fill,"
+                f"drawbox=x=0:y=ih-if(gt(ih*{r}\\,iw)\\,{bar_h}\\,0):w=iw:h=if(gt(ih*{r}\\,iw)\\,{bar_h}\\,0):color={color}:t=fill,"
+                f"drawbox=x=0:y=0:w=if(gt(iw\\,ih*{r})\\,{bar_w}\\,0):h=ih:color={color}:t=fill,"
+                f"drawbox=x=iw-if(gt(iw\\,ih*{r})\\,{bar_w}\\,0):y=0:w=if(gt(iw\\,ih*{r})\\,{bar_w}\\,0):h=ih:color={color}:t=fill"
             ])
 
 
