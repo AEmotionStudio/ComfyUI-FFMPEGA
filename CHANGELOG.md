@@ -7,8 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.6.5] - 2026-02-22
 
+### Added
+- **Whisper Auto-Transcription**: New `auto_transcribe` skill — transcribes video audio with OpenAI Whisper and burns SRT subtitles into the output. Supports single and multi-video (concat) workflows with correct cross-clip timing. *(PR #67)*
+- **Karaoke Subtitles**: New `karaoke_subtitles` skill — word-by-word progressive-fill karaoke effect using Whisper word-level timestamps and ASS `\kf` tags. Configurable font size, base color, and fill color. *(PR #67)*
+- **Whisper Device Control**: New `whisper_device` node setting (`gpu`/`cpu`) — allows running Whisper on CPU to avoid VRAM pressure on low-memory GPUs. *(PR #67)*
+- **Whisper Model Selection**: New `whisper_model` node setting (`tiny`, `base`, `small`, `medium`, `large-v3`) — choose the model size for speed vs. accuracy tradeoff. *(PR #67)*
+- **Transcription Test Suite**: New `tests/test_transcribe.py` with 18 tests covering SRT generation, ASS karaoke output, handler dispatch, skill registry entries, and model path resolution. *(PR #67)*
+
 ### Fixed
 - **Publish Action Failure**: Fixed PEP 8 E702 semicolon error in `agent_node.py` that caused the Comfy Registry publish action to fail.
+- **Letterbox Content Preservation**: Replaced `crop+pad` with `drawbox` for letterboxing to preserve video content instead of cropping. Correctly handles both letterbox (horizontal bars) and pillarbox (vertical bars) cases. *(PR #67)*
+- **Whisper Memory Leak**: `_load_model` now frees the previous model before loading a new one, preventing GPU memory accumulation when switching model sizes. *(PR #67)*
+- **Multi-Video Timestamp Desync**: Fixed `transcribe_multi_video` not advancing `time_offset` for skipped (non-existent) videos, which caused subtitle desync. *(PR #67)*
+- **Xfade Transition Timing**: `transcribe_multi_video` now accepts `transition_duration` to subtract xfade overlap from timestamp offsets, keeping subtitles in sync with xfade-shortened output. *(PR #67)*
+- **ASS Subtitle Escaping**: Transcribed words containing `{`, `}`, or `\` are now stripped before embedding in karaoke ASS tags, preventing rendering failures. *(PR #67)*
+- **Primary Input Validation**: `_collect_video_paths` now validates the primary input's file extension, matching the check already applied to extra inputs. *(PR #67)*
+- **Invalid Hex Color Rejection**: `color_to_ass_bgr` now validates hex digits before conversion — malformed colors like `#GGGGGG` fall back to the default instead of producing broken ASS strings. *(PR #67)*
+- **Aspect Ratio Division by Zero**: Added validation to prevent `ZeroDivisionError` when parsing aspect ratios with zero denominators. *(PR #67)*
+
+### Changed
+- **Shared `ffmpeg_escape_path`**: Extracted duplicate `_ffmpeg_escape` functions from `subtitles.py` and `transcribe.py` into a shared `ffmpeg_escape_path()` in `core/sanitize.py`. *(PR #67)*
+- **Shared `color_to_ass_bgr`**: Extracted duplicate color-to-ASS conversion from `subtitles.py`, `transcribe.py`, and `whisper_transcriber.py` into a shared `color_to_ass_bgr()` in `core/sanitize.py`. Supports named colors, 6/8-digit hex, and native ASS pass-through. *(PR #67)*
+- **Shared `_run_transcription`**: Extracted duplicated transcription dispatch logic from `_f_auto_transcribe` and `_f_karaoke_subtitles` into a shared `_run_transcription()` helper. *(PR #67)*
+- **Subtitle Filter Ordering**: Subtitle filters now always render last via a filter reordering pass, ensuring subtitles appear on top of letterbox bars and other effects. *(PR #67)*
 
 ---
 

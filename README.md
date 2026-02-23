@@ -24,9 +24,19 @@
 
 ---
 
-## 🚀 What's New in v2.6.0 (February 18, 2026)
+## 🚀 What's New in v2.6.5 (February 22, 2026)
 
-**Skill Architecture Refactoring, Audio Mixing, Security Hardening & Test Expansion**
+**Whisper Auto-Transcription, Karaoke Subtitles & Letterbox Fixes**
+
+*   **🎙️ Auto-Transcribe**: New `auto_transcribe` skill — transcribes video audio with OpenAI Whisper and burns SRT subtitles directly into the output. Supports multi-video concat with correct cross-clip timing.
+*   **🎤 Karaoke Subtitles**: New `karaoke_subtitles` skill — word-by-word progressive-fill karaoke effect using Whisper's word-level timestamps and ASS `\kf` tags.
+*   **⚙️ Whisper Controls**: Choose your Whisper model size (`tiny` → `large-v3`) and device (`gpu`/`cpu`) via node settings — trade off speed vs. accuracy, or offload to CPU on low-VRAM systems.
+*   **📐 Letterbox Fix**: Replaced `crop+pad` with `drawbox` for letterboxing, preserving video content. Handles both letterbox and pillarbox cases correctly.
+*   **🧹 Code Dedup**: Extracted shared `ffmpeg_escape_path`, `color_to_ass_bgr`, and `_run_transcription` helpers — 3 deduplication refactors reducing maintenance surface.
+*   **🔧 9 Bug Fixes**: Whisper memory leak, xfade subtitle timing, ASS escaping, hex color validation, aspect ratio div-by-zero, and more.
+
+<details>
+<summary><b>Previous: v2.6.0 — HandlerResult, Compose Decomposition & 516 Tests</b></summary>
 
 *   **🏗️ HandlerResult Contract**: All 9 handler modules now return a formal `HandlerResult` dataclass, replacing ad-hoc tuples. Backward-compatible with existing code.
 *   **🔧 Compose Decomposition**: Extracted 5 orchestration methods from the 600+ line `compose()` into pure, testable static methods.
@@ -35,6 +45,8 @@
 *   **📝 TextInput Node**: New node for subtitle and text overlay workflows with auto SRT detection.
 *   **🔒 Security**: Sanitized text overlay `enable` parameter, fixed path traversal on output dirs, fixed weak UUID entropy.
 *   **🧪 516 Tests**: Expanded test suite from 481 → 516 with 0 failures. New handler unit tests, skill combination tests, and orchestration helper tests.
+
+</details>
 
 <details>
 <summary><b>Previous: v2.5.0 — PiP Overlay Fixes, VL Model Vision & Border Support</b></summary>
