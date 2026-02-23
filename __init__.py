@@ -10,8 +10,8 @@ Example usage:
     - "Create a vintage VHS look with grain and color shift"
 """
 
-__version__ = "1.6.1"
-__author__ = "FFMPEGA Team"
+__version__ = "2.6.5"
+__author__ = "Æmotion Studio"
 
 # Import node mappings for ComfyUI
 # Guarded so the package can be imported standalone (e.g. during pytest)

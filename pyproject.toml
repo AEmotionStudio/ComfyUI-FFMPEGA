@@ -9,7 +9,7 @@ description = "Intelligent FFMPEG agent node for ComfyUI with natural language v
 readme = "README.md"
 license = {text = "GPL-3.0"}
 authors = [
-    {name = "FFMPEGA Team"}
+    {name = "Æmotion Studio"}
 ]
 keywords = ["comfyui", "ffmpeg", "video-editing", "ai-agent", "llm"]
 classifiers = [
@@ -24,7 +24,6 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = [
     "httpx>=0.25.0",
-    "pydantic~=2.0",
     "openai-whisper>=20240930",
 ]
 
