@@ -41,37 +41,33 @@ def _collect_video_paths(p):
     return paths
 
 
-def _f_auto_transcribe(p):
-    """Auto-transcribe video audio with Whisper and burn subtitles.
+def _run_transcription(p, skill_name="transcribe"):
+    """Shared transcription dispatch for auto_transcribe and karaoke handlers.
 
-    Extracts audio from all connected videos, runs Whisper speech-to-text,
-    generates SRT subtitles with correct timing across concatenated clips,
-    and burns them into the video.
+    Collects video paths, reads whisper preferences, handles audio_a input,
+    and dispatches to the appropriate transcription function.
+
+    Returns:
+        Tuple of (TranscriptionResult, video_paths).
     """
     try:
         from ...core.whisper_transcriber import (
             transcribe_audio,
             transcribe_multi_video,
-            segments_to_srt,
         )
     except ImportError:
         from core.whisper_transcriber import (
             transcribe_audio,
             transcribe_multi_video,
-            segments_to_srt,
         )
 
     video_paths = _collect_video_paths(p)
     if not video_paths:
         raise ValueError(
-            "auto_transcribe requires a video input with audio. "
+            f"{skill_name} requires a video input with audio. "
             "No input video path available."
         )
 
-    fontsize = int(p.get("fontsize", 24))
-    fontcolor = sanitize_text_param(str(p.get("fontcolor", "white")))
-
-    # Read whisper preferences from node settings
     whisper_device = p.get("_whisper_device", "gpu")
     whisper_model = p.get("_whisper_model", "large-v3")
 
@@ -82,17 +78,37 @@ def _f_auto_transcribe(p):
     if audio_input_path and os.path.isfile(audio_input_path):
         import logging
         _log = logging.getLogger("ffmpega")
-        _log.info("Transcribing connected audio input: %s", audio_input_path)
+        _log.info("Transcribing connected audio input for %s: %s", skill_name, audio_input_path)
         if len(video_paths) > 1:
             _log.info(
-                "Note: using connected audio_a for subtitle timing "
-                "(ignoring individual video durations)"
+                "Note: using connected audio_a for %s timing "
+                "(ignoring individual video durations)", skill_name
             )
         result = transcribe_audio(audio_input_path, model_size=whisper_model, device=whisper_device)
     elif len(video_paths) > 1:
         result = transcribe_multi_video(video_paths, model_size=whisper_model, device=whisper_device)
     else:
         result = transcribe_audio(video_paths[0], model_size=whisper_model, device=whisper_device)
+
+    return result, video_paths
+
+
+def _f_auto_transcribe(p):
+    """Auto-transcribe video audio with Whisper and burn subtitles.
+
+    Extracts audio from all connected videos, runs Whisper speech-to-text,
+    generates SRT subtitles with correct timing across concatenated clips,
+    and burns them into the video.
+    """
+    try:
+        from ...core.whisper_transcriber import segments_to_srt
+    except ImportError:
+        from core.whisper_transcriber import segments_to_srt
+
+    result, _video_paths = _run_transcription(p, "auto_transcribe")
+
+    fontsize = int(p.get("fontsize", 24))
+    fontcolor = sanitize_text_param(str(p.get("fontcolor", "white")))
 
     if not result.segments:
         import logging
@@ -131,51 +147,15 @@ def _f_karaoke_subtitles(p):
     Supports multi-video (concat) workflows.
     """
     try:
-        from ...core.whisper_transcriber import (
-            transcribe_audio,
-            transcribe_multi_video,
-            words_to_karaoke_ass,
-        )
+        from ...core.whisper_transcriber import words_to_karaoke_ass
     except ImportError:
-        from core.whisper_transcriber import (
-            transcribe_audio,
-            transcribe_multi_video,
-            words_to_karaoke_ass,
-        )
+        from core.whisper_transcriber import words_to_karaoke_ass
 
-    video_paths = _collect_video_paths(p)
-    if not video_paths:
-        raise ValueError(
-            "karaoke_subtitles requires a video input with audio. "
-            "No input video path available."
-        )
+    result, _video_paths = _run_transcription(p, "karaoke_subtitles")
 
     fontsize = int(p.get("fontsize", 48))
     base_color = sanitize_text_param(str(p.get("base_color", "white")))
     fill_color = sanitize_text_param(str(p.get("fill_color", "yellow")))
-
-    # Read whisper preferences from node settings
-    whisper_device = p.get("_whisper_device", "gpu")
-    whisper_model = p.get("_whisper_model", "large-v3")
-
-    # Prefer connected audio input (audio_a) when available.
-    # When audio_a is connected, it replaces the video's embedded audio,
-    # so we transcribe it directly — its timeline IS the output timeline.
-    audio_input_path = p.get("_audio_input_path", "")
-    if audio_input_path and os.path.isfile(audio_input_path):
-        import logging
-        _log = logging.getLogger("ffmpega")
-        _log.info("Transcribing connected audio input for karaoke: %s", audio_input_path)
-        if len(video_paths) > 1:
-            _log.info(
-                "Note: using connected audio_a for karaoke timing "
-                "(ignoring individual video durations)"
-            )
-        result = transcribe_audio(audio_input_path, model_size=whisper_model, device=whisper_device)
-    elif len(video_paths) > 1:
-        result = transcribe_multi_video(video_paths, model_size=whisper_model, device=whisper_device)
-    else:
-        result = transcribe_audio(video_paths[0], model_size=whisper_model, device=whisper_device)
 
     if not result.words:
         import logging
