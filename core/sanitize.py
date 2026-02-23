@@ -26,7 +26,13 @@ ALLOWED_FONT_EXTENSIONS = {'.ttf', '.otf', '.woff', '.woff2', '.ttc'}
 # Critical system directories that should be protected from write operations
 UNSAFE_DIRECTORIES = {
     "/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc",
-    "/root", "/run", "/sbin", "/sys", "/usr", "/var"
+    "/root", "/run", "/sbin", "/sys", "/usr", "/var", "/opt", "/srv"
+}
+
+# Sensitive directories that should not be part of any output path
+SENSITIVE_DIRS = {
+    ".ssh", ".aws", ".kube", ".git", ".github", ".vscode", ".idea",
+    ".env", ".config"
 }
 
 
@@ -45,6 +51,14 @@ def _check_unsafe_path(path: Path) -> None:
         # Match directory exactly or as a parent
         if path_str == unsafe or path_str.startswith(f"{unsafe}{os.sep}"):
             raise ValueError(f"Path targets unsafe system directory: {path}")
+
+    # Check for sensitive directories in the path components
+    # This prevents writing to hidden sensitive dirs like ~/.ssh/ even
+    # if they are inside a allowed user directory.
+    parts = path.parts
+    for part in parts:
+        if part in SENSITIVE_DIRS:
+            raise ValueError(f"Path contains sensitive directory: {part}")
 
     # Check Windows system paths
     if os.name == 'nt':
@@ -194,6 +208,9 @@ def sanitize_text_param(text: str) -> str:
     """
     if not text:
         return text
+
+    if "\0" in text:
+        raise ValueError("Null byte found in text parameter")
 
     # Optimization: check for special chars before replacing to avoid
     # unnecessary string allocations in the common case (clean text).
