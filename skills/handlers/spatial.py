@@ -194,11 +194,59 @@ def _f_aspect(p):
     else:
         r = float(ratio)
     if mode == "crop":
-        return make_result(vf=[f"crop=if(gt(iw/ih\\,{r})\\,ih*{r}\\,iw):if(gt(iw/ih\\,{r})\\,ih\\,iw/{r})"])
+        # Crop to target aspect ratio (no bars, loses content)
+        return make_result(vf=[
+            f"crop=2*trunc(if(gt(iw/ih\\,{r})\\,ih*{r}\\,iw)/2)"
+            f":2*trunc(if(gt(iw/ih\\,{r})\\,ih\\,iw/{r})/2)"
+        ])
     elif mode == "stretch":
-        return make_result(vf=[f"scale=if(gt(iw/ih\\,{r})\\,iw\\,ih*{r}):if(gt(iw/ih\\,{r})\\,iw/{r}\\,ih)"])
-    else:  # pad
-        return make_result(vf=[f"pad=if(gt(iw/ih\\,{r})\\,iw\\,ih*{r}):if(gt(iw/ih\\,{r})\\,iw/{r}\\,ih):(ow-iw)/2:(oh-ih)/2:{color}"])
+        # Stretch to target aspect ratio (distorts content)
+        return make_result(vf=[
+            f"scale=2*trunc(if(gt(iw/ih\\,{r})\\,iw\\,ih*{r})/2)"
+            f":2*trunc(if(gt(iw/ih\\,{r})\\,iw/{r}\\,ih)/2)"
+        ])
+    else:  # pad — overlay black bars on the original frame
+        # Draw opaque bars on top/bottom (letterbox) or left/right
+        # (pillarbox) WITHOUT cropping any content.  The video stays
+        # at its original resolution — the bars are purely cosmetic.
+        #
+        # For a portrait 720×1280 with r=2.35:
+        #   visible height = 720/2.35 ≈ 306 → bar_h ≈ 487 each side
+        #
+        # For a landscape 1920×1080 with r=2.35:
+        #   visible height = 1920/2.35 ≈ 817 → bar_h ≈ 131 each side
+        orig_w = p.get("_input_width")
+        orig_h = p.get("_input_height")
+        if orig_w and orig_h:
+            orig_w, orig_h = int(orig_w), int(orig_h)
+            src_ar = orig_w / orig_h
+            if src_ar > r:
+                # Source wider than target — pillarbox (bars on sides)
+                visible_w = int(orig_h * r)
+                bar_w = (orig_w - visible_w) // 2
+                if bar_w > 0:
+                    return make_result(vf=[
+                        f"drawbox=x=0:y=0:w={bar_w}:h=ih:color={color}:t=fill,"
+                        f"drawbox=x=iw-{bar_w}:y=0:w={bar_w}:h=ih:color={color}:t=fill"
+                    ])
+                return make_result()  # no bars needed
+            else:
+                # Source taller than target — letterbox (bars top/bottom)
+                visible_h = int(orig_w / r)
+                bar_h = (orig_h - visible_h) // 2
+                if bar_h > 0:
+                    return make_result(vf=[
+                        f"drawbox=x=0:y=0:w=iw:h={bar_h}:color={color}:t=fill,"
+                        f"drawbox=x=0:y=ih-{bar_h}:w=iw:h={bar_h}:color={color}:t=fill"
+                    ])
+                return make_result()  # no bars needed
+        else:
+            # Fallback when metadata not available — use expression-based
+            # drawbox with runtime dimension calculation
+            return make_result(vf=[
+                f"drawbox=x=0:y=0:w=iw:h=(ih-iw/{r})/2:color={color}:t=fill,"
+                f"drawbox=x=0:y=ih-(ih-iw/{r})/2:w=iw:h=(ih-iw/{r})/2:color={color}:t=fill"
+            ])
 
 
 def _f_perspective(p):

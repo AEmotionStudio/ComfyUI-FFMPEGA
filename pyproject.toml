@@ -25,12 +25,14 @@ requires-python = ">=3.10"
 dependencies = [
     "httpx>=0.25.0",
     "pydantic~=2.0",
+    "openai-whisper>=20240930",
 ]
 
 [project.optional-dependencies]
 masking = ["rembg[cpu]>=2.0.50"]
 ollama = ["ollama>=0.1.0"]
 mcp = ["mcp>=1.0.0"]
+whisper = ["openai-whisper>=20240930"]
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",

@@ -41,6 +41,11 @@ from .subtitles import (  # noqa: F401
     _f_burn_subtitles,
 )
 
+from .transcribe import (  # noqa: F401
+    _f_auto_transcribe,
+    _f_karaoke_subtitles,
+)
+
 from .encoding import (  # noqa: F401
     _f_compress,
     _f_convert,
