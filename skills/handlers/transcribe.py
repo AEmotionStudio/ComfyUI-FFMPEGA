@@ -14,9 +14,9 @@ except ImportError:
     from skills.handler_contract import make_result
 
 try:
-    from ...core.sanitize import sanitize_text_param, ffmpeg_escape_path
+    from ...core.sanitize import sanitize_text_param, ffmpeg_escape_path, color_to_ass_bgr
 except ImportError:
-    from core.sanitize import sanitize_text_param, ffmpeg_escape_path
+    from core.sanitize import sanitize_text_param, ffmpeg_escape_path, color_to_ass_bgr
 
 
 def _collect_video_paths(p):
@@ -112,33 +112,8 @@ def _f_auto_transcribe(p):
     tmp.close()
     atexit.register(os.unlink, tmp.name)
 
-    # Build subtitle filter (same approach as _f_burn_subtitles)
-    _COLOR_MAP = {
-        "white": "&H00FFFFFF",
-        "black": "&H00000000",
-        "red": "&H000000FF",
-        "green": "&H0000FF00",
-        "blue": "&H00FF0000",
-        "yellow": "&H0000FFFF",
-        "cyan": "&H00FFFF00",
-        "magenta": "&H00FF00FF",
-    }
-
-    fontcolor_lower = fontcolor.lower().strip()
-    if fontcolor_lower in _COLOR_MAP:
-        ass_color = _COLOR_MAP[fontcolor_lower]
-    elif fontcolor_lower.startswith("#") and len(fontcolor_lower) in (7, 9):
-        hex_val = fontcolor_lower.lstrip("#")
-        if len(hex_val) == 6:
-            r, g, b = hex_val[0:2], hex_val[2:4], hex_val[4:6]
-            ass_color = f"&H00{b}{g}{r}".upper()
-        else:
-            a, r, g, b = hex_val[0:2], hex_val[2:4], hex_val[4:6], hex_val[6:8]
-            ass_color = f"&H{a}{b}{g}{r}".upper()
-    elif fontcolor_lower.startswith("&h"):
-        ass_color = fontcolor
-    else:
-        ass_color = "&H00FFFFFF"
+    # Build subtitle filter
+    ass_color = color_to_ass_bgr(fontcolor)
 
     escaped_path = ffmpeg_escape_path(tmp.name)
     style = f"FontSize={fontsize},PrimaryColour={ass_color}"

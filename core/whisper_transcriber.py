@@ -10,6 +10,8 @@ import subprocess
 import tempfile
 from dataclasses import dataclass, field
 
+from .sanitize import color_to_ass_bgr
+
 logger = logging.getLogger("ffmpega")
 
 # Module-level model cache — loaded once, reused across calls
@@ -419,33 +421,8 @@ def words_to_karaoke_ass(
     if not words:
         return ""
 
-    # Convert named colors to ASS BGR hex format (&HBBGGRR)
-    _COLOR_MAP = {
-        "white": "&H00FFFFFF",
-        "black": "&H00000000",
-        "red": "&H000000FF",
-        "green": "&H0000FF00",
-        "blue": "&H00FF0000",
-        "yellow": "&H0000FFFF",
-        "cyan": "&H00FFFF00",
-        "magenta": "&H00FF00FF",
-        "gray": "&H00808080",
-        "grey": "&H00808080",
-    }
-
-    def _resolve_color(color: str) -> str:
-        c = color.lower().strip()
-        if c in _COLOR_MAP:
-            return _COLOR_MAP[c]
-        if c.startswith("#") and len(c) == 7:
-            r, g, b = c[1:3], c[3:5], c[5:7]
-            return f"&H00{b}{g}{r}".upper()
-        if c.startswith("&h"):
-            return color
-        return _COLOR_MAP.get("white", "&H00FFFFFF")
-
-    ass_base = _resolve_color(base_color)
-    ass_fill = _resolve_color(fill_color)
+    ass_base = color_to_ass_bgr(base_color)
+    ass_fill = color_to_ass_bgr(fill_color)
 
     # ASS header
     header = (

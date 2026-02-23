@@ -244,6 +244,54 @@ def ffmpeg_escape_path(s: str) -> str:
     return s
 
 
+# Named colors → ASS BGR hex format (&HAABBGGRR)
+_ASS_COLOR_MAP = {
+    "white": "&H00FFFFFF",
+    "black": "&H00000000",
+    "red": "&H000000FF",
+    "green": "&H0000FF00",
+    "blue": "&H00FF0000",
+    "yellow": "&H0000FFFF",
+    "cyan": "&H00FFFF00",
+    "magenta": "&H00FF00FF",
+    "gray": "&H00808080",
+    "grey": "&H00808080",
+}
+
+
+def color_to_ass_bgr(color: str, default: str = "&H00FFFFFF") -> str:
+    """Convert a color name, hex string, or ASS color to ASS BGR format.
+
+    Supports:
+    - Named colors: white, black, red, green, blue, yellow, cyan,
+      magenta, gray/grey
+    - 6-digit hex: #RRGGBB → &H00BBGGRR
+    - 8-digit hex with alpha: #AARRGGBB → &HAABBGGRR
+    - Native ASS colors: &H... passed through unchanged
+
+    Args:
+        color: Color string in any supported format.
+        default: Fallback ASS color if parsing fails.
+
+    Returns:
+        ASS-format BGR hex string like ``&H00FFFFFF``.
+    """
+    c = color.lower().strip()
+    if c in _ASS_COLOR_MAP:
+        return _ASS_COLOR_MAP[c]
+    if c.startswith("#") and len(c) in (7, 9):
+        hex_val = c.lstrip("#")
+        if len(hex_val) == 6:
+            r, g, b = hex_val[0:2], hex_val[2:4], hex_val[4:6]
+            return f"&H00{b}{g}{r}".upper()
+        else:
+            a, r, g, b = hex_val[0:2], hex_val[2:4], hex_val[4:6], hex_val[6:8]
+            return f"&H{a}{b}{g}{r}".upper()
+    if c.startswith("&h"):
+        return color  # native ASS pass-through
+    return default
+
+
 def redact_secret(secret: str, visible_chars: int = 4) -> str:
     """Redact a secret string, showing only the last few characters.
 
