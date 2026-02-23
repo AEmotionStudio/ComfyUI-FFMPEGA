@@ -242,10 +242,17 @@ def _f_aspect(p):
                 return make_result()  # no bars needed
         else:
             # Fallback when metadata not available — use expression-based
-            # drawbox with runtime dimension calculation
+            # drawbox with runtime dimension calculation.
+            # Handles both letterbox (bars top/bottom) and pillarbox
+            # (bars left/right).  max(...,0) prevents negative sizes
+            # when the source AR doesn't match the expected direction.
             return make_result(vf=[
-                f"drawbox=x=0:y=0:w=iw:h=(ih-iw/{r})/2:color={color}:t=fill,"
-                f"drawbox=x=0:y=ih-(ih-iw/{r})/2:w=iw:h=(ih-iw/{r})/2:color={color}:t=fill"
+                # Letterbox bars (top/bottom) — active when source is taller than target
+                f"drawbox=x=0:y=0:w=iw:h=max((ih-iw/{r})/2\\,0):color={color}:t=fill,"
+                f"drawbox=x=0:y=ih-max((ih-iw/{r})/2\\,0):w=iw:h=max((ih-iw/{r})/2\\,0):color={color}:t=fill,"
+                # Pillarbox bars (left/right) — active when source is wider than target
+                f"drawbox=x=0:y=0:w=max((iw-ih*{r})/2\\,0):h=ih:color={color}:t=fill,"
+                f"drawbox=x=iw-max((iw-ih*{r})/2\\,0):y=0:w=max((iw-ih*{r})/2\\,0):h=ih:color={color}:t=fill"
             ])
 
 

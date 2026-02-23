@@ -1111,7 +1111,12 @@ class FFMPEGAgentNode:
         # When audio_a is connected and the pipeline contains transcription
         # skills, convert the audio tensor to a WAV file so Whisper can
         # transcribe the replacement audio instead of the video's embedded audio.
-        _TRANSCRIBE_SKILLS = {"auto_transcribe", "transcribe", "speech_to_text", "karaoke_subtitles"}
+        _TRANSCRIBE_SKILLS = {
+            "auto_transcribe", "transcribe", "speech_to_text",
+            "karaoke_subtitles",
+            # Aliases that resolve to auto_transcribe
+            "whisper", "auto_subtitle", "auto_caption",
+        }
         has_transcribe_skill = any(
             s.skill_name in _TRANSCRIBE_SKILLS for s in pipeline.steps
         )
