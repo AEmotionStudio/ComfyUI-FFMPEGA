@@ -57,7 +57,7 @@ def _check_unsafe_path(path: Path) -> None:
     # if they are inside a allowed user directory.
     parts = path.parts
     for part in parts:
-        if part in SENSITIVE_DIRS:
+        if part.lower() in SENSITIVE_DIRS:
             raise ValueError(f"Path contains sensitive directory: {part}")
 
     # Check Windows system paths
