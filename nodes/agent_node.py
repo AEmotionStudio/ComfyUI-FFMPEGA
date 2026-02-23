@@ -483,7 +483,8 @@ class FFMPEGAgentNode:
             # to a temp file. For 8s@1080p this frees ~4.7GB.
             del images_a
             images_a = None  # Keep name in scope for later None checks
-            import gc; gc.collect()
+            import gc
+            gc.collect()
             try:
                 import torch as _torch
                 if _torch.cuda.is_available():
