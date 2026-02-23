@@ -328,6 +328,9 @@ function addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, get
                                 }
                                 infoEl._timeoutId = null;
                             }, 1000);
+                        } else {
+                            // Fallback if no infoEl
+                            flashNode(node, "#4a7a4a");
                         }
                     } catch {
                         flashNode(node, "#7a4a4a");
@@ -419,6 +422,9 @@ function addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, get
                                 }
                                 infoEl._timeoutId = null;
                             }, 1000);
+                        } else {
+                            // Fallback if no infoEl
+                            flashNode(node, "#4a7a4a");
                         }
                     } catch {
                         flashNode(node, "#7a4a4a");
