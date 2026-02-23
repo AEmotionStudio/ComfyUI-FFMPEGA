@@ -307,7 +307,11 @@ function addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, get
 
                         // Text feedback if infoEl is available
                         if (infoEl) {
-                            const originalText = infoEl.textContent;
+                            // If this is our first time overriding, save the original text
+                            if (!infoEl._originalText) {
+                                infoEl._originalText = infoEl.textContent;
+                            }
+
                             const msg = "📋 Copied to clipboard!";
                             infoEl.textContent = msg;
 
@@ -316,7 +320,11 @@ function addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, get
 
                             infoEl._timeoutId = setTimeout(() => {
                                 if (infoEl.textContent === msg) {
-                                    infoEl.textContent = originalText;
+                                    // Restore original text
+                                    if (infoEl._originalText) {
+                                        infoEl.textContent = infoEl._originalText;
+                                        delete infoEl._originalText;
+                                    }
                                 }
                                 infoEl._timeoutId = null;
                             }, 1000);
@@ -391,7 +399,11 @@ function addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, get
 
                         // Text feedback if infoEl is available
                         if (infoEl && msg) {
-                            const originalText = infoEl.textContent;
+                            // If this is our first time overriding, save the original text
+                            if (!infoEl._originalText) {
+                                infoEl._originalText = infoEl.textContent;
+                            }
+
                             infoEl.textContent = msg;
 
                             // Ensure previous timeout is cleared if exists
@@ -399,7 +411,11 @@ function addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, get
 
                             infoEl._timeoutId = setTimeout(() => {
                                 if (infoEl.textContent === msg) {
-                                    infoEl.textContent = originalText;
+                                    // Restore original text
+                                    if (infoEl._originalText) {
+                                        infoEl.textContent = infoEl._originalText;
+                                        delete infoEl._originalText;
+                                    }
                                 }
                                 infoEl._timeoutId = null;
                             }, 1000);
