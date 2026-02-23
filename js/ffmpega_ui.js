@@ -310,10 +310,15 @@ function addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, get
                             const originalText = infoEl.textContent;
                             const msg = "📋 Copied to clipboard!";
                             infoEl.textContent = msg;
-                            setTimeout(() => {
+
+                            // Ensure previous timeout is cleared if exists
+                            if (infoEl._timeoutId) clearTimeout(infoEl._timeoutId);
+
+                            infoEl._timeoutId = setTimeout(() => {
                                 if (infoEl.textContent === msg) {
                                     infoEl.textContent = originalText;
                                 }
+                                infoEl._timeoutId = null;
                             }, 1000);
                         }
                     } catch {
@@ -388,10 +393,15 @@ function addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, get
                         if (infoEl && msg) {
                             const originalText = infoEl.textContent;
                             infoEl.textContent = msg;
-                            setTimeout(() => {
+
+                            // Ensure previous timeout is cleared if exists
+                            if (infoEl._timeoutId) clearTimeout(infoEl._timeoutId);
+
+                            infoEl._timeoutId = setTimeout(() => {
                                 if (infoEl.textContent === msg) {
                                     infoEl.textContent = originalText;
                                 }
+                                infoEl._timeoutId = null;
                             }, 1000);
                         }
                     } catch {
