@@ -56,3 +56,22 @@ if _dependency_issues:
     for issue in _dependency_issues:
         print(f"  - {issue}")
     print("=" * 50)
+
+
+def _check_optional_deps():
+    """Log notices for missing optional AI features."""
+    missing = []
+    try:
+        import sam2  # noqa: F401
+    except ImportError:
+        missing.append(
+            "SAM3 (auto_mask): pip install --no-deps "
+            "git+https://github.com/facebookresearch/sam3.git"
+        )
+    if missing:
+        print("[FFMPEGA] Optional AI features not installed:")
+        for m in missing:
+            print(f"  → {m}")
+
+
+_check_optional_deps()

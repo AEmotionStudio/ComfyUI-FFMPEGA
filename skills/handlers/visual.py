@@ -510,3 +510,189 @@ def _f_remove_background(p):
         p.get("model", "silueta"),
     )
     return make_result()
+
+
+# ── SAM3 Auto-Mask handler ────────────────────────────────────────── #
+
+
+def _f_auto_mask(p):
+    """Apply an effect to SAM3-detected objects using text prompts.
+
+    This handler uses a two-pass approach:
+    1. SAM3 generates per-object masks from text descriptions
+    2. FFmpeg applies the chosen effect only to the masked region
+
+    When SAM3 is not available, falls back to a full-frame effect
+    with a warning so the pipeline doesn't break.
+
+    Params:
+        target (str):       Text prompt describing what to mask (e.g. "the face").
+        effect (str):       One of blur, pixelate, remove, grayscale, highlight.
+        strength (int):     Effect intensity 1–100 (default 50).
+        invert (bool):      Invert mask — apply effect to background instead.
+    """
+    import logging
+    log = logging.getLogger("ffmpega")
+
+    target = str(p.get("target", "the subject"))
+    effect = str(p.get("effect", "blur")).lower()
+    strength = int(p.get("strength", 50))
+    invert = bool(p.get("invert", False))
+    video_path = p.get("_input_path", "")
+
+    # Try to load SAM3
+    try:
+        from ...core.sam3_masker import mask_video as sam3_mask_video  # noqa: F811
+        _has_sam3 = True
+    except ImportError:
+        try:
+            from core.sam3_masker import mask_video as sam3_mask_video  # noqa: F811
+            _has_sam3 = True
+        except ImportError:
+            _has_sam3 = False
+
+    if not _has_sam3:
+        log.warning(
+            "SAM3 not available for auto_mask — falling back to full-frame "
+            "effect. Install with: pip install git+https://github.com/facebookresearch/sam3.git"
+        )
+        return _auto_mask_fallback(effect, strength)
+
+    # Generate mask video using SAM3 with text prompt
+    try:
+        mask_path = sam3_mask_video(
+            video_path=video_path,
+            prompt=target,
+        )
+    except Exception as e:
+        log.error("SAM3 mask generation failed: %s — falling back", e)
+        return _auto_mask_fallback(effect, strength)
+
+    # Special handling for "remove" — use MiniMax-Remover AI inpainting
+    # MiniMax is disabled by default — enable via hidden UI toggle
+    if effect == "remove":
+        _use_minimax = False
+        if _use_minimax:
+            try:
+                from ...core.minimax_remover import remove_object as mmr_remove
+            except ImportError:
+                try:
+                    from core.minimax_remover import remove_object as mmr_remove
+                except ImportError:
+                    mmr_remove = None
+
+            if mmr_remove is not None:
+                try:
+                    inpainted_path = mmr_remove(
+                        video_path=video_path,
+                        mask_video_path=mask_path,
+                    )
+                    log.info("MiniMax-Remover inpainting complete: %s", inpainted_path)
+
+                    escaped = inpainted_path
+                    for ch in ("\\", "'", ":", ";", "[", "]"):
+                        escaped = escaped.replace(ch, f"\\{ch}")
+
+                    fc = f"movie={escaped}[inp];[inp]format=yuv420p[out];[0:v][out]overlay=0:0"
+                    return make_result(fc=fc)
+                except Exception as e:
+                    log.warning(
+                        "MiniMax-Remover failed: %s — falling back to black fill", e
+                    )
+
+    # Build FFmpeg filter_complex that uses the mask
+    return _build_mask_fc(mask_path, effect, strength, invert)
+
+
+def _auto_mask_fallback(effect: str, strength: int):
+    """Full-frame fallback when SAM3 is unavailable."""
+    effect_filters = {
+        "blur": f"boxblur={max(1, strength // 5)}",
+        "pixelate": f"scale=iw/{max(2, strength // 10)}:ih/{max(2, strength // 10)},"
+                    f"scale=iw*{max(2, strength // 10)}:ih*{max(2, strength // 10)}:flags=neighbor",
+        "grayscale": "colorchannelmixer=.3:.4:.3:0:.3:.4:.3:0:.3:.4:.3",
+        "highlight": f"eq=brightness={min(0.5, strength / 200.0)}:saturation=1.5",
+        "remove": "drawbox=c=black:t=fill",
+        "greenscreen": "drawbox=c=#00FF00:t=fill",
+    }
+    if effect == "transparent":
+        # Transparent fallback: output fully transparent frame via WebM
+        return make_result(
+            vf=["format=yuva420p,colorchannelmixer=aa=0"],
+            opts=["-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p",
+                  "-auto-alt-ref", "0"],
+        )
+    filt = effect_filters.get(effect, effect_filters["blur"])
+    return make_result(vf=[filt])
+
+
+def _build_mask_fc(mask_path: str, effect: str, strength: int, invert: bool):
+    """Build a filter_complex that applies an effect using a mask video.
+
+    Approach:
+    - Input 0:v = original video
+    - Input mask  = grayscale mask video (loaded via movie filter)
+    - Split original into [base] and [fx]
+    - Apply effect to [fx]
+    - Use maskedmerge to combine: mask selects where effect shows
+
+    Special effects:
+    - greenscreen: fills masked area with chroma green (#00FF00)
+    - transparent: outputs video with alpha channel (WebM VP9)
+    """
+    # Escape path for ffmpeg filter expressions
+    for ch in ("\\", "'", ":", ";", "[", "]"):
+        mask_path = mask_path.replace(ch, f"\\{ch}")
+
+    # --- Transparent effect: embed alpha channel ---
+    if effect == "transparent":
+        if invert:
+            # Keep target visible, make background transparent
+            fc = (
+                f"movie={mask_path},format=gray[alpha];"
+                f"[0:v][alpha]alphamerge,format=yuva420p"
+            )
+        else:
+            # Make target transparent, keep background
+            fc = (
+                f"movie={mask_path},format=gray,negate[alpha];"
+                f"[0:v][alpha]alphamerge,format=yuva420p"
+            )
+        return make_result(
+            fc=fc,
+            opts=["-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p",
+                  "-auto-alt-ref", "0"],
+        )
+
+    # --- Standard effects (including greenscreen) ---
+    effect_map = {
+        "blur": f"boxblur={max(1, strength // 5)}",
+        "pixelate": f"scale=iw/{max(2, strength // 10)}:ih/{max(2, strength // 10)},"
+                    f"scale=iw*{max(2, strength // 10)}:ih*{max(2, strength // 10)}:flags=neighbor",
+        "grayscale": "colorchannelmixer=.3:.4:.3:0:.3:.4:.3:0:.3:.4:.3",
+        "highlight": f"eq=brightness={min(0.5, strength / 200.0)}:saturation=1.5",
+        "remove": "drawbox=c=black:t=fill",
+        "greenscreen": "drawbox=c=#00FF00:t=fill",
+    }
+    fx_filter = effect_map.get(effect, effect_map["blur"])
+
+    # Build the filter graph
+    if invert:
+        fc = (
+            f"movie={mask_path}[mask];"
+            f"[0:v]split[base][fx];"
+            f"[fx]{fx_filter}[effected];"
+            f"[mask]format=gray[gmask];"
+            f"[effected][base][gmask]maskedmerge"
+        )
+    else:
+        fc = (
+            f"movie={mask_path}[mask];"
+            f"[0:v]split[base][fx];"
+            f"[fx]{fx_filter}[effected];"
+            f"[mask]format=gray[gmask];"
+            f"[base][effected][gmask]maskedmerge"
+        )
+
+    return make_result(fc=fc)
+

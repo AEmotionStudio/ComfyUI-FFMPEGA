@@ -3,3 +3,10 @@ httpx>=0.25.0
 
 # Speech-to-text (auto-transcription)
 openai-whisper>=20240930
+
+# --- Optional AI features (install manually with --no-deps) ---
+# These packages have overly restrictive version pins that conflict
+# with ComfyUI's environment.  Install them manually:
+#
+# SAM3 (object segmentation for auto_mask):
+#   pip install --no-deps git+https://github.com/facebookresearch/sam3.git
