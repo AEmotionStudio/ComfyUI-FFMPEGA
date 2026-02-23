@@ -127,9 +127,16 @@ def _f_auto_transcribe(p):
     fontcolor_lower = fontcolor.lower().strip()
     if fontcolor_lower in _COLOR_MAP:
         ass_color = _COLOR_MAP[fontcolor_lower]
-    elif fontcolor_lower.startswith("#") and len(fontcolor_lower) == 7:
-        r, g, b = fontcolor_lower[1:3], fontcolor_lower[3:5], fontcolor_lower[5:7]
-        ass_color = f"&H00{b}{g}{r}".upper()
+    elif fontcolor_lower.startswith("#") and len(fontcolor_lower) in (7, 9):
+        hex_val = fontcolor_lower.lstrip("#")
+        if len(hex_val) == 6:
+            r, g, b = hex_val[0:2], hex_val[2:4], hex_val[4:6]
+            ass_color = f"&H00{b}{g}{r}".upper()
+        else:
+            a, r, g, b = hex_val[0:2], hex_val[2:4], hex_val[4:6], hex_val[6:8]
+            ass_color = f"&H{a}{b}{g}{r}".upper()
+    elif fontcolor_lower.startswith("&h"):
+        ass_color = fontcolor
     else:
         ass_color = "&H00FFFFFF"
 
