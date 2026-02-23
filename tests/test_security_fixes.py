@@ -24,13 +24,14 @@ def test_sensitive_dir_traversal_blocked():
 def test_safe_path_allowed():
     # Test a safe path
     safe_path = "/tmp/video.mp4"
-    assert validate_output_path(safe_path) == "/tmp/video.mp4"
+    # Compare resolved paths to handle symlinks/absolute path differences
+    assert Path(validate_output_path(safe_path)) == Path(safe_path).resolve()
 
     # Test a path with safe hidden dir (not in sensitive list)
     # E.g. .cache is not in SENSITIVE_DIRS
     hidden_safe = "/home/user/.cache/video.mp4"
     # Note: .cache is NOT in SENSITIVE_DIRS currently
-    assert validate_output_path(hidden_safe) == "/home/user/.cache/video.mp4"
+    assert Path(validate_output_path(hidden_safe)) == Path(hidden_safe).resolve()
 
 def test_null_byte_rejection():
     # Test null byte in text param
