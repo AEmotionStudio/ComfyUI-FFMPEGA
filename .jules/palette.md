@@ -23,3 +23,7 @@
 ## 2026-03-10 - Status Updates for Screen Readers
 **Learning:** While LiteGraph is canvas-based, custom nodes often use DOM overlays for previews and status bars. Adding `role="status"` or `aria-live="polite"` to these DOM elements bridges the gap for screen reader users during async operations (uploads, processing) where visual cues alone are insufficient.
 **Action:** Ensure all dynamic text updates in DOM overlays (like info bars or copy feedback) have appropriate ARIA live region attributes to announce status changes.
+
+## 2026-03-24 - Stable Temporary Feedback
+**Learning:** When providing temporary UI feedback (like "Copied!"), rapid interactions can lead to race conditions where the restoration logic accidentally saves the feedback message as the "original" text.
+**Action:** Always store the true original state in a dedicated property (e.g., `_originalText`) on the element itself, and clear any pending timeouts before applying new feedback. This ensures 100% stability regardless of click speed.
