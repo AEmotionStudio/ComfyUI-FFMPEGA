@@ -324,9 +324,9 @@ Add a professional lower third with name "Sarah Johnson" and title "Lead Designe
 Add typewriter text revealing "Chapter 1: The Beginning" letter by letter, fade in from black, add a subtle vignette
 ```
 
-### Karaoke Lyrics
+### Karaoke Lyrics (Whisper AI)
 ```
-Add karaoke-style text that fills in as the song plays, large centered text, white with yellow fill
+Auto-transcribe and add karaoke-style word-by-word subtitles with yellow fill and white base, large text at 48px
 ```
 
 ### Countdown Intro
@@ -386,6 +386,40 @@ Spin the video while zooming in, add ghost trail, fade to black at the end
 ### Ken Burns Photo
 ```
 Apply Ken Burns slow zoom in over 10 seconds, add a vignette, fade in from black, fade out to white
+```
+
+---
+
+## 🎙️ Transcription & Subtitles (Whisper AI)
+
+### Auto-Transcribe and Burn
+```
+Auto-transcribe and burn subtitles on the bottom with blue text
+```
+
+### Transcribe with Style
+```
+Transcribe the speech and burn subtitles with large yellow text at 32px, add a vignette, normalize audio
+```
+
+### Karaoke Music Video
+```
+Auto-transcribe with karaoke word-by-word subtitles, pink fill on white base, add a music video style look, boost bass
+```
+
+### Captioned Cinematic
+```
+Auto-transcribe and burn white subtitles, add cinematic letterbox bars, fade in from black, normalize loudness
+```
+
+### Multi-Clip Transcription
+```
+Concatenate all video segments with cross dissolve transitions, auto-transcribe and burn subtitles across the full output
+```
+
+### Accessibility Captions
+```
+Auto-transcribe the video speech and burn large white subtitles at 36px for accessibility, normalize audio loudness
 ```
 
 ---

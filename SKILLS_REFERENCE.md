@@ -1750,6 +1750,9 @@ Here are some multi-skill prompt ideas you can try:
 | Sin city effect | "Colorhold red, boost contrast, add vignette" |
 | VFX compositing | "Chroma key green screen, despill green, color match" |
 | Luma matte | "Lumakey dark areas, add glow, fade in from black" |
+| Auto subtitles | "Auto-transcribe and burn subtitles with white text" |
+| Karaoke lyrics | "Add karaoke-style word-by-word subtitles with yellow fill" |
+| Captioned cinematic | "Auto-transcribe, add letterbox bars, fade in" |
 
 ---
 
@@ -2332,4 +2335,45 @@ Generate a sprite sheet of evenly-spaced frames.
 **Example prompts:**
 - "Create a sprite sheet"
 - "Generate a contact sheet of frames"
+
+---
+
+## 🎙️ Transcription & Subtitles (Whisper AI)
+
+> [!NOTE]
+> These skills use OpenAI Whisper to auto-transcribe video audio and burn subtitles.
+> **First run** downloads the selected Whisper model (~70MB for `tiny`, ~1.5GB for `large-v3`) to `ComfyUI/models/whisper/`.
+> **Node settings**: `whisper_device` (`gpu`/`cpu`) and `whisper_model` (`tiny`, `base`, `small`, `medium`, `large-v3`) control transcription behavior.
+> **Multi-video support**: When used with `concat`/`xfade`, timestamps are automatically offset to account for concatenated segments.
+
+### auto_transcribe
+Transcribe video audio with Whisper AI and burn SRT subtitles into the output.
+| Parameter | Type | Default | Range/Choices |
+|-----------|------|---------|---------------|
+| `fontsize` | int | 24 | 8 to 72 |
+| `fontcolor` | string | white | color name, hex (`#RRGGBB`), or ASS color (`&H00FFFFFF`) |
+
+**Example prompts:**
+- "Auto-transcribe and burn subtitles"
+- "Transcribe the speech and add white subtitles"
+- "Add auto-generated captions with large blue text"
+- "Burn subtitles with yellow text at 32px"
+
+**Aliases:** `transcribe`, `auto_subtitle`, `auto_caption`, `whisper`, `speech_to_text`, `burn_subtitles`, `stt`
+
+---
+
+### karaoke_subtitles
+Word-by-word progressive-fill karaoke effect using Whisper word-level timestamps and ASS `\kf` tags.
+| Parameter | Type | Default | Range/Choices |
+|-----------|------|---------|---------------|
+| `fontsize` | int | 48 | 8 to 72 |
+| `base_color` | string | white | color for unfilled words |
+| `fill_color` | string | yellow | color that fills in as words are spoken |
+
+**Example prompts:**
+- "Add karaoke-style lyrics"
+- "Add word-by-word karaoke subtitles with yellow fill"
+- "Karaoke captions with large pink fill on a white base"
+- "Auto-transcribe with progressive word highlight"
 

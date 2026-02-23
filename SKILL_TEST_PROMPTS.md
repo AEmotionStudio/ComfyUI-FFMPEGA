@@ -1386,3 +1386,37 @@ Encode with two-pass at 5M bitrate
 Use two-pass encoding for best quality
 ```
 
+---
+
+## 🎙️ Transcription & Subtitles (Whisper AI)
+
+### auto_transcribe
+```
+Auto-transcribe and burn subtitles
+```
+
+```
+Transcribe the speech and add white subtitles at the bottom
+```
+
+```
+Burn subtitles with blue text at 32px
+```
+
+```
+Auto-transcribe and burn subtitles on the bottom with blue text
+```
+
+### karaoke_subtitles
+```
+Add karaoke-style word-by-word subtitles
+```
+
+```
+Add karaoke lyrics with yellow fill and white base text at 48px
+```
+
+```
+Auto-transcribe with progressive word highlight in pink
+```
+

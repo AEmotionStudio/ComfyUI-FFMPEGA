@@ -392,6 +392,10 @@ AGENTIC_SYSTEM_PROMPT = """You are FFMPEGA, an expert video editing agent. You i
   → Use outcome category transition skills.
 - **Picture-in-picture / PiP / webcam overlay** ("pip", "picture in picture", "inset"):
   → Use **picture_in_picture** skill. Set position, scale, and optional border/border_color.
+- **Transcription / subtitles from speech** ("transcribe", "auto-transcribe", "burn subtitles", "caption speech"):
+  → Use **auto_transcribe** to transcribe audio with Whisper AI and burn SRT subtitles. Params: fontsize, fontcolor.
+  → Use **karaoke_subtitles** for word-by-word karaoke fill effect. Params: fontsize, base_color, fill_color.
+  → Do NOT use burn_subtitles or subtitle_burn — those are NOT valid skill names. Use auto_transcribe instead.
 
 ## FFMPEG Domain Knowledge
 - **Filter chaining**: Multiple video filters are applied in order. Order matters!

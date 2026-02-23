@@ -129,6 +129,12 @@ class SkillComposer:
         "auto_caption": "auto_transcribe",
         "whisper": "auto_transcribe",
         "speech_to_text": "auto_transcribe",
+        "subtitle_burn": "auto_transcribe",
+        "burn_subtitles": "auto_transcribe",
+        "burn_subtitle": "auto_transcribe",
+        "transcribe_audio": "auto_transcribe",
+        "transcribe_video": "auto_transcribe",
+        "stt": "auto_transcribe",
     }
 
     def __init__(self, registry: Optional[SkillRegistry] = None):
