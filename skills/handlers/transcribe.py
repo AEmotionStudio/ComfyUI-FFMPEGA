@@ -30,7 +30,9 @@ def _collect_video_paths(p):
     paths = []
     primary = p.get("_input_path", "")
     if primary and os.path.isfile(primary):
-        paths.append(primary)
+        ext = os.path.splitext(primary)[1].lower()
+        if ext in _VIDEO_EXTS:
+            paths.append(primary)
 
     for ep in p.get("_extra_input_paths", []):
         if ep and os.path.isfile(ep):

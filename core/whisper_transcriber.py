@@ -283,8 +283,9 @@ def transcribe_multi_video(
     model_size: str = "large-v3",
     language: str | None = None,
     device: str = "gpu",
+    transition_duration: float = 0.0,
 ) -> TranscriptionResult:
-    """Transcribe multiple videos and merge results with offset timestamps.
+    """Transcribe multiple videos and merge results with correct timing.
 
     Each video is transcribed independently, then timestamps are offset
     by the cumulative duration of preceding videos so the final result
@@ -295,6 +296,9 @@ def transcribe_multi_video(
         model_size: Whisper model size (always forced to large-v3).
         language: Optional language code. None = auto-detect.
         device: "gpu" or "cpu" for Whisper model placement.
+        transition_duration: Overlap duration per xfade transition (seconds).
+            Subtracted from time_offset between videos to keep subtitles
+            in sync with the xfade-shortened output.
 
     Returns:
         Merged TranscriptionResult spanning all videos.
@@ -346,9 +350,9 @@ def transcribe_multi_video(
         if not detected_lang and result.language:
             detected_lang = result.language
 
-        # Advance offset by this video's duration
+        # Advance offset by this video's duration, minus xfade overlap
         duration = _get_video_duration(vpath)
-        time_offset += duration
+        time_offset += duration - transition_duration
 
     logger.info(
         "Multi-video transcription complete: %d segments, %d words across %d videos",
@@ -465,7 +469,9 @@ def words_to_karaoke_ass(
         for w in line_words:
             duration_cs = int((w["end"] - w["start"]) * 100)
             duration_cs = max(duration_cs, 1)  # Minimum 1 centisecond
-            karaoke_text += f"{{\\kf{duration_cs}}}{w['word']} "
+            # Escape ASS special characters in transcribed words
+            word_text = w['word'].replace('\\', '').replace('{', '').replace('}', '')
+            karaoke_text += f"{{\\kf{duration_cs}}}{word_text} "
 
         karaoke_text = karaoke_text.rstrip()
 

@@ -281,6 +281,8 @@ def color_to_ass_bgr(color: str, default: str = "&H00FFFFFF") -> str:
         return _ASS_COLOR_MAP[c]
     if c.startswith("#") and len(c) in (7, 9):
         hex_val = c.lstrip("#")
+        if not all(ch in "0123456789abcdef" for ch in hex_val):
+            return default  # Invalid hex digits
         if len(hex_val) == 6:
             r, g, b = hex_val[0:2], hex_val[2:4], hex_val[4:6]
             return f"&H00{b}{g}{r}".upper()
