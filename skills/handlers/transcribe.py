@@ -14,9 +14,9 @@ except ImportError:
     from skills.handler_contract import make_result
 
 try:
-    from ...core.sanitize import sanitize_text_param
+    from ...core.sanitize import sanitize_text_param, ffmpeg_escape_path
 except ImportError:
-    from core.sanitize import sanitize_text_param
+    from core.sanitize import sanitize_text_param, ffmpeg_escape_path
 
 
 def _collect_video_paths(p):
@@ -133,9 +133,9 @@ def _f_auto_transcribe(p):
     else:
         ass_color = "&H00FFFFFF"
 
-    escaped_path = _ffmpeg_escape(tmp.name)
+    escaped_path = ffmpeg_escape_path(tmp.name)
     style = f"FontSize={fontsize},PrimaryColour={ass_color}"
-    escaped_style = _ffmpeg_escape(style)
+    escaped_style = ffmpeg_escape_path(style)
     vf = f"subtitles={escaped_path}:force_style={escaped_style}"
 
     return make_result(vf=[vf])
@@ -219,19 +219,8 @@ def _f_karaoke_subtitles(p):
     atexit.register(os.unlink, tmp.name)
 
     # Use ass= filter for ASS subtitles
-    escaped_path = _ffmpeg_escape(tmp.name)
+    escaped_path = ffmpeg_escape_path(tmp.name)
     vf = f"ass={escaped_path}"
 
     return make_result(vf=[vf])
 
-
-def _ffmpeg_escape(s: str) -> str:
-    """Escape special chars for ffmpeg filter option values."""
-    s = s.replace("\\", "\\\\")
-    s = s.replace("'", "\\'")
-    s = s.replace(":", "\\:")
-    s = s.replace(",", "\\,")
-    s = s.replace("[", "\\[")
-    s = s.replace("]", "\\]")
-    s = s.replace(" ", "\\ ")
-    return s

@@ -221,6 +221,29 @@ def sanitize_text_param(text: str) -> str:
     return text
 
 
+def ffmpeg_escape_path(s: str) -> str:
+    """Escape special characters in a file path for ffmpeg filter options.
+
+    This is needed when embedding paths inside filter strings like
+    ``ass=/path/to/file.ass`` where colons, commas, spaces, and other
+    characters have syntactic meaning.
+
+    Args:
+        s: The raw path string.
+
+    Returns:
+        Escaped path safe for use in ffmpeg filter option values.
+    """
+    s = s.replace("\\", "\\\\")
+    s = s.replace("'", "\\'")
+    s = s.replace(":", "\\:")
+    s = s.replace(",", "\\,")
+    s = s.replace("[", "\\[")
+    s = s.replace("]", "\\]")
+    s = s.replace(" ", "\\ ")
+    return s
+
+
 def redact_secret(secret: str, visible_chars: int = 4) -> str:
     """Redact a secret string, showing only the last few characters.
 

@@ -7,12 +7,14 @@ try:
     from ...core.sanitize import (
         sanitize_text_param,
         validate_path,
+        ffmpeg_escape_path,
         ALLOWED_SUBTITLE_EXTENSIONS,
     )
 except ImportError:
     from core.sanitize import (
         sanitize_text_param,
         validate_path,
+        ffmpeg_escape_path,
         ALLOWED_SUBTITLE_EXTENSIONS,
     )
 
@@ -125,20 +127,9 @@ def _f_burn_subtitles(p):
     else:
         ass_color = "&H00FFFFFF"
 
-    def _ffmpeg_escape(s: str) -> str:
-        """Escape special chars for ffmpeg filter option values."""
-        s = s.replace("\\", "\\\\")
-        s = s.replace("'", "\\'")
-        s = s.replace(":", "\\:")
-        s = s.replace(",", "\\,")
-        s = s.replace("[", "\\[")
-        s = s.replace("]", "\\]")
-        s = s.replace(" ", "\\ ")
-        return s
-
-    escaped_path = _ffmpeg_escape(str(path))
+    escaped_path = ffmpeg_escape_path(str(path))
     style = f"FontSize={fontsize},PrimaryColour={ass_color}"
-    escaped_style = _ffmpeg_escape(style)
+    escaped_style = ffmpeg_escape_path(style)
     vf = f"subtitles={escaped_path}:force_style={escaped_style}"
     return make_result(vf=[vf])
 
