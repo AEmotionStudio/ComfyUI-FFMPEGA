@@ -193,8 +193,9 @@ function flashNode(node, color = "#4a5a7a") {
  * @param {HTMLElement} previewContainer - The preview container div
  * @param {HTMLElement} previewWidget - The preview widget
  * @param {Function} getVideoUrl - Returns the current video URL string (or null)
+ * @param {HTMLElement} infoEl - The info overlay element (optional, for feedback)
  */
-function addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, getVideoUrl) {
+function addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, getVideoUrl, infoEl) {
     const origGetExtraMenuOptions = node.constructor.prototype._ffmpegaOrigGetExtraMenu;
     const currentGetExtra = node.getExtraMenuOptions;
 
@@ -303,6 +304,18 @@ function addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, get
                         const filename = params.get("filename") || url;
                         await navigator.clipboard.writeText(filename);
                         flashNode(node, "#4a7a4a");
+
+                        // Text feedback if infoEl is available
+                        if (infoEl) {
+                            const originalText = infoEl.textContent;
+                            const msg = "📋 Copied to clipboard!";
+                            infoEl.textContent = msg;
+                            setTimeout(() => {
+                                if (infoEl.textContent === msg) {
+                                    infoEl.textContent = originalText;
+                                }
+                            }, 2000);
+                        }
                     } catch {
                         flashNode(node, "#7a4a4a");
                     }
@@ -351,11 +364,14 @@ function addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, get
                         canvas.height = videoEl.videoHeight;
                         canvas.getContext("2d").drawImage(videoEl, 0, 0);
                         const blob = await new Promise(r => canvas.toBlob(r, "image/png"));
+                        let msg = "";
+
                         if (blob && navigator.clipboard?.write) {
                             await navigator.clipboard.write([
                                 new ClipboardItem({ "image/png": blob })
                             ]);
                             flashNode(node, "#4a7a4a");
+                            msg = "📸 Screenshot copied!";
                         } else {
                             // Fallback: download as file
                             const url = URL.createObjectURL(blob);
@@ -365,6 +381,18 @@ function addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, get
                             a.click();
                             URL.revokeObjectURL(url);
                             flashNode(node, "#4a7a4a");
+                            msg = "📸 Screenshot saved!";
+                        }
+
+                        // Text feedback if infoEl is available
+                        if (infoEl && msg) {
+                            const originalText = infoEl.textContent;
+                            infoEl.textContent = msg;
+                            setTimeout(() => {
+                                if (infoEl.textContent === msg) {
+                                    infoEl.textContent = originalText;
+                                }
+                            }, 2000);
                         }
                     } catch {
                         flashNode(node, "#7a4a4a");
@@ -1156,7 +1184,7 @@ app.registerExtension({
 
                 // --- Video preview context menu ---
                 const getVideoUrlLoad = () => videoEl.src || null;
-                addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, getVideoUrlLoad);
+                addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, getVideoUrlLoad, infoEl);
 
                 return result;
             };
@@ -1288,7 +1316,7 @@ app.registerExtension({
 
                 // --- Video preview context menu ---
                 const getVideoUrlSave = () => videoEl.src || null;
-                addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, getVideoUrlSave);
+                addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, getVideoUrlSave, infoEl);
 
                 return result;
             };
