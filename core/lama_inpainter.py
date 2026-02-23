@@ -21,7 +21,11 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 import numpy as np
-import torch
+
+try:
+    import torch
+except ImportError:
+    torch = None
 
 log = logging.getLogger("ffmpega")
 
@@ -116,7 +120,9 @@ def _load_video_frames(video_path: str) -> Tuple[list, float]:
     """Load video frames as PIL Images.
 
     Returns:
-        (frames_pil, fps) where frames_pil is a list of PIL.Image.Image
+        (frames_pil, fps, tmpdir) where frames_pil is a list of
+        PIL.Image.Image, fps is a float, and tmpdir is the temp
+        directory path (caller is responsible for cleanup).
     """
     from PIL import Image
 
@@ -149,9 +155,13 @@ def _load_video_frames(video_path: str) -> Tuple[list, float]:
     fps_str = probe.stdout.strip()
     if "/" in fps_str:
         num, den = fps_str.split("/")
-        fps = float(num) / float(den)
+        den_f = float(den)
+        fps = float(num) / den_f if den_f != 0 else 30.0
     else:
         fps = float(fps_str) if fps_str else 30.0
+
+    if not frames:
+        raise RuntimeError(f"No frames extracted from {video_path}")
 
     return frames, fps, tmpdir
 
@@ -160,7 +170,9 @@ def _load_mask_frames(mask_video_path: str, num_frames: int) -> list:
     """Load mask frames as PIL Images (mode 'L').
 
     Returns:
-        List of PIL.Image.Image in mode 'L' (grayscale).
+        (masks, tmpdir) where masks is a list of PIL.Image.Image
+        in mode 'L' (grayscale), and tmpdir is the temp directory
+        path (caller is responsible for cleanup).
     """
     from PIL import Image
 
@@ -181,8 +193,8 @@ def _load_mask_frames(mask_video_path: str, num_frames: int) -> list:
         img = Image.open(f).convert("L")
         masks.append(img)
 
-    # Pad if fewer masks than frames
-    if masks:
+    # Pad if fewer masks than frames (guard against empty list)
+    if masks and len(masks) < num_frames:
         while len(masks) < num_frames:
             masks.append(Image.new("L", masks[0].size, 0))
 

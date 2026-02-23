@@ -78,7 +78,10 @@ def _find_sam3_package_dir() -> "Path | None":
     import sys
 
     # Collect all site-packages directories
-    dirs = list(site.getsitepackages()) + [site.getusersitepackages()]
+    user_sp = site.getusersitepackages()
+    dirs = list(site.getsitepackages())
+    if user_sp is not None:
+        dirs.append(user_sp)
     # Also check sys.path for virtualenv site-packages
     dirs.extend(p for p in sys.path if "site-packages" in p)
 
@@ -547,7 +550,8 @@ def mask_video(
     fps_str = probe.stdout.strip()
     if "/" in fps_str:
         num, den = fps_str.split("/")
-        fps = float(num) / float(den)
+        den_f = float(den)
+        fps = float(num) / den_f if den_f != 0 else 30.0
     else:
         fps = float(fps_str) if fps_str else 30.0
 
@@ -562,8 +566,9 @@ def mask_video(
     # in Sam3TrackerPredictor.__init__). ComfyUI's operations between runs
     # can pop this off the thread-local autocast stack. Re-enter it here
     # to ensure consistent dtype handling on every run.
-    with torch.inference_mode(), \
-         torch.autocast("cuda", dtype=torch.bfloat16):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    autocast_ctx = torch.autocast(device, dtype=torch.bfloat16) if device == "cuda" else torch.inference_mode()
+    with torch.inference_mode(), autocast_ctx:
         # Initialize inference state from frames directory
         inference_state = video_model.init_state(
             resource_path=frames_dir,
