@@ -314,7 +314,7 @@ function addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, get
                                 if (infoEl.textContent === msg) {
                                     infoEl.textContent = originalText;
                                 }
-                            }, 2000);
+                            }, 1000);
                         }
                     } catch {
                         flashNode(node, "#7a4a4a");
@@ -392,7 +392,7 @@ function addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, get
                                 if (infoEl.textContent === msg) {
                                     infoEl.textContent = originalText;
                                 }
-                            }, 2000);
+                            }, 1000);
                         }
                     } catch {
                         flashNode(node, "#7a4a4a");
