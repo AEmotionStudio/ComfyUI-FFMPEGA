@@ -659,7 +659,11 @@ app.registerExtension({
                                             { content: "Fade Text", callback: () => setPrompt(this, "Add text that fades in and out") },
                                             { content: "Karaoke Text", callback: () => setPrompt(this, "Add karaoke-style progressively filled text") },
                                             { content: "Watermark", callback: () => setPrompt(this, "Add a semi-transparent watermark in the bottom-right corner") },
-                                            { content: "Burn Subtitles", callback: () => setPrompt(this, "Burn subtitles from SRT file into the video") }
+                                            { content: "Burn Subtitles (SRT)", callback: () => setPrompt(this, "Burn subtitles from SRT file into the video") },
+                                            null, // Separator
+                                            { content: "🎙️ Auto-Transcribe Subtitles", callback: () => setPrompt(this, "Auto-transcribe and burn subtitles with white text") },
+                                            { content: "🎙️ Transcribe (Custom Color)", callback: () => setPrompt(this, "Auto-transcribe and burn subtitles with large yellow text at 32px") },
+                                            { content: "🎙️ Karaoke Subtitles", callback: () => setPrompt(this, "Add karaoke-style word-by-word subtitles with yellow fill") }
                                         ]
                                     }
                                 },
