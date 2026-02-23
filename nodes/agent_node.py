@@ -218,6 +218,14 @@ class FFMPEGAgentNode:
                     "label_off": "Verify Off",
                     "tooltip": "When On, the agent inspects the output video after rendering and auto-corrects if it doesn't match intent. Adds one extra LLM call (more tokens/time). Best for complex edits like overlays, color grading, or animations.",
                 }),
+                "whisper_device": (["gpu", "cpu"], {
+                    "default": "gpu",
+                    "tooltip": "Device for Whisper transcription model. 'gpu' is faster but uses ~3 GB VRAM (frees ComfyUI models first). 'cpu' is slower but avoids VRAM pressure — best for low-VRAM GPUs or intensive workflows.",
+                }),
+                "whisper_model": (["large-v3", "medium", "small", "base", "tiny"], {
+                    "default": "large-v3",
+                    "tooltip": "Whisper model size for transcription. 'large-v3' is most accurate (~3 GB VRAM). Smaller models use less memory: medium (~1.5 GB), small (~1 GB), base (~150 MB), tiny (~75 MB). Models auto-download on first use.",
+                }),
                 "batch_mode": ("BOOLEAN", {
                     "default": False,
                     "label_on": "Batch",
@@ -358,6 +366,8 @@ class FFMPEGAgentNode:
         encoding_preset: str = "auto",
         use_vision: bool = True,
         verify_output: bool = True,
+        whisper_device: str = "gpu",
+        whisper_model: str = "large-v3",
         batch_mode: bool = False,
         video_folder: str = "",
         file_pattern: str = "*.mp4",
@@ -1097,6 +1107,34 @@ class FFMPEGAgentNode:
                 if audio_segment_count >= 2:
                     pipeline.metadata["_has_embedded_audio"] = True
 
+        # --- Inject audio input path for transcription skills ---
+        # When audio_a is connected and the pipeline contains transcription
+        # skills, convert the audio tensor to a WAV file so Whisper can
+        # transcribe the replacement audio instead of the video's embedded audio.
+        _TRANSCRIBE_SKILLS = {
+            "auto_transcribe", "transcribe", "speech_to_text",
+            "karaoke_subtitles",
+            # Aliases that resolve to auto_transcribe
+            "whisper", "auto_subtitle", "auto_caption",
+        }
+        has_transcribe_skill = any(
+            s.skill_name in _TRANSCRIBE_SKILLS for s in pipeline.steps
+        )
+        if has_transcribe_skill and audio_a is not None:
+            audio_wav_path = self._audio_dict_to_wav(audio_a)
+            if audio_wav_path:
+                pipeline.metadata["_audio_input_path"] = audio_wav_path
+                temp_audio_files.append(audio_wav_path)
+                logger.info(
+                    "Transcription will use connected audio_a input: %s",
+                    audio_wav_path,
+                )
+
+        # Pass whisper preferences to transcription handlers
+        if has_transcribe_skill:
+            pipeline.metadata["_whisper_device"] = whisper_device
+            pipeline.metadata["_whisper_model"] = whisper_model
+
         command = self.composer.compose(pipeline)
 
         # --- FPS normalization for speed changes ---
@@ -1383,6 +1421,21 @@ Token Usage{est_tag}:
                 logger.debug("Mixing %d audio tracks: %s", len(audio_inputs), list(audio_inputs.keys()))
                 self.media_converter.mux_audio_mix(
                     output_path, list(audio_inputs.values()), audio_mode=audio_mode
+                )
+        elif audio_inputs and audio_already_embedded and not removes_audio:
+            # Audio was embedded by concat/xfade, but user connected audio_a
+            # explicitly — replace the concat'd audio with the connected input.
+            if audio_source and audio_source != "mix" and audio_source in audio_inputs:
+                logger.info("Replacing concat audio with explicit audio source: %s", audio_source)
+                self.media_converter.mux_audio(output_path, audio_inputs[audio_source], audio_mode="replace")
+            elif len(audio_inputs) == 1:
+                name = list(audio_inputs.keys())[0]
+                logger.info("Replacing concat audio with connected %s", name)
+                self.media_converter.mux_audio(output_path, audio_inputs[name], audio_mode="replace")
+            else:
+                logger.debug(
+                    "Multiple audio inputs with embedded audio — skipping "
+                    "replacement (ambiguous intent)"
                 )
 
         # --- Smart frame extraction (auto-detect downstream usage) ---

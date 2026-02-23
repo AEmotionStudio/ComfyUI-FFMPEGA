@@ -1,2 +1,5 @@
 # LLM Integration
 httpx>=0.25.0
+
+# Speech-to-text (auto-transcription)
+openai-whisper>=20240930

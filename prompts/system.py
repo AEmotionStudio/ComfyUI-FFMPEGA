@@ -258,6 +258,32 @@ Response:
 }}
 ```
 Note: When using overlay_image with other multi-input skills, always set "image_source" to specify which input is the overlay image (e.g. "image_a", "image_b").
+
+User: "Auto-transcribe and burn subtitles"
+Response:
+```json
+{{
+  "interpretation": "Transcribe video audio with Whisper AI and burn subtitles",
+  "pipeline": [
+    {{"skill": "auto_transcribe", "params": {{"fontsize": 24, "fontcolor": "white"}}}}
+  ],
+  "warnings": ["First run downloads ~1.5GB Whisper model to ComfyUI/models/whisper/"],
+  "estimated_changes": "Speech auto-detected and subtitles burned into the video"
+}}
+```
+
+User: "Add karaoke-style lyrics"
+Response:
+```json
+{{
+  "interpretation": "Auto-transcribe and add karaoke word-by-word subtitles with progressive fill",
+  "pipeline": [
+    {{"skill": "karaoke_subtitles", "params": {{"fontsize": 48, "fill_color": "yellow"}}}}
+  ],
+  "warnings": ["First run downloads ~1.5GB Whisper model to ComfyUI/models/whisper/"],
+  "estimated_changes": "Word-by-word karaoke subtitles with progressive yellow fill"
+}}
+```
 """
 
 

@@ -125,6 +125,10 @@ class SkillComposer:
         "audio_mix": "mix_audio",
         "blend_audio": "mix_audio",
         "combine_audio": "mix_audio",
+        "auto_subtitle": "auto_transcribe",
+        "auto_caption": "auto_transcribe",
+        "whisper": "auto_transcribe",
+        "speech_to_text": "auto_transcribe",
     }
 
     def __init__(self, registry: Optional[SkillRegistry] = None):
@@ -379,6 +383,30 @@ class SkillComposer:
         Returns:
             Updated (fc_graph, audio_filters, output_options).
         """
+        # If -an is present (remove_audio), do NOT map audio from the
+        # filter graph.  Also strip audio streams from concat so ffmpeg
+        # doesn't process audio that will be discarded.
+        if "-an" in output_options:
+            if _fc_audio_label:
+                # Remove audio stream processing from concat: a=1 → a=0
+                # and strip all [idx:a] audio references from the graph.
+                import re
+                fc_graph = re.sub(r'concat=n=(\d+):v=1:a=1', r'concat=n=\1:v=1:a=0', fc_graph)
+                # Remove audio stream processing lines (e.g. [0:a]aresample...)
+                fc_graph = re.sub(r';\[\d+:a\][^;]*?\[_ca\d+\]', '', fc_graph)
+                fc_graph = re.sub(r'\[\d+:a\][^;]*?\[_ca\d+\];', '', fc_graph)
+                # Remove audio labels from concat input
+                fc_graph = re.sub(r'\[_ca\d+\]', '', fc_graph)
+
+            # Map only video output
+            if "[_vfinal]" in fc_graph and "-map" not in output_options:
+                output_options.extend(["-map", "[_vfinal]"])
+            elif "[_vout]" in fc_graph and "-map" not in output_options:
+                output_options.extend(["-map", "[_vout]"])
+
+            audio_filters = []
+            return fc_graph, audio_filters, output_options
+
         if _fc_audio_label and audio_filters:
             af_chain = ",".join(audio_filters)
             fc_graph += f";{_fc_audio_label}{af_chain}[_aout]"
@@ -566,6 +594,8 @@ class SkillComposer:
                     del step.params[name]
 
             # Inject multi-input metadata for handlers that need it
+            if pipeline.input_path:
+                step.params["_input_path"] = pipeline.input_path
             if pipeline.extra_inputs:
                 step.params["_extra_input_count"] = len(pipeline.extra_inputs)
                 step.params["_extra_input_paths"] = pipeline.extra_inputs
@@ -581,6 +611,12 @@ class SkillComposer:
                 step.params["_input_width"] = pipeline.metadata["_input_width"]
             if "_input_height" in pipeline.metadata:
                 step.params["_input_height"] = pipeline.metadata["_input_height"]
+            if "_audio_input_path" in pipeline.metadata:
+                step.params["_audio_input_path"] = pipeline.metadata["_audio_input_path"]
+            if "_whisper_device" in pipeline.metadata:
+                step.params["_whisper_device"] = pipeline.metadata["_whisper_device"]
+            if "_whisper_model" in pipeline.metadata:
+                step.params["_whisper_model"] = pipeline.metadata["_whisper_model"]
             # Propagate xfade transition duration and still_duration so
             # fade_to_black can calculate the correct total output duration.
             if _xfade_transition_dur is not None:
@@ -630,7 +666,13 @@ class SkillComposer:
                 # Add input options to the main input (index 0)
                 builder.add_input_options(pipeline.input_path, input_opts)
 
-        # Resolve conflict between -an and audio filters
+        # Subtitle filters (ass=, subtitles=) should always render LAST
+        # so they appear on top of letterbox bars, neon glow, etc.
+        # regardless of the pipeline order the LLM chose.
+        _sub_filters = [f for f in video_filters if f.startswith(("ass=", "subtitles="))]
+        if _sub_filters:
+            video_filters = [f for f in video_filters if f not in _sub_filters] + _sub_filters
+
         output_options, audio_filters = self._resolve_audio_conflicts(
             output_options, audio_filters, step_names
         )
@@ -916,6 +958,11 @@ class SkillComposer:
 
                 sub_skill = self.registry.get(sub_skill_name)
                 if sub_skill:
+                    # Forward internal metadata from parent params so
+                    # sub-handlers can access _input_width, _input_height, etc.
+                    for pk, pv in params.items():
+                        if pk.startswith("_") and pk not in sub_params:
+                            sub_params[pk] = pv
                     vf, af, opts, fc, io = self._skill_to_filters(sub_skill, sub_params)
                     video_filters.extend(vf)
                     audio_filters.extend(af)
@@ -1094,6 +1141,8 @@ def _get_dispatch() -> dict:
         _f_text_overlay, _f_pip, _f_burn_subtitles, _f_countdown,
         _f_animated_text, _f_scrolling_text, _f_ticker, _f_lower_third,
         _f_typewriter_text, _f_bounce_text, _f_fade_text, _f_karaoke_text,
+        # transcribe
+        _f_auto_transcribe, _f_karaoke_subtitles,
         # presets
         _f_fade_to_black, _f_fade_to_white, _f_flash,
         _f_spin, _f_shake, _f_pulse, _f_bounce, _f_drift,
@@ -1214,6 +1263,11 @@ def _get_dispatch() -> dict:
         "pip": _f_pip,
         "burn_subtitles": _f_burn_subtitles,
         "hardcode_subtitles": _f_burn_subtitles,
+        # Transcription
+        "auto_transcribe": _f_auto_transcribe,
+        "transcribe": _f_auto_transcribe,
+        "speech_to_text": _f_auto_transcribe,
+        "karaoke_subtitles": _f_karaoke_subtitles,
         "countdown": _f_countdown,
         "timer": _f_countdown,
         "animated_text": _f_animated_text,

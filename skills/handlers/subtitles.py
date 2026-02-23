@@ -7,12 +7,16 @@ try:
     from ...core.sanitize import (
         sanitize_text_param,
         validate_path,
+        ffmpeg_escape_path,
+        color_to_ass_bgr,
         ALLOWED_SUBTITLE_EXTENSIONS,
     )
 except ImportError:
     from core.sanitize import (
         sanitize_text_param,
         validate_path,
+        ffmpeg_escape_path,
+        color_to_ass_bgr,
         ALLOWED_SUBTITLE_EXTENSIONS,
     )
 
@@ -99,46 +103,11 @@ def _f_burn_subtitles(p):
     fontsize = int(p.get("fontsize", 24))
     fontcolor = sanitize_text_param(str(p.get("fontcolor", "white")))
 
-    color_map = {
-        "white": "&H00FFFFFF",
-        "black": "&H00000000",
-        "red": "&H000000FF",
-        "green": "&H0000FF00",
-        "blue": "&H00FF0000",
-        "yellow": "&H0000FFFF",
-        "cyan": "&H00FFFF00",
-        "magenta": "&H00FF00FF",
-    }
-    fontcolor_lower = fontcolor.lower().strip()
-    if fontcolor_lower in color_map:
-        ass_color = color_map[fontcolor_lower]
-    elif fontcolor_lower.startswith("#") and len(fontcolor_lower) in (7, 9):
-        hex_val = fontcolor_lower.lstrip("#")
-        if len(hex_val) == 6:
-            r, g, b = hex_val[0:2], hex_val[2:4], hex_val[4:6]
-            ass_color = f"&H00{b}{g}{r}".upper()
-        else:
-            a, r, g, b = hex_val[0:2], hex_val[2:4], hex_val[4:6], hex_val[6:8]
-            ass_color = f"&H{a}{b}{g}{r}".upper()
-    elif fontcolor_lower.startswith("&h"):
-        ass_color = fontcolor
-    else:
-        ass_color = "&H00FFFFFF"
+    ass_color = color_to_ass_bgr(fontcolor)
 
-    def _ffmpeg_escape(s: str) -> str:
-        """Escape special chars for ffmpeg filter option values."""
-        s = s.replace("\\", "\\\\")
-        s = s.replace("'", "\\'")
-        s = s.replace(":", "\\:")
-        s = s.replace(",", "\\,")
-        s = s.replace("[", "\\[")
-        s = s.replace("]", "\\]")
-        s = s.replace(" ", "\\ ")
-        return s
-
-    escaped_path = _ffmpeg_escape(str(path))
+    escaped_path = ffmpeg_escape_path(str(path))
     style = f"FontSize={fontsize},PrimaryColour={ass_color}"
-    escaped_style = _ffmpeg_escape(style)
+    escaped_style = ffmpeg_escape_path(style)
     vf = f"subtitles={escaped_path}:force_style={escaped_style}"
     return make_result(vf=[vf])
 

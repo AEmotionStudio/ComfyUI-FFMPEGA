@@ -2526,6 +2526,74 @@ def register_skills(registry: SkillRegistry) -> None:
         tags=["karaoke", "lyrics", "sing", "highlight", "fill", "music", "text"],
     ))
 
+    # Auto-transcribe (Whisper)
+    registry.register(Skill(
+        name="auto_transcribe",
+        category=SkillCategory.OUTCOME,
+        description="Auto-transcribe video audio using Whisper AI (large-v3) and burn subtitles into the video",
+        parameters=[
+            SkillParameter(
+                name="fontsize",
+                type=ParameterType.INT,
+                description="Subtitle font size in pixels",
+                required=False,
+                default=24,
+                min_value=8,
+                max_value=200,
+            ),
+            SkillParameter(
+                name="fontcolor",
+                type=ParameterType.STRING,
+                description="Subtitle font color",
+                required=False,
+                default="white",
+            ),
+        ],
+        examples=[
+            "auto_transcribe - Transcribe and burn subtitles",
+            "auto_transcribe:fontsize=32,fontcolor=yellow - Large yellow subtitles",
+        ],
+        tags=["transcribe", "whisper", "subtitle", "caption", "speech", "auto", "stt", "speech_to_text"],
+    ))
+
+    # Karaoke subtitles (Whisper word-level)
+    registry.register(Skill(
+        name="karaoke_subtitles",
+        category=SkillCategory.OUTCOME,
+        description="Auto-transcribe and burn karaoke-style word-by-word subtitles with progressive color fill (uses Whisper large-v3)",
+        parameters=[
+            SkillParameter(
+                name="fontsize",
+                type=ParameterType.INT,
+                description="Font size in pixels",
+                required=False,
+                default=48,
+                min_value=16,
+                max_value=200,
+            ),
+            SkillParameter(
+                name="base_color",
+                type=ParameterType.STRING,
+                description="Base (unfilled) text color",
+                required=False,
+                default="white",
+            ),
+            SkillParameter(
+                name="fill_color",
+                type=ParameterType.STRING,
+                description="Fill (highlighted) text color for active word",
+                required=False,
+                default="yellow",
+            ),
+        ],
+        examples=[
+            "karaoke_subtitles - Word-by-word karaoke with yellow fill",
+            "karaoke_subtitles:fill_color=cyan,fontsize=64 - Large cyan karaoke",
+            "karaoke_subtitles:base_color=gray,fill_color=red - Gray to red fill",
+        ],
+        tags=["karaoke", "lyrics", "transcribe", "whisper", "word", "subtitle", "music", "sing"],
+    ))
+
     # Color match
     registry.register(Skill(
         name="color_match",
