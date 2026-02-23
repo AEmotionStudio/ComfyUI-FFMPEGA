@@ -98,7 +98,6 @@ response.json
 errors_2.md
 
 # Package manager lock files
-uv.lock
 
 # Type checker / linter caches
 .pyre_configuration
@@ -149,3 +148,4 @@ tests/test_*_local.py
 /re
 /os
 /sys
+uv.lock
