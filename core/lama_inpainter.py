@@ -153,7 +153,7 @@ def _load_video_frames(video_path: str) -> Tuple[list, float]:
     else:
         fps = float(fps_str) if fps_str else 30.0
 
-    return frames, fps
+    return frames, fps, tmpdir
 
 
 def _load_mask_frames(mask_video_path: str, num_frames: int) -> list:
@@ -186,7 +186,7 @@ def _load_mask_frames(mask_video_path: str, num_frames: int) -> list:
         while len(masks) < num_frames:
             masks.append(Image.new("L", masks[0].size, 0))
 
-    return masks
+    return masks, tmpdir
 
 
 def _encode_video(
@@ -221,6 +221,14 @@ def _encode_video(
         capture_output=True,
         check=True,
     )
+
+    # Clean up intermediate PNG frames
+    import shutil
+    try:
+        shutil.rmtree(tmpdir)
+    except OSError:
+        pass
+
     return output_path
 
 
@@ -322,7 +330,7 @@ def remove_object(
 
     # Load frames
     log.info("Loading video frames from %s", video_path)
-    frames, fps = _load_video_frames(video_path)
+    frames, fps, frames_tmpdir = _load_video_frames(video_path)
     total_frames = len(frames)
     log.info(
         "Loaded %d frames at %.1f FPS (%dx%d)",
@@ -331,7 +339,7 @@ def remove_object(
 
     # Load masks
     log.info("Loading mask frames from %s", mask_video_path)
-    masks = _load_mask_frames(mask_video_path, total_frames)
+    masks, masks_tmpdir = _load_mask_frames(mask_video_path, total_frames)
 
     # Load model
     model = load_model()
@@ -382,6 +390,14 @@ def remove_object(
     # Encode result
     log.info("Encoding inpainted video to %s", output_path)
     _encode_video(composited, output_path, fps)
+
+    # Clean up intermediate temp directories
+    import shutil
+    for d in (frames_tmpdir, masks_tmpdir):
+        try:
+            shutil.rmtree(d)
+        except OSError:
+            pass
 
     # Free VRAM
     cleanup()

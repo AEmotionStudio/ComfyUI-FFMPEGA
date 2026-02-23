@@ -571,8 +571,8 @@ def _f_auto_mask(p):
     # Special handling for "remove" — try LaMa AI inpainting first
     if effect == "remove":
         try:
-            from core.lama_inpainter import inpaint_video
-            inpainted_path = inpaint_video(
+            from core.lama_inpainter import remove_object
+            inpainted_path = remove_object(
                 video_path=video_path,
                 mask_video_path=mask_path,
             )
