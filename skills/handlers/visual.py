@@ -568,37 +568,22 @@ def _f_auto_mask(p):
         log.error("SAM3 mask generation failed: %s — falling back", e)
         return _auto_mask_fallback(effect, strength)
 
-    # Special handling for "remove" — use MiniMax-Remover AI inpainting
-    # MiniMax is disabled by default — enable via hidden UI toggle
+    # Special handling for "remove" — try LaMa AI inpainting first
     if effect == "remove":
-        _use_minimax = False
-        if _use_minimax:
-            try:
-                from ...core.minimax_remover import remove_object as mmr_remove
-            except ImportError:
-                try:
-                    from core.minimax_remover import remove_object as mmr_remove
-                except ImportError:
-                    mmr_remove = None
-
-            if mmr_remove is not None:
-                try:
-                    inpainted_path = mmr_remove(
-                        video_path=video_path,
-                        mask_video_path=mask_path,
-                    )
-                    log.info("MiniMax-Remover inpainting complete: %s", inpainted_path)
-
-                    escaped = inpainted_path
-                    for ch in ("\\", "'", ":", ";", "[", "]"):
-                        escaped = escaped.replace(ch, f"\\{ch}")
-
-                    fc = f"movie={escaped}[inp];[inp]format=yuv420p[out];[0:v][out]overlay=0:0"
-                    return make_result(fc=fc)
-                except Exception as e:
-                    log.warning(
-                        "MiniMax-Remover failed: %s — falling back to black fill", e
-                    )
+        try:
+            from core.lama_inpainter import inpaint_video
+            inpainted_path = inpaint_video(
+                video_path=video_path,
+                mask_video_path=mask_path,
+            )
+            log.info("LaMa inpainting complete: %s", inpainted_path)
+            escaped = inpainted_path
+            for ch in ("\\", "'", ":", ";", "[", "]"):
+                escaped = escaped.replace(ch, f"\\{ch}")
+            fc = f"movie={escaped}[inp];[inp]format=yuv420p"
+            return make_result(fc=fc)
+        except Exception as e:
+            log.warning("LaMa inpainting failed: %s — falling back to black fill", e)
 
     # Build FFmpeg filter_complex that uses the mask
     return _build_mask_fc(mask_path, effect, strength, invert)
@@ -609,7 +594,8 @@ def _auto_mask_fallback(effect: str, strength: int):
     effect_filters = {
         "blur": f"boxblur={max(1, strength // 5)}",
         "pixelate": f"scale=iw/{max(2, strength // 10)}:ih/{max(2, strength // 10)},"
-                    f"scale=iw*{max(2, strength // 10)}:ih*{max(2, strength // 10)}:flags=neighbor",
+                    f"scale=iw*{max(2, strength // 10)}:ih*{max(2, strength // 10)}:flags=neighbor,"
+                    f"scale=iw:ih",
         "grayscale": "colorchannelmixer=.3:.4:.3:0:.3:.4:.3:0:.3:.4:.3",
         "highlight": f"eq=brightness={min(0.5, strength / 200.0)}:saturation=1.5",
         "remove": "drawbox=c=black:t=fill",
@@ -668,7 +654,8 @@ def _build_mask_fc(mask_path: str, effect: str, strength: int, invert: bool):
     effect_map = {
         "blur": f"boxblur={max(1, strength // 5)}",
         "pixelate": f"scale=iw/{max(2, strength // 10)}:ih/{max(2, strength // 10)},"
-                    f"scale=iw*{max(2, strength // 10)}:ih*{max(2, strength // 10)}:flags=neighbor",
+                    f"scale=iw*{max(2, strength // 10)}:ih*{max(2, strength // 10)}:flags=neighbor,"
+                    f"scale=iw:ih",
         "grayscale": "colorchannelmixer=.3:.4:.3:0:.3:.4:.3:0:.3:.4:.3",
         "highlight": f"eq=brightness={min(0.5, strength / 200.0)}:saturation=1.5",
         "remove": "drawbox=c=black:t=fill",

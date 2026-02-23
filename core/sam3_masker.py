@@ -594,6 +594,9 @@ def mask_video(
                 if hasattr(binary_masks, 'numpy'):
                     binary_masks = binary_masks.cpu().numpy()
                 combined = np.any(binary_masks, axis=0)
+                # Squeeze extra dims: (1, H, W) → (H, W) for mode="L"
+                while combined.ndim > 2:
+                    combined = combined.squeeze(0)
                 mask = (combined > 0).astype(np.uint8) * 255
             else:
                 mask = np.zeros((h, w), dtype=np.uint8)
@@ -631,6 +634,16 @@ def mask_video(
     )
 
     log.info("Mask video created: %s", mask_video_path)
+
+    # Clean up intermediate frame/mask images to avoid disk space leaks
+    import shutil
+    try:
+        shutil.rmtree(frames_dir)
+        shutil.rmtree(masks_dir)
+        log.debug("Cleaned up intermediate frame/mask directories")
+    except OSError as e:
+        log.debug("Could not clean up temp dirs: %s", e)
+
     return mask_video_path
 
 
