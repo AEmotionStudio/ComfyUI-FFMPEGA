@@ -87,7 +87,7 @@ def cleanup() -> None:
     """Free GPU memory and clear cached model."""
     global _lama_model
     _lama_model = None
-    if torch.cuda.is_available():
+    if torch is not None and torch.cuda.is_available():
         torch.cuda.empty_cache()
     log.info("LaMa model unloaded")
 
@@ -108,7 +108,7 @@ def _free_vram():
     except Exception:
         pass
 
-    if torch.cuda.is_available():
+    if torch is not None and torch.cuda.is_available():
         torch.cuda.empty_cache()
 
 
