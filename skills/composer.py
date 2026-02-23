@@ -577,12 +577,15 @@ class SkillComposer:
                 # where hyphens are expected (bottom_right → bottom-right)
                 if (param.type == ParameterType.CHOICE
                         and isinstance(val, str)
-                        and param.choices
-                        and val not in param.choices):
-                    normalized = val.replace("_", "-")
-                    if normalized in param.choices:
-                        step.params[name] = normalized
-                        val = normalized
+                        and param.choices):
+
+                    # ⚡ Perf: Use O(1) map lookup instead of O(N) list scan for normalization.
+                    # Covers underscore handling AND case insensitivity if mapped.
+                    if val in param._choice_map:
+                        match = param._choice_map[val]
+                        if match != val:
+                            step.params[name] = match
+                            val = match
 
                 # 5. Validate & drop invalid params to prevent injection
                 p_valid, p_err = param.validate(val)

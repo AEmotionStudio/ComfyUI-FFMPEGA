@@ -105,15 +105,14 @@ class SkillParameter:
                 return False, f"Parameter '{self.name}' must be a boolean"
 
         elif self.type == ParameterType.CHOICE:
-            choices = self.choices
-            if choices is not None:
-                if value in choices:
-                    return True, None
-
-                # Try fast O(1) lookup map (covers case-insensitive & underscore variants)
+            if self.choices:
+                # ⚡ Perf: Use O(1) map lookup instead of O(N) list search.
+                # _choice_map contains exact matches, lowercase, and normalized variants.
                 val_str = str(value)
                 if val_str in self._choice_map:
                     match = self._choice_map[val_str]
+                    if match == value:
+                        return True, None
                     return True, f"__autocorrect__:{self.name}={match}"
 
                 lower_val = val_str.lower().strip()
@@ -123,18 +122,18 @@ class SkillParameter:
 
                 # Fallback to slow prefix/substring match (O(N))
                 match: str | None = None
-                prefix_matches = [c for c in choices if c.lower().startswith(lower_val)]
+                prefix_matches = [c for c in self.choices if c.lower().startswith(lower_val)]
                 if len(prefix_matches) == 1:
                     match = prefix_matches[0]
 
                 if not match:
-                    sub_matches = [c for c in choices if lower_val in c.lower()]
+                    sub_matches = [c for c in self.choices if lower_val in c.lower()]
                     if len(sub_matches) == 1:
                         match = sub_matches[0]
 
                 if match:
                     return True, f"__autocorrect__:{self.name}={match}"
-                return False, f"Parameter '{self.name}' must be one of {choices}"
+                return False, f"Parameter '{self.name}' must be one of {self.choices}"
 
         return True, None
 
