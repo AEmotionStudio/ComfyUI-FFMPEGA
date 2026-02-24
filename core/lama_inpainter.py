@@ -335,9 +335,10 @@ def remove_object(
 
     # Load masks
     log.info("Loading mask frames from %s", mask_video_path)
-    masks, masks_tmpdir = _load_mask_frames(mask_video_path, total_frames)
+    masks_tmpdir = None
 
     try:
+        masks, masks_tmpdir = _load_mask_frames(mask_video_path, total_frames)
         # Load model
         model = load_model()
 

@@ -509,11 +509,14 @@ def _get_video_fps(video_path: str) -> float:
         text=True,
     )
     fps_str = probe.stdout.strip()
-    if "/" in fps_str:
-        num, den = fps_str.split("/")
-        den_f = float(den)
-        return float(num) / den_f if den_f != 0 else 30.0
-    return float(fps_str) if fps_str else 30.0
+    try:
+        if "/" in fps_str:
+            num, den = fps_str.split("/", 1)
+            den_f = float(den)
+            return float(num) / den_f if den_f != 0 else 30.0
+        return float(fps_str) if fps_str else 30.0
+    except (ValueError, ZeroDivisionError):
+        return 30.0
 
 def mask_video(
     video_path: str,
