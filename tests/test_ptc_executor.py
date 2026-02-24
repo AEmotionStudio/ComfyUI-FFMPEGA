@@ -33,11 +33,12 @@ except (ImportError, ModuleNotFoundError):
 def _mock_search_skills(query: str) -> dict:
     """Mock search_skills that always returns a cinematic skill."""
     return {
-        "skills": [
-            {"name": "cinematic_grade", "description": "Cinematic color grading"},
-            {"name": "film_grain", "description": "Film grain overlay"},
+        "query": query,
+        "match_count": 2,
+        "matches": [
+            {"name": "cinematic_grade", "category": "visual", "description": "Cinematic color grading", "tags": []},
+            {"name": "film_grain", "category": "visual", "description": "Film grain overlay", "tags": []},
         ],
-        "count": 2,
     }
 
 
@@ -55,11 +56,12 @@ def _mock_get_skill_details(skill_name: str) -> dict:
 def _mock_list_skills(category=None) -> dict:
     """Mock list_skills."""
     return {
+        "total_count": 2,
         "skills": [
-            {"name": "blur", "category": "visual"},
-            {"name": "speed", "category": "temporal"},
+            {"name": "blur", "category": "visual", "description": "Blur filter", "parameters": [], "tags": [], "examples": []},
+            {"name": "speed", "category": "temporal", "description": "Speed control", "parameters": [], "tags": [], "examples": []},
         ],
-        "count": 2,
+        "by_category": {},
     }
 
 
@@ -151,8 +153,8 @@ class TestToolAccess:
         )
         assert result.success
         data = json.loads(result.stdout.strip())
-        assert data["count"] == 2
-        assert data["skills"][0]["name"] == "cinematic_grade"
+        assert data["match_count"] == 2
+        assert data["matches"][0]["name"] == "cinematic_grade"
 
     def test_get_skill_details_callable(self, executor):
         """get_skill_details should be callable."""
@@ -167,7 +169,7 @@ class TestToolAccess:
         """list_skills should be callable with default args."""
         result = executor.execute(
             'skills = list_skills()\n'
-            'print(skills["count"])'
+            'print(skills["total_count"])'
         )
         assert result.success
         assert result.stdout.strip() == "2"
@@ -361,7 +363,7 @@ class TestEndToEnd:
         """Full orchestration: search for skills, get details, build pipeline."""
         code = '''
 results = search_skills("cinematic")
-top_skill = results["skills"][0]["name"]
+top_skill = results["matches"][0]["name"]
 details = get_skill_details(top_skill)
 params = {"intensity": details["params"]["intensity"]["default"]}
 pipeline = build_pipeline(
@@ -390,7 +392,7 @@ print(json.dumps(output))
         code = '''
 results = search_skills("cinematic")
 skills_to_use = []
-for skill_info in results["skills"]:
+for skill_info in results["matches"]:
     details = get_skill_details(skill_info["name"])
     skills_to_use.append({
         "name": details["name"],
@@ -409,8 +411,8 @@ print(json.dumps({"count": len(skills_to_use), "valid": pipeline["valid"]}))
         """LLM-style conditional logic in orchestration code."""
         code = '''
 results = search_skills("cinematic")
-if results["count"] > 0:
-    best = results["skills"][0]
+if results["match_count"] > 0:
+    best = results["matches"][0]
     print(json.dumps({"found": True, "skill": best["name"]}))
 else:
     print(json.dumps({"found": False}))
@@ -481,7 +483,7 @@ class TestVisionIntegration:
         """frame_paths should be empty when extract_frames is not called."""
         result = vision_executor.execute(
             'skills = search_skills("blur")\n'
-            'print(skills["count"])'
+            'print(skills["match_count"])'
         )
         assert result.success
         assert len(vision_executor._test_collected) == 0
@@ -491,7 +493,7 @@ class TestVisionIntegration:
         code = '''
 frames = extract_frames("/tmp/test.mp4", duration=2.0, fps=1.0)
 results = search_skills("cinematic")
-details = get_skill_details(results["skills"][0]["name"])
+details = get_skill_details(results["matches"][0]["name"])
 output = {
     "frames_extracted": frames["count"],
     "skill": details["name"],

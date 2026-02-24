@@ -542,7 +542,7 @@ Frames from extract_frames are automatically embedded as images.
 ```python
 # Search and discover skills
 results = search_skills("cinematic color")
-top = results["skills"][0]["name"]
+top = results["matches"][0]["name"]
 details = get_skill_details(top)
 
 # Analyze video to inform parameter choices

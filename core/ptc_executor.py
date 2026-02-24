@@ -24,13 +24,20 @@ from typing import Any, Callable, Optional
 
 logger = logging.getLogger("ffmpega")
 
-# Patterns that indicate sandbox escape attempts in code
+# Patterns that indicate sandbox escape attempts in code.
+# Uses word boundaries (\b) for module names to avoid false positives
+# on strings like "videos.mp4" or "chaos.dat".
 _BLOCKED_PATTERNS = re.compile(
+    # Dunder attributes used for object-model introspection
     r"__subclasses__|__globals__|__builtins__|__code__|__import__|"
     r"__loader__|__spec__|__cached__|__file__|__path__|__class__|"
-    r"os\.|subprocess\.|sys\.|shutil\.|pathlib\.|"
-    r"open\s*\(|exec\s*\(|eval\s*\(|compile\s*\(|"
-    r"breakpoint\s*\(|exit\s*\(|quit\s*\(",
+    # Traceback frame traversal (sandbox escape via exception frames)
+    r"__traceback__|tb_frame|f_back|f_builtins|f_locals|f_globals|"
+    # Module access (word boundary prevents matching inside strings)
+    r"\bos\.\b|\bsubprocess\.|\bsys\.|\bshutil\.|\bpathlib\.|"
+    # Dangerous builtins (with parens to avoid matching variable names)
+    r"\bopen\s*\(|\bexec\s*\(|\beval\s*\(|\bcompile\s*\(|"
+    r"\bbreakpoint\s*\(|\bexit\s*\(|\bquit\s*\(",
 )
 
 
