@@ -398,6 +398,8 @@ def remove_object(
         # Clean up intermediate temp directories (even on failure)
         import shutil
         for d in (frames_tmpdir, masks_tmpdir):
+            if d is None:
+                continue
             try:
                 shutil.rmtree(d)
             except OSError:
