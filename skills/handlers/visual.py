@@ -614,7 +614,7 @@ def _auto_mask_fallback(effect: str, strength: int):
         return make_result(
             vf=["format=yuva420p,colorchannelmixer=aa=0"],
             opts=["-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p",
-                  "-auto-alt-ref", "0"],
+                  "-auto-alt-ref", "0", "-f", "webm"],
         )
     filt = effect_filters.get(effect, effect_filters["blur"])
     return make_result(vf=[filt])
@@ -655,7 +655,7 @@ def _build_mask_fc(mask_path: str, effect: str, strength: int, invert: bool):
         return make_result(
             fc=fc,
             opts=["-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p",
-                  "-auto-alt-ref", "0"],
+                  "-auto-alt-ref", "0", "-f", "webm"],
         )
 
     # --- Standard effects (including greenscreen) ---

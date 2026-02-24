@@ -22,10 +22,7 @@ from typing import Optional, Tuple
 
 import numpy as np
 
-try:
-    import torch
-except ImportError:
-    torch = None
+import torch
 
 log = logging.getLogger("ffmpega")
 
