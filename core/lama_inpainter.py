@@ -50,6 +50,23 @@ def load_model():
     if _lama_model is not None:
         return _lama_model
 
+    # Check if a local model exists (SimpleLama caches in ~/.cache/huggingface by default)
+    # to determine whether a download would be required
+    try:
+        from huggingface_hub import try_to_load_from_cache  # type: ignore
+        cached = try_to_load_from_cache("enesmsahin/simple-lama-inpainting", "big-lama.pt")
+        model_cached = cached is not None
+    except Exception:
+        model_cached = False  # Can't check — assume download needed
+
+    if not model_cached:
+        # Guard: raise if downloads are disabled
+        try:
+            from . import model_manager
+        except ImportError:
+            from core import model_manager  # type: ignore
+        model_manager.require_downloads_allowed("lama")
+
     try:
         from simple_lama_inpainting import SimpleLama
     except ImportError:

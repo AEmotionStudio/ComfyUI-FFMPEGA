@@ -265,6 +265,12 @@ class FFMPEGAgentNode:
                     "label_off": "Log Off",
                     "tooltip": "When On, appends a JSON entry to usage_log.jsonl for each run. Useful for tracking cumulative token spend over time.",
                 }),
+                "allow_model_downloads": ("BOOLEAN", {
+                    "default": True,
+                    "label_on": "Downloads On",
+                    "label_off": "Downloads Off",
+                    "tooltip": "When On (default), AI models (SAM3, LaMa, Whisper) auto-download on first use. Turn Off to prevent any automatic downloads — runs requiring a missing model will fail with a clear message and a link to download manually.",
+                }),
             },
             "hidden": {
                 "hidden_prompt": "PROMPT",
@@ -379,6 +385,7 @@ class FFMPEGAgentNode:
         max_concurrent: int = 4,
         track_tokens: bool = False,
         log_usage: bool = False,
+        allow_model_downloads: bool = True,
         **kwargs,  # hidden: prompt (PROMPT dict), extra_pnginfo (EXTRA_PNGINFO)
     ) -> tuple[torch.Tensor, dict, str, str, str]:
         """Process the video based on the natural language prompt.
@@ -401,6 +408,13 @@ class FFMPEGAgentNode:
             Tuple of (images_tensor, audio, output_video_path, command_log, analysis).
         """
         from ..skills.composer import Pipeline  # type: ignore[import-not-found]
+
+        # --- Apply model-download permission flag ---
+        try:
+            from ..core import model_manager  # type: ignore[import-not-found]
+        except ImportError:
+            from core import model_manager  # type: ignore
+        model_manager.set_downloads_allowed(allow_model_downloads)
 
         # --- Batch mode: process all matching videos in a folder ---
         if batch_mode:

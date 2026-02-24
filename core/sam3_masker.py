@@ -204,6 +204,13 @@ def _find_checkpoint() -> str:
         return str(local_pt)
 
     # Auto-download from HuggingFace
+    # Guard: raise if downloads are disabled
+    try:
+        from . import model_manager
+    except ImportError:
+        from core import model_manager  # type: ignore
+    model_manager.require_downloads_allowed("sam3")
+
     log.info(
         "SAM3 checkpoint not found locally. "
         "Downloading from %s...", _HF_REPO

@@ -99,6 +99,24 @@ def _load_model(model_size: str = "large-v3", device: str = "gpu"):
             "Install it with: pip install openai-whisper>=20240930"
         )
 
+    # Check if the model file is already cached locally
+    download_dir = _get_whisper_model_dir()
+    _WHISPER_FILENAMES = {
+        "large-v3": "large-v3.pt",
+        "medium": "medium.pt",
+        "small": "small.pt",
+        "base": "base.pt",
+        "tiny": "tiny.pt",
+    }
+    model_file = os.path.join(download_dir, _WHISPER_FILENAMES.get(model_size, f"{model_size}.pt"))
+    if not os.path.isfile(model_file):
+        # Model not cached — guard before download
+        try:
+            from . import model_manager
+        except ImportError:
+            from core import model_manager  # type: ignore
+        model_manager.require_downloads_allowed("whisper")
+
     if use_cpu:
         # CPU mode — no VRAM needed, slower but safe for low-VRAM systems
         download_dir = _get_whisper_model_dir()
