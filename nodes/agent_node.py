@@ -805,12 +805,28 @@ class FFMPEGAgentNode:
         if _all_text_inputs:
             pipeline.text_inputs = _all_text_inputs
 
-        # Auto-set include_video for slideshow/grid
+        # Auto-set include_video for slideshow/grid.
+        # A "real video" means the pipeline has at least one multi-frame input
+        # (the primary video path, any extra video file paths, or a tensor with
+        # enough frames to constitute a video).
+        _tensor_has_many_frames = (
+            image_a is not None
+            and hasattr(image_a, 'shape')
+            and len(image_a.shape) >= 1
+            and image_a.shape[0] > 10
+        )
+        _extra_images_have_many_frames = any(
+            v is not None
+            and hasattr(v, 'shape')
+            and len(v.shape) >= 1
+            and v.shape[0] > 10
+            for k, v in kwargs.items()
+            if k.startswith("images_")
+        )
         has_real_video = (
-            kwargs.get("images_a") is not None
-            or (hasattr(self, '_images_a_shape_flag'))
-            or (hasattr(kwargs, 'get') and kwargs.get("video_path") and str(kwargs.get("video_path")).strip())
-            or len(_all_video_paths) > 0
+            len(_all_video_paths) > 0
+            or _tensor_has_many_frames
+            or _extra_images_have_many_frames
         )
         for step in pipeline.steps:
             if step.skill_name in ("slideshow", "grid"):
@@ -1596,27 +1612,6 @@ Token Usage{est_tag}:
                 shutil.rmtree(temp_render_dir, ignore_errors=True)
 
         return (images_tensor, audio_out, output_path, command.to_string(), analysis)
-
-
-        if batch_mode:
-            return await self._process_batch(
-                video_folder=video_folder,
-                file_pattern=file_pattern,
-                prompt=prompt,
-                llm_model=llm_model,
-                quality_preset=quality_preset,
-                ollama_url=ollama_url,
-                api_key=api_key,
-                custom_model=custom_model,
-                crf=crf,
-                encoding_preset=encoding_preset,
-                max_concurrent=max_concurrent,
-                save_output=save_output,
-                output_path=output_path,
-                use_vision=use_vision,
-                verify_output=verify_output,
-                ptc_mode=ptc_mode,
-            )
 
         # --- Resolve input video ---
         temp_video_from_images = None
