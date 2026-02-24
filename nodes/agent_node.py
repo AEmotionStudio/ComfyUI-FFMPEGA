@@ -230,6 +230,10 @@ class FFMPEGAgentNode:
                     "default": "large-v3",
                     "tooltip": "Whisper model size for transcription. 'large-v3' is most accurate (~3 GB VRAM). Smaller models use less memory: medium (~1.5 GB), small (~1 GB), base (~150 MB), tiny (~75 MB). Models auto-download on first use.",
                 }),
+                "sam3_device": (["gpu", "cpu"], {
+                    "default": "gpu",
+                    "tooltip": "Device for SAM3 segmentation (auto_mask, remove, greenscreen). 'gpu' is faster but SAM3 pre-loads all video frames into VRAM — on a 12 GB GPU a 192-frame 720p clip can use 8+ GB. Switch to 'cpu' if you see out-of-memory errors; it is slower but uses no VRAM.",
+                }),
                 "batch_mode": ("BOOLEAN", {
                     "default": False,
                     "label_on": "Batch",
@@ -379,6 +383,7 @@ class FFMPEGAgentNode:
         verify_output: bool = True,
         whisper_device: str = "gpu",
         whisper_model: str = "large-v3",
+        sam3_device: str = "gpu",
         batch_mode: bool = False,
         video_folder: str = "",
         file_pattern: str = "*.mp4",
@@ -1156,6 +1161,9 @@ class FFMPEGAgentNode:
         if has_transcribe_skill:
             pipeline.metadata["_whisper_device"] = whisper_device
             pipeline.metadata["_whisper_model"] = whisper_model
+
+        # Pass SAM3 device preference to auto_mask / remove / greenscreen handlers
+        pipeline.metadata["_sam3_device"] = sam3_device
 
         command = self.composer.compose(pipeline)
 

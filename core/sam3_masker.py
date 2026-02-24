@@ -148,7 +148,9 @@ def _patch_sam3_imports() -> None:
 
 _image_model = None
 _image_processor = None
+_image_model_device = None  # last device the image model was loaded on
 _video_model = None
+_video_model_device = None  # last device the video model was loaded on
 
 
 # ---------------------------------------------------------------------------
@@ -322,8 +324,11 @@ def _free_vram() -> None:
 #  Model loading
 # ---------------------------------------------------------------------------
 
-def load_image_model():
+def load_image_model(device: str = "gpu"):
     """Load and cache the SAM3 image model + processor.
+
+    Args:
+        device: "gpu" (default) or "cpu". CPU avoids VRAM pressure but is slower.
 
     Returns:
         Tuple of (model, Sam3Processor).
@@ -331,9 +336,17 @@ def load_image_model():
     Raises:
         ImportError: If SAM3 is not installed.
     """
-    global _image_model, _image_processor
+    global _image_model, _image_processor, _image_model_device
+
+    use_cpu = device.lower() == "cpu"
+    target_device = "cpu" if use_cpu else "cuda"
 
     if _image_model is not None and _image_processor is not None:
+        # If device changed, move model to new device
+        if _image_model_device != target_device:
+            import torch
+            _image_model.to(torch.device(target_device))
+            _image_model_device = target_device
         return _image_model, _image_processor
 
     _patch_sam3_imports()
@@ -347,7 +360,10 @@ def load_image_model():
             "pip install --no-deps git+https://github.com/facebookresearch/sam3.git"
         )
 
-    _free_vram()
+    if use_cpu:
+        log.info("SAM3 image model: CPU mode (avoids VRAM pressure, slower)")
+    else:
+        _free_vram()
 
     checkpoint_path = _find_checkpoint()
 
@@ -379,15 +395,25 @@ def load_image_model():
     # Note: SAM3 handles its own dtype management (bf16 autocast).
     # Do NOT call model.float() — it breaks mixed-precision inference.
 
+    import torch
+    if use_cpu:
+        model.to(torch.device("cpu"))
+
     _image_model = model
+    _image_model_device = target_device
     _image_processor = Sam3Processor(model)
 
-    log.info("SAM3 image model loaded successfully")
+    log.info("SAM3 image model loaded successfully on %s", target_device.upper())
     return _image_model, _image_processor
 
 
-def load_video_model():
+def load_video_model(device: str = "gpu"):
     """Load and cache the SAM3 video model.
+
+    Args:
+        device: "gpu" (default) or "cpu". CPU mode avoids VRAM pressure by
+            moving the model off-GPU before frame loading. Slower but necessary
+            when VRAM is insufficient (~12 GB needed for long videos on GPU).
 
     Returns:
         SAM3 video predictor instance.
@@ -395,9 +421,17 @@ def load_video_model():
     Raises:
         ImportError: If SAM3 is not installed.
     """
-    global _video_model
+    global _video_model, _video_model_device
+
+    use_cpu = device.lower() == "cpu"
+    target_device = "cpu" if use_cpu else "cuda"
 
     if _video_model is not None:
+        # If device changed, move model to new device
+        if _video_model_device != target_device:
+            import torch
+            _video_model.to(torch.device(target_device))
+            _video_model_device = target_device
         return _video_model
 
     _patch_sam3_imports()
@@ -410,7 +444,10 @@ def load_video_model():
             "pip install --no-deps git+https://github.com/facebookresearch/sam3.git"
         )
 
-    _free_vram()
+    if use_cpu:
+        log.info("SAM3 video model: CPU mode (avoids VRAM frame-loading OOM, slower)")
+    else:
+        _free_vram()
 
     checkpoint_path = _find_checkpoint()
     log.info("Loading SAM3 video model from: %s", checkpoint_path)
@@ -446,8 +483,16 @@ def load_video_model():
     # inference. Do NOT call model.float() or disable autocast; it breaks
     # the model's internal dtype expectations.
 
+    import torch
+    if use_cpu:
+        # Move to CPU so frame loading doesn't compete for VRAM.
+        # SAM3's init_state() will pre-load ALL video frames into device memory;
+        # on a 12 GB GPU a 192-frame 720p video alone fills ~5 GB.
+        model.to(torch.device("cpu"))
+
     _video_model = model
-    log.info("SAM3 video model loaded successfully")
+    _video_model_device = target_device
+    log.info("SAM3 video model loaded successfully on %s", target_device.upper())
     return _video_model
 
 
@@ -458,19 +503,21 @@ def load_video_model():
 def mask_image_with_text(
     image_path: str,
     prompt: str,
+    device: str = "gpu",
 ) -> np.ndarray:
     """Generate masks for objects described by a text prompt.
 
     Args:
         image_path: Path to the image file.
         prompt: Text description of what to segment (e.g. "the dog").
+        device: "gpu" (default) or "cpu".
 
     Returns:
         Binary mask as numpy array (H, W) where 255=masked, 0=unmasked.
     """
     from PIL import Image
 
-    model, processor = load_image_model()
+    model, processor = load_image_model(device=device)
     image = Image.open(image_path).convert("RGB")
 
     inference_state = processor.set_image(image)
@@ -529,6 +576,7 @@ def mask_video(
     video_path: str,
     prompt: str,
     output_dir: Optional[str] = None,
+    device: str = "gpu",
 ) -> str:
     """Generate a grayscale mask video for text-prompted objects.
 
@@ -539,6 +587,9 @@ def mask_video(
         video_path: Path to input video.
         prompt: Text description of what to segment.
         output_dir: Directory for output files. Uses temp dir if None.
+        device: "gpu" (default) or "cpu". CPU avoids VRAM OOM on long
+            videos — SAM3 pre-loads all frames into device memory during
+            init_state(), which can easily consume 5+ GB on 720p clips.
 
     Returns:
         Path to the generated grayscale mask video (MP4).
@@ -576,15 +627,22 @@ def mask_video(
         log.info("Running SAM3 video tracking on %d frames (prompt: '%s')",
                  len(frame_files), prompt)
 
-        video_model = load_video_model()
+        video_model = load_video_model(device=device)
 
         import torch
         from contextlib import nullcontext
 
-        # Flush VRAM again right before inference — ComfyUI may have reloaded
-        # its models into VRAM between load_video_model() and here, which would
-        # leave only ~90 MB free for the SAM3 propagation loop.
-        _free_vram()
+        # Flush VRAM again right before inference (GPU mode only).
+        # ComfyUI may have reloaded its models between load_video_model() and here.
+        use_cpu = device.lower() == "cpu"
+        if not use_cpu:
+            _free_vram()
+            if torch.cuda.is_available():
+                allocated = torch.cuda.memory_allocated() / 1024**3
+                free = (torch.cuda.get_device_properties(0).total_memory
+                        - torch.cuda.memory_allocated()) / 1024**3
+                log.info("VRAM before SAM3 inference: %.2f GB allocated, %.2f GB free",
+                         allocated, free)
 
         # SAM3's tracker expects a bfloat16 autocast context (entered permanently
         # in Sam3TrackerPredictor.__init__). ComfyUI's operations between runs
