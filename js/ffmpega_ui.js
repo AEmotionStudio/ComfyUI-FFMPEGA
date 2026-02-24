@@ -41,17 +41,6 @@ const RANDOM_PROMPTS = [
     "Apply golden hour warm glow with a slow Ken Burns zoom"
 ];
 
-// --- Color utility ---
-// Returns black or white depending on background luminance for readable text
-function _contrastColor(hex) {
-    const c = hex.replace("#", "");
-    const r = parseInt(c.substring(0, 2), 16);
-    const g = parseInt(c.substring(2, 4), 16);
-    const b = parseInt(c.substring(4, 6), 16);
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    return luminance > 0.5 ? "#000000" : "#FFFFFF";
-}
-
 // --- Dynamic input slot management ---
 // When you connect image_a, image_b appears. Connect image_b → image_c appears, etc.
 // Same for audio_a, audio_b, audio_c, ...
@@ -1074,28 +1063,52 @@ app.registerExtension({
                     origOnRemoved?.apply(this, arguments);
                 };
 
-                // Add upload button widget
-                const uploadWidget = this.addWidget(
-                    "button",
-                    "choose video to upload",
-                    "image",
-                    () => {
-                        app.canvas.node_widget = null;
-                        fileInput.click();
-                    }
-                );
-                uploadWidget.options = uploadWidget.options || {};
-                uploadWidget.options.serialize = false;
+                // Add upload button widget (DOM)
+                const uploadBtn = document.createElement("button");
+                uploadBtn.textContent = "Upload Video...";
+                uploadBtn.style.cssText = `
+                    width: 100%;
+                    margin-top: 4px;
+                    background-color: #222;
+                    color: #ccc;
+                    border: 1px solid #333;
+                    border-radius: 4px;
+                    padding: 6px;
+                    cursor: pointer;
+                    font-family: monospace;
+                    font-size: 12px;
+                    transition: background-color 0.2s;
+                `;
+                // Hover effect
+                uploadBtn.onmouseenter = () => { if (!uploadBtn.disabled) uploadBtn.style.backgroundColor = "#333"; };
+                uploadBtn.onmouseleave = () => { if (!uploadBtn.disabled) uploadBtn.style.backgroundColor = "#222"; };
+
+                uploadBtn.onclick = (e) => {
+                    // Stop propagation to prevent node selection issues on click
+                    // (though usually handled by DOM widget logic)
+                    fileInput.click();
+                };
+
+                // Prevent node dragging when clicking/dragging the button
+                uploadBtn.onpointerdown = (e) => e.stopPropagation();
+
+                const uploadWidget = this.addDOMWidget("upload_button", "btn", uploadBtn, {
+                    serialize: false,
+                });
 
                 // Helper to set upload state
                 const setUploadState = (isUploading, filename = "") => {
                     if (isUploading) {
-                        uploadWidget.name = "⏳ Uploading...";
+                        uploadBtn.textContent = "⏳ Uploading...";
+                        uploadBtn.disabled = true;
+                        uploadBtn.style.cursor = "wait";
                         infoEl.textContent = `Uploading ${filename}...`;
                         previewContainer.style.display = ""; // Ensure info is visible
                         videoEl.style.display = "none";      // Hide stale video
                     } else {
-                        uploadWidget.name = "choose video to upload";
+                        uploadBtn.textContent = "Upload Video...";
+                        uploadBtn.disabled = false;
+                        uploadBtn.style.cursor = "pointer";
                         videoEl.style.display = "block";     // Restore video visibility
                     }
                     node.setDirtyCanvas(true, true);
@@ -1415,7 +1428,7 @@ app.registerExtension({
 
                     // Label
                     const label = document.createElement("span");
-                    label.textContent = "font_color";
+                    label.textContent = "Font Color";
                     label.style.cssText = `
                         color: #b0b0b0;
                         font: 12px Arial, sans-serif;
