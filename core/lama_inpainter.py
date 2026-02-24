@@ -138,24 +138,11 @@ def _load_video_frames(video_path: str) -> Tuple[list, float]:
     frames = [Image.open(f).convert("RGB") for f in frame_files]
 
     # Get FPS
-    probe = subprocess.run(
-        [
-            "ffprobe", "-v", "quiet",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=r_frame_rate",
-            "-of", "csv=p=0",
-            video_path,
-        ],
-        capture_output=True,
-        text=True,
-    )
-    fps_str = probe.stdout.strip()
-    if "/" in fps_str:
-        num, den = fps_str.split("/")
-        den_f = float(den)
-        fps = float(num) / den_f if den_f != 0 else 30.0
-    else:
-        fps = float(fps_str) if fps_str else 30.0
+    try:
+        from core.sam3_masker import _get_video_fps
+    except ImportError:
+        from .sam3_masker import _get_video_fps
+    fps = _get_video_fps(video_path)
 
     if not frames:
         raise RuntimeError(f"No frames extracted from {video_path}")
@@ -350,69 +337,70 @@ def remove_object(
     log.info("Loading mask frames from %s", mask_video_path)
     masks, masks_tmpdir = _load_mask_frames(mask_video_path, total_frames)
 
-    # Load model
-    model = load_model()
+    try:
+        # Load model
+        model = load_model()
 
-    # Per-frame inpainting
-    log.info("Running LaMa inpainting on %d frames...", total_frames)
-    inpainted_frames = []
-    for i in range(total_frames):
-        if i % 20 == 0:
-            log.info("  Frame %d/%d", i + 1, total_frames)
+        # Per-frame inpainting
+        log.info("Running LaMa inpainting on %d frames...", total_frames)
+        inpainted_frames = []
+        for i in range(total_frames):
+            if i % 20 == 0:
+                log.info("  Frame %d/%d", i + 1, total_frames)
 
-        # Check if mask has any content (skip blank masks)
-        mask_arr = np.array(masks[i])
-        if mask_arr.max() < 10:
-            # No mask content — keep original frame
-            inpainted_frames.append(frames[i])
-            continue
+            # Check if mask has any content (skip blank masks)
+            mask_arr = np.array(masks[i])
+            if mask_arr.max() < 10:
+                # No mask content — keep original frame
+                inpainted_frames.append(frames[i])
+                continue
 
-        result = _inpaint_frame(model, frames[i], masks[i])
-        inpainted_frames.append(result)
+            result = _inpaint_frame(model, frames[i], masks[i])
+            inpainted_frames.append(result)
 
-    # Composite: use inpainted pixels only where mask > 0
-    log.info("Compositing inpainted regions onto original frames...")
-    composited = []
-    composited_np = []
-    mask_np_list = []
+        # Composite: use inpainted pixels only where mask > 0
+        log.info("Compositing inpainted regions onto original frames...")
+        composited = []
+        composited_np = []
+        mask_np_list = []
 
-    for i in range(total_frames):
-        orig_arr = np.array(frames[i]).astype(np.float32)
-        inp_arr = np.array(inpainted_frames[i]).astype(np.float32)
-        mask_pil = masks[i]
+        for i in range(total_frames):
+            orig_arr = np.array(frames[i]).astype(np.float32)
+            inp_arr = np.array(inpainted_frames[i]).astype(np.float32)
+            mask_pil = masks[i]
 
-        # Resize mask to match frame dimensions if needed
-        if mask_pil.size != frames[i].size:
-            mask_pil = mask_pil.resize(frames[i].size, Image.NEAREST)
+            # Resize mask to match frame dimensions if needed
+            if mask_pil.size != frames[i].size:
+                mask_pil = mask_pil.resize(frames[i].size, Image.NEAREST)
 
-        mask_arr = np.array(mask_pil).astype(np.float32) / 255.0
+            mask_arr = np.array(mask_pil).astype(np.float32) / 255.0
 
-        mask_np_list.append(mask_arr)
+            mask_np_list.append(mask_arr)
 
-        # Composite
-        mask_3ch = mask_arr[:, :, None]
-        result = orig_arr * (1 - mask_3ch) + inp_arr * mask_3ch
-        composited_np.append(result.astype(np.uint8))
+            # Composite
+            mask_3ch = mask_arr[:, :, None]
+            result = orig_arr * (1 - mask_3ch) + inp_arr * mask_3ch
+            composited_np.append(result.astype(np.uint8))
 
-    # Temporal smoothing to reduce flicker
-    log.info("Applying temporal smoothing...")
-    smoothed = _temporal_smooth(composited_np, mask_np_list, window=5)
+        # Temporal smoothing to reduce flicker
+        log.info("Applying temporal smoothing...")
+        smoothed = _temporal_smooth(composited_np, mask_np_list, window=5)
 
-    # Convert back to PIL
-    for arr in smoothed:
-        composited.append(Image.fromarray(arr))
+        # Convert back to PIL
+        for arr in smoothed:
+            composited.append(Image.fromarray(arr))
 
-    # Encode result
-    log.info("Encoding inpainted video to %s", output_path)
-    _encode_video(composited, output_path, fps)
-
-    # Clean up intermediate temp directories
-    import shutil
-    for d in (frames_tmpdir, masks_tmpdir):
-        try:
-            shutil.rmtree(d)
-        except OSError:
-            pass
+        # Encode result
+        log.info("Encoding inpainted video to %s", output_path)
+        _encode_video(composited, output_path, fps)
+    finally:
+        # Clean up intermediate temp directories (even on failure)
+        import shutil
+        for d in (frames_tmpdir, masks_tmpdir):
+            try:
+                shutil.rmtree(d)
+            except OSError:
+                pass
 
     # Free VRAM
     cleanup()

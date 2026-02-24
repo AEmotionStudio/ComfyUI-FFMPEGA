@@ -580,9 +580,7 @@ def _f_auto_mask(p):
                 mask_video_path=mask_path,
             )
             log.info("LaMa inpainting complete: %s", inpainted_path)
-            escaped = inpainted_path
-            for ch in ("\\", "'", ":", ";", "[", "]"):
-                escaped = escaped.replace(ch, f"\\{ch}")
+            escaped = _escape_filter_path(inpainted_path)
             fc = f"movie={escaped}[inp];[inp]format=yuv420p"
             return make_result(fc=fc)
         except Exception as e:
@@ -635,8 +633,7 @@ def _build_mask_fc(mask_path: str, effect: str, strength: int, invert: bool):
     - transparent: outputs video with alpha channel (WebM VP9)
     """
     # Escape path for ffmpeg filter expressions
-    for ch in ("\\", "'", ":", ";", "[", "]"):
-        mask_path = mask_path.replace(ch, f"\\{ch}")
+    mask_path = _escape_filter_path(mask_path)
 
     # --- Transparent effect: embed alpha channel ---
     if effect == "transparent":

@@ -491,6 +491,30 @@ def mask_image_with_text(
 #  Video masking with text prompts
 # ---------------------------------------------------------------------------
 
+def _get_video_fps(video_path: str) -> float:
+    """Extract FPS from a video file using ffprobe.
+
+    Returns:
+        Frame rate as a float, defaults to 30.0 if extraction fails.
+    """
+    probe = subprocess.run(
+        [
+            "ffprobe", "-v", "quiet",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=r_frame_rate",
+            "-of", "csv=p=0",
+            video_path,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    fps_str = probe.stdout.strip()
+    if "/" in fps_str:
+        num, den = fps_str.split("/")
+        den_f = float(den)
+        return float(num) / den_f if den_f != 0 else 30.0
+    return float(fps_str) if fps_str else 30.0
+
 def mask_video(
     video_path: str,
     prompt: str,
@@ -535,119 +559,101 @@ def mask_video(
     if not frame_files:
         raise RuntimeError(f"No frames extracted from {video_path}")
 
-    # Get FPS from source video
-    probe = subprocess.run(
-        [
-            "ffprobe", "-v", "quiet",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=r_frame_rate",
-            "-of", "csv=p=0",
-            video_path,
-        ],
-        capture_output=True,
-        text=True,
-    )
-    fps_str = probe.stdout.strip()
-    if "/" in fps_str:
-        num, den = fps_str.split("/")
-        den_f = float(den)
-        fps = float(num) / den_f if den_f != 0 else 30.0
-    else:
-        fps = float(fps_str) if fps_str else 30.0
+    fps = _get_video_fps(video_path)
 
-    # 2. Run SAM3 video predictor with text prompt
-    log.info("Running SAM3 video tracking on %d frames (prompt: '%s')",
-             len(frame_files), prompt)
-
-    video_model = load_video_model()
-
-    import torch
-    # SAM3's tracker expects a bfloat16 autocast context (entered permanently
-    # in Sam3TrackerPredictor.__init__). ComfyUI's operations between runs
-    # can pop this off the thread-local autocast stack. Re-enter it here
-    # to ensure consistent dtype handling on every run.
-    # Get original video dimensions (before with block so h/w are always defined)
-    first_frame = np.array(Image.open(frame_files[0]))
-    h, w = first_frame.shape[:2]
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    autocast_ctx = torch.autocast(device, dtype=torch.bfloat16) if device == "cuda" else torch.inference_mode()
-    with torch.inference_mode(), autocast_ctx:
-        # Initialize inference state from frames directory
-        inference_state = video_model.init_state(
-            resource_path=frames_dir,
-            video_loader_type="cv2",
-        )
-
-        # Add text prompt on first frame
-        video_model.add_prompt(
-            inference_state,
-            frame_idx=0,
-            text_str=prompt,
-        )
-
-        # 3. Propagate and save mask frames
-        log.info("Propagating SAM3 masks across %d frames", len(frame_files))
-        mask_frames_saved = set()
-        for frame_idx, outputs in video_model.propagate_in_video(inference_state):
-            if outputs is None:
-                continue
-
-            binary_masks = outputs.get("out_binary_masks")
-            if binary_masks is not None and len(binary_masks) > 0:
-                # Combine all object masks into one
-                if torch.is_tensor(binary_masks):
-                    binary_masks = binary_masks.cpu().numpy()
-                combined = np.any(binary_masks, axis=0)
-                # Squeeze extra dims: (1, H, W) → (H, W) for mode="L"
-                while combined.ndim > 2:
-                    combined = combined.squeeze(0)
-                mask = (combined > 0).astype(np.uint8) * 255
-            else:
-                mask = np.zeros((h, w), dtype=np.uint8)
-
-            mask_img = Image.fromarray(mask, mode="L")
-            if mask_img.size != (w, h):
-                mask_img = mask_img.resize((w, h), Image.NEAREST)
-            mask_img.save(os.path.join(masks_dir, f"{frame_idx:06d}.png"))
-            mask_frames_saved.add(frame_idx)
-
-    # Fill any missing frames with empty masks
-    for i in range(len(frame_files)):
-        if i not in mask_frames_saved:
-            mask = np.zeros((h, w), dtype=np.uint8)
-            mask_img = Image.fromarray(mask, mode="L")
-            mask_img.save(os.path.join(masks_dir, f"{i:06d}.png"))
-
-    log.info("Saved %d mask frames (%d with detections)",
-             len(frame_files), len(mask_frames_saved))
-
-    # 4. Encode mask frames into a video
-    mask_video_path = os.path.join(output_dir, "mask.mp4")
-    subprocess.run(
-        [
-            "ffmpeg", "-y",
-            "-framerate", str(fps),
-            "-i", os.path.join(masks_dir, "%06d.png"),
-            "-c:v", "libx264",
-            "-pix_fmt", "yuv420p",
-            "-crf", "18",
-            mask_video_path,
-        ],
-        capture_output=True,
-        check=True,
-    )
-
-    log.info("Mask video created: %s", mask_video_path)
-
-    # Clean up intermediate frame/mask images to avoid disk space leaks
-    import shutil
     try:
-        shutil.rmtree(frames_dir)
-        shutil.rmtree(masks_dir)
-        log.debug("Cleaned up intermediate frame/mask directories")
-    except OSError as e:
-        log.debug("Could not clean up temp dirs: %s", e)
+        # 2. Run SAM3 video predictor with text prompt
+        log.info("Running SAM3 video tracking on %d frames (prompt: '%s')",
+                 len(frame_files), prompt)
+
+        video_model = load_video_model()
+
+        import torch
+        from contextlib import nullcontext
+        # SAM3's tracker expects a bfloat16 autocast context (entered permanently
+        # in Sam3TrackerPredictor.__init__). ComfyUI's operations between runs
+        # can pop this off the thread-local autocast stack. Re-enter it here
+        # to ensure consistent dtype handling on every run.
+        # Get original video dimensions (before with block so h/w are always defined)
+        first_frame = np.array(Image.open(frame_files[0]))
+        h, w = first_frame.shape[:2]
+
+        autocast_ctx = torch.autocast("cuda", dtype=torch.bfloat16) if torch.cuda.is_available() else nullcontext()
+        with torch.inference_mode(), autocast_ctx:
+            # Initialize inference state from frames directory
+            inference_state = video_model.init_state(
+                resource_path=frames_dir,
+                video_loader_type="cv2",
+            )
+
+            # Add text prompt on first frame
+            video_model.add_prompt(
+                inference_state,
+                frame_idx=0,
+                text_str=prompt,
+            )
+
+            # 3. Propagate and save mask frames
+            log.info("Propagating SAM3 masks across %d frames", len(frame_files))
+            mask_frames_saved = set()
+            for frame_idx, outputs in video_model.propagate_in_video(inference_state):
+                if outputs is None:
+                    continue
+
+                binary_masks = outputs.get("out_binary_masks")
+                if binary_masks is not None and len(binary_masks) > 0:
+                    # Combine all object masks into one
+                    if torch.is_tensor(binary_masks):
+                        binary_masks = binary_masks.cpu().numpy()
+                    combined = np.any(binary_masks, axis=0)
+                    # Squeeze extra dims: (1, H, W) → (H, W) for mode="L"
+                    while combined.ndim > 2:
+                        combined = combined.squeeze(0)
+                    mask = (combined > 0).astype(np.uint8) * 255
+                else:
+                    mask = np.zeros((h, w), dtype=np.uint8)
+
+                mask_img = Image.fromarray(mask, mode="L")
+                if mask_img.size != (w, h):
+                    mask_img = mask_img.resize((w, h), Image.NEAREST)
+                mask_img.save(os.path.join(masks_dir, f"{frame_idx:06d}.png"))
+                mask_frames_saved.add(frame_idx)
+
+        # Fill any missing frames with empty masks
+        for i in range(len(frame_files)):
+            if i not in mask_frames_saved:
+                mask = np.zeros((h, w), dtype=np.uint8)
+                mask_img = Image.fromarray(mask, mode="L")
+                mask_img.save(os.path.join(masks_dir, f"{i:06d}.png"))
+
+        log.info("Saved %d mask frames (%d with detections)",
+                 len(frame_files), len(mask_frames_saved))
+
+        # 4. Encode mask frames into a video
+        mask_video_path = os.path.join(output_dir, "mask.mp4")
+        subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-framerate", str(fps),
+                "-i", os.path.join(masks_dir, "%06d.png"),
+                "-c:v", "libx264",
+                "-pix_fmt", "yuv420p",
+                "-crf", "18",
+                mask_video_path,
+            ],
+            capture_output=True,
+            check=True,
+        )
+
+        log.info("Mask video created: %s", mask_video_path)
+    finally:
+        # Clean up intermediate frame/mask images (even on failure)
+        import shutil
+        for d in (frames_dir, masks_dir):
+            try:
+                shutil.rmtree(d)
+            except OSError:
+                pass
 
     return mask_video_path
 
