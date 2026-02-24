@@ -264,11 +264,20 @@ class PipelineGenerator:
 
         # Filter tool definitions based on PTC mode
         if ptc_mode == "off":
+            # Classic mode: all tools except execute_code
             tool_defs = [
                 t for t in TOOL_DEFINITIONS
                 if t["function"]["name"] != "execute_code"
             ]
+        elif ptc_mode == "on":
+            # Forced PTC: only execute_code (model must orchestrate
+            # all tool calls through a single Python script)
+            tool_defs = [
+                t for t in TOOL_DEFINITIONS
+                if t["function"]["name"] == "execute_code"
+            ]
         else:
+            # Auto mode: all tools including execute_code
             tool_defs = list(TOOL_DEFINITIONS)
 
         # Strip non-standard fields (e.g. input_examples) for API
