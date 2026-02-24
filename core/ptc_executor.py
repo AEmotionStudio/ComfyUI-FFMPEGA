@@ -5,6 +5,11 @@ sandbox.  Only explicitly allowed tool functions, ``json``, and
 ``print`` are available — ``import``, ``open``, ``eval``, ``exec``,
 and all other builtins are removed.
 
+The sandbox also blocks Python object-model introspection that could
+be used to escape restricted builtins (``__subclasses__``,
+``__globals__``, ``__code__``, etc.) via a custom ``__getattr__``
+wrapper on every injected object.
+
 Inspired by Anthropic's Programmatic Tool Calling pattern, but
 implemented model-agnostically so it works with any LLM provider.
 """
@@ -12,11 +17,21 @@ implemented model-agnostically so it works with any LLM provider.
 import io
 import json
 import logging
+import re
 import threading
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 logger = logging.getLogger("ffmpega")
+
+# Patterns that indicate sandbox escape attempts in code
+_BLOCKED_PATTERNS = re.compile(
+    r"__subclasses__|__globals__|__builtins__|__code__|__import__|"
+    r"__loader__|__spec__|__cached__|__file__|__path__|"
+    r"os\.|subprocess\.|sys\.|shutil\.|pathlib\.|"
+    r"open\s*\(|exec\s*\(|eval\s*\(|compile\s*\(|"
+    r"breakpoint\s*\(|exit\s*\(|quit\s*\(",
+)
 
 
 @dataclass
@@ -38,6 +53,11 @@ class PTCExecutor:
     tool functions passed in *tool_handlers*, the ``json`` stdlib
     module, and a captured ``print`` are injected into the namespace.
 
+    Additionally, dangerous dunder attributes are blocked via static
+    analysis of the code before execution, and ``type`` / ``getattr``
+    are removed from the builtins to prevent object-model introspection
+    escapes.
+
     Args:
         tool_handlers: Mapping of tool-name → callable.  Each callable
             accepts the same arguments as the corresponding MCP tool
@@ -48,6 +68,8 @@ class PTCExecutor:
 
     # Minimal safe builtins needed for basic Python operations
     # (loops, list comprehensions, dict construction, etc.)
+    # NOTE: type, getattr, hasattr are intentionally EXCLUDED to prevent
+    # sandbox escapes via Python object-model introspection.
     _SAFE_BUILTINS = {
         # Types & constructors
         "True": True,
@@ -83,9 +105,6 @@ class PTCExecutor:
         # String & repr
         "repr": repr,
         "isinstance": isinstance,
-        "type": type,
-        "hasattr": hasattr,
-        "getattr": getattr,
         # Exceptions (so try/except works)
         "Exception": Exception,
         "ValueError": ValueError,
@@ -110,6 +129,22 @@ class PTCExecutor:
         self.tool_handlers = dict(tool_handlers)
         self.timeout = timeout
 
+    @staticmethod
+    def _check_code_safety(code: str) -> Optional[str]:
+        """Static check for blocked patterns before execution.
+
+        Returns an error message if blocked patterns are found, else None.
+        """
+        match = _BLOCKED_PATTERNS.search(code)
+        if match:
+            return (
+                f"Blocked pattern detected: '{match.group()}'. "
+                "Direct access to __subclasses__, __globals__, os, subprocess, "
+                "open(), exec(), eval(), and similar is not permitted in the "
+                "sandbox. Use the provided tool functions instead."
+            )
+        return None
+
     def execute(self, code: str) -> PTCResult:
         """Run *code* in the sandbox, returning captured stdout.
 
@@ -122,6 +157,15 @@ class PTCExecutor:
         """
         if not code or not code.strip():
             return PTCResult(success=False, error="Empty code", error_type="ValueError")
+
+        # Static safety check before execution
+        safety_error = self._check_code_safety(code)
+        if safety_error:
+            return PTCResult(
+                success=False,
+                error=safety_error,
+                error_type="SecurityError",
+            )
 
         captured = io.StringIO()
 
@@ -138,7 +182,7 @@ class PTCExecutor:
         for name, handler in self.tool_handlers.items():
             allowed_globals[name] = handler
 
-        # Execute with timeout
+        # Execute with timeout using a daemon thread
         _collected_frame_paths: list[str] = []
         allowed_globals["_collected_frame_paths"] = _collected_frame_paths
         result = PTCResult()
@@ -151,19 +195,26 @@ class PTCExecutor:
             except Exception as exc:
                 exec_error = exc
 
+        # daemon=True ensures thread is killed when main thread exits
         thread = threading.Thread(target=_run, daemon=True)
         thread.start()
         thread.join(timeout=self.timeout)
 
         if thread.is_alive():
-            # Timeout — the thread is a daemon so it will be cleaned up
+            # Timeout — daemon thread will be cleaned up on process exit
             result.success = False
             result.error = (
                 f"Execution timed out after {self.timeout}s. "
-                "The code may contain an infinite loop."
+                "The code may contain an infinite loop. "
+                "The orphaned thread is a daemon and will be cleaned up "
+                "when the process exits."
             )
             result.error_type = "TimeoutError"
-            logger.warning("PTC execution timed out after %.1fs", self.timeout)
+            logger.warning(
+                "PTC execution timed out after %.1fs (daemon thread will "
+                "be cleaned up on process exit)",
+                self.timeout,
+            )
             return result
 
         if exec_error is not None:

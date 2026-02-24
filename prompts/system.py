@@ -487,7 +487,7 @@ Frames from extract_frames are automatically embedded as images.
 **Example:**
 ```python
 results = search_skills("cinematic color")
-top = results["skills"][0]["name"]
+top = results["matches"][0]["name"]
 details = get_skill_details(top)
 params = {{"intensity": "medium"}}
 pipeline = build_pipeline(
