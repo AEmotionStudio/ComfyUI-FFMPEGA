@@ -19,7 +19,7 @@ import json
 import logging
 import re
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 logger = logging.getLogger("ffmpega")
@@ -53,7 +53,6 @@ class PTCResult:
     success: bool = True
     error: Optional[str] = None
     error_type: Optional[str] = None
-    frame_paths: list = field(default_factory=list)
 
 
 class PTCExecutor:
@@ -194,8 +193,6 @@ class PTCExecutor:
             allowed_globals[name] = handler
 
         # Execute with timeout using a daemon thread
-        _collected_frame_paths: list[str] = []
-        allowed_globals["_collected_frame_paths"] = _collected_frame_paths
         result = PTCResult()
         exec_error: Optional[BaseException] = None
 
@@ -249,5 +246,4 @@ class PTCExecutor:
             logger.warning("PTC execution error: %s: %s", result.error_type, result.error)
         
         result.stdout = captured.getvalue()
-        result.frame_paths = list(_collected_frame_paths)
         return result
