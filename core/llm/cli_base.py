@@ -390,9 +390,15 @@ class CLIConnectorBase(LLMConnector):
                 "You have the following tools available. To call a tool, output a line "
                 "in this exact format (one per line):\n"
                 f'{_TOOL_CALL_MARKER} {{"name": "tool_name", "arguments": {{"key": "value"}}}}\n\n'
-                "You may call multiple tools by putting each on its own line.\n"
-                "When you have enough information, output the final JSON pipeline directly "
-                "(without any TOOL_CALL markers).\n\n"
+                "You may call multiple tools by putting each on its own line.\n\n"
+                "IMPORTANT: You MUST use tools before producing a pipeline.\n"
+                "- ALWAYS call search_skills first to discover correct skill names\n"
+                "- ALWAYS call get_skill_details to learn valid parameters\n"
+                "- Do NOT guess or hallucinate skill names — only use names "
+                "returned by search_skills\n"
+                "- Output your TOOL_CALL lines FIRST, then wait for results\n"
+                "- Only output the final JSON pipeline AFTER receiving tool "
+                "results (without any TOOL_CALL markers)\n\n"
                 "Tools:\n" + "\n\n".join(tool_descriptions) +
                 "\n=== END TOOLS ===\n"
             )

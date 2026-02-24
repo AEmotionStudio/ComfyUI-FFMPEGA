@@ -2,6 +2,11 @@
 
 These definitions are passed to the LLM via the tools parameter so it can
 dynamically discover and select skills for video editing pipelines.
+
+Each tool includes:
+- Detailed parameter descriptions
+- Return format documentation (helps PTC scripts parse results)
+- Input examples (improves parameter accuracy per Anthropic best practices)
 """
 
 
@@ -13,7 +18,11 @@ TOOL_DEFINITIONS = [
             "description": (
                 "List available video editing skills. "
                 "Returns skill names, descriptions, parameters, and examples. "
-                "Use this to discover what skills exist."
+                "Use this to discover what skills exist. "
+                "Returns: {total_count: int, skills: [{name: str, category: str, "
+                "description: str, parameters: [{name, type, description, "
+                "required, default}], tags: [str], examples: [str]}], "
+                "by_category: {category: [skills]}}"
             ),
             "parameters": {
                 "type": "object",
@@ -32,6 +41,11 @@ TOOL_DEFINITIONS = [
                     }
                 },
             },
+            "input_examples": [
+                {},
+                {"category": "visual"},
+                {"category": "temporal"},
+            ],
         },
     },
     {
@@ -41,7 +55,9 @@ TOOL_DEFINITIONS = [
             "description": (
                 "Search for skills by keyword. Matches against skill names, "
                 "descriptions, and tags. Use when the user asks for something "
-                "specific like 'blue', 'slow motion', 'blur', etc."
+                "specific like 'blue', 'slow motion', 'blur', etc. "
+                "Returns: {query: str, match_count: int, matches: [{name: str, "
+                "category: str, description: str, tags: [str]}]}"
             ),
             "parameters": {
                 "type": "object",
@@ -53,6 +69,13 @@ TOOL_DEFINITIONS = [
                 },
                 "required": ["query"],
             },
+            "input_examples": [
+                {"query": "color correction"},
+                {"query": "slow motion"},
+                {"query": "film grain vintage"},
+                {"query": "fade transition"},
+                {"query": "letterbox cinematic"},
+            ],
         },
     },
     {
@@ -61,7 +84,16 @@ TOOL_DEFINITIONS = [
             "name": "get_skill_details",
             "description": (
                 "Get full details about a specific skill including all "
-                "parameters, value ranges, defaults, and usage examples."
+                "parameters, value ranges, defaults, and usage examples. "
+                "ALWAYS call this before using a skill in your pipeline "
+                "to ensure correct parameter names and valid values. "
+                "Returns: {name: str, category: str, description: str, "
+                "parameters: [{name: str, type: str, description: str, "
+                "required: bool, default: any, min_value: number|null, "
+                "max_value: number|null, choices: [str]|null}], "
+                "ffmpeg_template: str, pipeline: [str]|null, "
+                "examples: [str], tags: [str]} "
+                "or {error: str} if skill not found"
             ),
             "parameters": {
                 "type": "object",
@@ -73,6 +105,13 @@ TOOL_DEFINITIONS = [
                 },
                 "required": ["skill_name"],
             },
+            "input_examples": [
+                {"skill_name": "colorbalance"},
+                {"skill_name": "film_grain"},
+                {"skill_name": "letterbox"},
+                {"skill_name": "fade_to_black"},
+                {"skill_name": "speed"},
+            ],
         },
     },
     {
@@ -81,7 +120,13 @@ TOOL_DEFINITIONS = [
             "name": "analyze_video",
             "description": (
                 "Analyze a video file and return its metadata: resolution, "
-                "duration, codec, FPS, audio info, file size, etc."
+                "duration, codec, FPS, audio info, file size, etc. "
+                "Returns: {file_path: str, file_size_mb: float, "
+                "format: str, duration_seconds: float, "
+                "video: {width: int, height: int, codec: str, fps: float, "
+                "pixel_format: str}, "
+                "audio: {codec: str, sample_rate: int, channels: int}, "
+                "analysis_text: str}"
             ),
             "parameters": {
                 "type": "object",
@@ -93,6 +138,9 @@ TOOL_DEFINITIONS = [
                 },
                 "required": ["video_path"],
             },
+            "input_examples": [
+                {"video_path": "/tmp/input.mp4"},
+            ],
         },
     },
     {
@@ -103,7 +151,10 @@ TOOL_DEFINITIONS = [
                 "Build and validate an FFMPEG pipeline from a list of skills. "
                 "Returns the composed ffmpeg command string and any validation "
                 "errors. Use this to verify your pipeline before outputting "
-                "the final JSON response."
+                "the final JSON response. "
+                "On success returns: {success: true, command: str, "
+                "command_args: [str], explanation: str, step_count: int}. "
+                "On failure returns: {success: false, errors: [str]}"
             ),
             "parameters": {
                 "type": "object",
@@ -140,6 +191,27 @@ TOOL_DEFINITIONS = [
                 },
                 "required": ["skills"],
             },
+            "input_examples": [
+                {
+                    "skills": [
+                        {"name": "colorbalance", "params": {"rs": 0.05, "gs": 0.0, "bs": -0.03}},
+                        {"name": "film_grain", "params": {"intensity": "medium"}},
+                    ],
+                    "input_path": "/tmp/input.mp4",
+                    "output_path": "/tmp/output.mp4",
+                },
+                {
+                    "skills": [
+                        {"name": "speed", "params": {"factor": 0.5}},
+                        {"name": "fade_to_black", "params": {"in_duration": 1.0, "out_duration": 1.0}},
+                    ],
+                },
+                {
+                    "skills": [
+                        {"name": "letterbox", "params": {"ratio": "2.35:1"}},
+                    ],
+                },
+            ],
         },
     },
     {
@@ -151,7 +223,8 @@ TOOL_DEFINITIONS = [
                 "inspection. For vision-capable models (API and CLI), the "
                 "frames will be viewable as images. Use this to SEE the actual "
                 "video content — colors, composition, lighting, subjects — "
-                "before choosing effects or color grading."
+                "before choosing effects or color grading. "
+                "Returns: {frame_count: int, paths: [str], folder: str}"
             ),
             "parameters": {
                 "type": "object",
@@ -186,6 +259,11 @@ TOOL_DEFINITIONS = [
                     },
                 },
             },
+            "input_examples": [
+                {"max_frames": 3},
+                {"start": 0, "duration": 10, "fps": 0.5, "max_frames": 5},
+                {},
+            ],
         },
     },
     {
@@ -197,7 +275,17 @@ TOOL_DEFINITIONS = [
                 "signalstats. Returns numeric luminance, saturation, and "
                 "color balance data with actionable recommendations. "
                 "Use this for precise color metrics or as a fallback when "
-                "vision is unavailable. Great for color grading decisions."
+                "vision is unavailable. Great for color grading decisions. "
+                "Returns: {analysis_type: 'signalstats', "
+                "frames_analyzed: int, "
+                "luminance: {min: float, max: float, average: float, "
+                "assessment: str}, "
+                "saturation: {min: float, max: float, average: float, "
+                "assessment: str}, "
+                "color_balance: {u_average: float, v_average: float, "
+                "dominant_tone: str}, "
+                "hue_average: float, "
+                "recommendations: [str], hint: str}"
             ),
             "parameters": {
                 "type": "object",
@@ -218,6 +306,10 @@ TOOL_DEFINITIONS = [
                     },
                 },
             },
+            "input_examples": [
+                {},
+                {"start": 2, "duration": 3},
+            ],
         },
     },
     {
@@ -229,12 +321,18 @@ TOOL_DEFINITIONS = [
                 "used with the lut_apply skill. Returns each LUT's name "
                 "and filename. Users can add their own LUTs by dropping "
                 "files into the luts/ folder. Call this before using "
-                "lut_apply to discover available looks."
+                "lut_apply to discover available looks. "
+                "Returns: {luts: [{name: str, display_name: str, "
+                "filename: str}], count: int, luts_folder: str, "
+                "usage_hint: str}"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {},
             },
+            "input_examples": [
+                {},
+            ],
         },
     },
     {
@@ -246,7 +344,15 @@ TOOL_DEFINITIONS = [
                 "Returns numeric volume (dB), EBU R128 loudness (LUFS), "
                 "silence detection, and actionable recommendations. "
                 "Use this before applying audio effects or to verify "
-                "audio output quality."
+                "audio output quality. "
+                "Returns: {has_audio: bool, codec: str, sample_rate: int, "
+                "channels: int, channel_layout: str, "
+                "volume: {mean_db: float, peak_db: float, "
+                "dynamic_range_db: float, assessment: str}, "
+                "loudness: {integrated_lufs: float, range_lu: float, "
+                "true_peak_dbtp: float, assessment: str}, "
+                "silence: {silent_sections: int, assessment: str}, "
+                "recommendations: [str], hint: str}"
             ),
             "parameters": {
                 "type": "object",
@@ -267,7 +373,79 @@ TOOL_DEFINITIONS = [
                     },
                 },
             },
+            "input_examples": [
+                {},
+                {"start": 0, "duration": 5},
+            ],
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "execute_code",
+            "description": (
+                "Execute a Python script that orchestrates multiple tool calls "
+                "in a single pass. The script runs in a sandboxed environment "
+                "where all tool functions are available as top-level callables: "
+                "search_skills(query), get_skill_details(skill_name), "
+                "list_skills(category=None), "
+                "build_pipeline(skills, input_path, output_path), "
+                "analyze_video(video_path), "
+                "extract_frames(video_path, start, duration, fps, max_frames), "
+                "analyze_colors(video_path, start, duration), "
+                "list_luts(), analyze_audio(video_path, start, duration). "
+                "The json module is available for serialization. "
+                "Use print() to output results — ONLY print output is returned. "
+                "No imports are allowed. Use this for complex requests that need "
+                "multiple tool calls and data processing (search → details → build). "
+                "Frames from extract_frames will be embedded as images automatically."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": (
+                            "Python code to execute. Available functions: "
+                            "search_skills(query), get_skill_details(skill_name), "
+                            "list_skills(category=None), "
+                            "build_pipeline(skills, input_path, output_path), "
+                            "analyze_video(video_path), "
+                            "extract_frames(video_path, start=0, duration=5, fps=1, max_frames=8), "
+                            "analyze_colors(video_path, start=0.0, duration=5.0), "
+                            "list_luts(), "
+                            "analyze_audio(video_path, start=0.0, duration=10.0). "
+                            "Use json.dumps() for JSON output. Use print() to "
+                            "return results. No imports allowed."
+                        ),
+                    },
+                },
+                "required": ["code"],
+            },
+            "input_examples": [
+                {
+                    "code": (
+                        "# Search for relevant skills and get details\n"
+                        "results = search_skills('color correction')\n"
+                        "skill = results['matches'][0]\n"
+                        "details = get_skill_details(skill['name'])\n"
+                        "print(json.dumps(details, indent=2))"
+                    ),
+                },
+                {
+                    "code": (
+                        "# Full pipeline: search, detail, build, output\n"
+                        "matches = search_skills('film grain vintage')['matches']\n"
+                        "grain_skill = matches[0]['name']\n"
+                        "details = get_skill_details(grain_skill)\n"
+                        "result = build_pipeline(\n"
+                        "    [{'name': grain_skill, 'params': {'intensity': 'medium'}}],\n"
+                        "    '/tmp/input.mp4', '/tmp/output.mp4'\n"
+                        ")\n"
+                        "print(json.dumps(result, indent=2))"
+                    ),
+                },
+            ],
         },
     },
 ]
-

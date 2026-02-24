@@ -468,6 +468,39 @@ Respond with valid JSON:
 - Do NOT omit required parameters
 - Do NOT add unnecessary skills — keep pipelines minimal
 
+## Programmatic Tool Calling (execute_code)
+For requests needing multiple tool calls (search → details → build), you can
+use the **execute_code** tool to write a Python script that orchestrates them
+all in one pass.  Only the `print()` output is returned to you.
+
+**Available functions inside execute_code:**
+`search_skills(query)`, `get_skill_details(skill_name)`, `list_skills(category=None)`,
+`build_pipeline(skills, input_path, output_path)`, `analyze_video(video_path)`,
+`extract_frames(video_path, start, duration, fps, max_frames)`,
+`analyze_colors(video_path, start, duration)`, `list_luts()`,
+`analyze_audio(video_path, start, duration)`.
+
+The `json` module is available.  **No imports allowed** — json and all functions
+are pre-injected as globals. Do NOT write `import json`.
+Frames from extract_frames are automatically embedded as images.
+
+**Example:**
+```python
+results = search_skills("cinematic color")
+top = results["skills"][0]["name"]
+details = get_skill_details(top)
+params = {{"intensity": "medium"}}
+pipeline = build_pipeline(
+    [{{"name": top, "params": params}}],
+    "/tmp/in.mp4", "/tmp/out.mp4"
+)
+print(json.dumps(pipeline))
+```
+
+> **When to use**: Complex requests requiring 3+ tool calls, multi-skill pipelines,
+> or when you need to filter/process search results before building the pipeline.
+> **When NOT to use**: Simple 1-2 tool requests.
+
 ## Input Video
 {video_metadata}
 
@@ -485,9 +518,54 @@ When audio is connected, default to "loop" unless the user specifies otherwise.
 """
 
 
+# PTC-first variant: when ptc_mode=="on", replace the PTC section
+PTC_FIRST_SECTION = """\
+## MANDATORY: Programmatic Tool Calling (execute_code)
+You MUST use **execute_code** for ALL requests. Write a single Python script that:
+1. Searches for relevant skills with search_skills()
+2. Gets parameter details with get_skill_details()
+3. Optionally analyzes the video with analyze_video() or extract_frames()
+4. Builds the pipeline with build_pipeline()
+5. Prints the final pipeline JSON with print(json.dumps(...))
+
+**Available functions** (pre-injected as globals, NO imports allowed):
+`search_skills(query)`, `get_skill_details(skill_name)`, `list_skills(category=None)`,
+`build_pipeline(skills, input_path, output_path)`, `analyze_video(video_path)`,
+`extract_frames(video_path, start, duration, fps, max_frames)`,
+`analyze_colors(video_path, start, duration)`, `list_luts()`,
+`analyze_audio(video_path, start, duration)`, `json` module.
+
+Do NOT write `import json` — it is already available.
+Frames from extract_frames are automatically embedded as images.
+
+**Example** (complete workflow in one script):
+```python
+# Search and discover skills
+results = search_skills("cinematic color")
+top = results["skills"][0]["name"]
+details = get_skill_details(top)
+
+# Analyze video to inform parameter choices
+info = analyze_video("/tmp/input.mp4")
+
+# Build the pipeline with discovered skills
+params = {{"intensity": "medium"}}
+pipeline = build_pipeline(
+    [{{"name": top, "params": params}}],
+    "/tmp/in.mp4", "/tmp/out.mp4"
+)
+print(json.dumps(pipeline))
+```
+
+> **IMPORTANT**: Do NOT make individual tool calls. Put EVERYTHING in one
+> execute_code script. The only tool you should call is execute_code.
+"""
+
+
 def get_agentic_system_prompt(
     video_metadata: Optional[str] = None,
     connected_inputs: str = "",
+    ptc_mode: str = "auto",
 ) -> str:
     """Generate a system prompt for agentic/tool-calling mode.
 
@@ -496,6 +574,8 @@ def get_agentic_system_prompt(
 
     Args:
         video_metadata: Optional video analysis string.
+        connected_inputs: Summary of connected inputs.
+        ptc_mode: 'auto' (LLM chooses), 'on' (force PTC), 'off' (no PTC).
 
     Returns:
         Formatted system prompt string.
@@ -503,7 +583,28 @@ def get_agentic_system_prompt(
     video_info = video_metadata or "No video information available - assume standard video input"
     inputs_info = connected_inputs or "No extra inputs connected"
 
-    return AGENTIC_SYSTEM_PROMPT.format(
+    prompt = AGENTIC_SYSTEM_PROMPT
+
+    if ptc_mode == "on":
+        # Replace the auto PTC section with the mandatory PTC section
+        import re
+        prompt = re.sub(
+            r"## Programmatic Tool Calling \(execute_code\).*?(?=## Input Video)",
+            PTC_FIRST_SECTION + "\n",
+            prompt,
+            flags=re.DOTALL,
+        )
+    elif ptc_mode == "off":
+        # Strip the PTC section entirely
+        import re
+        prompt = re.sub(
+            r"## Programmatic Tool Calling \(execute_code\).*?(?=## Input Video)",
+            "",
+            prompt,
+            flags=re.DOTALL,
+        )
+
+    return prompt.format(
         video_metadata=video_info,
         connected_inputs=inputs_info,
     )
