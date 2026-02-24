@@ -671,11 +671,22 @@ def mask_video(
 
         autocast_ctx = torch.autocast("cuda", dtype=torch.bfloat16) if torch.cuda.is_available() else nullcontext()
         with torch.inference_mode(), autocast_ctx:
-            # Initialize inference state from frames directory
-            inference_state = video_model.init_state(
-                resource_path=frames_dir,
-                video_loader_type="cv2",
-            )
+            # init_state loads all frames — suppress SAM3's per-frame tqdm bar
+            # (in a non-TTY environment each \r update prints as a new line).
+            import os as _os
+            _tqdm_was = _os.environ.get("TQDM_DISABLE")
+            _os.environ["TQDM_DISABLE"] = "1"
+            try:
+                inference_state = video_model.init_state(
+                    resource_path=frames_dir,
+                    video_loader_type="cv2",
+                )
+            finally:
+                if _tqdm_was is None:
+                    _os.environ.pop("TQDM_DISABLE", None)
+                else:
+                    _os.environ["TQDM_DISABLE"] = _tqdm_was
+            log.info("SAM3 frames loaded (%d total)", len(frame_files))
 
             # Add text prompt on first frame
             video_model.add_prompt(
@@ -684,9 +695,12 @@ def mask_video(
                 text_str=prompt,
             )
 
-            # 3. Propagate and save mask frames
+            # 3. Propagate masks — drive the iterator ourselves so we control
+            # progress reporting (no tqdm bar spam in ComfyUI's non-TTY console).
             log.info("Propagating SAM3 masks across %d frames", len(frame_files))
             mask_frames_saved = set()
+            _total = len(frame_files)
+            _report_every = max(1, _total // 10)  # log roughly every 10%
             for frame_idx, outputs in video_model.propagate_in_video(inference_state):
                 if outputs is None:
                     continue
@@ -709,6 +723,16 @@ def mask_video(
                     mask_img = mask_img.resize((w, h), Image.NEAREST)
                 mask_img.save(os.path.join(masks_dir, f"{frame_idx:06d}.png"))
                 mask_frames_saved.add(frame_idx)
+
+                # Log progress at ~10% intervals
+                if (frame_idx + 1) % _report_every == 0 or frame_idx + 1 == _total:
+                    log.info("SAM3 propagation: %d/%d frames (%.0f%%)",
+                             frame_idx + 1, _total,
+                             100.0 * (frame_idx + 1) / _total)
+
+            # Release the frame cache so subsequent runs (e.g. verification
+            # retry) don't inherit the ~5 GB of loaded frame tensors in VRAM.
+            video_model.reset_state(inference_state)
 
         # Fill any missing frames with empty masks
         for i in range(len(frame_files)):
