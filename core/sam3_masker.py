@@ -669,7 +669,11 @@ def mask_video(
         first_frame = np.array(Image.open(frame_files[0]))
         h, w = first_frame.shape[:2]
 
-        autocast_ctx = torch.autocast("cuda", dtype=torch.bfloat16) if torch.cuda.is_available() else nullcontext()
+        autocast_ctx = (
+            torch.autocast("cuda", dtype=torch.bfloat16)
+            if (torch.cuda.is_available() and not use_cpu)
+            else nullcontext()
+        )
         with torch.inference_mode(), autocast_ctx:
             # init_state loads all frames — suppress SAM3's per-frame tqdm bar
             # (in a non-TTY environment each \r update prints as a new line).
