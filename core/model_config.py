@@ -55,21 +55,23 @@ def _parse_simple_yaml(path: Path) -> dict:
         return result
 
     in_api_models = False
+    in_live_fetch = False
     for line in lines:
         stripped = line.strip()
         if stripped.startswith("#") or not stripped:
             continue
-        if stripped == "api_models:":
-            in_api_models = True
-            continue
-        if stripped.endswith(":") and not stripped.startswith("-"):
-            in_api_models = False
+        # Detect top-level section headers (no leading whitespace, ends with colon)
+        indent = len(line) - len(line.lstrip())
+        if indent == 0 and stripped.endswith(":") and not stripped.startswith("-"):
+            in_api_models = stripped == "api_models:"
+            in_live_fetch = stripped == "live_fetch:"
             continue
         if in_api_models and stripped.startswith("- "):
             model = stripped[2:].strip().strip("\"'")
             if model:
                 result["api_models"].append(model)
-        if "enabled:" in stripped and "live_fetch" not in stripped:
+        # Only read enabled: when we are inside the live_fetch: section
+        if in_live_fetch and stripped.startswith("enabled:"):
             val = stripped.split(":", 1)[1].strip().lower()
             result["live_fetch"]["enabled"] = val == "true"
 

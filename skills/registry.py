@@ -561,7 +561,11 @@ class SkillRegistry:
                     self.reload()
                 except Exception as exc:
                     logger.error("SkillRegistry: reload failed: %s", exc)
-            # Schedule the next check
+            # Re-check the stop event after the potentially slow reload so that
+            # a stop_watching() call that arrived while we were reloading won't
+            # accidentally reschedule the timer.
+            if self._watcher_stop.is_set():  # type: ignore[attr-defined]
+                return
             t = threading.Timer(interval, _poll)
             t.daemon = True
             self._watcher_timer = t  # type: ignore[attr-defined]
