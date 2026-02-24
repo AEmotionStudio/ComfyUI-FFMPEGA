@@ -146,5 +146,6 @@ from .visual import (  # noqa: F401
     _f_colorhold,
     _f_despill,
     _f_remove_background,
+    _f_auto_mask,
 )
 

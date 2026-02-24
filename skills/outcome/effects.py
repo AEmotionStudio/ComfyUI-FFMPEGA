@@ -2813,3 +2813,65 @@ def register_skills(registry: SkillRegistry) -> None:
         ],
         tags=["thumbnail", "poster", "preview", "screenshot", "frame", "image"],
     ))
+
+    # ── SAM3 Auto-Mask ──────────────────────────────────────────────── #
+
+    registry.register(Skill(
+        name="auto_mask",
+        category=SkillCategory.VISUAL,
+        description=(
+            "Apply an effect only to specific objects in the video using "
+            "SAM3 AI segmentation. Describe what to target with a text prompt "
+            "(e.g. 'the person', 'license plate') and SAM3 generates a "
+            "precise pixel-level mask. Supports blur, pixelate, remove, "
+            "grayscale, highlight, greenscreen, and transparent effects."
+        ),
+        parameters=[
+            SkillParameter(
+                name="target",
+                type=ParameterType.STRING,
+                description="Text prompt describing what to segment (e.g. 'the dog', 'face', 'background')",
+                required=True,
+            ),
+            SkillParameter(
+                name="effect",
+                type=ParameterType.CHOICE,
+                description="Effect to apply to the masked region",
+                required=False,
+                default="blur",
+                choices=["blur", "pixelate", "remove", "grayscale", "highlight",
+                         "greenscreen", "transparent"],
+            ),
+            SkillParameter(
+                name="strength",
+                type=ParameterType.INT,
+                description="Effect intensity (1=subtle, 100=maximum)",
+                required=False,
+                default=50,
+                min_value=1,
+                max_value=100,
+            ),
+            SkillParameter(
+                name="invert",
+                type=ParameterType.BOOL,
+                description="Invert the mask — apply effect to everything EXCEPT the target",
+                required=False,
+                default=False,
+            ),
+        ],
+        examples=[
+            "auto_mask:target=face:effect=blur - Blur all faces",
+            "auto_mask:target=the person:effect=grayscale:invert=true - Keep subject in color, grayscale background",
+            "auto_mask:target=license plate:effect=pixelate:strength=80 - Pixelate license plates",
+            "auto_mask:target=watermark:effect=remove - Black out a watermark",
+            "auto_mask:target=the car:effect=highlight - Brighten and saturate the car",
+            "auto_mask:target=the person:effect=greenscreen:invert=true - Isolate person on green screen",
+            "auto_mask:target=the car:effect=greenscreen - Replace car with green for compositing",
+            "auto_mask:target=the person:effect=transparent:invert=true - Isolate person with transparent background (WebM)",
+        ],
+        tags=[
+            "mask", "segment", "sam3", "auto", "blur", "pixelate", "censor",
+            "privacy", "face", "detect", "ai", "smart", "object", "region",
+            "remove", "highlight", "grayscale", "invert", "text", "prompt",
+        ],
+    ))

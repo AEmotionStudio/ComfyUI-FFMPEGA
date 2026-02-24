@@ -135,6 +135,13 @@ class SkillComposer:
         "transcribe_audio": "auto_transcribe",
         "transcribe_video": "auto_transcribe",
         "stt": "auto_transcribe",
+        "auto_segment": "auto_mask",
+        "segment": "auto_mask",
+        "smart_mask": "auto_mask",
+        "sam2": "auto_mask",
+        "sam_mask": "auto_mask",
+        "ai_mask": "auto_mask",
+        "object_mask": "auto_mask",
     }
 
     def __init__(self, registry: Optional[SkillRegistry] = None):
@@ -1152,6 +1159,8 @@ def _get_dispatch() -> dict:
         _f_typewriter_text, _f_bounce_text, _f_fade_text, _f_karaoke_text,
         # transcribe
         _f_auto_transcribe, _f_karaoke_subtitles,
+        # masking (SAM2)
+        _f_auto_mask,
         # presets
         _f_fade_to_black, _f_fade_to_white, _f_flash,
         _f_spin, _f_shake, _f_pulse, _f_bounce, _f_drift,
@@ -1310,6 +1319,15 @@ def _get_dispatch() -> dict:
         "remove_background": _f_remove_background,
         "remove_bg": _f_remove_background,
         "background_removal": _f_remove_background,
+        # SAM2 Auto-Mask
+        "auto_mask": _f_auto_mask,
+        "auto_segment": _f_auto_mask,
+        "segment": _f_auto_mask,
+        "smart_mask": _f_auto_mask,
+        "sam2": _f_auto_mask,
+        "sam_mask": _f_auto_mask,
+        "ai_mask": _f_auto_mask,
+        "object_mask": _f_auto_mask,
         # Presets / Transitions
         "fade_to_black": _f_fade_to_black,
         "fade_to_white": _f_fade_to_white,
