@@ -452,24 +452,42 @@ def load_video_model(device: str = "gpu"):
     checkpoint_path = _find_checkpoint()
     log.info("Loading SAM3 video model from: %s", checkpoint_path)
 
+    import torch
+
     if checkpoint_path.endswith(".safetensors"):
         # build_sam3_video_model uses torch.load internally which can't
         # handle safetensors. Build without checkpoint, then load manually.
-        model = build_sam3_video_model(
-            checkpoint_path=None,
-            load_from_HF=False,
-        )
+        if use_cpu:
+            # Temporarily hide CUDA so build_sam3_video_model constructs the
+            # model on CPU. Without this, it calls torch.device('cuda') internally
+            # and OOMs before we even get to .to(cpu).
+            _orig_cuda_available = torch.cuda.is_available
+            torch.cuda.is_available = lambda: False
+            try:
+                model = build_sam3_video_model(
+                    checkpoint_path=None,
+                    load_from_HF=False,
+                )
+            finally:
+                torch.cuda.is_available = _orig_cuda_available
+        else:
+            model = build_sam3_video_model(
+                checkpoint_path=None,
+                load_from_HF=False,
+            )
         _load_safetensors_video(model, checkpoint_path)
     else:
         # .pt file — sam3's builder uses torch.load(weights_only=True)
         # which fails on PyTorch 2.6+ with some checkpoints.
         # Monkey-patch torch.load to use weights_only=False.
-        import torch
         _orig_load = torch.load
         def _patched_load(*args, **kwargs):
             kwargs["weights_only"] = False
             return _orig_load(*args, **kwargs)
         torch.load = _patched_load
+        if use_cpu:
+            _orig_cuda_available = torch.cuda.is_available
+            torch.cuda.is_available = lambda: False
         try:
             model = build_sam3_video_model(
                 checkpoint_path=checkpoint_path,
@@ -477,17 +495,16 @@ def load_video_model(device: str = "gpu"):
             )
         finally:
             torch.load = _orig_load
+            if use_cpu:
+                torch.cuda.is_available = _orig_cuda_available
 
     # Note: SAM3's Sam3TrackerPredictor.__init__ enters a permanent bfloat16
     # autocast context. This is by design — SAM3 uses mixed-precision bf16
     # inference. Do NOT call model.float() or disable autocast; it breaks
     # the model's internal dtype expectations.
 
-    import torch
     if use_cpu:
-        # Move to CPU so frame loading doesn't compete for VRAM.
-        # SAM3's init_state() will pre-load ALL video frames into device memory;
-        # on a 12 GB GPU a 192-frame 720p video alone fills ~5 GB.
+        # Belt-and-suspenders: explicitly move any remaining CUDA tensors to CPU
         model.to(torch.device("cpu"))
 
     _video_model = model
