@@ -37,6 +37,19 @@ def main():
     else:
         print("[FFMPEGA] ✓ SAM3 already installed")
 
+    # --- LaMa inpainting (object removal for auto_mask) ---
+    if not is_installed("simple_lama_inpainting"):
+        print("[FFMPEGA] Installing simple-lama-inpainting (--no-deps to avoid torch/numpy conflicts)...")
+        result = subprocess.run(
+            [*pip, "--no-deps", "simple-lama-inpainting"],
+        )
+        if result.returncode == 0:
+            print("[FFMPEGA] ✓ simple-lama-inpainting installed successfully")
+        else:
+            print("[FFMPEGA] ✗ simple-lama-inpainting installation failed — LaMa inpainting will use black fill fallback")
+    else:
+        print("[FFMPEGA] ✓ simple-lama-inpainting already installed")
+
     print("[FFMPEGA] Dependency installation complete")
 
 
