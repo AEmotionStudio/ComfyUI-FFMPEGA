@@ -104,6 +104,13 @@ class SkillParameter:
             if not isinstance(value, bool):
                 return False, f"Parameter '{self.name}' must be a boolean"
 
+        elif self.type == ParameterType.COLOR:
+            import re
+            if not isinstance(value, str):
+                return False, f"Parameter '{self.name}' must be a color string"
+            if not re.match(r"^#[0-9A-Fa-f]{6}$", value):
+                return False, f"Parameter '{self.name}' must be a hex color like #RRGGBB"
+
         elif self.type == ParameterType.CHOICE:
             if self.choices:
                 # ⚡ Perf: Use O(1) map lookup instead of O(N) list search.
@@ -496,4 +503,3 @@ def _register_default_skills(registry: SkillRegistry) -> None:
     transitions.register_skills(registry)
     motion.register_skills(registry)
     delivery.register_skills(registry)
-
