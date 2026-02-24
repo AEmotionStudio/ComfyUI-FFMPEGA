@@ -596,7 +596,7 @@ def mask_video(
             binary_masks = outputs.get("out_binary_masks")
             if binary_masks is not None and len(binary_masks) > 0:
                 # Combine all object masks into one
-                if hasattr(binary_masks, 'numpy'):
+                if torch.is_tensor(binary_masks):
                     binary_masks = binary_masks.cpu().numpy()
                 combined = np.any(binary_masks, axis=0)
                 # Squeeze extra dims: (1, H, W) → (H, W) for mode="L"
