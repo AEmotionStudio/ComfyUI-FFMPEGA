@@ -5,7 +5,7 @@
 **An AI-powered FFMPEG agent node for ComfyUI — edit videos with natural language.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-2.6.6-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-2.7.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-2-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 [![Downloads](https://img.shields.io/badge/dynamic/json?color=blueviolet&label=Downloads&query=downloads.smart_count&url=https://raw.githubusercontent.com/AEmotionStudio/ComfyUI-FFMPEGA/refs/heads/badges/traffic_stats.json&style=for-the-badge&logo=github)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
@@ -24,9 +24,19 @@
 
 ---
 
-## 🚀 What's New in v2.6.5 (February 22, 2026)
+## 🚀 What's New in v2.7.0 (February 24, 2026)
 
-**Whisper Auto-Transcription, Karaoke Subtitles & Letterbox Fixes**
+**SAM3 Auto-Mask, LaMa Inpainting, Programmatic Tool Calling & 656 Tests**
+
+*   **🎭 SAM3 Auto-Mask**: New `remove` skill powered by Segment Anything Model 3 — describe what to remove in natural language (e.g. *"remove the person"*) and SAM3 generates per-frame masks automatically.
+*   **🖌️ LaMa Inpainting**: AI-powered video object removal using LaMa (Large Mask Inpainting). Temporal Gaussian smoothing reduces frame-to-frame flicker. Falls back to black fill if LaMa is not installed.
+*   **🟢 Greenscreen**: New `greenscreen` skill — uses SAM3 masks to replace backgrounds with solid colors or transparency (WebM output).
+*   **⚡ Programmatic Tool Calling (PTC)**: New `execute_code` tool lets LLMs write a single Python script that orchestrates multiple tool calls in one pass, reducing round-trips from ~6 to 1. Three modes: `off`, `auto`, `on`.
+*   **🔒 PTC Sandbox**: Hardened with 25+ escape vector blocks — dunder introspection, module access, traceback traversal, dynamic attribute access, and `chr()` construction bypasses.
+*   **🧪 656 Tests**: Expanded test suite from 516 → 656 with 0 failures. 34 new PTC executor tests, security hardening tests, and corrected mock contracts.
+
+<details>
+<summary><b>Previous: v2.6.5 — Whisper Auto-Transcription, Karaoke Subtitles & Letterbox Fixes</b></summary>
 
 *   **🎙️ Auto-Transcribe**: New `auto_transcribe` skill — transcribes video audio with OpenAI Whisper and burns SRT subtitles directly into the output. Supports multi-video concat with correct cross-clip timing.
 *   **🎤 Karaoke Subtitles**: New `karaoke_subtitles` skill — word-by-word progressive-fill karaoke effect using Whisper's word-level timestamps and ASS `\kf` tags.
@@ -34,6 +44,8 @@
 *   **📐 Letterbox Fix**: Replaced `crop+pad` with `drawbox` for letterboxing, preserving video content. Handles both letterbox and pillarbox cases correctly.
 *   **🧹 Code Dedup**: Extracted shared `ffmpeg_escape_path`, `color_to_ass_bgr`, and `_run_transcription` helpers — 3 deduplication refactors reducing maintenance surface.
 *   **🔧 9 Bug Fixes**: Whisper memory leak, xfade subtitle timing, ASS escaping, hex color validation, aspect ratio div-by-zero, and more.
+
+</details>
 
 <details>
 <summary><b>Previous: v2.6.0 — HandlerResult, Compose Decomposition & 516 Tests</b></summary>
@@ -78,25 +90,6 @@
 *   **🖼️ Vision System**: Multimodal frame analysis — the agent extracts frames and "sees" the video.
 *   **🔊 Audio Analysis**: Volume (dB), EBU R128 loudness (LUFS), and silence detection.
 *   **🤖 Real Token Stats**: Gemini CLI and Claude CLI return native token counts via JSON output.
-
-</details>
-
-<details>
-<summary><b>Previous: v2.2.1 — Security Sandbox & CLI Vision</b></summary>
-
-*   **🔒 CLI Agent Sandbox**: All CLI agents sandboxed to the custom node directory.
-*   **👁️ Vision Frame Access**: CLI agents read extracted video frames. Tested: Gemini ✅, Claude ✅, Cursor ✅, Qwen ❌.
-*   **📊 Gemini CLI Plans & Limits**: Free/paid tier comparison and rate limits.
-
-</details>
-
-<details>
-<summary><b>Previous: v2.2.0 — 200 Skills & Dynamic Inputs</b></summary>
-
-*   **🎯 200 Skills**: Expanded to **200 skills** across all categories.
-*   **🔗 Dynamic Auto-Expanding Inputs**: Connect `image_a` → `image_b` appears, and so on.
-*   **🎥 Concat & Transitions**: 18 smooth transition types with `xfade`.
-*   **📺 Split Screen / 🎨 Animated Overlay / 📝 Text & Graphics / 🔊 Audio / ✂️ Editing / 🎆 Effects**
 
 </details>
 

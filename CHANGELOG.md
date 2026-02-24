@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] - 2026-02-24
+
+### Added
+- **SAM3 Auto-Mask & Greenscreen**: New `remove` skill powered by SAM3 (Segment Anything Model 3) for automatic object segmentation. Generates per-frame binary masks from text prompts (e.g. *"remove the person"*), then applies LaMa inpainting or black fill. New `greenscreen` skill uses SAM3 masks to replace backgrounds with solid colors or transparency (WebM output). *(PR #71)*
+- **LaMa Inpainting**: New `core/lama_inpainter.py` — per-frame LaMa (Large Mask Inpainting) for AI-powered video object removal. Uses `simple-lama-inpainting` (Apache-2.0). Includes temporal Gaussian smoothing to reduce frame-to-frame flickering, and automatic temp directory cleanup. *(PR #71)*
+- **Programmatic Tool Calling (PTC)**: New `execute_code` tool with sandboxed Python executor (`core/ptc_executor.py`). LLMs can write a single Python script that orchestrates multiple tool calls (search → details → build) in one pass, reducing round-trips from ~6 to 1. Three modes: `off` (classic), `auto` (both available), `on` (forced PTC only). *(PR #72)*
+- **PTC Sandbox Security**: Static code analysis blocks 25+ escape vectors — dunder introspection (`__class__`, `__globals__`, `__getattribute__`), module access (`os.`, `subprocess.`), traceback frame traversal (`__traceback__`, `tb_frame`, `f_back`), dangerous builtins (`eval`, `exec`, `open`, `chr`), and dynamic attribute access. All builtins except safe ones are removed. *(PR #72)*
+- **Tool Use Examples**: `input_examples` field added to all tool definitions, giving LLMs concrete usage patterns. Examples are stripped from API schemas (OpenAI, Anthropic) to avoid 400 errors but preserved for CLI connectors that embed tools as text. *(PR #72)*
+- **PTC Test Suite**: New `tests/test_ptc_executor.py` with 34 tests covering sandbox security (15 escape vector tests), safe builtins, tool access, end-to-end orchestration, and vision integration. *(PR #72)*
+
+### Security
+- **Path Validation Hardening**: Case-insensitive path validation on all platforms, improved robustness of output path blocking for system directories. *(PR #69)*
+- **Input Sanitization**: Expanded input sanitization for edge cases in text parameters and API key handling. *(PR #69)*
+- **PTC Sandbox Hardening**: Blocked `__getattribute__`/`__setattr__`/`__delattr__` for dynamic attribute access, `chr()` for string construction bypasses, and traceback frame traversal escapes. Deep-copied tool schemas prevent mutation of global definitions. *(PR #72)*
+
+### Performance
+- **CHOICE Validation O(1)**: `SkillParameter` caches a normalized `_choice_map` in `__post_init__` — O(1) dictionary lookup instead of O(N) list iteration. *(PR #70)*
+- **FFMPEG Path Escape**: Optimized `ffmpeg_escape_path` performance for common-case clean paths. *(PR #73)*
+
+### Fixed
+- **SAM3 Mask Cleanup**: Guarded `rmtree` against `None` temp directory, wrapped FPS parsing in try/except, fixed torch.cuda calls on CPU-only systems, and resolved mask dimension validation issues. *(PR #71)*
+- **LaMa Import Path**: Added relative import fallback and corrected `remove_object` function import (was incorrectly `inpaint_video`). *(PR #71)*
+- **PTC API Keys**: System prompt and test mocks now use correct return keys (`matches`/`match_count` instead of `skills`/`count`). *(PR #72)*
+- **Regex False Positives**: PTC blocked-patterns regex uses word boundaries so strings like `"videos.mp4"` are not flagged by the `os.` pattern. *(PR #72)*
+- **Forced PTC Mode**: When `ptc_mode == "on"`, tool_defs now only exposes `execute_code` — model can no longer bypass forced-PTC with classic per-tool calls. *(PR #72)*
+- **CLI Tool Instructions**: Tool usage instructions now adapt to available tools — prevents contradictory "ALWAYS call search_skills" when only `execute_code` is exposed. *(PR #72)*
+- **Sentinel Overlay Validation**: Added validation for `ParameterType.COLOR` and hidden `text_overlay` parameters.
+
+### Changed
+- **Shared Effect Filter Map**: Extracted duplicate effect filter mapping into a shared constant to eliminate duplication between handlers. *(PR #71)*
+- **Upload Button UX**: Enhanced upload button accessibility with improved label casing and ARIA attributes. *(PR #74)*
+- **Tool Schema Stripping**: `strip_nonstandard_fields()` now uses `copy.deepcopy` for nested parameters, preventing mutation of global `TOOL_DEFINITIONS`. Only applied to non-CLI connectors. *(PR #72)*
+- **Test Suite**: Expanded from 516 to **656 passing tests**, 0 failures. New PTC executor tests (34), security hardening tests, and updated mock return shapes to match real API contracts.
+
+---
+
+
 ## [2.6.6] - 2026-02-22
 
 ### Changed
