@@ -442,7 +442,7 @@ class FFMPEGAgentNode:
                 }))
 
         has_extra_images = (
-            kwargs.get("image_a") is not None
+            image_a is not None
             or any(k.startswith("image_") and not k.startswith("image_path_") and kwargs.get(k) is not None for k in kwargs)
             or len(_all_video_paths) > 0
             or len(_all_image_paths) > 0

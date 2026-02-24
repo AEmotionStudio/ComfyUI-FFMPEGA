@@ -73,6 +73,9 @@ def _parse_simple_yaml(path: Path) -> dict:
         # Only read enabled: when we are inside the live_fetch: section
         if in_live_fetch and stripped.startswith("enabled:"):
             val = stripped.split(":", 1)[1].strip().lower()
+            # Strip inline comments (e.g. "false # set to true to enable")
+            if " #" in val:
+                val = val.split(" #", 1)[0].strip()
             result["live_fetch"]["enabled"] = val == "true"
 
     return result
