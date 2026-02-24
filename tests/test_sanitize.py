@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from core.sanitize import (
     validate_video_path, validate_output_path, validate_output_file_path,
-    sanitize_text_param, redact_secret, sanitize_api_key,
+    sanitize_text_param, redact_secret, sanitize_api_key, ffmpeg_escape_path,
 )
 
 
@@ -208,3 +208,19 @@ class TestSanitizeApiKey:
     def test_no_key_in_text_unchanged(self):
         text = "normal error message"
         assert sanitize_api_key(text, "sk-nothere") == text
+
+
+class TestFFMPEGEscapePath:
+    """Tests for ffmpeg_escape_path."""
+
+    def test_clean_path_unchanged(self):
+        assert ffmpeg_escape_path("/home/user/video.mp4") == "/home/user/video.mp4"
+
+    def test_escapes_special_chars(self):
+        # Backslash, single quote, colon, comma, brackets, space
+        s = r"C:\My Documents\Video's[1]:New,Ver.mp4"
+        expected = r"C\:\\My\ Documents\\Video\'s\[1\]\:New\,Ver.mp4"
+        assert ffmpeg_escape_path(s) == expected
+
+    def test_escapes_spaces(self):
+        assert ffmpeg_escape_path("my video.mp4") == "my\\ video.mp4"
