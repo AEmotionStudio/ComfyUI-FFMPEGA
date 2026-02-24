@@ -148,7 +148,9 @@ def _patch_sam3_imports() -> None:
 
 _image_model = None
 _image_processor = None
+_image_model_device = None  # last device the image model was loaded on
 _video_model = None
+_video_model_device = None  # last device the video model was loaded on
 
 
 # ---------------------------------------------------------------------------
@@ -322,8 +324,11 @@ def _free_vram() -> None:
 #  Model loading
 # ---------------------------------------------------------------------------
 
-def load_image_model():
+def load_image_model(device: str = "gpu"):
     """Load and cache the SAM3 image model + processor.
+
+    Args:
+        device: "gpu" (default) or "cpu". CPU avoids VRAM pressure but is slower.
 
     Returns:
         Tuple of (model, Sam3Processor).
@@ -331,9 +336,28 @@ def load_image_model():
     Raises:
         ImportError: If SAM3 is not installed.
     """
-    global _image_model, _image_processor
+    global _image_model, _image_processor, _image_model_device
+
+    use_cpu = device.lower() == "cpu"
+    target_device = "cpu" if use_cpu else "cuda"
+    # Guard: fall back to CPU if CUDA was requested but isn't available
+    if target_device == "cuda":
+        import torch as _torch_check
+        if not _torch_check.cuda.is_available():
+            log.warning("CUDA unavailable, loading SAM3 image model on CPU")
+            target_device = "cpu"
+            use_cpu = True
 
     if _image_model is not None and _image_processor is not None:
+        # If device changed, move model to new device
+        if _image_model_device != target_device:
+            import torch
+            actual_device = target_device
+            if actual_device == "cuda" and not torch.cuda.is_available():
+                log.warning("CUDA unavailable, keeping SAM3 image model on CPU")
+                actual_device = "cpu"
+            _image_model.to(torch.device(actual_device))
+            _image_model_device = actual_device
         return _image_model, _image_processor
 
     _patch_sam3_imports()
@@ -347,7 +371,10 @@ def load_image_model():
             "pip install --no-deps git+https://github.com/facebookresearch/sam3.git"
         )
 
-    _free_vram()
+    if use_cpu:
+        log.info("SAM3 image model: CPU mode (avoids VRAM pressure, slower)")
+    else:
+        _free_vram()
 
     checkpoint_path = _find_checkpoint()
 
@@ -379,15 +406,25 @@ def load_image_model():
     # Note: SAM3 handles its own dtype management (bf16 autocast).
     # Do NOT call model.float() — it breaks mixed-precision inference.
 
+    import torch
+    if use_cpu:
+        model.to(torch.device("cpu"))
+
     _image_model = model
+    _image_model_device = target_device
     _image_processor = Sam3Processor(model)
 
-    log.info("SAM3 image model loaded successfully")
+    log.info("SAM3 image model loaded successfully on %s", target_device.upper())
     return _image_model, _image_processor
 
 
-def load_video_model():
+def load_video_model(device: str = "gpu"):
     """Load and cache the SAM3 video model.
+
+    Args:
+        device: "gpu" (default) or "cpu". CPU mode avoids VRAM pressure by
+            moving the model off-GPU before frame loading. Slower but necessary
+            when VRAM is insufficient (~12 GB needed for long videos on GPU).
 
     Returns:
         SAM3 video predictor instance.
@@ -395,9 +432,28 @@ def load_video_model():
     Raises:
         ImportError: If SAM3 is not installed.
     """
-    global _video_model
+    global _video_model, _video_model_device
+
+    use_cpu = device.lower() == "cpu"
+    target_device = "cpu" if use_cpu else "cuda"
+    # Guard: fall back to CPU if CUDA was requested but isn't available
+    if target_device == "cuda":
+        import torch as _torch_check
+        if not _torch_check.cuda.is_available():
+            log.warning("CUDA unavailable, loading SAM3 video model on CPU")
+            target_device = "cpu"
+            use_cpu = True
 
     if _video_model is not None:
+        # If device changed, move model to new device
+        if _video_model_device != target_device:
+            import torch
+            actual_device = target_device
+            if actual_device == "cuda" and not torch.cuda.is_available():
+                log.warning("CUDA unavailable, keeping SAM3 video model on CPU")
+                actual_device = "cpu"
+            _video_model.to(torch.device(actual_device))
+            _video_model_device = actual_device
         return _video_model
 
     _patch_sam3_imports()
@@ -410,29 +466,50 @@ def load_video_model():
             "pip install --no-deps git+https://github.com/facebookresearch/sam3.git"
         )
 
-    _free_vram()
+    if use_cpu:
+        log.info("SAM3 video model: CPU mode (avoids VRAM frame-loading OOM, slower)")
+    else:
+        _free_vram()
 
     checkpoint_path = _find_checkpoint()
     log.info("Loading SAM3 video model from: %s", checkpoint_path)
 
+    import torch
+
     if checkpoint_path.endswith(".safetensors"):
         # build_sam3_video_model uses torch.load internally which can't
         # handle safetensors. Build without checkpoint, then load manually.
-        model = build_sam3_video_model(
-            checkpoint_path=None,
-            load_from_HF=False,
-        )
+        if use_cpu:
+            # Temporarily hide CUDA so build_sam3_video_model constructs the
+            # model on CPU. Without this, it calls torch.device('cuda') internally
+            # and OOMs before we even get to .to(cpu).
+            _orig_cuda_available = torch.cuda.is_available
+            torch.cuda.is_available = lambda: False
+            try:
+                model = build_sam3_video_model(
+                    checkpoint_path=None,
+                    load_from_HF=False,
+                )
+            finally:
+                torch.cuda.is_available = _orig_cuda_available
+        else:
+            model = build_sam3_video_model(
+                checkpoint_path=None,
+                load_from_HF=False,
+            )
         _load_safetensors_video(model, checkpoint_path)
     else:
         # .pt file — sam3's builder uses torch.load(weights_only=True)
         # which fails on PyTorch 2.6+ with some checkpoints.
         # Monkey-patch torch.load to use weights_only=False.
-        import torch
         _orig_load = torch.load
         def _patched_load(*args, **kwargs):
             kwargs["weights_only"] = False
             return _orig_load(*args, **kwargs)
         torch.load = _patched_load
+        if use_cpu:
+            _orig_cuda_available = torch.cuda.is_available
+            torch.cuda.is_available = lambda: False
         try:
             model = build_sam3_video_model(
                 checkpoint_path=checkpoint_path,
@@ -440,14 +517,21 @@ def load_video_model():
             )
         finally:
             torch.load = _orig_load
+            if use_cpu:
+                torch.cuda.is_available = _orig_cuda_available
 
     # Note: SAM3's Sam3TrackerPredictor.__init__ enters a permanent bfloat16
     # autocast context. This is by design — SAM3 uses mixed-precision bf16
     # inference. Do NOT call model.float() or disable autocast; it breaks
     # the model's internal dtype expectations.
 
+    if use_cpu:
+        # Belt-and-suspenders: explicitly move any remaining CUDA tensors to CPU
+        model.to(torch.device("cpu"))
+
     _video_model = model
-    log.info("SAM3 video model loaded successfully")
+    _video_model_device = target_device
+    log.info("SAM3 video model loaded successfully on %s", target_device.upper())
     return _video_model
 
 
@@ -458,19 +542,21 @@ def load_video_model():
 def mask_image_with_text(
     image_path: str,
     prompt: str,
+    device: str = "gpu",
 ) -> np.ndarray:
     """Generate masks for objects described by a text prompt.
 
     Args:
         image_path: Path to the image file.
         prompt: Text description of what to segment (e.g. "the dog").
+        device: "gpu" (default) or "cpu".
 
     Returns:
         Binary mask as numpy array (H, W) where 255=masked, 0=unmasked.
     """
     from PIL import Image
 
-    model, processor = load_image_model()
+    model, processor = load_image_model(device=device)
     image = Image.open(image_path).convert("RGB")
 
     inference_state = processor.set_image(image)
@@ -529,6 +615,7 @@ def mask_video(
     video_path: str,
     prompt: str,
     output_dir: Optional[str] = None,
+    device: str = "gpu",
 ) -> str:
     """Generate a grayscale mask video for text-prompted objects.
 
@@ -539,6 +626,9 @@ def mask_video(
         video_path: Path to input video.
         prompt: Text description of what to segment.
         output_dir: Directory for output files. Uses temp dir if None.
+        device: "gpu" (default) or "cpu". CPU avoids VRAM OOM on long
+            videos — SAM3 pre-loads all frames into device memory during
+            init_state(), which can easily consume 5+ GB on 720p clips.
 
     Returns:
         Path to the generated grayscale mask video (MP4).
@@ -576,10 +666,23 @@ def mask_video(
         log.info("Running SAM3 video tracking on %d frames (prompt: '%s')",
                  len(frame_files), prompt)
 
-        video_model = load_video_model()
+        video_model = load_video_model(device=device)
 
         import torch
         from contextlib import nullcontext
+
+        # Flush VRAM again right before inference (GPU mode only).
+        # ComfyUI may have reloaded its models between load_video_model() and here.
+        use_cpu = device.lower() == "cpu"
+        if not use_cpu:
+            _free_vram()
+            if torch.cuda.is_available():
+                allocated = torch.cuda.memory_allocated() / 1024**3
+                free = (torch.cuda.get_device_properties(0).total_memory
+                        - torch.cuda.memory_allocated()) / 1024**3
+                log.info("VRAM before SAM3 inference: %.2f GB allocated, %.2f GB free",
+                         allocated, free)
+
         # SAM3's tracker expects a bfloat16 autocast context (entered permanently
         # in Sam3TrackerPredictor.__init__). ComfyUI's operations between runs
         # can pop this off the thread-local autocast stack. Re-enter it here
@@ -588,13 +691,29 @@ def mask_video(
         first_frame = np.array(Image.open(frame_files[0]))
         h, w = first_frame.shape[:2]
 
-        autocast_ctx = torch.autocast("cuda", dtype=torch.bfloat16) if torch.cuda.is_available() else nullcontext()
+        autocast_ctx = (
+            torch.autocast("cuda", dtype=torch.bfloat16)
+            if (torch.cuda.is_available() and not use_cpu)
+            else nullcontext()
+        )
+        inference_state = None  # declared here so finally block can always reach it
         with torch.inference_mode(), autocast_ctx:
-            # Initialize inference state from frames directory
-            inference_state = video_model.init_state(
-                resource_path=frames_dir,
-                video_loader_type="cv2",
-            )
+            # init_state loads all frames — suppress SAM3's per-frame tqdm bar
+            # (in a non-TTY environment each \r update prints as a new line).
+            import os as _os
+            _tqdm_was = _os.environ.get("TQDM_DISABLE")
+            _os.environ["TQDM_DISABLE"] = "1"
+            try:
+                inference_state = video_model.init_state(
+                    resource_path=frames_dir,
+                    video_loader_type="cv2",
+                )
+            finally:
+                if _tqdm_was is None:
+                    _os.environ.pop("TQDM_DISABLE", None)
+                else:
+                    _os.environ["TQDM_DISABLE"] = _tqdm_was
+            log.info("SAM3 frames loaded (%d total)", len(frame_files))
 
             # Add text prompt on first frame
             video_model.add_prompt(
@@ -603,31 +722,53 @@ def mask_video(
                 text_str=prompt,
             )
 
-            # 3. Propagate and save mask frames
+            # 3. Propagate masks — drive the iterator ourselves so we control
+            # progress reporting (no tqdm bar spam in ComfyUI's non-TTY console).
             log.info("Propagating SAM3 masks across %d frames", len(frame_files))
             mask_frames_saved = set()
-            for frame_idx, outputs in video_model.propagate_in_video(inference_state):
-                if outputs is None:
-                    continue
+            _total = len(frame_files)
+            _report_every = max(1, _total // 10)  # log roughly every 10%
+            try:
+                for frame_idx, outputs in video_model.propagate_in_video(inference_state):
+                    if outputs is None:
+                        continue
 
-                binary_masks = outputs.get("out_binary_masks")
-                if binary_masks is not None and len(binary_masks) > 0:
-                    # Combine all object masks into one
-                    if torch.is_tensor(binary_masks):
-                        binary_masks = binary_masks.cpu().numpy()
-                    combined = np.any(binary_masks, axis=0)
-                    # Squeeze extra dims: (1, H, W) → (H, W) for mode="L"
-                    while combined.ndim > 2:
-                        combined = combined.squeeze(0)
-                    mask = (combined > 0).astype(np.uint8) * 255
-                else:
-                    mask = np.zeros((h, w), dtype=np.uint8)
+                    binary_masks = outputs.get("out_binary_masks")
+                    if binary_masks is not None and len(binary_masks) > 0:
+                        # Combine all object masks into one
+                        if torch.is_tensor(binary_masks):
+                            binary_masks = binary_masks.cpu().numpy()
+                        combined = np.any(binary_masks, axis=0)
+                        # Squeeze extra dims: (1, H, W) → (H, W) for mode="L"
+                        while combined.ndim > 2:
+                            combined = combined.squeeze(0)
+                        mask = (combined > 0).astype(np.uint8) * 255
+                    else:
+                        mask = np.zeros((h, w), dtype=np.uint8)
 
-                mask_img = Image.fromarray(mask, mode="L")
-                if mask_img.size != (w, h):
-                    mask_img = mask_img.resize((w, h), Image.NEAREST)
-                mask_img.save(os.path.join(masks_dir, f"{frame_idx:06d}.png"))
-                mask_frames_saved.add(frame_idx)
+                    mask_img = Image.fromarray(mask, mode="L")
+                    if mask_img.size != (w, h):
+                        mask_img = mask_img.resize((w, h), Image.NEAREST)
+                    mask_img.save(os.path.join(masks_dir, f"{frame_idx:06d}.png"))
+                    mask_frames_saved.add(frame_idx)
+
+                    # Log progress at ~10% intervals
+                    if (frame_idx + 1) % _report_every == 0 or frame_idx + 1 == _total:
+                        log.info("SAM3 propagation: %d/%d frames (%.0f%%)",
+                                 frame_idx + 1, _total,
+                                 100.0 * (frame_idx + 1) / _total)
+            finally:
+                # Release the frame cache ALWAYS — even if propagation hits OOM
+                # mid-way. Without this, each failed run leaves ~5 GB of frame
+                # tensors stranded in VRAM, making every subsequent retry worse.
+                if inference_state is not None:
+                    try:
+                        video_model.reset_state(inference_state)
+                    except Exception:
+                        pass
+                    inference_state = None
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
         # Fill any missing frames with empty masks
         for i in range(len(frame_files)):

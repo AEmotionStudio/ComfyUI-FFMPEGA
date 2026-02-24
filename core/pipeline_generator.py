@@ -9,6 +9,8 @@ import logging
 import re
 from typing import Optional
 
+from .errors import PipelineGenerationError
+
 logger = logging.getLogger("ffmpega")
 
 
@@ -187,7 +189,7 @@ class PipelineGenerator:
 
         if spec is None:
             preview = raw_response[:300] if raw_response else "(empty)"
-            raise ValueError(
+            raise PipelineGenerationError(
                 f"Failed to parse LLM response as JSON.\n"
                 f"LLM returned: {preview}\n"
                 f"Tip: Try running the prompt again or use a different model."
@@ -759,3 +761,154 @@ class PipelineGenerator:
                             break
 
         return None
+
+
+# ------------------------------------------------------------------ #
+#  AgenticSession: named lifecycle object for the tool loop           #
+# ------------------------------------------------------------------ #
+
+
+class AgenticSession:
+    # Multi-turn tool-calling session with a clear open/run/close lifecycle.
+    #
+    # This class holds all the mutable state for one LLM + tools exchange so
+    # that it can be unit-tested independently of the rest of PipelineGenerator
+    # and paves the way for future multi-session support (e.g. ComfyUI batch).
+    #
+    #   session = AgenticSession(connector, tools, tool_handlers, max_iterations=10)
+    #   async with session:
+    #       result = await session.run(messages)
+
+    def __init__(
+        self,
+        connector,
+        tools: list,
+        tool_handlers: dict,
+        max_iterations: int = 10,
+    ):
+        self.connector = connector
+        self.tools = tools
+        self.tool_handlers = tool_handlers
+        self.max_iterations = max_iterations
+        # Accumulated conversation history for the current run
+        self.messages: list[dict] = []
+        # Run-level metadata
+        self.iterations_used: int = 0
+        self.tool_calls_made: list[str] = []
+        self._closed: bool = False
+
+    # Async context manager: reserves resources, cleans up on exit
+
+    async def __aenter__(self):
+        self._closed = False
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False  # do not suppress exceptions
+
+    def close(self) -> None:
+        # Mark the session inactive.  Callers that hold references can
+        # check .closed before trying to submit more messages.
+        self._closed = True
+
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
+    async def run(self, messages: list[dict]) -> str:
+        # Execute the multi-turn tool loop starting from the given messages.
+        #
+        # Args:
+        #     messages: Initial conversation, usually system + user turn.
+        #
+        # Returns:
+        #     Final LLM text output (pipeline JSON string or explanation).
+        #
+        # Raises:
+        #     RuntimeError: If the session has already been closed.
+        import json
+        import logging
+
+        if self._closed:
+            raise RuntimeError("AgenticSession.run() called on a closed session")
+
+        logger_local = logging.getLogger("ffmpega")
+        self.messages = list(messages)
+        self.iterations_used = 0
+        self.tool_calls_made = []
+
+        for iteration in range(self.max_iterations):
+            self.iterations_used = iteration + 1
+            response = await self.connector.chat_with_tools(
+                self.messages, self.tools
+            )
+
+            if not response.tool_calls:
+                # Model emitted a final answer — return it
+                return response.content or ""
+
+            # Append assistant turn with tool_calls metadata
+            assistant_msg: dict = {
+                "role": "assistant",
+                "content": response.content or "",
+                "tool_calls": [
+                    {
+                        "id": tc.get("id", f"call_{i}"),
+                        "function": {
+                            "name": tc["function"]["name"],
+                            "arguments": tc["function"]["arguments"],
+                        },
+                    }
+                    for i, tc in enumerate(response.tool_calls)
+                ],
+            }
+            self.messages.append(assistant_msg)
+
+            # Dispatch each tool call
+            for i, tool_call in enumerate(response.tool_calls):
+                func_name = tool_call["function"]["name"]
+                func_args = tool_call["function"]["arguments"]
+                if isinstance(func_args, str):
+                    try:
+                        func_args = json.loads(func_args)
+                    except (json.JSONDecodeError, ValueError):
+                        func_args = {}
+
+                logger_local.info(
+                    "AgenticSession[%d]: %s(%s)", iteration + 1, func_name, func_args
+                )
+                self.tool_calls_made.append(func_name)
+
+                handler = self.tool_handlers.get(func_name)
+                if handler:
+                    try:
+                        result = handler(func_args)
+                        result_str = json.dumps(result, indent=2)
+                    except Exception as exc:
+                        result_str = json.dumps({"error": str(exc)})
+                        logger_local.warning(
+                            "AgenticSession tool error: %s -> %s", func_name, exc
+                        )
+                else:
+                    result_str = json.dumps({"error": f"Unknown tool: {func_name}"})
+
+                self.messages.append({
+                    "role": "tool",
+                    "content": result_str,
+                    "tool_call_id": tool_call.get("id", f"call_{i}"),
+                })
+
+        # Exhausted iterations — ask for final answer with no more tools
+        logger_local.warning(
+            "AgenticSession: exhausted max_iterations=%d", self.max_iterations
+        )
+        self.messages.append({
+            "role": "user",
+            "content": (
+                "You have used all available tool calls. "
+                "Please output the final JSON pipeline now."
+            ),
+        })
+        response = await self.connector.chat_with_tools(self.messages, [])
+        return response.content or ""

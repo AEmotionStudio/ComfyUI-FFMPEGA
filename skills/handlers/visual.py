@@ -539,6 +539,7 @@ def _f_auto_mask(p):
     strength = int(p.get("strength", 50))
     invert = bool(p.get("invert", False))
     video_path = p.get("_input_path", "")
+    sam3_device = str(p.get("_sam3_device", "gpu")).lower()
 
     # Try to load SAM3
     try:
@@ -563,6 +564,7 @@ def _f_auto_mask(p):
         mask_path = sam3_mask_video(
             video_path=video_path,
             prompt=target,
+            device=sam3_device,
         )
     except Exception as e:
         log.error("SAM3 mask generation failed: %s — falling back", e)

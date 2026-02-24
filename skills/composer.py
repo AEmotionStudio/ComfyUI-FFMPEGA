@@ -633,6 +633,8 @@ class SkillComposer:
                 step.params["_whisper_device"] = pipeline.metadata["_whisper_device"]
             if "_whisper_model" in pipeline.metadata:
                 step.params["_whisper_model"] = pipeline.metadata["_whisper_model"]
+            if "_sam3_device" in pipeline.metadata:
+                step.params["_sam3_device"] = pipeline.metadata["_sam3_device"]
             # Propagate xfade transition duration and still_duration so
             # fade_to_black can calculate the correct total output duration.
             if _xfade_transition_dur is not None:

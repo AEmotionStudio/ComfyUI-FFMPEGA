@@ -1,9 +1,12 @@
 """Skill registry for managing available editing skills."""
 
 import copy
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional, Callable, Any, Union
+
+logger = logging.getLogger("ffmpega")
 
 
 class SkillCategory(str, Enum):
@@ -453,6 +456,140 @@ class SkillRegistry:
             "required": ["skill", "params"],
         }
         return copy.deepcopy(self._cached_json_schema)
+
+    # ------------------------------------------------------------------ #
+    #  Hot-reload                                                          #
+    # ------------------------------------------------------------------ #
+
+    def reload(self) -> int:
+        """Re-read and re-register all default and custom skills.
+
+        Clears all internal state (skills, category/tag indexes, caches)
+        and re-runs the full registration sequence, including reloading
+        any YAML custom skills from ``custom_skills/``.  This lets
+        ComfyUI pick up skill changes without a server restart.
+
+        Returns:
+            The number of skills registered after the reload.
+        """
+        logger.info("SkillRegistry: reloading all skills…")
+
+        # Clear all internal state
+        self._skills.clear()
+        for cat_list in self._by_category.values():
+            cat_list.clear()
+        self._by_tag.clear()
+        self._cached_prompt_string = None
+        self._cached_json_schema = None
+
+        # Re-register defaults
+        _register_default_skills(self)
+
+        # Re-load YAML custom skills
+        try:
+            from .yaml_loader import load_custom_skills  # type: ignore[import-not-found]
+            self._custom_handlers = {}  # type: ignore[attr-defined]
+            load_custom_skills(self, self._custom_handlers)  # type: ignore[attr-defined]
+        except Exception as exc:
+            logger.warning("SkillRegistry reload: failed to load custom skills: %s", exc)
+
+        count = len(self._skills)
+        logger.info("SkillRegistry: reload complete — %d skills registered", count)
+        return count
+
+    # ------------------------------------------------------------------ #
+    #  File-watcher (optional, opt-in)                                     #
+    # ------------------------------------------------------------------ #
+
+    def start_watching(
+        self,
+        watch_dir: Optional[str] = None,
+        interval: float = 5.0,
+    ) -> None:
+        """Start a background thread that polls YAML files for changes.
+
+        When any ``.yaml`` or ``.yml`` file in *watch_dir* is modified
+        (detected via mtime), :meth:`reload` is called automatically.
+
+        This is opt-in and *disabled by default*.  Call :meth:`stop_watching`
+        to clean up the background thread before shutdown.
+
+        Args:
+            watch_dir: Directory to watch.  Defaults to the
+                ``custom_skills/`` sibling directory next to this file.
+            interval: Poll interval in seconds (default 5.0).
+        """
+        import os
+        import threading
+        from pathlib import Path
+
+        if getattr(self, "_watcher_timer", None) is not None:
+            logger.debug("SkillRegistry: file-watcher already running")
+            return
+
+        if watch_dir is None:
+            watch_dir = str(Path(__file__).resolve().parent.parent / "custom_skills")
+
+        watch_path = Path(watch_dir)
+
+        # Snapshot current mtimes
+        def _snapshot() -> dict[str, float]:
+            if not watch_path.exists():
+                return {}
+            return {
+                str(p): p.stat().st_mtime
+                for p in watch_path.rglob("*.yaml")
+            } | {
+                str(p): p.stat().st_mtime
+                for p in watch_path.rglob("*.yml")
+            }
+
+        self._watcher_mtimes: dict[str, float] = _snapshot()  # type: ignore[attr-defined]
+        self._watcher_stop: threading.Event = threading.Event()  # type: ignore[attr-defined]
+
+        def _poll():
+            if self._watcher_stop.is_set():  # type: ignore[attr-defined]
+                return
+            current = _snapshot()
+            if current != self._watcher_mtimes:  # type: ignore[attr-defined]
+                logger.info(
+                    "SkillRegistry: detected YAML changes in %s — reloading",
+                    watch_dir,
+                )
+                self._watcher_mtimes = current  # type: ignore[attr-defined]
+                try:
+                    self.reload()
+                except Exception as exc:
+                    logger.error("SkillRegistry: reload failed: %s", exc)
+            # Re-check the stop event after the potentially slow reload so that
+            # a stop_watching() call that arrived while we were reloading won't
+            # accidentally reschedule the timer.
+            if self._watcher_stop.is_set():  # type: ignore[attr-defined]
+                return
+            t = threading.Timer(interval, _poll)
+            t.daemon = True
+            self._watcher_timer = t  # type: ignore[attr-defined]
+            t.start()
+
+        # Kick off the first poll
+        t = threading.Timer(interval, _poll)
+        t.daemon = True
+        self._watcher_timer = t  # type: ignore[attr-defined]
+        t.start()
+        logger.info(
+            "SkillRegistry: watching %s every %.1fs", watch_dir, interval
+        )
+
+    def stop_watching(self) -> None:
+        """Stop the background file-watcher if running."""
+        stop_event = getattr(self, "_watcher_stop", None)
+        if stop_event is not None:
+            stop_event.set()
+        timer = getattr(self, "_watcher_timer", None)
+        if timer is not None:
+            timer.cancel()
+            self._watcher_timer = None  # type: ignore[attr-defined]
+        logger.debug("SkillRegistry: file-watcher stopped")
 
 
 # Global registry instance

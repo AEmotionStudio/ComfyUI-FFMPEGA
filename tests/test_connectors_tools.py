@@ -447,3 +447,162 @@ class TestExtractFramesCleanup:
         shutil.rmtree(frames_dir, ignore_errors=True)
 
 
+
+
+# -- Phase 3: schema validation --
+
+
+class TestCLIToolCallSchemaValidation:
+    # Tests for the new schema validation logic in _parse_tool_calls.
+
+    def test_missing_name_field_is_skipped(self):
+        text = 'TOOL_CALL: {"arguments": {"query": "blur"}}'
+        calls = CLIConnectorBase._parse_tool_calls(text)
+        assert calls is None
+
+    def test_empty_name_is_skipped(self):
+        text = 'TOOL_CALL: {"name": "", "arguments": {}}'
+        calls = CLIConnectorBase._parse_tool_calls(text)
+        assert calls is None
+
+    def test_null_name_is_skipped(self):
+        text = 'TOOL_CALL: {"name": null, "arguments": {}}'
+        calls = CLIConnectorBase._parse_tool_calls(text)
+        assert calls is None
+
+    def test_missing_arguments_defaults_to_empty_dict(self):
+        text = 'TOOL_CALL: {"name": "list_skills"}'
+        calls = CLIConnectorBase._parse_tool_calls(text)
+        assert calls is not None
+        assert calls[0]["function"]["arguments"] == {}
+
+    def test_non_dict_arguments_is_skipped(self):
+        text = 'TOOL_CALL: {"name": "search_skills", "arguments": "blur"}'
+        calls = CLIConnectorBase._parse_tool_calls(text)
+        assert calls is None
+
+    def test_arguments_as_list_is_skipped(self):
+        text = 'TOOL_CALL: {"name": "search_skills", "arguments": ["blur"]}'
+        calls = CLIConnectorBase._parse_tool_calls(text)
+        assert calls is None
+
+    def test_wrong_wrapper_schema_skipped(self):
+        text = 'TOOL_CALL: {"function": {"name": "search_skills", "arguments": {}}}'
+        calls = CLIConnectorBase._parse_tool_calls(text)
+        assert calls is None
+
+    def test_valid_payload_passes_schema(self):
+        text = 'TOOL_CALL: {"name": "search_skills", "arguments": {"query": "blur"}}'
+        calls = CLIConnectorBase._parse_tool_calls(text)
+        assert calls is not None
+        assert calls[0]["function"]["name"] == "search_skills"
+
+
+# -- Phase 3: Levenshtein + fuzzy correction --
+
+from core.llm.cli_base import _levenshtein, _fuzzy_match_tool_name
+
+
+class TestLevenshtein:
+    # Unit tests for the _levenshtein helper.
+
+    def test_identical(self):
+        assert _levenshtein("abc", "abc") == 0
+
+    def test_empty(self):
+        assert _levenshtein("", "") == 0
+
+    def test_empty_vs_nonempty(self):
+        assert _levenshtein("", "abc") == 3
+        assert _levenshtein("abc", "") == 3
+
+    def test_one_insert(self):
+        assert _levenshtein("blur", "blurr") == 1
+
+    def test_one_delete(self):
+        assert _levenshtein("search_skills", "search_skill") == 1
+
+    def test_one_sub(self):
+        assert _levenshtein("cat", "bat") == 1
+
+
+class TestFuzzyMatchToolName:
+    # Tests for _fuzzy_match_tool_name.
+
+    KNOWN = {"search_skills", "get_skill_details", "list_skills", "build_pipeline"}
+
+    def test_exact(self):
+        assert _fuzzy_match_tool_name("search_skills", self.KNOWN) == "search_skills"
+
+    def test_one_edit(self):
+        assert _fuzzy_match_tool_name("search_skill", self.KNOWN) == "search_skills"
+
+    def test_sub(self):
+        assert _fuzzy_match_tool_name("list_skillz", self.KNOWN) == "list_skills"
+
+    def test_too_far(self):
+        assert _fuzzy_match_tool_name("totally_different", self.KNOWN) is None
+
+    def test_empty_known(self):
+        assert _fuzzy_match_tool_name("anything", set()) == "anything"
+
+    def test_case_insensitive(self):
+        assert _fuzzy_match_tool_name("Search_Skills", self.KNOWN) == "search_skills"
+
+
+class TestParseToolCallsWithFuzzyCorrection:
+    # _parse_tool_calls with known_tool_names kwarg.
+
+    KNOWN = {"search_skills", "list_skills"}
+
+    def test_exact_name_passes(self):
+        text = 'TOOL_CALL: {"name": "search_skills", "arguments": {"query": "blur"}}'
+        calls = CLIConnectorBase._parse_tool_calls(text, known_tool_names=self.KNOWN)
+        assert calls is not None
+        assert calls[0]["function"]["name"] == "search_skills"
+
+    def test_off_by_one_corrected(self):
+        text = 'TOOL_CALL: {"name": "search_skill", "arguments": {"query": "blur"}}'
+        calls = CLIConnectorBase._parse_tool_calls(text, known_tool_names=self.KNOWN)
+        assert calls is not None
+        assert calls[0]["function"]["name"] == "search_skills"
+
+    def test_hallucinated_name_skipped(self):
+        text = 'TOOL_CALL: {"name": "do_the_thing", "arguments": {}}'
+        calls = CLIConnectorBase._parse_tool_calls(text, known_tool_names=self.KNOWN)
+        assert calls is None
+
+    def test_no_known_names_skips_fuzzy(self):
+        text = 'TOOL_CALL: {"name": "any_tool_at_all", "arguments": {}}'
+        calls = CLIConnectorBase._parse_tool_calls(text, known_tool_names=None)
+        assert calls is not None
+        assert calls[0]["function"]["name"] == "any_tool_at_all"
+
+    def test_mixed_valid_and_hallucinated(self):
+        text = (
+            'TOOL_CALL: {"name": "do_the_thing", "arguments": {}}\n'
+            'TOOL_CALL: {"name": "list_skills", "arguments": {}}'
+        )
+        calls = CLIConnectorBase._parse_tool_calls(text, known_tool_names=self.KNOWN)
+        assert calls is not None
+        assert len(calls) == 1
+        assert calls[0]["function"]["name"] == "list_skills"
+
+
+class TestBuildToolPromptFormatExamples:
+    # Tests for the new CORRECT/WRONG format examples in _build_tool_prompt.
+
+    def test_correct_wrong_present(self):
+        sys_prompt, _ = CLIConnectorBase._build_tool_prompt(SAMPLE_MESSAGES, SAMPLE_TOOLS)
+        assert sys_prompt is not None
+        assert "CORRECT" in sys_prompt
+        assert "WRONG" in sys_prompt
+
+    def test_available_names_listed(self):
+        sys_prompt, _ = CLIConnectorBase._build_tool_prompt(SAMPLE_MESSAGES, SAMPLE_TOOLS)
+        assert "search_skills" in sys_prompt
+        assert "list_skills" in sys_prompt
+
+    def test_exact_spellings_mentioned(self):
+        sys_prompt, _ = CLIConnectorBase._build_tool_prompt(SAMPLE_MESSAGES, SAMPLE_TOOLS)
+        assert "EXACTLY" in sys_prompt or "exactly" in sys_prompt
