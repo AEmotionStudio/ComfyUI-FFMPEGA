@@ -31,13 +31,17 @@ _BLOCKED_PATTERNS = re.compile(
     # Dunder attributes used for object-model introspection
     r"__subclasses__|__globals__|__builtins__|__code__|__import__|"
     r"__loader__|__spec__|__cached__|__file__|__path__|__class__|"
+    # Dynamic attribute access (bypass for static name checks)
+    r"__getattribute__|__setattr__|__delattr__|"
     # Traceback frame traversal (sandbox escape via exception frames)
     r"__traceback__|tb_frame|f_back|f_builtins|f_locals|f_globals|"
     # Module access (word boundary prevents matching inside strings)
     r"\bos\.\b|\bsubprocess\.|\bsys\.|\bshutil\.|\bpathlib\.|"
     # Dangerous builtins (with parens to avoid matching variable names)
     r"\bopen\s*\(|\bexec\s*\(|\beval\s*\(|\bcompile\s*\(|"
-    r"\bbreakpoint\s*\(|\bexit\s*\(|\bquit\s*\(",
+    r"\bbreakpoint\s*\(|\bexit\s*\(|\bquit\s*\(|"
+    # chr() can construct blocked names dynamically: chr(95)+chr(95)...
+    r"\bchr\s*\(",
 )
 
 
