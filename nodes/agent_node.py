@@ -1603,7 +1603,10 @@ Token Usage{est_tag}:
             + temp_audio_files
         ):
             if tmp_path and os.path.exists(tmp_path):
-                os.remove(tmp_path)
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
         for d in temp_frames_dirs:
             if os.path.isdir(d):
                 shutil.rmtree(d, ignore_errors=True)
@@ -3319,8 +3322,6 @@ Token Usage{est_tag}:
             "",
             "File results:",
         ]
-        # Build a quick lookup: actual output paths (as returned by process_single)
-        _output_set = set(output_paths)
         # Map each source filename stem -> actual output path for reporting
         _stem_to_out: dict[str, str] = {Path(p).stem.replace("_edited", ""): p
                                          for p in output_paths}
@@ -3335,12 +3336,13 @@ Token Usage{est_tag}:
                 except OSError:
                     status_lines.append(f"  ✓ {Path(vf).name} → {Path(actual_out).name}")
             else:
-                # Find the error message for this file
+                # Find the error message for this file (default if no match)
                 err_msg = next(
-                    (e.split(": ", 1)[1] if ": " in e else e)
-                    for e in errors
-                    if e.startswith(Path(vf).name)
-                ) if errors else "unknown error"
+                    ((e.split(": ", 1)[1] if ": " in e else e)
+                     for e in errors
+                     if e.startswith(Path(vf).name)),
+                    "unknown error",
+                )
                 status_lines.append(f"  ✗ {Path(vf).name}: {err_msg}")
 
         analysis = (
@@ -3349,6 +3351,13 @@ Token Usage{est_tag}:
         )
 
         command_log = "\n\n".join(command_logs) if command_logs else "No commands executed"
+
+        # --- Cleanup batch temp directory ---
+        if not save_output and out_dir and out_dir.exists():
+            try:
+                shutil.rmtree(str(out_dir), ignore_errors=True)
+            except OSError:
+                pass
 
         return (frames_tensor, audio_dict, paths_json, command_log, analysis)
 
