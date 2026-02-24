@@ -24,6 +24,46 @@ from .cli_utils import resolve_cli_binary
 
 logger = logging.getLogger("ffmpega")
 
+
+def _levenshtein(a: str, b: str) -> int:
+    """Compute the Levenshtein edit distance between two strings."""
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    row = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        new_row = [i]
+        for j, cb in enumerate(b, 1):
+            cost = 0 if ca == cb else 1
+            new_row.append(min(new_row[j - 1] + 1, row[j] + 1, row[j - 1] + cost))
+        row = new_row
+    return row[-1]
+
+
+def _fuzzy_match_tool_name(
+    name: str,
+    known_names: set[str],
+    max_distance: int = 2,
+) -> Optional[str]:
+    """Return the closest known tool name within *max_distance* edits.
+
+    Returns ``None`` if the closest match exceeds *max_distance* so that
+    callers can decide whether to accept or reject the hallucination.
+    """
+    if not known_names or name in known_names:
+        return name
+    best_match: Optional[str] = None
+    best_dist = max_distance + 1
+    for candidate in known_names:
+        dist = _levenshtein(name.lower(), candidate.lower())
+        if dist < best_dist:
+            best_dist = dist
+            best_match = candidate
+    return best_match if best_dist <= max_distance else None
+
 # Marker the LLM uses to request a tool call
 _TOOL_CALL_MARKER = "TOOL_CALL:"
 
@@ -385,9 +425,6 @@ class CLIConnectorBase(LLMConnector):
                     f"  {name}: {desc}\n  Parameters:\n{param_block}"
                 )
 
-            # Build tool usage instructions based on which tools
-            # are actually available (avoids contradictory instructions
-            # when ptc_mode=="on" and only execute_code is exposed)
             available_names = {
                 t.get("function", {}).get("name") for t in tools
             }
@@ -413,12 +450,26 @@ class CLIConnectorBase(LLMConnector):
                 "results (without any TOOL_CALL markers)\n"
             )
 
+            # Concrete correct/wrong examples help weak models get the format right
+            available_list = ", ".join(sorted(available_names))
+            format_examples = (
+                f"\nCORRECT (exactly this format, tool name spelled correctly):\n"
+                f'TOOL_CALL: {{"name": "{next(iter(available_names)) if available_names else "tool_name"}", "arguments": {{"key": "value"}}}}\n'
+                f"\nWRONG (do NOT do these):\n"
+                f'  TOOL_CALL: {{name: search_skills, arguments: {{}}}}      <- unquoted keys\n'
+                f'  TOOL_CALL: {{"name": "search_skill"}}                   <- missing arguments key\n'
+                f'  TOOL_CALL: {{"function": {{"name": "search_skills"}}}}  <- wrong schema\n'
+                f'  tool_call: {{"name": "search_skills", ...}}             <- wrong case\n'
+                f"\nAvailable tool names (use EXACTLY these spellings): {available_list}\n"
+                "Each call must be on its own line starting with TOOL_CALL:\n"
+            )
+
             tool_section = (
                 "\n\n=== AVAILABLE TOOLS ===\n"
                 "You have the following tools available. To call a tool, output a line "
-                "in this exact format (one per line):\n"
-                f'{_TOOL_CALL_MARKER} {{"name": "tool_name", "arguments": {{"key": "value"}}}}\n\n'
-                "You may call multiple tools by putting each on its own line.\n\n"
+                "in this exact format (one per line, valid JSON only):\n"
+                f'{_TOOL_CALL_MARKER} {{"name": "tool_name", "arguments": {{"key": "value"}}}}\n'
+                + format_examples + "\n"
                 + "".join(usage_lines) + "\n"
                 "Tools:\n" + "\n\n".join(tool_descriptions) +
                 "\n=== END TOOLS ===\n"
@@ -431,11 +482,33 @@ class CLIConnectorBase(LLMConnector):
         return system_prompt, user_prompt
 
     @staticmethod
-    def _parse_tool_calls(text: str) -> Optional[list[dict]]:
+    def _parse_tool_calls(
+        text: str,
+        known_tool_names: Optional[set[str]] = None,
+    ) -> Optional[list[dict]]:
         """Parse TOOL_CALL: markers from CLI output.
 
+        Performs two layers of defence against hallucinated output:
+
+        1. **Schema validation** — each parsed JSON payload must contain
+           both a ``"name"`` key (non-empty string) and an ``"arguments"``
+           key (dict).  Malformed payloads are logged and skipped rather
+           than silently producing broken tool calls.
+
+        2. **Fuzzy name correction** — when ``known_tool_names`` is
+           provided and the model uses a slightly misspelled name (e.g.
+           ``"search_skill"`` instead of ``"search_skills"``), the closest
+           known name within edit-distance 2 is substituted automatically
+           and a warning is emitted.  If no close match exists, the call
+           is skipped with a warning.
+
+        Args:
+            text: Raw LLM output that may contain ``TOOL_CALL:`` lines.
+            known_tool_names: Optional set of valid tool names used for
+                fuzzy correction.  Pass ``None`` to skip name validation.
+
         Returns:
-            List of tool call dicts, or None if no tool calls found.
+            List of tool call dicts, or ``None`` if none were found/valid.
         """
         pattern = re.compile(
             r'TOOL_CALL:\s*(\{.*?\})\s*$',
@@ -448,18 +521,65 @@ class CLIConnectorBase(LLMConnector):
 
         tool_calls = []
         for i, match in enumerate(matches):
+            # ── 1. Parse JSON ──────────────────────────────────────────
             try:
                 parsed = json.loads(match)
-                tool_calls.append({
-                    "id": f"cli_call_{i}",
-                    "function": {
-                        "name": parsed.get("name", ""),
-                        "arguments": parsed.get("arguments", {}),
-                    }
-                })
             except json.JSONDecodeError:
-                logger.warning("Failed to parse tool call JSON: %s", match)
+                logger.warning(
+                    "Tool call JSON parse error (call %d) — skipping: %s", i, match
+                )
                 continue
+
+            # ── 2. Schema validation ───────────────────────────────────
+            name = parsed.get("name")
+            arguments = parsed.get("arguments")
+
+            if not isinstance(name, str) or not name:
+                logger.warning(
+                    "Tool call missing/invalid 'name' key (call %d) — skipping: %s",
+                    i, match,
+                )
+                continue
+
+            if not isinstance(arguments, dict):
+                # Tolerate missing arguments by defaulting to empty dict
+                if arguments is None and "arguments" not in parsed:
+                    logger.warning(
+                        "Tool call missing 'arguments' key (call %d) — defaulting to {}: %s",
+                        i, match,
+                    )
+                    arguments = {}
+                else:
+                    logger.warning(
+                        "Tool call 'arguments' must be a dict (call %d) — skipping: %s",
+                        i, match,
+                    )
+                    continue
+
+            # ── 3. Fuzzy name correction ───────────────────────────────
+            if known_tool_names:
+                corrected = _fuzzy_match_tool_name(name, known_tool_names)
+                if corrected is None:
+                    logger.warning(
+                        "Hallucinated tool name '%s' has no close match in known "
+                        "tools %s (call %d) — skipping",
+                        name, sorted(known_tool_names), i,
+                    )
+                    continue
+                if corrected != name:
+                    logger.warning(
+                        "Fuzzy-corrected tool name '%s' → '%s' (call %d)",
+                        name, corrected, i,
+                    )
+                    name = corrected
+
+            tool_calls.append({
+                "id": f"cli_call_{i}",
+                "function": {
+                    "name": name,
+                    "arguments": arguments,
+                },
+            })
 
         return tool_calls if tool_calls else None
 

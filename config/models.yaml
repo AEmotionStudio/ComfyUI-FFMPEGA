@@ -1,0 +1,41 @@
+# ComfyUI-FFMPEGA model configuration
+# ─────────────────────────────────────────────────────────────────────────────
+# This file centralises the list of API-based models shown in the node dropdown.
+# Edit this file to add, remove, or reorder models without touching Python code.
+#
+# The list is read once at node startup (via core/model_config.py).
+# Live-fetch from provider APIs is also supported — see core/model_config.py.
+#
+# Format: each entry is exactly the model name string accepted by the provider.
+# GPT models → OpenAI  |  claude-* → Anthropic  |  gemini-* → Google  |  qwen-* → Alibaba
+
+api_models:
+  # ── OpenAI ──────────────────────────────────────────────────────────────────
+  - gpt-5.2
+  - gpt-5-mini
+  - gpt-4.1
+
+  # ── Anthropic ───────────────────────────────────────────────────────────────
+  - claude-sonnet-4-6
+  - claude-haiku-4-5
+
+  # ── Google (via API key) ────────────────────────────────────────────────────
+  - gemini-3-flash
+  - gemini-2.5-flash
+
+  # ── Alibaba Qwen ────────────────────────────────────────────────────────────
+  - qwen-max
+  - qwen-plus
+  - qwen-turbo
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Live-fetch settings (optional).
+# When `live_fetch` is true, FFMPEGA will attempt to query the provider API
+# to get the freshest model list.  Falls back to the list above on failure.
+# ─────────────────────────────────────────────────────────────────────────────
+live_fetch:
+  enabled: false           # set to true to enable live model discovery
+  timeout_seconds: 5       # per-provider HTTP timeout
+  providers:
+    - openai               # fetches from /v1/models (requires OPENAI_API_KEY)
+    - anthropic            # fetches from /v1/models (requires ANTHROPIC_API_KEY)

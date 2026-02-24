@@ -1,13 +1,17 @@
 """Process management for FFMPEG execution."""
 
 import asyncio
+import logging
 import re
 import shutil
 import subprocess
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Callable, AsyncIterator
 from .command_builder import FFMPEGCommand
+
+logger = logging.getLogger("ffmpega")
 
 
 @dataclass
@@ -55,6 +59,52 @@ class ProcessManager:
         if not self.ffmpeg_path:
             raise RuntimeError("ffmpeg not found in PATH")
 
+        # Cancellation support
+        self._active_proc: Optional[subprocess.Popen] = None
+        self._active_async_proc = None  # asyncio.subprocess.Process, typed as Any
+        self._cancel_lock = threading.Lock()
+        self._cancelled = False
+
+    def cancel(self) -> bool:
+        """Request cancellation of the currently in-flight FFmpeg process.
+
+        Kills both sync (``subprocess.Popen``) and async
+        (``asyncio.subprocess.Process``) processes if one is active.
+
+        Returns:
+            ``True`` if a running process was killed, ``False`` if there
+            was nothing to cancel.
+        """
+        killed = False
+        with self._cancel_lock:
+            self._cancelled = True
+            if self._active_proc is not None:
+                try:
+                    self._active_proc.kill()
+                    logger.info("ProcessManager: cancelled in-flight subprocess (pid=%s)",
+                                self._active_proc.pid)
+                    killed = True
+                except Exception as exc:
+                    logger.warning("ProcessManager: failed to kill subprocess: %s", exc)
+                finally:
+                    self._active_proc = None
+            if self._active_async_proc is not None:
+                try:
+                    self._active_async_proc.kill()
+                    logger.info("ProcessManager: cancelled in-flight async process")
+                    killed = True
+                except Exception as exc:
+                    logger.warning("ProcessManager: failed to kill async process: %s", exc)
+                finally:
+                    self._active_async_proc = None
+        return killed
+
+    def _reset_cancel(self) -> None:
+        """Clear the cancelled flag before starting a new execution."""
+        with self._cancel_lock:
+            self._cancelled = False
+
+
     def execute(
         self,
         command: FFMPEGCommand | list[str],
@@ -82,39 +132,62 @@ class ProcessManager:
         if args[0] == "ffmpeg":
             args[0] = self.ffmpeg_path
 
+        self._reset_cancel()
         try:
-            result = subprocess.run(
+            proc = subprocess.Popen(
                 args,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
+            with self._cancel_lock:
+                if self._cancelled:
+                    proc.kill()
+                else:
+                    self._active_proc = proc
 
-            success = result.returncode == 0
-            error_message = None
+            try:
+                stdout_bytes, stderr_bytes = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.communicate()  # drain pipes
+                return ProcessResult(
+                    success=False,
+                    return_code=-1,
+                    stdout="",
+                    stderr="Process timed out",
+                    command=cmd_string,
+                    error_message="Execution timed out",
+                )
+            finally:
+                with self._cancel_lock:
+                    if self._active_proc is proc:
+                        self._active_proc = None
 
-            if not success:
-                error_message = self._parse_error(result.stderr)
+            if self._cancelled:
+                return ProcessResult(
+                    success=False,
+                    return_code=-1,
+                    stdout="",
+                    stderr="Cancelled",
+                    command=cmd_string,
+                    error_message="Cancelled by user",
+                )
+
+            stdout_str = stdout_bytes.decode("utf-8", errors="replace")
+            stderr_str = stderr_bytes.decode("utf-8", errors="replace")
+            success = proc.returncode == 0
+            error_message = None if success else self._parse_error(stderr_str)
 
             return ProcessResult(
                 success=success,
-                return_code=result.returncode,
-                stdout=result.stdout,
-                stderr=result.stderr,
+                return_code=proc.returncode,
+                stdout=stdout_str,
+                stderr=stderr_str,
                 command=cmd_string,
                 output_path=output_path,
                 error_message=error_message,
             )
 
-        except subprocess.TimeoutExpired:
-            return ProcessResult(
-                success=False,
-                return_code=-1,
-                stdout="",
-                stderr="Process timed out",
-                command=cmd_string,
-                error_message="Execution timed out",
-            )
         except Exception as e:
             return ProcessResult(
                 success=False,
@@ -157,12 +230,18 @@ class ProcessManager:
         # Add progress reporting
         args = [args[0], "-progress", "pipe:1", "-nostats"] + args[1:]
 
+        self._reset_cancel()
         try:
             process = await asyncio.create_subprocess_exec(
                 *args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
+            with self._cancel_lock:
+                if self._cancelled:
+                    process.kill()
+                else:
+                    self._active_async_proc = process
 
             stdout_data = []
             stderr_data = []
@@ -214,6 +293,10 @@ class ProcessManager:
             # Run both readers concurrently
             await asyncio.gather(read_stdout(), read_stderr())
             await process.wait()
+
+            with self._cancel_lock:
+                if self._active_async_proc is process:
+                    self._active_async_proc = None
 
             success = process.returncode == 0
             stderr_str = "".join(stderr_data)
