@@ -260,7 +260,7 @@ class PipelineGenerator:
 
         from ..prompts.system import get_agentic_system_prompt  # type: ignore[import-not-found]
         from ..prompts.generation import get_generation_prompt  # type: ignore[import-not-found]
-        from ..mcp.tool_defs import TOOL_DEFINITIONS  # type: ignore[import-not-found]
+        from ..mcp.tool_defs import TOOL_DEFINITIONS, strip_nonstandard_fields  # type: ignore[import-not-found]
 
         # Filter tool definitions based on PTC mode
         if ptc_mode == "off":
@@ -269,7 +269,11 @@ class PipelineGenerator:
                 if t["function"]["name"] != "execute_code"
             ]
         else:
-            tool_defs = TOOL_DEFINITIONS
+            tool_defs = list(TOOL_DEFINITIONS)
+
+        # Strip non-standard fields (e.g. input_examples) that would
+        # cause 400 errors with strict OpenAI-compatible API providers
+        tool_defs = strip_nonstandard_fields(tool_defs)
         from ..mcp.tools import (  # type: ignore[import-not-found]
             analyze_video,
             analyze_colors,

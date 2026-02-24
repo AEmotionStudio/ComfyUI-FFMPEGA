@@ -5,10 +5,10 @@ sandbox.  Only explicitly allowed tool functions, ``json``, and
 ``print`` are available — ``import``, ``open``, ``eval``, ``exec``,
 and all other builtins are removed.
 
-The sandbox also blocks Python object-model introspection that could
-be used to escape restricted builtins (``__subclasses__``,
-``__globals__``, ``__code__``, etc.) via a custom ``__getattr__``
-wrapper on every injected object.
+The sandbox also blocks Python object-model introspection via static
+code analysis — patterns like ``__subclasses__``, ``__globals__``,
+``__class__``, ``__code__``, ``os.``, ``subprocess.``, etc. are
+rejected before execution starts.
 
 Inspired by Anthropic's Programmatic Tool Calling pattern, but
 implemented model-agnostically so it works with any LLM provider.
@@ -27,7 +27,7 @@ logger = logging.getLogger("ffmpega")
 # Patterns that indicate sandbox escape attempts in code
 _BLOCKED_PATTERNS = re.compile(
     r"__subclasses__|__globals__|__builtins__|__code__|__import__|"
-    r"__loader__|__spec__|__cached__|__file__|__path__|"
+    r"__loader__|__spec__|__cached__|__file__|__path__|__class__|"
     r"os\.|subprocess\.|sys\.|shutil\.|pathlib\.|"
     r"open\s*\(|exec\s*\(|eval\s*\(|compile\s*\(|"
     r"breakpoint\s*\(|exit\s*\(|quit\s*\(",

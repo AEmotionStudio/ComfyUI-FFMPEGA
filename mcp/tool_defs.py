@@ -449,3 +449,38 @@ TOOL_DEFINITIONS = [
         },
     },
 ]
+
+
+# Keys that are safe in OpenAI-compatible function-calling schemas
+_STANDARD_FUNCTION_KEYS = {"name", "description", "parameters"}
+
+
+def strip_nonstandard_fields(tools: list[dict]) -> list[dict]:
+    """Return tool definitions with non-standard keys removed.
+
+    OpenAI-compatible APIs validate tool schemas strictly and may reject
+    unknown fields like ``input_examples``.  This strips any keys from
+    the ``function`` block that are not part of the standard spec.
+
+    CLI connectors that embed tools as text in the prompt should use
+    the raw ``TOOL_DEFINITIONS`` (with examples) instead.
+
+    Args:
+        tools: List of tool definitions (OpenAI format).
+
+    Returns:
+        Deep-copied list with only standard keys in each ``function``.
+    """
+    cleaned = []
+    for tool in tools:
+        func = tool.get("function", {})
+        clean_func = {
+            k: v for k, v in func.items()
+            if k in _STANDARD_FUNCTION_KEYS
+        }
+        cleaned.append({
+            "type": tool.get("type", "function"),
+            "function": clean_func,
+        })
+    return cleaned
+
