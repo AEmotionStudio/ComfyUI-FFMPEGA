@@ -251,13 +251,22 @@ def ffmpeg_escape_path(s: str) -> str:
     Returns:
         Escaped path safe for use in ffmpeg filter option values.
     """
-    s = s.replace("\\", "\\\\")
-    s = s.replace("'", "\\'")
-    s = s.replace(":", "\\:")
-    s = s.replace(",", "\\,")
-    s = s.replace("[", "\\[")
-    s = s.replace("]", "\\]")
-    s = s.replace(" ", "\\ ")
+    # Optimization: check for special chars before replacing to avoid
+    # unnecessary string allocations in the common case (clean text).
+    if "\\" in s:
+        s = s.replace("\\", "\\\\")
+    if "'" in s:
+        s = s.replace("'", "\\'")
+    if ":" in s:
+        s = s.replace(":", "\\:")
+    if "," in s:
+        s = s.replace(",", "\\,")
+    if "[" in s:
+        s = s.replace("[", "\\[")
+    if "]" in s:
+        s = s.replace("]", "\\]")
+    if " " in s:
+        s = s.replace(" ", "\\ ")
     return s
 
 

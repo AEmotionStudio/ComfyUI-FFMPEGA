@@ -11,3 +11,7 @@
 ## 2026-02-16 - Choice Parameter Validation Optimization
 **Learning:** `SkillParameter.validate` and `SkillComposer.compose` used O(N) list scans to validate and normalize `CHOICE` parameters. This was done repeatedly for every parameter in every pipeline step.
 **Action:** Replaced O(N) list scans with O(1) dictionary lookups using the pre-computed `_choice_map`. This handles exact matches, case insensitivity, and underscore normalization in constant time. Benchmark showed ~100x speedup for this specific operation.
+
+## 2026-02-23 - String Replacement Performance
+**Learning:** For escaping a small set of characters (7) in short strings (paths), `str.translate` was found to be ~15x slower than multiple `if char in s: s.replace(...)` calls. The overhead of `translate` table lookup outweighs the benefit of a single pass for typical path lengths.
+**Action:** Use "Check First" pattern (`if char in s: s.replace(...)`) for string sanitization instead of `str.translate` or unconditional `replace`.
