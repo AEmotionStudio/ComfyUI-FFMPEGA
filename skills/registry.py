@@ -528,7 +528,7 @@ class SkillRegistry:
             return
 
         if watch_dir is None:
-            watch_dir = str(Path(__file__).resolve().parent / "custom_skills")
+            watch_dir = str(Path(__file__).resolve().parent.parent / "custom_skills")
 
         watch_path = Path(watch_dir)
 

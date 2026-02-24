@@ -345,8 +345,12 @@ def load_image_model(device: str = "gpu"):
         # If device changed, move model to new device
         if _image_model_device != target_device:
             import torch
-            _image_model.to(torch.device(target_device))
-            _image_model_device = target_device
+            actual_device = target_device
+            if actual_device == "cuda" and not torch.cuda.is_available():
+                log.warning("CUDA unavailable, keeping SAM3 image model on CPU")
+                actual_device = "cpu"
+            _image_model.to(torch.device(actual_device))
+            _image_model_device = actual_device
         return _image_model, _image_processor
 
     _patch_sam3_imports()
@@ -430,8 +434,12 @@ def load_video_model(device: str = "gpu"):
         # If device changed, move model to new device
         if _video_model_device != target_device:
             import torch
-            _video_model.to(torch.device(target_device))
-            _video_model_device = target_device
+            actual_device = target_device
+            if actual_device == "cuda" and not torch.cuda.is_available():
+                log.warning("CUDA unavailable, keeping SAM3 video model on CPU")
+                actual_device = "cpu"
+            _video_model.to(torch.device(actual_device))
+            _video_model_device = actual_device
         return _video_model
 
     _patch_sam3_imports()
@@ -674,6 +682,7 @@ def mask_video(
             if (torch.cuda.is_available() and not use_cpu)
             else nullcontext()
         )
+        inference_state = None  # declared here so finally block can always reach it
         with torch.inference_mode(), autocast_ctx:
             # init_state loads all frames — suppress SAM3's per-frame tqdm bar
             # (in a non-TTY environment each \r update prints as a new line).
@@ -705,38 +714,47 @@ def mask_video(
             mask_frames_saved = set()
             _total = len(frame_files)
             _report_every = max(1, _total // 10)  # log roughly every 10%
-            for frame_idx, outputs in video_model.propagate_in_video(inference_state):
-                if outputs is None:
-                    continue
+            try:
+                for frame_idx, outputs in video_model.propagate_in_video(inference_state):
+                    if outputs is None:
+                        continue
 
-                binary_masks = outputs.get("out_binary_masks")
-                if binary_masks is not None and len(binary_masks) > 0:
-                    # Combine all object masks into one
-                    if torch.is_tensor(binary_masks):
-                        binary_masks = binary_masks.cpu().numpy()
-                    combined = np.any(binary_masks, axis=0)
-                    # Squeeze extra dims: (1, H, W) → (H, W) for mode="L"
-                    while combined.ndim > 2:
-                        combined = combined.squeeze(0)
-                    mask = (combined > 0).astype(np.uint8) * 255
-                else:
-                    mask = np.zeros((h, w), dtype=np.uint8)
+                    binary_masks = outputs.get("out_binary_masks")
+                    if binary_masks is not None and len(binary_masks) > 0:
+                        # Combine all object masks into one
+                        if torch.is_tensor(binary_masks):
+                            binary_masks = binary_masks.cpu().numpy()
+                        combined = np.any(binary_masks, axis=0)
+                        # Squeeze extra dims: (1, H, W) → (H, W) for mode="L"
+                        while combined.ndim > 2:
+                            combined = combined.squeeze(0)
+                        mask = (combined > 0).astype(np.uint8) * 255
+                    else:
+                        mask = np.zeros((h, w), dtype=np.uint8)
 
-                mask_img = Image.fromarray(mask, mode="L")
-                if mask_img.size != (w, h):
-                    mask_img = mask_img.resize((w, h), Image.NEAREST)
-                mask_img.save(os.path.join(masks_dir, f"{frame_idx:06d}.png"))
-                mask_frames_saved.add(frame_idx)
+                    mask_img = Image.fromarray(mask, mode="L")
+                    if mask_img.size != (w, h):
+                        mask_img = mask_img.resize((w, h), Image.NEAREST)
+                    mask_img.save(os.path.join(masks_dir, f"{frame_idx:06d}.png"))
+                    mask_frames_saved.add(frame_idx)
 
-                # Log progress at ~10% intervals
-                if (frame_idx + 1) % _report_every == 0 or frame_idx + 1 == _total:
-                    log.info("SAM3 propagation: %d/%d frames (%.0f%%)",
-                             frame_idx + 1, _total,
-                             100.0 * (frame_idx + 1) / _total)
-
-            # Release the frame cache so subsequent runs (e.g. verification
-            # retry) don't inherit the ~5 GB of loaded frame tensors in VRAM.
-            video_model.reset_state(inference_state)
+                    # Log progress at ~10% intervals
+                    if (frame_idx + 1) % _report_every == 0 or frame_idx + 1 == _total:
+                        log.info("SAM3 propagation: %d/%d frames (%.0f%%)",
+                                 frame_idx + 1, _total,
+                                 100.0 * (frame_idx + 1) / _total)
+            finally:
+                # Release the frame cache ALWAYS — even if propagation hits OOM
+                # mid-way. Without this, each failed run leaves ~5 GB of frame
+                # tensors stranded in VRAM, making every subsequent retry worse.
+                if inference_state is not None:
+                    try:
+                        video_model.reset_state(inference_state)
+                    except Exception:
+                        pass
+                    inference_state = None
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
         # Fill any missing frames with empty masks
         for i in range(len(frame_files)):
