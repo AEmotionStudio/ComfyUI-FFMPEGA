@@ -8,6 +8,8 @@ import os
 import re
 from pathlib import Path
 
+from .errors import ValidationError
+
 # Common video, image, and audio extensions
 ALLOWED_EXTENSIONS = {
     # Video
@@ -50,7 +52,7 @@ def _check_unsafe_path(path: Path) -> None:
     for unsafe in UNSAFE_DIRECTORIES:
         # Match directory exactly or as a parent
         if path_str == unsafe or path_str.startswith(f"{unsafe}{os.sep}"):
-            raise ValueError(f"Path targets unsafe system directory: {path}")
+            raise ValidationError(f"Path targets unsafe system directory: {path}")
 
     # Check for sensitive directories in the path components
     # This prevents writing to hidden sensitive dirs like ~/.ssh/ even
@@ -58,7 +60,7 @@ def _check_unsafe_path(path: Path) -> None:
     parts = path.parts
     for part in parts:
         if part.lower() in SENSITIVE_DIRS:
-            raise ValueError(f"Path contains sensitive directory: {part}")
+            raise ValidationError(f"Path contains sensitive directory: {part}")
 
     # Check Windows system paths
     if os.name == 'nt':
@@ -66,7 +68,7 @@ def _check_unsafe_path(path: Path) -> None:
         if (lower_path.startswith("c:\\windows") or
                 lower_path.startswith("c:\\program files") or
                 lower_path.startswith("c:\\program files (x86)")):
-            raise ValueError(f"Path targets unsafe system directory: {path}")
+            raise ValidationError(f"Path targets unsafe system directory: {path}")
 
 
 def validate_path(path: str, allowed_extensions: set[str], must_exist: bool = True) -> str:
@@ -85,27 +87,27 @@ def validate_path(path: str, allowed_extensions: set[str], must_exist: bool = Tr
                     or file doesn't exist (when must_exist=True).
     """
     if not path or not path.strip():
-        raise ValueError("Path cannot be empty")
+        raise ValidationError("Path cannot be empty")
 
     resolved = Path(path).resolve()
 
     # Reject paths that try to escape via traversal
     if ".." in Path(path).parts:
-        raise ValueError(
+        raise ValidationError(
             f"Path contains directory traversal (..): {path}"
         )
 
     if resolved.suffix.lower() not in allowed_extensions:
-        raise ValueError(
+        raise ValidationError(
             f"Invalid file extension: {resolved.suffix}. "
             f"Allowed: {sorted(list(allowed_extensions))}"
         )
 
     if must_exist:
         if not resolved.exists():
-            raise ValueError(f"File not found: {resolved}")
+            raise ValidationError(f"File not found: {resolved}")
         if not resolved.is_file():
-            raise ValueError(f"Path is not a file: {resolved}")
+            raise ValidationError(f"Path is not a file: {resolved}")
 
     return str(resolved)
 
@@ -145,10 +147,10 @@ def validate_output_path(path: str) -> str:
                     or targets a protected system directory.
     """
     if not path or not path.strip():
-        raise ValueError("Output path cannot be empty")
+        raise ValidationError("Output path cannot be empty")
 
     if ".." in Path(path).parts:
-        raise ValueError(
+        raise ValidationError(
             f"Output path contains directory traversal (..): {path}"
         )
 
@@ -177,12 +179,12 @@ def validate_output_file_path(path: str) -> str:
     # Pre-check: file must have an extension
     resolved = Path(path).resolve()
     if not resolved.suffix:
-        raise ValueError(
+        raise ValidationError(
             f"Output file path must have an extension: {path}"
         )
     # Pre-check: provide output-specific error message for disallowed extensions
     if resolved.suffix.lower() not in ALLOWED_EXTENSIONS:
-        raise ValueError(
+        raise ValidationError(
             f"Invalid output file extension: {resolved.suffix}. "
             f"Allowed: {sorted(list(ALLOWED_EXTENSIONS))}"
         )
@@ -210,7 +212,7 @@ def sanitize_text_param(text: str) -> str:
         return text
 
     if "\0" in text:
-        raise ValueError("Null byte found in text parameter")
+        raise ValidationError("Null byte found in text parameter")
 
     # Optimization: check for special chars before replacing to avoid
     # unnecessary string allocations in the common case (clean text).

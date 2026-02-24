@@ -16,6 +16,12 @@ logger = logging.getLogger("ffmpega")
 # Rough chars-per-token ratio for estimation when native counts unavailable
 _CHARS_PER_TOKEN = 4
 
+# Maximum size of usage_log.jsonl before rotation trims the oldest entries.
+# Set to 0 to disable rotation.
+_MAX_LOG_BYTES: int = 5 * 1024 * 1024  # 5 MB
+# Fraction of entries to drop when the log exceeds _MAX_LOG_BYTES (0.2 = drop oldest 20%)
+_LOG_TRIM_FRACTION: float = 0.20
+
 
 @dataclass
 class CallRecord:
@@ -139,13 +145,39 @@ class TokenTracker:
 
     @staticmethod
     def append_to_log(entry: dict, log_dir: Optional[str] = None) -> None:
-        """Append a log entry to usage_log.jsonl."""
+        """Append a log entry to usage_log.jsonl.
+
+        Automatically trims the oldest *_LOG_TRIM_FRACTION* of entries when the
+        file exceeds *_MAX_LOG_BYTES* to prevent unbounded disk growth.
+        Rotation is disabled when ``_MAX_LOG_BYTES`` is set to ``0``.
+        """
         if log_dir is None:
             log_dir = str(Path(__file__).resolve().parent.parent)
         log_path = Path(log_dir) / "usage_log.jsonl"
         try:
+            # --- Rotation check ---
+            if _MAX_LOG_BYTES > 0 and log_path.exists() and log_path.stat().st_size > _MAX_LOG_BYTES:
+                TokenTracker._rotate_log(log_path)
+
             with open(log_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(entry) + "\n")
             logger.debug("Token usage logged to %s", log_path)
         except OSError as exc:
             logger.warning("Failed to write usage log: %s", exc)
+
+    @staticmethod
+    def _rotate_log(log_path: Path) -> None:
+        """Drop the oldest fraction of entries from *log_path* in-place."""
+        try:
+            lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            if len(lines) < 2:
+                return  # Nothing worth trimming
+            drop_count = max(1, int(len(lines) * _LOG_TRIM_FRACTION))
+            kept = lines[drop_count:]
+            log_path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+            logger.info(
+                "usage_log.jsonl rotated: dropped %d oldest entries, kept %d",
+                drop_count, len(kept),
+            )
+        except OSError as exc:
+            logger.warning("Failed to rotate usage log: %s", exc)
