@@ -271,9 +271,10 @@ class PipelineGenerator:
         else:
             tool_defs = list(TOOL_DEFINITIONS)
 
-        # Strip non-standard fields (e.g. input_examples) that would
-        # cause 400 errors with strict OpenAI-compatible API providers
-        tool_defs = strip_nonstandard_fields(tool_defs)
+        # Strip non-standard fields (e.g. input_examples) for API
+        # connectors that validate schemas strictly. CLI connectors
+        # embed tools as text, so non-standard fields are harmless.
+        # (Stripping is deferred until after _is_cli is known.)
         from ..mcp.tools import (  # type: ignore[import-not-found]
             analyze_video,
             analyze_colors,
@@ -419,6 +420,10 @@ class PipelineGenerator:
         # Determine connector type for vision routing
         _is_cli = isinstance(connector, CLIConnectorBase)
         _is_ollama = isinstance(connector, OllamaConnector)
+
+        # Now strip non-standard fields for non-CLI connectors
+        if not _is_cli:
+            tool_defs = strip_nonstandard_fields(tool_defs)
 
         # Auto-embed initial frames for Ollama VL models so the model
         # sees the video content from the very first message.  Without
