@@ -566,6 +566,10 @@ def mask_video(
     # in Sam3TrackerPredictor.__init__). ComfyUI's operations between runs
     # can pop this off the thread-local autocast stack. Re-enter it here
     # to ensure consistent dtype handling on every run.
+    # Get original video dimensions (before with block so h/w are always defined)
+    first_frame = np.array(Image.open(frame_files[0]))
+    h, w = first_frame.shape[:2]
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     autocast_ctx = torch.autocast(device, dtype=torch.bfloat16) if device == "cuda" else torch.inference_mode()
     with torch.inference_mode(), autocast_ctx:
@@ -581,10 +585,6 @@ def mask_video(
             frame_idx=0,
             text_str=prompt,
         )
-
-        # Get original video dimensions
-        first_frame = np.array(Image.open(frame_files[0]))
-        h, w = first_frame.shape[:2]
 
         # 3. Propagate and save mask frames
         log.info("Propagating SAM3 masks across %d frames", len(frame_files))

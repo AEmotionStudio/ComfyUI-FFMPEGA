@@ -87,7 +87,7 @@ def cleanup() -> None:
     """Free GPU memory and clear cached model."""
     global _lama_model
     _lama_model = None
-    if torch is not None and torch.cuda.is_available():
+    if torch.cuda.is_available():
         torch.cuda.empty_cache()
     log.info("LaMa model unloaded")
 
@@ -108,7 +108,7 @@ def _free_vram():
     except Exception:
         pass
 
-    if torch is not None and torch.cuda.is_available():
+    if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
 
@@ -382,7 +382,13 @@ def remove_object(
     for i in range(total_frames):
         orig_arr = np.array(frames[i]).astype(np.float32)
         inp_arr = np.array(inpainted_frames[i]).astype(np.float32)
-        mask_arr = np.array(masks[i]).astype(np.float32) / 255.0
+        mask_pil = masks[i]
+
+        # Resize mask to match frame dimensions if needed
+        if mask_pil.size != frames[i].size:
+            mask_pil = mask_pil.resize(frames[i].size, Image.NEAREST)
+
+        mask_arr = np.array(mask_pil).astype(np.float32) / 255.0
 
         mask_np_list.append(mask_arr)
 
