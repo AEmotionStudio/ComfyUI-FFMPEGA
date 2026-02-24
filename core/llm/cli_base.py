@@ -427,7 +427,7 @@ class CLIConnectorBase(LLMConnector):
 
             available_names = {
                 t.get("function", {}).get("name") for t in tools
-            }
+            } - {None}
             usage_lines = [
                 "IMPORTANT: You MUST use tools before producing a pipeline.\n",
             ]
