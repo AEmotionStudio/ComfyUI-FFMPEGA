@@ -340,6 +340,13 @@ def load_image_model(device: str = "gpu"):
 
     use_cpu = device.lower() == "cpu"
     target_device = "cpu" if use_cpu else "cuda"
+    # Guard: fall back to CPU if CUDA was requested but isn't available
+    if target_device == "cuda":
+        import torch as _torch_check
+        if not _torch_check.cuda.is_available():
+            log.warning("CUDA unavailable, loading SAM3 image model on CPU")
+            target_device = "cpu"
+            use_cpu = True
 
     if _image_model is not None and _image_processor is not None:
         # If device changed, move model to new device
@@ -429,6 +436,13 @@ def load_video_model(device: str = "gpu"):
 
     use_cpu = device.lower() == "cpu"
     target_device = "cpu" if use_cpu else "cuda"
+    # Guard: fall back to CPU if CUDA was requested but isn't available
+    if target_device == "cuda":
+        import torch as _torch_check
+        if not _torch_check.cuda.is_available():
+            log.warning("CUDA unavailable, loading SAM3 video model on CPU")
+            target_device = "cpu"
+            use_cpu = True
 
     if _video_model is not None:
         # If device changed, move model to new device
