@@ -580,6 +580,12 @@ def mask_video(
 
         import torch
         from contextlib import nullcontext
+
+        # Flush VRAM again right before inference — ComfyUI may have reloaded
+        # its models into VRAM between load_video_model() and here, which would
+        # leave only ~90 MB free for the SAM3 propagation loop.
+        _free_vram()
+
         # SAM3's tracker expects a bfloat16 autocast context (entered permanently
         # in Sam3TrackerPredictor.__init__). ComfyUI's operations between runs
         # can pop this off the thread-local autocast stack. Re-enter it here
