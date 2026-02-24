@@ -146,6 +146,7 @@ class PipelineGenerator:
         connected_inputs: str = "",
         video_path: str = "",
         use_vision: bool = True,
+        ptc_mode: str = "auto",
     ) -> dict:
         """Generate a pipeline spec, with auto-retry on invalid JSON.
 
@@ -170,6 +171,7 @@ class PipelineGenerator:
                 connector, prompt, video_metadata, connected_inputs,
                 video_path=video_path,
                 use_vision=use_vision,
+                ptc_mode=ptc_mode,
             )
         except NotImplementedError:
             raw_response = await self._generate_single_shot(
@@ -250,6 +252,7 @@ class PipelineGenerator:
         max_iterations: int = 10,
         video_path: str = "",
         use_vision: bool = True,
+        ptc_mode: str = "auto",
     ) -> str:
         """Agentic pipeline generation with tool calling."""
         from ..core.token_tracker import TokenTracker  # type: ignore[import-not-found]
@@ -257,7 +260,30 @@ class PipelineGenerator:
 
         from ..prompts.system import get_agentic_system_prompt  # type: ignore[import-not-found]
         from ..prompts.generation import get_generation_prompt  # type: ignore[import-not-found]
-        from ..mcp.tool_defs import TOOL_DEFINITIONS  # type: ignore[import-not-found]
+        from ..mcp.tool_defs import TOOL_DEFINITIONS, strip_nonstandard_fields  # type: ignore[import-not-found]
+
+        # Filter tool definitions based on PTC mode
+        if ptc_mode == "off":
+            # Classic mode: all tools except execute_code
+            tool_defs = [
+                t for t in TOOL_DEFINITIONS
+                if t["function"]["name"] != "execute_code"
+            ]
+        elif ptc_mode == "on":
+            # Forced PTC: only execute_code (model must orchestrate
+            # all tool calls through a single Python script)
+            tool_defs = [
+                t for t in TOOL_DEFINITIONS
+                if t["function"]["name"] == "execute_code"
+            ]
+        else:
+            # Auto mode: all tools including execute_code
+            tool_defs = list(TOOL_DEFINITIONS)
+
+        # Strip non-standard fields (e.g. input_examples) for API
+        # connectors that validate schemas strictly. CLI connectors
+        # embed tools as text, so non-standard fields are harmless.
+        # (Stripping is deferred until after _is_cli is known.)
         from ..mcp.tools import (  # type: ignore[import-not-found]
             analyze_video,
             analyze_colors,
@@ -281,6 +307,7 @@ class PipelineGenerator:
         system_prompt = get_agentic_system_prompt(
             video_metadata=video_metadata,
             connected_inputs=connected_inputs,
+            ptc_mode=ptc_mode,
         )
         user_prompt = get_generation_prompt(prompt, video_metadata, connected_inputs)
 
@@ -336,9 +363,76 @@ class PipelineGenerator:
             ),
         }
 
+        # ── Programmatic Tool Calling (PTC) ──────────────────────── #
+        # The LLM can call execute_code with a Python script that
+        # orchestrates multiple tool calls in one pass.  Only the
+        # print() output is returned to the LLM's context.
+        # extract_frames is available; collected frame paths are
+        # embedded as images via the same vision routing as regular
+        # tool calls.
+        _ptc_frame_paths: list[str] = []  # side-channel for vision
+
+        if ptc_mode != "off":
+            from ..core.ptc_executor import PTCExecutor  # type: ignore[import-not-found]
+
+            def _ptc_extract_frames(
+                video_path=_vid, start=0.0, duration=5.0,
+                fps=1.0, max_frames=8,
+            ):
+                result = extract_frames(
+                    video_path=video_path or _vid,
+                    start=start, duration=duration,
+                    fps=fps, max_frames=max_frames,
+                )
+                if result.get("run_id"):
+                    _vision_run_ids.append(result["run_id"])
+                if result.get("paths"):
+                    _ptc_frame_paths.extend(result["paths"])
+                return result
+
+            _ptc_tools = {
+                "search_skills": lambda query: search_skills(query),
+                "get_skill_details": lambda skill_name: get_skill_details(skill_name),
+                "list_skills": lambda category=None: list_skills(category),
+                "build_pipeline": lambda skills, input_path="/tmp/in.mp4", output_path="/tmp/out.mp4": (
+                    build_pipeline(skills, input_path, output_path)
+                ),
+                "analyze_video": lambda video_path: analyze_video(video_path),
+                "extract_frames": _ptc_extract_frames,
+                "analyze_colors": lambda video_path=_vid, start=0.0, duration=5.0: (
+                    analyze_colors(video_path or _vid, start, duration)
+                ),
+                "list_luts": lambda: list_luts(),
+                "analyze_audio": lambda video_path=_vid, start=0.0, duration=10.0: (
+                    analyze_audio(video_path or _vid, start, duration)
+                ),
+            }
+            _ptc_executor = PTCExecutor(tool_handlers=_ptc_tools, timeout=30.0)
+
+            def _execute_code_handler(args: dict) -> dict:
+                _ptc_frame_paths.clear()
+                code = args.get("code", "")
+                result = _ptc_executor.execute(code)
+                if result.success:
+                    out: dict = {"output": result.stdout}
+                    # Attach frame paths so vision routing can embed them
+                    if _ptc_frame_paths:
+                        out["_frame_paths"] = list(_ptc_frame_paths)
+                    return out
+                return {
+                    "error": result.error,
+                    "error_type": result.error_type,
+                }
+
+            tool_handlers["execute_code"] = _execute_code_handler
+
         # Determine connector type for vision routing
         _is_cli = isinstance(connector, CLIConnectorBase)
         _is_ollama = isinstance(connector, OllamaConnector)
+
+        # Now strip non-standard fields for non-CLI connectors
+        if not _is_cli:
+            tool_defs = strip_nonstandard_fields(tool_defs)
 
         # Auto-embed initial frames for Ollama VL models so the model
         # sees the video content from the very first message.  Without
@@ -370,7 +464,7 @@ class PipelineGenerator:
             for iteration in range(max_iterations):
                 _call_start = _time.time()
                 _tool_names_this_iter: list[str] = []
-                response = await connector.chat_with_tools(messages, TOOL_DEFINITIONS)
+                response = await connector.chat_with_tools(messages, tool_defs)
 
                 if not response.tool_calls:
                     tracker.record(response, iteration + 1, call_start=_call_start)
@@ -541,6 +635,48 @@ class PipelineGenerator:
                                     indent=2,
                                 )
                                 logger.info("Vision: API fallback to color analysis")
+
+                    # Vision routing for PTC execute_code: if the sandbox
+                    # called extract_frames, embed the collected frames
+                    if (
+                        func_name == "execute_code"
+                        and isinstance(result, dict)
+                        and result.get("_frame_paths")
+                    ):
+                        frame_paths = result["_frame_paths"]
+                        if use_vision and not _is_cli:
+                            if _is_ollama:
+                                b64_strings = frames_to_base64_raw_strings(frame_paths)
+                                if b64_strings:
+                                    tool_result_msg["images"] = b64_strings
+                                    logger.info(
+                                        "PTC Vision: embedded %d frames for Ollama",
+                                        len(b64_strings),
+                                    )
+                            else:
+                                _is_anthropic = (
+                                    hasattr(connector, 'config')
+                                    and hasattr(connector.config, 'provider')
+                                    and str(connector.config.provider) == "anthropic"
+                                )
+                                if _is_anthropic:
+                                    image_blocks = frames_to_base64_anthropic(frame_paths)
+                                else:
+                                    image_blocks = frames_to_base64(frame_paths)
+                                if image_blocks:
+                                    tool_result_msg["content"] = [
+                                        {"type": "text", "text": result_str},
+                                        *image_blocks,
+                                    ]
+                                    logger.info(
+                                        "PTC Vision: embedded %d frames for API",
+                                        len(image_blocks),
+                                    )
+                        elif use_vision and _is_cli:
+                            logger.info(
+                                "PTC Vision: CLI connector, %d frame paths in output",
+                                len(frame_paths),
+                            )
 
                     messages.append(tool_result_msg)
 

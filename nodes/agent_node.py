@@ -212,6 +212,10 @@ class FFMPEGAgentNode:
                     "label_off": "Vision Off",
                     "tooltip": "When On, embeds video frames as images for vision-capable models (uses more tokens). When Off, uses numeric color analysis instead (cheaper, works with all models).",
                 }),
+                "ptc_mode": (["auto", "on", "off"], {
+                    "default": "auto",
+                    "tooltip": "Programmatic Tool Calling mode. 'auto': LLM chooses when to use execute_code. 'on': always orchestrate via execute_code (fewer inference passes). 'off': disable PTC entirely (classic tool calling).",
+                }),
                 "verify_output": ("BOOLEAN", {
                     "default": True,
                     "label_on": "Verify On",
@@ -365,6 +369,7 @@ class FFMPEGAgentNode:
         crf: int = -1,
         encoding_preset: str = "auto",
         use_vision: bool = True,
+        ptc_mode: str = "auto",
         verify_output: bool = True,
         whisper_device: str = "gpu",
         whisper_model: str = "large-v3",
@@ -415,6 +420,7 @@ class FFMPEGAgentNode:
                 output_path=output_path,
                 use_vision=use_vision,
                 verify_output=verify_output,
+                ptc_mode=ptc_mode,
             )
 
         # --- Resolve input video ---
@@ -689,6 +695,7 @@ class FFMPEGAgentNode:
                 connected_inputs=connected_inputs_str,
                 video_path=effective_video_path,
                 use_vision=use_vision,
+                ptc_mode=ptc_mode,
             )
         except Exception as e:
             if hasattr(connector, 'close'):
@@ -1207,6 +1214,7 @@ class FFMPEGAgentNode:
                         connected_inputs=connected_inputs_str,
                         video_path=effective_video_path,
                         use_vision=use_vision,
+                        ptc_mode=ptc_mode,
                     )
                     # Rebuild pipeline from corrected spec
                     pipeline = Pipeline(
@@ -1959,6 +1967,7 @@ Token Usage{est_tag}:
         output_path: str,
         use_vision: bool = True,
         verify_output: bool = False,
+        ptc_mode: str = "auto",
     ) -> tuple[torch.Tensor, dict, str, str, str]:
         """Process all matching videos in a folder with the same pipeline.
 
@@ -2031,6 +2040,7 @@ Token Usage{est_tag}:
                 connected_inputs=connected_inputs_str,
                 video_path=valid_files[0] if valid_files else "",
                 use_vision=use_vision,
+                ptc_mode=ptc_mode,
             )
         finally:
             if hasattr(connector, 'close'):

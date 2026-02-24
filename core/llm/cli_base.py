@@ -385,14 +385,41 @@ class CLIConnectorBase(LLMConnector):
                     f"  {name}: {desc}\n  Parameters:\n{param_block}"
                 )
 
+            # Build tool usage instructions based on which tools
+            # are actually available (avoids contradictory instructions
+            # when ptc_mode=="on" and only execute_code is exposed)
+            available_names = {
+                t.get("function", {}).get("name") for t in tools
+            }
+            usage_lines = [
+                "IMPORTANT: You MUST use tools before producing a pipeline.\n",
+            ]
+            if "search_skills" in available_names:
+                usage_lines.append(
+                    "- ALWAYS call search_skills first to discover correct skill names\n"
+                )
+            if "get_skill_details" in available_names:
+                usage_lines.append(
+                    "- ALWAYS call get_skill_details to learn valid parameters\n"
+                )
+            if "search_skills" in available_names:
+                usage_lines.append(
+                    "- Do NOT guess or hallucinate skill names — only use names "
+                    "returned by search_skills\n"
+                )
+            usage_lines.append(
+                "- Output your TOOL_CALL lines FIRST, then wait for results\n"
+                "- Only output the final JSON pipeline AFTER receiving tool "
+                "results (without any TOOL_CALL markers)\n"
+            )
+
             tool_section = (
                 "\n\n=== AVAILABLE TOOLS ===\n"
                 "You have the following tools available. To call a tool, output a line "
                 "in this exact format (one per line):\n"
                 f'{_TOOL_CALL_MARKER} {{"name": "tool_name", "arguments": {{"key": "value"}}}}\n\n'
-                "You may call multiple tools by putting each on its own line.\n"
-                "When you have enough information, output the final JSON pipeline directly "
-                "(without any TOOL_CALL markers).\n\n"
+                "You may call multiple tools by putting each on its own line.\n\n"
+                + "".join(usage_lines) + "\n"
                 "Tools:\n" + "\n\n".join(tool_descriptions) +
                 "\n=== END TOOLS ===\n"
             )
