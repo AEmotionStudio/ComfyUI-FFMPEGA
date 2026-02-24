@@ -298,6 +298,16 @@ class ProcessManager:
                 if self._active_async_proc is process:
                     self._active_async_proc = None
 
+            if self._cancelled:
+                return ProcessResult(
+                    success=False,
+                    return_code=-1,
+                    stdout="",
+                    stderr="Cancelled",
+                    command=cmd_string,
+                    error_message="Cancelled by user",
+                )
+
             success = process.returncode == 0
             stderr_str = "".join(stderr_data)
             error_message = None if success else self._parse_error(stderr_str)

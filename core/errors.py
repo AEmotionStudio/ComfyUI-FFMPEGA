@@ -33,8 +33,12 @@ class ValidationError(FFMPEGAError, ValueError):
     """
 
 
-class PipelineGenerationError(FFMPEGAError):
+class PipelineGenerationError(FFMPEGAError, ValueError):
     """Raised when the LLM fails to produce a valid pipeline spec.
+
+    Inherits from both ``FFMPEGAError`` and ``ValueError`` so existing
+    callers that catch ``ValueError`` (e.g. ComfyUI's node runner) are
+    unaffected by the new exception hierarchy.
 
     Covers cases such as:
     - JSON parse failure after all retries

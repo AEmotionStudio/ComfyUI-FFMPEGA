@@ -454,7 +454,7 @@ class CLIConnectorBase(LLMConnector):
             available_list = ", ".join(sorted(available_names))
             format_examples = (
                 f"\nCORRECT (exactly this format, tool name spelled correctly):\n"
-                f'TOOL_CALL: {{"name": "{next(iter(available_names)) if available_names else "tool_name"}", "arguments": {{"key": "value"}}}}\n'
+                f'TOOL_CALL: {{"name": "{sorted(available_names)[0] if available_names else "tool_name"}", "arguments": {{"key": "value"}}}}\n'
                 f"\nWRONG (do NOT do these):\n"
                 f'  TOOL_CALL: {{name: search_skills, arguments: {{}}}}      <- unquoted keys\n'
                 f'  TOOL_CALL: {{"name": "search_skill"}}                   <- missing arguments key\n'

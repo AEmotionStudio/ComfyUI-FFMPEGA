@@ -3319,18 +3319,21 @@ Token Usage{est_tag}:
             "",
             "File results:",
         ]
-        # Build a quick lookup: output file -> source filename
+        # Build a quick lookup: actual output paths (as returned by process_single)
         _output_set = set(output_paths)
+        # Map each source filename stem -> actual output path for reporting
+        _stem_to_out: dict[str, str] = {Path(p).stem.replace("_edited", ""): p
+                                         for p in output_paths}
         for vf in valid_files:
             stem = Path(vf).stem
-            expected_out = str(out_dir / f"{stem}_edited.mp4")
-            if expected_out in _output_set:
+            actual_out = _stem_to_out.get(stem)
+            if actual_out is not None:
                 # Successful — show output size if available
                 try:
-                    size_kb = Path(expected_out).stat().st_size // 1024
-                    status_lines.append(f"  ✓ {Path(vf).name} → {Path(expected_out).name} ({size_kb:,} KB)")
+                    size_kb = Path(actual_out).stat().st_size // 1024
+                    status_lines.append(f"  ✓ {Path(vf).name} → {Path(actual_out).name} ({size_kb:,} KB)")
                 except OSError:
-                    status_lines.append(f"  ✓ {Path(vf).name} → {Path(expected_out).name}")
+                    status_lines.append(f"  ✓ {Path(vf).name} → {Path(actual_out).name}")
             else:
                 # Find the error message for this file
                 err_msg = next(
