@@ -469,18 +469,24 @@ def strip_nonstandard_fields(tools: list[dict]) -> list[dict]:
         tools: List of tool definitions (OpenAI format).
 
     Returns:
-        Deep-copied list with only standard keys in each ``function``.
+        Fully independent list with only standard keys in each
+        ``function``.  Nested objects (e.g. ``parameters``) are
+        deep-copied so mutations cannot affect the global definitions.
     """
+    import copy
+
     cleaned = []
     for tool in tools:
         func = tool.get("function", {})
-        clean_func = {
-            k: v for k, v in func.items()
-            if k in _STANDARD_FUNCTION_KEYS
-        }
+        clean_func = {}
+        for k, v in func.items():
+            if k in _STANDARD_FUNCTION_KEYS:
+                # Deep-copy mutable nested dicts (e.g. parameters)
+                clean_func[k] = copy.deepcopy(v) if isinstance(v, (dict, list)) else v
         cleaned.append({
             "type": tool.get("type", "function"),
             "function": clean_func,
         })
     return cleaned
+
 

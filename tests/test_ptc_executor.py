@@ -68,8 +68,11 @@ def _mock_list_skills(category=None) -> dict:
 def _mock_build_pipeline(skills, input_path="/tmp/in.mp4", output_path="/tmp/out.mp4") -> dict:
     """Mock build_pipeline returning a command string."""
     return {
+        "success": True,
         "command": f"ffmpeg -i {input_path} -vf 'test' {output_path}",
-        "valid": True,
+        "command_args": ["ffmpeg", "-i", input_path, "-vf", "test", output_path],
+        "explanation": "Test pipeline",
+        "step_count": len(skills),
         "errors": [],
     }
 
@@ -182,7 +185,7 @@ class TestToolAccess:
             '    "/tmp/in.mp4",\n'
             '    "/tmp/out.mp4"\n'
             ')\n'
-            'print(pipeline["valid"])'
+            'print(pipeline["success"])'
         )
         assert result.success
         assert result.stdout.strip() == "True"
@@ -375,7 +378,7 @@ output = {
     "skill_used": top_skill,
     "params": params,
     "command": pipeline["command"],
-    "valid": pipeline["valid"],
+    "success": pipeline["success"],
 }
 print(json.dumps(output))
 '''
@@ -384,7 +387,7 @@ print(json.dumps(output))
         data = json.loads(result.stdout.strip())
         assert data["skill_used"] == "cinematic_grade"
         assert data["params"]["intensity"] == "medium"
-        assert data["valid"] is True
+        assert data["success"] is True
         assert "ffmpeg" in data["command"]
 
     def test_multi_skill_pipeline(self, executor):
@@ -399,13 +402,13 @@ for skill_info in results["matches"]:
         "params": {}
     })
 pipeline = build_pipeline(skills_to_use, "/tmp/in.mp4", "/tmp/out.mp4")
-print(json.dumps({"count": len(skills_to_use), "valid": pipeline["valid"]}))
+print(json.dumps({"count": len(skills_to_use), "success": pipeline["success"]}))
 '''
         result = executor.execute(code)
         assert result.success, f"Execution failed: {result.error}"
         data = json.loads(result.stdout.strip())
         assert data["count"] == 2
-        assert data["valid"] is True
+        assert data["success"] is True
 
     def test_conditional_logic(self, executor):
         """LLM-style conditional logic in orchestration code."""
