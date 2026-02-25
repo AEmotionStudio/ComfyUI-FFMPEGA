@@ -185,6 +185,8 @@ class MediaConverter:
             stdin=subprocess.PIPE,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
+            # Optimization: Use 16MB buffer to reduce syscalls when piping raw video
+            bufsize=16 * 1024 * 1024,
         )
         # Write frames in chunks to avoid materializing the entire tensor
         # as a single numpy array (~1.2GB for 192 frames at 1080p).
