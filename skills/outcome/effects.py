@@ -1751,7 +1751,7 @@ def register_skills(registry: SkillRegistry) -> None:
                 description="Font name or path",
                 required=False,
                 default="sans",
-                max_value=50,
+                max_value=255,
             ),
             SkillParameter(
                 name="position",
@@ -2439,7 +2439,7 @@ def register_skills(registry: SkillRegistry) -> None:
                 description="Font name or path",
                 required=False,
                 default="sans",
-                max_value=50,
+                max_value=255,
             ),
             SkillParameter(
                 name="borderw",
