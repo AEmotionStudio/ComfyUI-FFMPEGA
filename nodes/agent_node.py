@@ -241,6 +241,28 @@ class FFMPEGAgentNode:
                     "default": "large-v3",
                     "tooltip": "Whisper model size for transcription. 'large-v3' is most accurate (~3 GB VRAM). Smaller models use less memory: medium (~1.5 GB), small (~1 GB), base (~150 MB), tiny (~75 MB). Models auto-download on first use.",
                 }),
+                "sam3_max_objects": ("INT", {
+                    "default": 5,
+                    "min": 1,
+                    "max": 20,
+                    "step": 1,
+                    "tooltip": "Maximum number of objects SAM3 will track per frame. Lower values reduce VRAM usage. Objects are ranked by detection confidence — lowest-confidence detections are dropped first.",
+                }),
+                "sam3_det_threshold": ("FLOAT", {
+                    "default": 0.70,
+                    "min": 0.0,
+                    "max": 1.0,
+                    "step": 0.05,
+                    "tooltip": "Minimum detection confidence for SAM3 to track a new object (0.0–1.0). Higher values = fewer objects tracked = less VRAM. Default 0.7 filters out low-confidence detections.",
+                }),
+                "mask_output_type": (["colored_overlay", "black_white"], {
+                    "default": "colored_overlay",
+                    "tooltip": "Mask preview output format. 'colored_overlay' composites colored SAM3-style regions + contours onto the video. 'black_white' outputs a raw B&W mask video (white = detected object) for use in external compositing.",
+                }),
+                "mask_points": ("STRING", {
+                    "forceInput": True,
+                    "tooltip": "JSON-encoded point selection data from the Load Image/Video Path node's Point Selector. Guides SAM3 masking with click-to-select points instead of relying on text prompts alone.",
+                }),
 
                 "batch_mode": ("BOOLEAN", {
                     "default": False,
@@ -291,14 +313,15 @@ class FFMPEGAgentNode:
             },
         }
 
-    RETURN_TYPES = ("IMAGE", "AUDIO", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("images", "audio", "video_path", "command_log", "analysis")
+    RETURN_TYPES = ("IMAGE", "AUDIO", "STRING", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("images", "audio", "video_path", "command_log", "analysis", "mask_overlay_path")
     OUTPUT_TOOLTIPS = (
         "Image frames from the output video. Returns ALL frames automatically when connected to a downstream node (e.g. VHS Video Combine). Returns only a thumbnail when unconnected (zero-memory preview).",
         "Audio extracted from the output video (or passed through from audio_a) in ComfyUI AUDIO format.",
         "Absolute path to the rendered output video file.",
         "The ffmpeg command that was executed.",
         "LLM interpretation, estimated changes, pipeline steps, and any warnings.",
+        "Path to a mask overlay preview video with SAM3-style colored contours. Connect to Save Video (FFMPEGA) to view.",
     )
     FUNCTION = "process"
     CATEGORY = "FFMPEGA"
@@ -1229,6 +1252,9 @@ class FFMPEGAgentNode:
         whisper_device: str = "cpu",
         whisper_model: str = "large-v3",
         sam3_device: str = "gpu",
+        sam3_max_objects: int = 5,
+        sam3_det_threshold: float = 0.7,
+        mask_points: str = "",
         batch_mode: bool = False,
         video_folder: str = "",
         file_pattern: str = "*.mp4",
@@ -1237,7 +1263,7 @@ class FFMPEGAgentNode:
         log_usage: bool = False,
         allow_model_downloads: bool = True,
         **kwargs,  # hidden: prompt (PROMPT dict), extra_pnginfo (EXTRA_PNGINFO)
-    ) -> tuple[torch.Tensor, dict, str, str, str]:
+    ) -> tuple[torch.Tensor, dict, str, str, str, str]:
         """Process the video based on the natural language prompt.
 
         Args:
@@ -1285,6 +1311,9 @@ class FFMPEGAgentNode:
                 use_vision=use_vision,
                 verify_output=verify_output,
                 ptc_mode=ptc_mode,
+                sam3_max_objects=sam3_max_objects,
+                sam3_det_threshold=sam3_det_threshold,
+                mask_points=mask_points,
             )
 
         # --- Resolve inputs ---
@@ -1448,6 +1477,10 @@ class FFMPEGAgentNode:
             pipeline.metadata["_whisper_device"] = whisper_device
             pipeline.metadata["_whisper_model"] = whisper_model
         pipeline.metadata["_sam3_device"] = sam3_device
+        pipeline.metadata["_sam3_max_objects"] = sam3_max_objects
+        pipeline.metadata["_sam3_det_threshold"] = sam3_det_threshold
+        if mask_points and mask_points.strip():
+            pipeline.metadata["_mask_points"] = mask_points.strip()
 
         # --- Inject extra inputs (multi-input, audio muxing, etc.) ---
         (
@@ -1599,6 +1632,36 @@ Token Usage{est_tag}:
                 hidden_extra_pnginfo,
             )
 
+        # --- Generate mask output if auto_mask was used ---
+        # IMPORTANT: This must run BEFORE temp file cleanup because
+        # effective_video_path may point to a temp file (e.g. from image
+        # inputs or audio muxing) that gets deleted in the cleanup block.
+        mask_overlay_path = ""
+        has_auto_mask = any(
+            s.skill_name in {"auto_mask", "auto_segment", "segment",
+                             "smart_mask", "sam_mask", "ai_mask", "object_mask"}
+            for s in pipeline.steps
+        )
+        if has_auto_mask:
+            # Look for the mask video generated by _f_auto_mask
+            mask_video_path = pipeline.metadata.get("_mask_video_path", "")
+            if mask_video_path and os.path.isfile(mask_video_path):
+                mask_type = kwargs.get("mask_output_type", "colored_overlay")
+                if mask_type == "black_white":
+                    # Pass through the raw B&W mask video directly
+                    mask_overlay_path = mask_video_path
+                    logger.info("Using B&W mask video: %s", mask_overlay_path)
+                else:
+                    try:
+                        from ..core.sam3_masker import generate_mask_overlay
+                        mask_overlay_path = generate_mask_overlay(
+                            video_path=effective_video_path,
+                            mask_video_path=mask_video_path,
+                        )
+                        logger.info("Generated mask overlay: %s", mask_overlay_path)
+                    except Exception as e:
+                        logger.warning("Mask overlay generation failed: %s", e)
+
         # --- Cleanup temp files ---
         for tmp_path in (
             [temp_video_from_images, temp_video_with_audio, temp_audio_input]
@@ -1617,7 +1680,7 @@ Token Usage{est_tag}:
             if not os.listdir(temp_render_dir):
                 shutil.rmtree(temp_render_dir, ignore_errors=True)
 
-        return (images_tensor, audio_out, output_path, command.to_string(), analysis)
+        return (images_tensor, audio_out, output_path, command.to_string(), analysis, mask_overlay_path)
 
     async def _verify_output(
         self,
@@ -2056,7 +2119,10 @@ Token Usage{est_tag}:
         use_vision: bool = True,
         verify_output: bool = False,
         ptc_mode: str = "off",
-    ) -> tuple[torch.Tensor, dict, str, str, str]:
+        sam3_max_objects: int = 5,
+        sam3_det_threshold: float = 0.7,
+        mask_points: str = "",
+    ) -> tuple[torch.Tensor, dict, str, str, str, str]:
         """Process all matching videos in a folder with the same pipeline.
 
         Uses one LLM call to generate the pipeline, then applies it to
@@ -2155,6 +2221,10 @@ Token Usage{est_tag}:
                 out_file = str(out_dir / f"{stem}_edited.mp4")
 
                 pipeline = Pipeline(input_path=vpath, output_path=out_file)
+                pipeline.metadata["_sam3_max_objects"] = sam3_max_objects
+                pipeline.metadata["_sam3_det_threshold"] = sam3_det_threshold
+                if mask_points and mask_points.strip():
+                    pipeline.metadata["_mask_points"] = mask_points.strip()
                 for step in pipeline_steps:
                     skill_name = step.get("skill")
                     params = step.get("params", {})
@@ -2251,7 +2321,7 @@ Token Usage{est_tag}:
             except OSError:
                 pass
 
-        return (frames_tensor, audio_dict, paths_json, command_log, analysis)
+        return (frames_tensor, audio_dict, paths_json, command_log, analysis, "")
 
     @classmethod
     def IS_CHANGED(cls, video_path, prompt, seed=0, **kwargs):

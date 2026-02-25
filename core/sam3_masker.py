@@ -596,6 +596,8 @@ def mask_image_with_text(
     return combined
 
 
+
+
 # ---------------------------------------------------------------------------
 #  Video masking with text prompts
 # ---------------------------------------------------------------------------
@@ -632,6 +634,12 @@ def mask_video(
     prompt: str,
     output_dir: Optional[str] = None,
     device: str = "gpu",
+    max_objects: int = 5,
+    det_threshold: float = 0.7,
+    points: Optional[list] = None,
+    labels: Optional[list] = None,
+    point_src_width: int = 0,
+    point_src_height: int = 0,
 ) -> str:
     """Generate a grayscale mask video for text-prompted objects.
 
@@ -645,6 +653,17 @@ def mask_video(
         device: "gpu" (default) or "cpu". CPU avoids VRAM OOM on long
             videos — SAM3 pre-loads all frames into device memory during
             init_state(), which can easily consume 5+ GB on 720p clips.
+        max_objects: Maximum number of objects to track per frame (1-20).
+            Lowest-confidence detections are dropped when exceeded.
+        det_threshold: Minimum detection confidence for tracking new
+            objects (0.0-1.0). Higher = fewer objects = less VRAM.
+        points: Optional list of [x, y] pixel-space points on frame 0.
+            When provided, these guide SAM3's segmentation (click-to-select).
+        labels: Optional list of 1/0 labels for each point (positive/negative).
+        point_src_width: Original image width the points were drawn on.
+            If 0, uses the video frame width for normalization.
+        point_src_height: Original image height the points were drawn on.
+            If 0, uses the video frame height for normalization.
 
     Returns:
         Path to the generated grayscale mask video (MP4).
@@ -679,13 +698,20 @@ def mask_video(
 
     try:
         # 2. Run SAM3 video predictor with text prompt
-        log.info("Running SAM3 video tracking on %d frames (prompt: '%s')",
-                 len(frame_files), prompt)
+        log.info("Running SAM3 video tracking on %d frames (prompt: '%s', "
+                 "max_objects=%d, det_threshold=%.2f)",
+                 len(frame_files), prompt, max_objects, det_threshold)
 
         video_model = load_video_model(device=device)
 
         import torch
         from contextlib import nullcontext
+
+        # Apply detection threshold — controls how confident SAM3 must be
+        # before it starts tracking a new object. Higher = fewer objects.
+        _UNSET = object()  # sentinel distinct from None
+        orig_det_thresh = getattr(video_model, "new_det_thresh", _UNSET)
+        video_model.new_det_thresh = det_threshold
 
         # Flush VRAM again right before inference (GPU mode only).
         # ComfyUI may have reloaded its models between load_video_model() and here.
@@ -723,6 +749,13 @@ def mask_video(
                 inference_state = video_model.init_state(
                     resource_path=frames_dir,
                     video_loader_type="cv2",
+                    offload_video_to_cpu=True,
+                )
+            except TypeError:
+                # Older SAM3 versions may not support offload_video_to_cpu
+                inference_state = video_model.init_state(
+                    resource_path=frames_dir,
+                    video_loader_type="cv2",
                 )
             finally:
                 if _tqdm_was is None:
@@ -731,11 +764,50 @@ def mask_video(
                     _os.environ["TQDM_DISABLE"] = _tqdm_was
             log.info("SAM3 frames loaded (%d total)", len(frame_files))
 
-            # Add text prompt on first frame
+            # Add prompts on first frame
+            text_prompt = prompt or "object"
+
+            # Convert point prompts (if present) to small normalized boxes
+            # for SAM3's add_prompt.  Each click becomes a 2%-of-image box
+            # centered on the pixel coordinate, in [xmin, ymin, w, h] format.
+            boxes_xywh = None
+            box_labels = None
+            if points and labels and w > 0 and h > 0:
+                import torch as _t
+                box_size = 0.02  # 2% of image
+                # Use source image dims for normalization if provided,
+                # otherwise fall back to video frame dims.
+                norm_w = point_src_width if point_src_width > 0 else w
+                norm_h = point_src_height if point_src_height > 0 else h
+                _boxes = []
+                _lbls = []
+                for pt, lbl in zip(points, labels):
+                    if not isinstance(pt, (list, tuple)) or len(pt) < 2:
+                        continue
+                    try:
+                        cx = float(pt[0]) / norm_w   # normalize to [0, 1]
+                        cy = float(pt[1]) / norm_h
+                        lbl_int = int(lbl)
+                    except (TypeError, ValueError):
+                        continue
+                    x0 = max(0.0, cx - box_size / 2)
+                    y0 = max(0.0, cy - box_size / 2)
+                    bw = min(box_size, 1.0 - x0)
+                    bh = min(box_size, 1.0 - y0)
+                    _boxes.append([x0, y0, bw, bh])
+                    _lbls.append(lbl_int)
+                if _boxes:
+                    boxes_xywh = _t.tensor(_boxes, dtype=_t.float32)
+                    box_labels = _t.tensor(_lbls, dtype=_t.long)
+                    log.info("Point prompts → %d SAM3 box(es) for '%s'",
+                             len(_boxes), text_prompt)
+
             video_model.add_prompt(
                 inference_state,
                 frame_idx=0,
-                text_str=prompt,
+                text_str=text_prompt,
+                boxes_xywh=boxes_xywh,
+                box_labels=box_labels,
             )
 
             # 3. Propagate masks — drive the iterator ourselves so we control
@@ -750,10 +822,40 @@ def mask_video(
                         continue
 
                     binary_masks = outputs.get("out_binary_masks")
+                    out_probs = outputs.get("out_probs")
+
                     if binary_masks is not None and len(binary_masks) > 0:
-                        # Combine all object masks into one
-                        if torch.is_tensor(binary_masks):
+                        if isinstance(binary_masks, list):
+                            binary_masks = np.array([m.cpu().numpy() if torch.is_tensor(m) else m
+                                                     for m in binary_masks])
+                        elif torch.is_tensor(binary_masks):
                             binary_masks = binary_masks.cpu().numpy()
+                        if out_probs is not None:
+                            if torch.is_tensor(out_probs):
+                                out_probs = out_probs.cpu().numpy()
+                            out_probs = np.ravel(out_probs)  # ensure 1-D
+
+                        # --- Cap objects by confidence ---
+                        n_objects = len(binary_masks)
+                        if n_objects > max_objects:
+                            if out_probs is not None and len(out_probs) >= n_objects:
+                                # Keep only the top-N highest-confidence objects
+                                top_indices = np.argsort(out_probs[:n_objects])[::-1][:max_objects]
+                                binary_masks = binary_masks[top_indices]
+                                log.debug(
+                                    "Frame %d: capped %d objects → %d (kept probs: %s)",
+                                    frame_idx, n_objects, max_objects,
+                                    out_probs[top_indices].tolist(),
+                                )
+                            else:
+                                # No probs or length mismatch — just take first N
+                                binary_masks = binary_masks[:max_objects]
+                                log.debug(
+                                    "Frame %d: capped %d objects → %d (no probs)",
+                                    frame_idx, n_objects, max_objects,
+                                )
+
+                        # Combine all object masks into one
                         combined = np.any(binary_masks, axis=0)
                         # Squeeze extra dims: (1, H, W) → (H, W) for mode="L"
                         while combined.ndim > 2:
@@ -783,6 +885,10 @@ def mask_video(
                     except Exception:
                         pass
                     inference_state = None
+                # Restore original detection threshold so subsequent runs
+                # with different settings aren't affected.
+                if orig_det_thresh is not _UNSET:
+                    video_model.new_det_thresh = orig_det_thresh
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
 
@@ -823,6 +929,184 @@ def mask_video(
                 pass
 
     return mask_video_path
+
+
+# ---------------------------------------------------------------------------
+#  Mask overlay generation (SAM3-style colored contours)
+# ---------------------------------------------------------------------------
+
+# Default overlay palette — perceptually distinct colors (RGB, 0-255).
+# Matches the style from SAM3's visualization_utils.draw_masks_to_frame().
+_OVERLAY_PALETTE = np.array([
+    [0, 200, 200],    # teal/cyan (primary — matches SAM3 repo screenshots)
+    [255, 100, 100],  # coral red
+    [100, 255, 100],  # lime green
+    [100, 100, 255],  # periwinkle blue
+    [255, 200, 50],   # amber
+    [200, 100, 255],  # violet
+    [255, 150, 200],  # pink
+    [50, 255, 200],   # mint
+], dtype=np.uint8)
+
+# OpenCV operates in BGR, so convert the RGB palette once
+_OVERLAY_PALETTE_BGR = _OVERLAY_PALETTE[:, ::-1].copy()
+
+
+def _draw_masks_to_frame(
+    frame: np.ndarray,
+    masks: np.ndarray,
+    obj_ids: Optional[list] = None,
+) -> np.ndarray:
+    """Composite colored masks onto a frame with triple-contour outlines.
+
+    Replicates the SAM3 repo's visual style:
+    - Semi-transparent fill (75% original + 25% color)
+    - Triple contour: white outer (7px) → black middle (5px) → color inner (3px)
+    - No bounding boxes
+
+    Args:
+        frame: BGR uint8 image (H, W, 3).
+        masks: Boolean masks (N, H, W) or list of (H, W) masks.
+        obj_ids: Optional per-object IDs for consistent coloring.
+
+    Returns:
+        Composited BGR uint8 image (H, W, 3).
+    """
+    import cv2
+
+    result = frame.copy()
+
+    for i, mask in enumerate(masks):
+        if mask.ndim > 2:
+            mask = mask.squeeze()
+        mask_u8 = (mask > 0).astype(np.uint8)
+        if mask_u8.sum() == 0:
+            continue
+
+        color_idx = (obj_ids[i] if obj_ids else i) % len(_OVERLAY_PALETTE_BGR)
+        color = _OVERLAY_PALETTE_BGR[color_idx]
+
+        # Semi-transparent fill
+        colored = np.where(mask_u8[..., None], color, result)
+        result = cv2.addWeighted(result, 0.75, colored, 0.25, 0)
+
+        # Triple contour: white → black → color
+        contours, _ = cv2.findContours(
+            mask_u8.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE,
+        )
+        cv2.drawContours(result, contours, -1, (255, 255, 255), 7)  # white outer
+        cv2.drawContours(result, contours, -1, (0, 0, 0), 5)        # black middle
+        cv2.drawContours(result, contours, -1, color.tolist(), 3)    # color inner
+
+    return result
+
+
+def generate_mask_overlay(
+    video_path: str,
+    mask_video_path: str,
+    output_path: Optional[str] = None,
+) -> str:
+    """Composite colored mask overlay onto the original video.
+
+    Produces a preview video with SAM3-style colored regions + contour
+    outlines so users can verify what was detected before final render.
+
+    Args:
+        video_path: Path to the original video.
+        mask_video_path: Path to the grayscale mask video (white=target).
+        output_path: Where to write the overlay video. Auto-generated if None.
+
+    Returns:
+        Path to the overlay video (MP4).
+    """
+    import cv2
+
+    if output_path is None:
+        p = Path(mask_video_path)
+        output_path = str(p.with_name(p.stem + "_overlay.mp4"))
+
+    cap_orig = cv2.VideoCapture(video_path)
+    cap_mask = cv2.VideoCapture(mask_video_path)
+    writer = None
+    tmp_path = output_path + ".tmp.mp4"
+
+    try:
+        if not cap_orig.isOpened():
+            raise RuntimeError(f"Cannot open original video: {video_path}")
+        if not cap_mask.isOpened():
+            raise RuntimeError(f"Cannot open mask video: {mask_video_path}")
+
+        fps = cap_orig.get(cv2.CAP_PROP_FPS) or 30.0
+        w = int(cap_orig.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap_orig.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        # Write to a temp file, then re-encode with ffmpeg for compatibility
+        fourcc = cv2.VideoWriter.fourcc(*"mp4v")
+        writer = cv2.VideoWriter(tmp_path, fourcc, fps, (w, h))
+
+        frame_count = 0
+        while True:
+            ret_o, frame_orig = cap_orig.read()
+            ret_m, frame_mask = cap_mask.read()
+            if not ret_o or not ret_m:
+                break
+
+            # Convert mask to grayscale → binary
+            if frame_mask.ndim == 3:
+                gray = cv2.cvtColor(frame_mask, cv2.COLOR_BGR2GRAY)
+            else:
+                gray = frame_mask
+
+            # Resize mask to match original if needed
+            if gray.shape[:2] != frame_orig.shape[:2]:
+                gray = cv2.resize(gray, (w, h), interpolation=cv2.INTER_NEAREST)
+
+            # Label connected components as separate objects
+            _, labels_map = cv2.connectedComponents((gray > 127).astype(np.uint8))
+            n_objects = labels_map.max()
+
+            if n_objects > 0:
+                masks = []
+                obj_ids = []
+                for oid in range(1, n_objects + 1):
+                    masks.append((labels_map == oid).astype(np.uint8))
+                    obj_ids.append(oid - 1)
+
+                overlay = _draw_masks_to_frame(
+                    frame_orig, np.array(masks), obj_ids,
+                )
+            else:
+                overlay = frame_orig
+
+            writer.write(overlay)
+            frame_count += 1
+
+    finally:
+        if writer is not None:
+            writer.release()
+        cap_orig.release()
+        cap_mask.release()
+
+    # Re-encode for broad compatibility
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-i", tmp_path,
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-crf", "18",
+            output_path,
+        ],
+        capture_output=True,
+        check=True,
+    )
+    try:
+        os.unlink(tmp_path)
+    except OSError:
+        pass
+
+    log.info("Mask overlay video created: %s (%d frames)", output_path, frame_count)
+    return output_path
 
 
 # ---------------------------------------------------------------------------

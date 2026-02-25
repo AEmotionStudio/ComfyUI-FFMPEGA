@@ -156,16 +156,21 @@ class LoadVideoPathNode:
                     "tooltip": "Select every Nth frame (1 = every frame).",
                 }),
             },
+            "hidden": {
+                "mask_points_data": "STRING",
+            },
         }
 
-    RETURN_TYPES = ("STRING", "INT", "FLOAT", "FLOAT")
-    RETURN_NAMES = ("video_path", "frame_count", "fps", "duration")
+    RETURN_TYPES = ("STRING", "INT", "FLOAT", "FLOAT", "STRING")
+    RETURN_NAMES = ("video_path", "frame_count", "fps", "duration", "mask_points")
     OUTPUT_TOOLTIPS = (
         "Validated video file path — connect to FFMPEGA Agent's "
         "video_a / video_b / video_c input slots.",
         "Total usable frames after applying trim parameters.",
         "Effective FPS (source FPS or force_rate override).",
         "Effective duration in seconds after applying trim parameters.",
+        "JSON-encoded point selection data from the Point Selector. "
+        "Connect to FFMPEGA Agent's mask_points input for guided masking.",
     )
     FUNCTION = "load_path"
     CATEGORY = "FFMPEGA"
@@ -181,7 +186,7 @@ class LoadVideoPathNode:
     @classmethod
     def IS_CHANGED(
         cls, video="", force_rate=0, skip_first_frames=0,
-        frame_load_cap=0, select_every_nth=1,
+        frame_load_cap=0, select_every_nth=1, **kwargs,
     ) -> str:
         """Return hash so ComfyUI re-runs if the file or params change."""
         video_path = folder_paths.get_annotated_filepath(video)
@@ -192,6 +197,7 @@ class LoadVideoPathNode:
             m.update(str(os.path.getsize(video_path)).encode())
             m.update(f"{force_rate}:{skip_first_frames}:{frame_load_cap}"
                      f":{select_every_nth}".encode())
+            m.update(str(kwargs.get("mask_points_data", "")).encode())
             return m.hexdigest()
         return ""
 
@@ -210,6 +216,7 @@ class LoadVideoPathNode:
         skip_first_frames: int = 0,
         frame_load_cap: int = 0,
         select_every_nth: int = 1,
+        mask_points_data: str = "",
     ) -> dict:
         """Resolve path, probe metadata, compute effective values.
 
@@ -277,7 +284,7 @@ class LoadVideoPathNode:
 
         return {
             "result": (video_path, available_frames, effective_fps,
-                       effective_duration),
+                       effective_duration, mask_points_data or ""),
             "ui": {
                 "video": [{
                     "filename": video,

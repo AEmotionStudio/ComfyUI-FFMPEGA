@@ -14,13 +14,19 @@ Memory:    ~0 MB          ~0 MB           ~0 MB
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 
+import numpy as np
+import torch
+
 import folder_paths
 
 logger = logging.getLogger("FFMPEGA")
+
+MAX_PREVIEW_FRAMES = 64  # cap to avoid memory blowout
 
 
 class SaveVideoNode:
@@ -69,7 +75,8 @@ class SaveVideoNode:
             },
         }
 
-    RETURN_TYPES = ()
+    RETURN_TYPES = ("IMAGE", "AUDIO", "STRING")
+    RETURN_NAMES = ("images", "audio", "video_path")
     FUNCTION = "save_video"
     OUTPUT_NODE = True
     CATEGORY = "FFMPEGA"
@@ -77,9 +84,9 @@ class SaveVideoNode:
         "Zero-memory video output with inline preview. "
         "Takes a video path (from FFMPEGA Agent or Load Video Path), "
         "copies the file to ComfyUI's output directory, and shows a "
-        "preview. The video already contains audio — no re-encoding "
-        "needed. Just a file copy. A workflow PNG thumbnail is saved "
-        "alongside the video for drag-and-drop workflow loading."
+        "preview. Also outputs IMAGE frames and the saved video_path "
+        "for chaining with downstream nodes. A workflow PNG thumbnail "
+        "is saved alongside the video for drag-and-drop workflow loading."
     )
 
     def save_video(
@@ -103,9 +110,14 @@ class SaveVideoNode:
             filename_prefix = "FFMPEGA"
 
         if not video_path or not os.path.isfile(video_path):
-            raise FileNotFoundError(
-                f"Video file not found: {video_path}"
-            )
+            # Return empty results when no video is available (e.g. mask
+            # overlay path is empty because SAM3 failed or was not used).
+            empty_tensor = torch.zeros(1, 64, 64, 3, dtype=torch.float32)
+            silent_audio = {"waveform": torch.zeros(1, 1, 1), "sample_rate": 44100}
+            return {
+                "ui": {"video": [], "file_size": ["0 B"]},
+                "result": (empty_tensor, silent_audio, ""),
+            }
 
         # Determine output path
         ext = os.path.splitext(video_path)[1] or ".mp4"
@@ -175,6 +187,12 @@ class SaveVideoNode:
             prompt, extra_pnginfo,
         )
 
+        # --- Extract frames as IMAGE tensor ---
+        images_tensor = self._extract_frames(output_path)
+
+        # --- Extract audio ---
+        audio_out = self._extract_audio(output_path)
+
         return {
             "ui": {
                 "video": [{
@@ -184,7 +202,116 @@ class SaveVideoNode:
                 }],
                 "file_size": [size_str],
             },
+            "result": (images_tensor, audio_out, output_path),
         }
+
+    def _extract_frames(self, video_path: str) -> torch.Tensor:
+        """Extract frames from video as an IMAGE tensor.
+
+        Samples up to MAX_PREVIEW_FRAMES frames evenly from the video.
+        Only decodes the frames we actually need to avoid OOM on long videos.
+        Returns shape (B, H, W, 3) float32 in [0, 1].
+        """
+        try:
+            import av  # type: ignore[import-not-found]
+
+            with av.open(video_path) as container:
+                stream = container.streams.video[0]
+                total = stream.frames or 0
+
+                # First pass: count frames if metadata is missing
+                if total <= 0:
+                    for _ in container.decode(video=0):
+                        total += 1
+                    if total == 0:
+                        return torch.zeros(1, 64, 64, 3, dtype=torch.float32)
+                    # Reopen to decode selected frames
+                    container.close()
+                    container2 = av.open(video_path)
+                else:
+                    container2 = container
+
+                # Determine which frame indices to keep
+                if total <= MAX_PREVIEW_FRAMES:
+                    keep = set(range(total))
+                else:
+                    keep = set(np.linspace(0, total - 1, MAX_PREVIEW_FRAMES, dtype=int).tolist())
+
+                sampled = []
+                try:
+                    for idx, frame in enumerate(container2.decode(video=0)):
+                        if idx in keep:
+                            sampled.append(frame.to_ndarray(format="rgb24"))
+                        if idx >= total - 1:
+                            break
+                finally:
+                    if container2 is not container:
+                        container2.close()
+
+            if not sampled:
+                return torch.zeros(1, 64, 64, 3, dtype=torch.float32)
+
+            stacked = np.stack(sampled)
+            return torch.from_numpy(stacked).float().div_(255.0)
+
+        except Exception as e:
+            logger.warning("SaveVideo: frame extraction failed: %s", e)
+            return torch.zeros(1, 64, 64, 3, dtype=torch.float32)
+
+    def _extract_audio(self, video_path: str) -> dict:
+        """Extract audio from video as a ComfyUI AUDIO dict.
+
+        Returns dict with 'waveform' (Tensor [1, channels, samples])
+        and 'sample_rate' (int). Returns silence if no audio stream.
+        """
+        silence = {"waveform": torch.zeros(1, 1, 1), "sample_rate": 44100}
+
+        ffmpeg_bin = shutil.which("ffmpeg")
+        ffprobe_bin = shutil.which("ffprobe")
+        if not ffmpeg_bin or not ffprobe_bin:
+            return silence
+
+        # Check for audio stream
+        try:
+            probe = subprocess.run(
+                [ffprobe_bin, "-v", "error", "-select_streams", "a",
+                 "-show_entries", "stream=codec_type", "-of", "csv=p=0",
+                 video_path],
+                capture_output=True, check=True,
+            )
+            if not probe.stdout.decode("utf-8", "backslashreplace").strip():
+                return silence
+        except subprocess.CalledProcessError:
+            return silence
+
+        # Extract raw PCM
+        try:
+            res = subprocess.run(
+                [ffmpeg_bin, "-i", video_path, "-vn",
+                 "-t", "120",  # cap at 2 min to avoid OOM on long videos
+                 "-f", "f32le", "-"],
+                capture_output=True, check=True,
+            )
+            audio = torch.frombuffer(bytearray(res.stdout), dtype=torch.float32)
+            match = re.search(
+                r", (\d+) Hz, (\w+), ",
+                res.stderr.decode("utf-8", "backslashreplace"),
+            )
+            if match:
+                ar = int(match.group(1))
+                ac = {"mono": 1, "stereo": 2}.get(match.group(2), 2)
+            else:
+                ar, ac = 44100, 2
+            # Truncate if samples aren't divisible by channel count
+            n_samples = audio.numel()
+            usable = n_samples - (n_samples % ac)
+            if usable == 0:
+                return silence
+            audio = audio[:usable].reshape((-1, ac)).transpose(0, 1).unsqueeze(0)
+            return {"waveform": audio, "sample_rate": ar}
+        except Exception as e:
+            logger.warning("SaveVideo: audio extraction failed: %s", e)
+            return silence
 
     def _save_workflow_png(
         self,

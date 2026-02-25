@@ -44,13 +44,18 @@ class LoadImagePathNode:
                     ),
                 }),
             },
+            "hidden": {
+                "mask_points_data": "STRING",
+            },
         }
 
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("image_path",)
+    RETURN_TYPES = ("STRING", "STRING")
+    RETURN_NAMES = ("image_path", "mask_points")
     OUTPUT_TOOLTIPS = (
         "Absolute file path to the selected image. Connect to "
         "FFMPEGA Agent's image_path_a / image_path_b / … inputs.",
+        "JSON-encoded point selection data from the Point Selector. "
+        "Connect to FFMPEGA Agent's mask_points input for guided masking.",
     )
     FUNCTION = "load_image_path"
     CATEGORY = "FFMPEGA"
@@ -61,7 +66,7 @@ class LoadImagePathNode:
         "~6 MB per image with standard Load Image."
     )
 
-    def load_image_path(self, image: str = "") -> dict:
+    def load_image_path(self, image: str = "", mask_points_data: str = "") -> dict:
         """Resolve the image path and return it plus UI preview data."""
         if not image:
             raise FileNotFoundError("No image selected")
@@ -92,11 +97,11 @@ class LoadImagePathNode:
                     "type": "input",
                 }],
             },
-            "result": (full_path,),
+            "result": (full_path, mask_points_data or ""),
         }
 
     @classmethod
-    def IS_CHANGED(cls, image: str = ""):
+    def IS_CHANGED(cls, image: str = "", mask_points_data: str = "", **kwargs):
         if not image:
             return 0.0
         input_dir = folder_paths.get_input_directory()
@@ -105,6 +110,7 @@ class LoadImagePathNode:
             m = hashlib.sha256()
             m.update(full_path.encode())
             m.update(str(os.path.getmtime(full_path)).encode())
+            m.update((mask_points_data or "").encode())
             return m.hexdigest()
         return 0.0
 
