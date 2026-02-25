@@ -274,9 +274,17 @@ def _load_safetensors(model, checkpoint_path: str) -> None:
     if not sam3_image_ckpt:
         sam3_image_ckpt = ckpt
 
-    missing_keys, _ = model.load_state_dict(sam3_image_ckpt, strict=False)
+    missing_keys, unexpected_keys = model.load_state_dict(sam3_image_ckpt, strict=False)
     if missing_keys:
         log.debug("SAM3 loaded with missing keys: %s", missing_keys[:5])
+    # Guard: if nearly all keys are missing, the checkpoint format is wrong
+    if len(missing_keys) > len(sam3_image_ckpt) * 0.5:
+        log.warning(
+            "SAM3 image checkpoint has %d/%d missing keys — likely wrong "
+            "format (e.g. HuggingFace Transformers vs original .pt). "
+            "Reconvert from .pt with: safetensors.torch.save_file(torch.load('sam3.pt'), 'sam3.safetensors')",
+            len(missing_keys), len(sam3_image_ckpt),
+        )
 
 
 def _load_safetensors_video(model, checkpoint_path: str) -> None:
@@ -299,6 +307,14 @@ def _load_safetensors_video(model, checkpoint_path: str) -> None:
         log.debug("SAM3 video model missing keys: %s", missing_keys[:5])
     if unexpected_keys:
         log.debug("SAM3 video model unexpected keys: %s", unexpected_keys[:5])
+    # Guard: if nearly all keys are missing, the checkpoint format is wrong
+    if len(missing_keys) > len(ckpt) * 0.5:
+        log.warning(
+            "SAM3 video checkpoint has %d/%d missing keys — likely wrong "
+            "format (e.g. HuggingFace Transformers vs original .pt). "
+            "Reconvert from .pt with: safetensors.torch.save_file(torch.load('sam3.pt'), 'sam3.safetensors')",
+            len(missing_keys), len(ckpt),
+        )
 
 
 # ---------------------------------------------------------------------------

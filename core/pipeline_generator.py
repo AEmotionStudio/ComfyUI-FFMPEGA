@@ -148,7 +148,7 @@ class PipelineGenerator:
         connected_inputs: str = "",
         video_path: str = "",
         use_vision: bool = True,
-        ptc_mode: str = "auto",
+        ptc_mode: str = "off",
     ) -> dict:
         """Generate a pipeline spec, with auto-retry on invalid JSON.
 
@@ -254,7 +254,7 @@ class PipelineGenerator:
         max_iterations: int = 10,
         video_path: str = "",
         use_vision: bool = True,
-        ptc_mode: str = "auto",
+        ptc_mode: str = "off",
     ) -> str:
         """Agentic pipeline generation with tool calling."""
         from ..core.token_tracker import TokenTracker  # type: ignore[import-not-found]
