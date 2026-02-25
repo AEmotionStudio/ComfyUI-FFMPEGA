@@ -860,6 +860,7 @@ def mask_video(
                         if out_probs is not None:
                             if torch.is_tensor(out_probs):
                                 out_probs = out_probs.cpu().numpy()
+                            out_probs = np.ravel(out_probs)  # ensure 1-D
 
                         # --- Cap objects by confidence ---
                         n_objects = len(binary_masks)

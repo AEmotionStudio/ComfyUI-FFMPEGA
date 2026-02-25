@@ -300,7 +300,12 @@ class SaveVideoNode:
                 ac = {"mono": 1, "stereo": 2}.get(match.group(2), 2)
             else:
                 ar, ac = 44100, 2
-            audio = audio.reshape((-1, ac)).transpose(0, 1).unsqueeze(0)
+            # Truncate if samples aren't divisible by channel count
+            n_samples = audio.numel()
+            usable = n_samples - (n_samples % ac)
+            if usable == 0:
+                return silence
+            audio = audio[:usable].reshape((-1, ac)).transpose(0, 1).unsqueeze(0)
             return {"waveform": audio, "sample_rate": ar}
         except Exception as e:
             logger.warning("SaveVideo: audio extraction failed: %s", e)

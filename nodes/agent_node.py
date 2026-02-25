@@ -2308,7 +2308,7 @@ Token Usage{est_tag}:
             except OSError:
                 pass
 
-        return (frames_tensor, audio_dict, paths_json, command_log, analysis)
+        return (frames_tensor, audio_dict, paths_json, command_log, analysis, "")
 
     @classmethod
     def IS_CHANGED(cls, video_path, prompt, seed=0, **kwargs):
