@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.1] - 2026-02-24
+
+### Added
+- **Advanced Options Toggle**: New `advanced_options` input (default: Simple) — hides `preview_mode`, `crf`, `encoding_preset`, `video_path`, `subtitle_path`, and `batch_mode` (+ sub-widgets) behind a toggle for a cleaner node layout. Power users can enable Advanced mode to access all settings.
+- **SAM3 Checkpoint Warnings**: Added format mismatch detection — logs a warning with reconversion instructions when >50% of checkpoint keys are missing (e.g. HuggingFace Transformers format vs expected original `.pt` key structure).
+- **Token Log Rotation**: `usage_log.jsonl` now auto-rotates when exceeding 10 MB, trimming the oldest 50% of entries to prevent unbounded disk growth.
+
+### Fixed
+- **Dynamic Input Persistence**: Fixed dynamic input slots (e.g. `video_b` appearing when `video_a` is connected) not restoring on workflow load. Pre-creates saved slots from serialized data in `onConfigure` and uses `setTimeout` instead of `requestAnimationFrame` for reliable link restoration timing.
+- **Default Value Mismatches**: Synced `process()` signature defaults with `INPUT_TYPES` for `whisper_device` and `track_tokens`.
+
+### Changed
+- **Removed `ptc_mode` Input**: PTC mode hidden from UI (not ready for public use). Defaults to `"off"` internally. Code preserved for future re-enablement.
+- **Removed `sam3_device` Input**: SAM3 CPU mode hidden from UI (SAM3 does not support CPU inference). Defaults to `"gpu"` internally.
+- **Whisper Default → CPU**: `whisper_device` now defaults to `"cpu"` to avoid VRAM pressure on most setups.
+- **Token Tracking Default → On**: `track_tokens` now defaults to `True` so users see token usage by default.
+- **Dead Code Cleanup**: Removed ~1100 lines of unreachable inlined `process` method after `return` statement in `agent_node.py`.
+- **`ValidationError`**: Path validation functions in `core/sanitize.py` now raise `ValidationError` instead of `ValueError` for more specific error handling.
+
+---
+
 ## [2.7.0] - 2026-02-24
 
 ### Added

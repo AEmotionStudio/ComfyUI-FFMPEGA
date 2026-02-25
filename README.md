@@ -5,7 +5,7 @@
 **An AI-powered FFMPEG agent node for ComfyUI — edit videos with natural language.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-2.7.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-2.7.1-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-2-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 [![Downloads](https://img.shields.io/badge/dynamic/json?color=blueviolet&label=Downloads&query=downloads.smart_count&url=https://raw.githubusercontent.com/AEmotionStudio/ComfyUI-FFMPEGA/refs/heads/badges/traffic_stats.json&style=for-the-badge&logo=github)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
@@ -24,9 +24,18 @@
 
 ---
 
-## 🚀 What's New in v2.7.0 (February 24, 2026)
+## 🚀 What's New in v2.7.1 (February 24, 2026)
 
-**SAM3 Auto-Mask, LaMa Inpainting, Programmatic Tool Calling & 656 Tests**
+**Cleaner Node UI, Dynamic Input Fix & Default Refinements**
+
+*   **⚙️ Advanced Options Toggle**: New Simple/Advanced toggle hides power-user settings (`preview_mode`, `crf`, `encoding_preset`, `video_path`, `subtitle_path`, `batch_mode`) behind a single switch. The node is now much more compact by default.
+*   **🔧 Dynamic Input Persistence**: Fixed dynamic input slots (e.g. `video_b` auto-appearing when `video_a` is connected) not restoring when loading saved workflows or images.
+*   **🎛️ Default Refinements**: Whisper defaults to CPU (avoids VRAM pressure), token tracking enabled by default, PTC mode and SAM3 CPU inputs removed from UI.
+*   **⚠️ SAM3 Checkpoint Warnings**: Detects wrong checkpoint format and logs reconversion instructions.
+*   **🧹 Code Cleanup**: Removed ~1100 lines of dead code, added `ValidationError` for path validation, token log rotation for `usage_log.jsonl`.
+
+<details>
+<summary><b>Previous: v2.7.0 — SAM3 Auto-Mask, LaMa Inpainting & PTC</b></summary>
 
 *   **🎭 SAM3 Auto-Mask**: New `remove` skill powered by Segment Anything Model 3 — describe what to remove in natural language (e.g. *"remove the person"*) and SAM3 generates per-frame masks automatically.
 *   **🖌️ LaMa Inpainting**: AI-powered video object removal using LaMa (Large Mask Inpainting). Temporal Gaussian smoothing reduces frame-to-frame flicker. Falls back to black fill if LaMa is not installed.
@@ -34,6 +43,8 @@
 *   **⚡ Programmatic Tool Calling (PTC)**: New `execute_code` tool lets LLMs write a single Python script that orchestrates multiple tool calls in one pass, reducing round-trips from ~6 to 1. Three modes: `off`, `auto`, `on`.
 *   **🔒 PTC Sandbox**: Hardened with 25+ escape vector blocks — dunder introspection, module access, traceback traversal, dynamic attribute access, and `chr()` construction bypasses.
 *   **🧪 656 Tests**: Expanded test suite from 516 → 656 with 0 failures. 34 new PTC executor tests, security hardening tests, and corrected mock contracts.
+
+</details>
 
 <details>
 <summary><b>Previous: v2.6.5 — Whisper Auto-Transcription, Karaoke Subtitles & Letterbox Fixes</b></summary>
