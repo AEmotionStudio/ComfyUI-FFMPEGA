@@ -767,14 +767,18 @@ def mask_video(
                 for pt, lbl in zip(points, labels):
                     if not isinstance(pt, (list, tuple)) or len(pt) < 2:
                         continue
-                    cx = pt[0] / w   # normalize to [0, 1]
-                    cy = pt[1] / h
+                    try:
+                        cx = float(pt[0]) / w   # normalize to [0, 1]
+                        cy = float(pt[1]) / h
+                        lbl_int = int(lbl)
+                    except (TypeError, ValueError):
+                        continue
                     x0 = max(0.0, cx - box_size / 2)
                     y0 = max(0.0, cy - box_size / 2)
                     bw = min(box_size, 1.0 - x0)
                     bh = min(box_size, 1.0 - y0)
                     _boxes.append([x0, y0, bw, bh])
-                    _lbls.append(int(lbl))
+                    _lbls.append(lbl_int)
                 if _boxes:
                     boxes_xywh = _t.tensor(_boxes, dtype=_t.float32)
                     box_labels = _t.tensor(_lbls, dtype=_t.long)
