@@ -197,6 +197,7 @@ class LoadVideoPathNode:
             m.update(str(os.path.getsize(video_path)).encode())
             m.update(f"{force_rate}:{skip_first_frames}:{frame_load_cap}"
                      f":{select_every_nth}".encode())
+            m.update(str(kwargs.get("mask_points_data", "")).encode())
             return m.hexdigest()
         return ""
 

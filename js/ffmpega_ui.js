@@ -1786,8 +1786,10 @@ app.registerExtension({
 
             canvas.addEventListener("click", (e) => {
                 const rect = canvas.getBoundingClientRect();
-                const mx = e.clientX - rect.left;
-                const my = e.clientY - rect.top;
+                const cssScaleX = canvas.width / rect.width;
+                const cssScaleY = canvas.height / rect.height;
+                const mx = (e.clientX - rect.left) * cssScaleX;
+                const my = (e.clientY - rect.top) * cssScaleY;
 
                 const hitIdx = findNearPoint(mx, my);
                 if (hitIdx >= 0) {
@@ -1806,8 +1808,10 @@ app.registerExtension({
                 e.preventDefault();
                 e.stopPropagation();
                 const rect = canvas.getBoundingClientRect();
-                const mx = e.clientX - rect.left;
-                const my = e.clientY - rect.top;
+                const cssScaleX = canvas.width / rect.width;
+                const cssScaleY = canvas.height / rect.height;
+                const mx = (e.clientX - rect.left) * cssScaleX;
+                const my = (e.clientY - rect.top) * cssScaleY;
 
                 const hitIdx = findNearPoint(mx, my);
                 if (hitIdx >= 0) {
@@ -1826,7 +1830,10 @@ app.registerExtension({
 
             // Buttons
             clearBtn.onclick = () => { pts = []; lbls = []; redraw(); };
-            cancelBtn.onclick = () => overlay.remove();
+            cancelBtn.onclick = () => {
+                document.removeEventListener("keydown", keyHandler);
+                overlay.remove();
+            };
 
             applyBtn.onclick = () => {
                 const data = JSON.stringify({
@@ -1847,6 +1854,7 @@ app.registerExtension({
                     if (w.computeSize) w.computeSize = () => [0, -4];
                 }
                 node.setDirtyCanvas(true, true);
+                document.removeEventListener("keydown", keyHandler);
                 overlay.remove();
                 // Flash green
                 flashNode(node, "#2a7a2a");

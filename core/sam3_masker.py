@@ -863,15 +863,23 @@ def mask_video(
 
                         # --- Cap objects by confidence ---
                         n_objects = len(binary_masks)
-                        if n_objects > max_objects and out_probs is not None:
-                            # Keep only the top-N highest-confidence objects
-                            top_indices = np.argsort(out_probs)[::-1][:max_objects]
-                            binary_masks = binary_masks[top_indices]
-                            log.debug(
-                                "Frame %d: capped %d objects → %d (kept probs: %s)",
-                                frame_idx, n_objects, max_objects,
-                                out_probs[top_indices].tolist(),
-                            )
+                        if n_objects > max_objects:
+                            if out_probs is not None and len(out_probs) >= n_objects:
+                                # Keep only the top-N highest-confidence objects
+                                top_indices = np.argsort(out_probs[:n_objects])[::-1][:max_objects]
+                                binary_masks = binary_masks[top_indices]
+                                log.debug(
+                                    "Frame %d: capped %d objects → %d (kept probs: %s)",
+                                    frame_idx, n_objects, max_objects,
+                                    out_probs[top_indices].tolist(),
+                                )
+                            else:
+                                # No probs or length mismatch — just take first N
+                                binary_masks = binary_masks[:max_objects]
+                                log.debug(
+                                    "Frame %d: capped %d objects → %d (no probs)",
+                                    frame_idx, n_objects, max_objects,
+                                )
 
                         # Combine all object masks into one
                         combined = np.any(binary_masks, axis=0)
@@ -966,6 +974,9 @@ _OVERLAY_PALETTE = np.array([
     [50, 255, 200],   # mint
 ], dtype=np.uint8)
 
+# OpenCV operates in BGR, so convert the RGB palette once
+_OVERLAY_PALETTE_BGR = _OVERLAY_PALETTE[:, ::-1].copy()
+
 
 def _draw_masks_to_frame(
     frame: np.ndarray,
@@ -998,8 +1009,8 @@ def _draw_masks_to_frame(
         if mask_u8.sum() == 0:
             continue
 
-        oid = obj_ids[i] if obj_ids else i
-        color = _OVERLAY_PALETTE[oid % len(_OVERLAY_PALETTE)]
+        color_idx = (obj_ids[i] if obj_ids else i) % len(_OVERLAY_PALETTE_BGR)
+        color = _OVERLAY_PALETTE_BGR[color_idx]
 
         # Semi-transparent fill
         colored = np.where(mask_u8[..., None], color, result)
@@ -1041,61 +1052,65 @@ def generate_mask_overlay(
 
     cap_orig = cv2.VideoCapture(video_path)
     cap_mask = cv2.VideoCapture(mask_video_path)
-
-    if not cap_orig.isOpened():
-        raise RuntimeError(f"Cannot open original video: {video_path}")
-    if not cap_mask.isOpened():
-        raise RuntimeError(f"Cannot open mask video: {mask_video_path}")
-
-    fps = cap_orig.get(cv2.CAP_PROP_FPS) or 30.0
-    w = int(cap_orig.get(cv2.CAP_PROP_FRAME_WIDTH))
-    h = int(cap_orig.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-    # Write to a temp file, then re-encode with ffmpeg for compatibility
+    writer = None
     tmp_path = output_path + ".tmp.mp4"
-    fourcc = cv2.VideoWriter.fourcc(*"mp4v")
-    writer = cv2.VideoWriter(tmp_path, fourcc, fps, (w, h))
 
-    frame_count = 0
-    while True:
-        ret_o, frame_orig = cap_orig.read()
-        ret_m, frame_mask = cap_mask.read()
-        if not ret_o or not ret_m:
-            break
+    try:
+        if not cap_orig.isOpened():
+            raise RuntimeError(f"Cannot open original video: {video_path}")
+        if not cap_mask.isOpened():
+            raise RuntimeError(f"Cannot open mask video: {mask_video_path}")
 
-        # Convert mask to grayscale → binary
-        if frame_mask.ndim == 3:
-            gray = cv2.cvtColor(frame_mask, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = frame_mask
+        fps = cap_orig.get(cv2.CAP_PROP_FPS) or 30.0
+        w = int(cap_orig.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap_orig.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-        # Resize mask to match original if needed
-        if gray.shape[:2] != frame_orig.shape[:2]:
-            gray = cv2.resize(gray, (w, h), interpolation=cv2.INTER_NEAREST)
+        # Write to a temp file, then re-encode with ffmpeg for compatibility
+        fourcc = cv2.VideoWriter.fourcc(*"mp4v")
+        writer = cv2.VideoWriter(tmp_path, fourcc, fps, (w, h))
 
-        # Label connected components as separate objects
-        _, labels_map = cv2.connectedComponents((gray > 127).astype(np.uint8))
-        n_objects = labels_map.max()
+        frame_count = 0
+        while True:
+            ret_o, frame_orig = cap_orig.read()
+            ret_m, frame_mask = cap_mask.read()
+            if not ret_o or not ret_m:
+                break
 
-        if n_objects > 0:
-            masks = []
-            obj_ids = []
-            for oid in range(1, n_objects + 1):
-                masks.append((labels_map == oid).astype(np.uint8))
-                obj_ids.append(oid - 1)
+            # Convert mask to grayscale → binary
+            if frame_mask.ndim == 3:
+                gray = cv2.cvtColor(frame_mask, cv2.COLOR_BGR2GRAY)
+            else:
+                gray = frame_mask
 
-            overlay = _draw_masks_to_frame(
-                frame_orig, np.array(masks), obj_ids,
-            )
-        else:
-            overlay = frame_orig
+            # Resize mask to match original if needed
+            if gray.shape[:2] != frame_orig.shape[:2]:
+                gray = cv2.resize(gray, (w, h), interpolation=cv2.INTER_NEAREST)
 
-        writer.write(overlay)
-        frame_count += 1
+            # Label connected components as separate objects
+            _, labels_map = cv2.connectedComponents((gray > 127).astype(np.uint8))
+            n_objects = labels_map.max()
 
-    writer.release()
-    cap_orig.release()
-    cap_mask.release()
+            if n_objects > 0:
+                masks = []
+                obj_ids = []
+                for oid in range(1, n_objects + 1):
+                    masks.append((labels_map == oid).astype(np.uint8))
+                    obj_ids.append(oid - 1)
+
+                overlay = _draw_masks_to_frame(
+                    frame_orig, np.array(masks), obj_ids,
+                )
+            else:
+                overlay = frame_orig
+
+            writer.write(overlay)
+            frame_count += 1
+
+    finally:
+        if writer is not None:
+            writer.release()
+        cap_orig.release()
+        cap_mask.release()
 
     # Re-encode for broad compatibility
     subprocess.run(

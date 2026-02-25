@@ -209,31 +209,49 @@ class SaveVideoNode:
         """Extract frames from video as an IMAGE tensor.
 
         Samples up to MAX_PREVIEW_FRAMES frames evenly from the video.
+        Only decodes the frames we actually need to avoid OOM on long videos.
         Returns shape (B, H, W, 3) float32 in [0, 1].
         """
         try:
             import av  # type: ignore[import-not-found]
 
-            container = av.open(video_path)
-            stream = container.streams.video[0]
-            total = stream.frames or 0
+            with av.open(video_path) as container:
+                stream = container.streams.video[0]
+                total = stream.frames or 0
 
-            # Decode all frames first (we'll sample afterwards)
-            all_frames = []
-            for frame in container.decode(video=0):
-                all_frames.append(frame.to_ndarray(format="rgb24"))
-            container.close()
+                # First pass: count frames if metadata is missing
+                if total <= 0:
+                    for _ in container.decode(video=0):
+                        total += 1
+                    if total == 0:
+                        return torch.zeros(1, 64, 64, 3, dtype=torch.float32)
+                    # Reopen to decode selected frames
+                    container.close()
+                    container2 = av.open(video_path)
+                else:
+                    container2 = container
 
-            if not all_frames:
+                # Determine which frame indices to keep
+                if total <= MAX_PREVIEW_FRAMES:
+                    keep = set(range(total))
+                else:
+                    keep = set(np.linspace(0, total - 1, MAX_PREVIEW_FRAMES, dtype=int).tolist())
+
+                sampled = []
+                try:
+                    for idx, frame in enumerate(container2.decode(video=0)):
+                        if idx in keep:
+                            sampled.append(frame.to_ndarray(format="rgb24"))
+                        if idx >= total - 1:
+                            break
+                finally:
+                    if container2 is not container:
+                        container2.close()
+
+            if not sampled:
                 return torch.zeros(1, 64, 64, 3, dtype=torch.float32)
 
-            # Sample evenly if over the cap
-            n = len(all_frames)
-            if n > MAX_PREVIEW_FRAMES:
-                indices = np.linspace(0, n - 1, MAX_PREVIEW_FRAMES, dtype=int)
-                all_frames = [all_frames[i] for i in indices]
-
-            stacked = np.stack(all_frames)
+            stacked = np.stack(sampled)
             return torch.from_numpy(stacked).float().div_(255.0)
 
         except Exception as e:
@@ -269,7 +287,7 @@ class SaveVideoNode:
         # Extract raw PCM
         try:
             res = subprocess.run(
-                [ffmpeg_bin, "-i", video_path, "-f", "f32le", "-"],
+                [ffmpeg_bin, "-i", video_path, "-vn", "-f", "f32le", "-"],
                 capture_output=True, check=True,
             )
             audio = torch.frombuffer(bytearray(res.stdout), dtype=torch.float32)

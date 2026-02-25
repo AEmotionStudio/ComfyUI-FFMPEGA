@@ -101,7 +101,7 @@ class LoadImagePathNode:
         }
 
     @classmethod
-    def IS_CHANGED(cls, image: str = ""):
+    def IS_CHANGED(cls, image: str = "", mask_points_data: str = "", **kwargs):
         if not image:
             return 0.0
         input_dir = folder_paths.get_input_directory()
@@ -110,6 +110,7 @@ class LoadImagePathNode:
             m = hashlib.sha256()
             m.update(full_path.encode())
             m.update(str(os.path.getmtime(full_path)).encode())
+            m.update((mask_points_data or "").encode())
             return m.hexdigest()
         return 0.0
 

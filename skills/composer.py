@@ -635,6 +635,10 @@ class SkillComposer:
                 step.params["_whisper_model"] = pipeline.metadata["_whisper_model"]
             if "_sam3_device" in pipeline.metadata:
                 step.params["_sam3_device"] = pipeline.metadata["_sam3_device"]
+            if "_sam3_max_objects" in pipeline.metadata:
+                step.params["_sam3_max_objects"] = pipeline.metadata["_sam3_max_objects"]
+            if "_sam3_det_threshold" in pipeline.metadata:
+                step.params["_sam3_det_threshold"] = pipeline.metadata["_sam3_det_threshold"]
             if "_mask_points" in pipeline.metadata:
                 step.params["_mask_points"] = pipeline.metadata["_mask_points"]
             # Provide mutable reference so handlers can write back metadata
