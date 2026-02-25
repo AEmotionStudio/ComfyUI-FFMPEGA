@@ -1926,6 +1926,7 @@ app.registerExtension({
                         tmpVideo.src = src;
                         tmpVideo.currentTime = 0.01; // seek past potential black frame
                         tmpVideo.addEventListener("seeked", () => {
+                            clearTimeout(seekTimeout);
                             // Draw frame to canvas → data URL
                             const c = document.createElement("canvas");
                             c.width = tmpVideo.videoWidth;
@@ -1936,9 +1937,16 @@ app.registerExtension({
                             tmpVideo.remove();
                         }, { once: true });
                         tmpVideo.addEventListener("error", () => {
+                            clearTimeout(seekTimeout);
                             flashNode(self, "#7a4a4a");
                             tmpVideo.remove();
                         }, { once: true });
+                        // Timeout: if seeked never fires (audio-only, invalid file),
+                        // clean up after 10 seconds so the UI doesn't hang.
+                        const seekTimeout = setTimeout(() => {
+                            flashNode(self, "#7a4a4a");
+                            tmpVideo.remove();
+                        }, 10000);
                     },
                 }, null);
             };

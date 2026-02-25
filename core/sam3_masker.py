@@ -709,7 +709,8 @@ def mask_video(
 
         # Apply detection threshold — controls how confident SAM3 must be
         # before it starts tracking a new object. Higher = fewer objects.
-        orig_det_thresh = getattr(video_model, "new_det_thresh", None)
+        _UNSET = object()  # sentinel distinct from None
+        orig_det_thresh = getattr(video_model, "new_det_thresh", _UNSET)
         video_model.new_det_thresh = det_threshold
 
         # Flush VRAM again right before inference (GPU mode only).
@@ -748,7 +749,13 @@ def mask_video(
                 inference_state = video_model.init_state(
                     resource_path=frames_dir,
                     video_loader_type="cv2",
-                    offload_video_to_cpu=True,  # keep frames on CPU, transfer on demand
+                    offload_video_to_cpu=True,
+                )
+            except TypeError:
+                # Older SAM3 versions may not support offload_video_to_cpu
+                inference_state = video_model.init_state(
+                    resource_path=frames_dir,
+                    video_loader_type="cv2",
                 )
             finally:
                 if _tqdm_was is None:
@@ -818,7 +825,10 @@ def mask_video(
                     out_probs = outputs.get("out_probs")
 
                     if binary_masks is not None and len(binary_masks) > 0:
-                        if torch.is_tensor(binary_masks):
+                        if isinstance(binary_masks, list):
+                            binary_masks = np.array([m.cpu().numpy() if torch.is_tensor(m) else m
+                                                     for m in binary_masks])
+                        elif torch.is_tensor(binary_masks):
                             binary_masks = binary_masks.cpu().numpy()
                         if out_probs is not None:
                             if torch.is_tensor(out_probs):
@@ -877,7 +887,7 @@ def mask_video(
                     inference_state = None
                 # Restore original detection threshold so subsequent runs
                 # with different settings aren't affected.
-                if orig_det_thresh is not None:
+                if orig_det_thresh is not _UNSET:
                     video_model.new_det_thresh = orig_det_thresh
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
@@ -1012,7 +1022,8 @@ def generate_mask_overlay(
     import cv2
 
     if output_path is None:
-        output_path = mask_video_path.replace(".mp4", "_overlay.mp4")
+        p = Path(mask_video_path)
+        output_path = str(p.with_name(p.stem + "_overlay.mp4"))
 
     cap_orig = cv2.VideoCapture(video_path)
     cap_mask = cv2.VideoCapture(mask_video_path)
