@@ -1756,9 +1756,8 @@ def register_skills(registry: SkillRegistry) -> None:
             SkillParameter(
                 name="position",
                 type=ParameterType.CHOICE,
-                description="Text position",
+                description="Text position (overrides preset when set)",
                 required=False,
-                default="center",
                 choices=["center", "top", "bottom", "top_left", "top_right", "bottom_left", "bottom_right"],
             ),
             SkillParameter(
