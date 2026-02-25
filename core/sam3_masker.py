@@ -752,25 +752,42 @@ def mask_video(
             log.info("SAM3 frames loaded (%d total)", len(frame_files))
 
             # Add prompts on first frame
-            #
-            # Point prompts (if present) serve as guidance for the LLM agent
-            # which already used them to pick the best text_prompt.  We don't
-            # pass them to SAM3's Tracker because the refinement propagation
-            # requires a VG cache populated first, and running two full
-            # propagations back-to-back causes OOM on typical VRAM (~12 GB).
-            #
-            # Text-only VG detection is accurate enough for the mask target
-            # the LLM identified from the user's clicks.
             text_prompt = prompt or "object"
+
+            # Convert point prompts (if present) to small normalized boxes
+            # for SAM3's add_prompt.  Each click becomes a 2%-of-image box
+            # centered on the pixel coordinate, in [xmin, ymin, w, h] format.
+            boxes_xywh = None
+            box_labels = None
+            if points and labels and w > 0 and h > 0:
+                import torch as _t
+                box_size = 0.02  # 2% of image
+                _boxes = []
+                _lbls = []
+                for pt, lbl in zip(points, labels):
+                    if not isinstance(pt, (list, tuple)) or len(pt) < 2:
+                        continue
+                    cx = pt[0] / w   # normalize to [0, 1]
+                    cy = pt[1] / h
+                    x0 = max(0.0, cx - box_size / 2)
+                    y0 = max(0.0, cy - box_size / 2)
+                    bw = min(box_size, 1.0 - x0)
+                    bh = min(box_size, 1.0 - y0)
+                    _boxes.append([x0, y0, bw, bh])
+                    _lbls.append(int(lbl))
+                if _boxes:
+                    boxes_xywh = _t.tensor(_boxes, dtype=_t.float32)
+                    box_labels = _t.tensor(_lbls, dtype=_t.long)
+                    log.info("Point prompts → %d SAM3 box(es) for '%s'",
+                             len(_boxes), text_prompt)
 
             video_model.add_prompt(
                 inference_state,
                 frame_idx=0,
                 text_str=text_prompt,
+                boxes_xywh=boxes_xywh,
+                box_labels=box_labels,
             )
-            if points and labels:
-                log.info("Point prompts (%d pts) informed text target: '%s'",
-                         len(points), text_prompt)
 
             # 3. Propagate masks — drive the iterator ourselves so we control
             # progress reporting (no tqdm bar spam in ComfyUI's non-TTY console).
