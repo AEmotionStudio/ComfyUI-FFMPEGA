@@ -430,6 +430,91 @@ function addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, get
     };
 }
 
+/**
+ * Adds a download overlay button to a video container
+ * @param {HTMLElement} container - The container element (must be position:relative)
+ * @param {HTMLVideoElement} videoEl - The video element
+ */
+function addDownloadOverlay(container, videoEl) {
+    const btn = document.createElement("button");
+    btn.textContent = "💾";
+    btn.title = "Save Video";
+    btn.type = "button";
+    btn.setAttribute("aria-label", "Save Video");
+    btn.className = "ffmpega-overlay-btn";
+    btn.style.cssText = `
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        background: rgba(0, 0, 0, 0.6);
+        color: white;
+        border: none;
+        padding: 0;
+        margin: 0;
+        border-radius: 4px;
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 16px;
+        opacity: 0;
+        transition: opacity 0.2s, background 0.2s;
+        z-index: 10;
+        pointer-events: auto;
+    `;
+
+    // Hover logic
+    btn.onmouseenter = () => { btn.style.background = "rgba(0, 0, 0, 0.8)"; };
+    btn.onmouseleave = () => { btn.style.background = "rgba(0, 0, 0, 0.6)"; };
+
+    // Visibility logic (Hover OR Focus)
+    let isHovered = false;
+    let isFocused = false;
+    const updateVisibility = () => {
+        btn.style.opacity = (isHovered || isFocused) ? "1" : "0";
+    };
+
+    container.addEventListener("mouseenter", () => { isHovered = true; updateVisibility(); });
+    container.addEventListener("mouseleave", () => { isHovered = false; updateVisibility(); });
+    btn.addEventListener("focus", () => { isFocused = true; updateVisibility(); });
+    btn.addEventListener("blur", () => { isFocused = false; updateVisibility(); });
+
+    // Click logic
+    btn.onclick = (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        if (videoEl.src) {
+             const a = document.createElement("a");
+             a.href = videoEl.src;
+             a.download = "video.mp4"; // Simple default
+             try {
+                 const params = new URL(a.href, window.location.href).searchParams;
+                 const f = params.get("filename");
+                 if (f) a.download = f;
+             } catch(e) {}
+
+             document.body.appendChild(a);
+             a.click();
+             setTimeout(() => a.remove(), 0);
+
+             // Feedback animation
+             if (btn._timeout) clearTimeout(btn._timeout);
+             btn.textContent = "✅";
+             btn.setAttribute("aria-label", "Saved!");
+
+             btn._timeout = setTimeout(() => {
+                 btn.textContent = "💾";
+                 btn.setAttribute("aria-label", "Save Video");
+                 btn._timeout = null;
+             }, 1000);
+        }
+    };
+
+    container.appendChild(btn);
+}
+
 // Register FFMPEGA extensions
 app.registerExtension({
     name: "FFMPEGA.UI",
@@ -1047,6 +1132,9 @@ app.registerExtension({
                 previewContainer.appendChild(videoEl);
                 previewContainer.appendChild(infoEl);
 
+                // Add download overlay
+                addDownloadOverlay(previewContainer, videoEl);
+
                 // Prevent canvas events from going through the preview
                 for (const evt of [
                     "contextmenu", "pointerdown", "mousewheel",
@@ -1317,7 +1405,7 @@ app.registerExtension({
                 previewContainer.className = "ffmpega_preview";
                 previewContainer.style.cssText =
                     "width:100%;background:#1a1a1a;border-radius:6px;" +
-                    "overflow:hidden;display:none;";
+                    "overflow:hidden;display:none;position:relative;";
 
                 const videoEl = document.createElement("video");
                 videoEl.controls = true;
@@ -1369,6 +1457,9 @@ app.registerExtension({
 
                 previewContainer.appendChild(videoEl);
                 previewContainer.appendChild(infoEl);
+
+                // Add download overlay
+                addDownloadOverlay(previewContainer, videoEl);
 
                 // Prevent canvas events from going through the preview
                 for (const evt of [
