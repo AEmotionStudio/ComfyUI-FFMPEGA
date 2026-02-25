@@ -565,7 +565,7 @@ print(json.dumps(pipeline))
 def get_agentic_system_prompt(
     video_metadata: Optional[str] = None,
     connected_inputs: str = "",
-    ptc_mode: str = "auto",
+    ptc_mode: str = "off",
 ) -> str:
     """Generate a system prompt for agentic/tool-calling mode.
 

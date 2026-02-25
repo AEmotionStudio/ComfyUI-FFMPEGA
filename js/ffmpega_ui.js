@@ -446,6 +446,7 @@ app.registerExtension({
                 this.color = "#2a3a5a";
                 this.bgcolor = "#1a2a4a";
 
+
                 // --- Dynamic widget visibility ---
                 // Uses the standard LiteGraph widget hiding pattern (VHS-style):
                 // hidden widgets get computeSize → [0, -4] so they collapse
@@ -528,14 +529,49 @@ app.registerExtension({
                     };
                 }
 
-                // --- batch_mode → video_folder / file_pattern / max_concurrent visibility ---
+                // --- advanced_options → preview_mode / crf / encoding_preset / batch_mode / video_path / subtitle_path visibility ---
+                const advancedWidget = this.widgets?.find(w => w.name === "advanced_options");
+                const previewWidget = this.widgets?.find(w => w.name === "preview_mode");
+                const crfWidget = this.widgets?.find(w => w.name === "crf");
+                const encodingWidget = this.widgets?.find(w => w.name === "encoding_preset");
+                const videoPathWidget = this.widgets?.find(w => w.name === "video_path");
+                const subtitleWidget = this.widgets?.find(w => w.name === "subtitle_path");
                 const batchWidget = this.widgets?.find(w => w.name === "batch_mode");
                 const folderWidget = this.widgets?.find(w => w.name === "video_folder");
                 const patternWidget = this.widgets?.find(w => w.name === "file_pattern");
                 const concurrentWidget = this.widgets?.find(w => w.name === "max_concurrent");
+
+                function updateAdvancedVisibility() {
+                    const show = advancedWidget?.value ?? false;
+                    if (previewWidget) toggleWidget(previewWidget, show);
+                    if (crfWidget) toggleWidget(crfWidget, show);
+                    if (encodingWidget) toggleWidget(encodingWidget, show);
+                    if (videoPathWidget) toggleWidget(videoPathWidget, show);
+                    if (subtitleWidget) toggleWidget(subtitleWidget, show);
+                    if (batchWidget) toggleWidget(batchWidget, show);
+                    // Batch sub-widgets only show when BOTH advanced AND batch are on
+                    const showBatch = show && batchWidget?.value;
+                    if (folderWidget) toggleWidget(folderWidget, showBatch);
+                    if (patternWidget) toggleWidget(patternWidget, showBatch);
+                    if (concurrentWidget) toggleWidget(concurrentWidget, showBatch);
+                    fitHeight();
+                }
+
+                if (advancedWidget) {
+                    updateAdvancedVisibility();
+                    const origAdvCb = advancedWidget.callback;
+                    advancedWidget.callback = function (...args) {
+                        origAdvCb?.apply(this, args);
+                        updateAdvancedVisibility();
+                    };
+                }
+
+                // --- batch_mode → video_folder / file_pattern / max_concurrent visibility ---
                 if (batchWidget) {
                     function updateBatchVisibility() {
-                        const show = batchWidget.value;
+                        // Only show batch sub-widgets when advanced is also on
+                        const showAdvanced = advancedWidget?.value ?? true;
+                        const show = batchWidget.value && showAdvanced;
                         if (folderWidget) toggleWidget(folderWidget, show);
                         if (patternWidget) toggleWidget(patternWidget, show);
                         if (concurrentWidget) toggleWidget(concurrentWidget, show);
@@ -575,16 +611,46 @@ app.registerExtension({
                 const origOnConfigure = this.onConfigure;
                 this.onConfigure = function (info) {
                     origOnConfigure?.apply(this, arguments);
-                    // Defer until links are fully restored by LiteGraph
-                    requestAnimationFrame(() => {
-                        updateDynamicSlots(this, "images_", "IMAGE");
-                        updateDynamicSlots(this, "image_", "IMAGE", ["images_", "image_path_"]);
-                        updateDynamicSlots(this, "audio_", "AUDIO");
-                        updateDynamicSlots(this, "video_", "STRING");
-                        updateDynamicSlots(this, "image_path_", "STRING");
-                        updateDynamicSlots(this, "text_", "STRING");
+
+                    // Pre-create any dynamic slots that were saved in the workflow
+                    // before LiteGraph tries to restore their links.
+                    // This ensures slots exist for link reconnection.
+                    if (info?.inputs) {
+                        const dynamicPrefixes = ["images_", "image_", "audio_", "video_", "image_path_", "text_"];
+                        const existingNames = new Set(this.inputs.map(i => i.name));
+                        for (const saved of info.inputs) {
+                            if (!existingNames.has(saved.name)) {
+                                const isDynamic = dynamicPrefixes.some(p => {
+                                    if (!saved.name.startsWith(p)) return false;
+                                    // Exclude image_ slots that match images_ or image_path_
+                                    if (p === "image_" && (saved.name.startsWith("images_") || saved.name.startsWith("image_path_"))) return false;
+                                    return true;
+                                });
+                                if (isDynamic) {
+                                    this.addInput(saved.name, saved.type);
+                                }
+                            }
+                        }
+                    }
+
+                    // After links are restored, update slots to add trailing empty slot
+                    const self = this;
+                    function restoreSlots() {
+                        updateDynamicSlots(self, "images_", "IMAGE");
+                        updateDynamicSlots(self, "image_", "IMAGE", ["images_", "image_path_"]);
+                        updateDynamicSlots(self, "audio_", "AUDIO");
+                        updateDynamicSlots(self, "video_", "STRING");
+                        updateDynamicSlots(self, "image_path_", "STRING");
+                        updateDynamicSlots(self, "text_", "STRING");
+                        updateAdvancedVisibility();
                         fitHeight();
-                    });
+                    }
+
+                    // setTimeout(0) defers until after LiteGraph finishes
+                    // restoring links in the current event-loop task.
+                    // The 200ms retry catches late link restoration.
+                    setTimeout(restoreSlots, 0);
+                    setTimeout(restoreSlots, 200);
                 };
 
                 return result;
