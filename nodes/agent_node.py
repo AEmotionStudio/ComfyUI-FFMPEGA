@@ -1313,6 +1313,7 @@ class FFMPEGAgentNode:
                 ptc_mode=ptc_mode,
                 sam3_max_objects=sam3_max_objects,
                 sam3_det_threshold=sam3_det_threshold,
+                mask_points=mask_points,
             )
 
         # --- Resolve inputs ---
@@ -2120,6 +2121,7 @@ Token Usage{est_tag}:
         ptc_mode: str = "off",
         sam3_max_objects: int = 5,
         sam3_det_threshold: float = 0.7,
+        mask_points: str = "",
     ) -> tuple[torch.Tensor, dict, str, str, str, str]:
         """Process all matching videos in a folder with the same pipeline.
 
@@ -2221,6 +2223,8 @@ Token Usage{est_tag}:
                 pipeline = Pipeline(input_path=vpath, output_path=out_file)
                 pipeline.metadata["_sam3_max_objects"] = sam3_max_objects
                 pipeline.metadata["_sam3_det_threshold"] = sam3_det_threshold
+                if mask_points and mask_points.strip():
+                    pipeline.metadata["_mask_points"] = mask_points.strip()
                 for step in pipeline_steps:
                     skill_name = step.get("skill")
                     params = step.get("params", {})
