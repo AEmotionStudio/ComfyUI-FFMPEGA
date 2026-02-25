@@ -470,13 +470,16 @@ function addDownloadOverlay(container, videoEl) {
     btn.onmouseleave = () => { btn.style.background = "rgba(0, 0, 0, 0.6)"; };
 
     // Visibility logic (Hover OR Focus)
-    const show = () => { btn.style.opacity = "1"; };
-    const hide = () => { btn.style.opacity = "0"; };
+    let isHovered = false;
+    let isFocused = false;
+    const updateVisibility = () => {
+        btn.style.opacity = (isHovered || isFocused) ? "1" : "0";
+    };
 
-    container.addEventListener("mouseenter", show);
-    container.addEventListener("mouseleave", hide);
-    btn.addEventListener("focus", show);
-    btn.addEventListener("blur", hide);
+    container.addEventListener("mouseenter", () => { isHovered = true; updateVisibility(); });
+    container.addEventListener("mouseleave", () => { isHovered = false; updateVisibility(); });
+    btn.addEventListener("focus", () => { isFocused = true; updateVisibility(); });
+    btn.addEventListener("blur", () => { isFocused = false; updateVisibility(); });
 
     // Click logic
     btn.onclick = (e) => {
@@ -497,12 +500,14 @@ function addDownloadOverlay(container, videoEl) {
              setTimeout(() => a.remove(), 0);
 
              // Feedback animation
-             const originalText = btn.textContent;
+             if (btn._timeout) clearTimeout(btn._timeout);
              btn.textContent = "✅";
              btn.setAttribute("aria-label", "Saved!");
-             setTimeout(() => {
-                 btn.textContent = originalText;
+
+             btn._timeout = setTimeout(() => {
+                 btn.textContent = "💾";
                  btn.setAttribute("aria-label", "Save Video");
+                 btn._timeout = null;
              }, 1000);
         }
     };
