@@ -1263,7 +1263,7 @@ class FFMPEGAgentNode:
         log_usage: bool = False,
         allow_model_downloads: bool = True,
         **kwargs,  # hidden: prompt (PROMPT dict), extra_pnginfo (EXTRA_PNGINFO)
-    ) -> tuple[torch.Tensor, dict, str, str, str]:
+    ) -> tuple[torch.Tensor, dict, str, str, str, str]:
         """Process the video based on the natural language prompt.
 
         Args:
@@ -1629,25 +1629,10 @@ Token Usage{est_tag}:
                 hidden_extra_pnginfo,
             )
 
-        # --- Cleanup temp files ---
-        for tmp_path in (
-            [temp_video_from_images, temp_video_with_audio, temp_audio_input]
-            + temp_multi_videos
-            + temp_audio_files
-        ):
-            if tmp_path and os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
-        for d in temp_frames_dirs:
-            if os.path.isdir(d):
-                shutil.rmtree(d, ignore_errors=True)
-        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
-            if not os.listdir(temp_render_dir):
-                shutil.rmtree(temp_render_dir, ignore_errors=True)
-
         # --- Generate mask output if auto_mask was used ---
+        # IMPORTANT: This must run BEFORE temp file cleanup because
+        # effective_video_path may point to a temp file (e.g. from image
+        # inputs or audio muxing) that gets deleted in the cleanup block.
         mask_overlay_path = ""
         has_auto_mask = any(
             s.skill_name in {"auto_mask", "auto_segment", "segment",
@@ -1673,6 +1658,24 @@ Token Usage{est_tag}:
                         logger.info("Generated mask overlay: %s", mask_overlay_path)
                     except Exception as e:
                         logger.warning("Mask overlay generation failed: %s", e)
+
+        # --- Cleanup temp files ---
+        for tmp_path in (
+            [temp_video_from_images, temp_video_with_audio, temp_audio_input]
+            + temp_multi_videos
+            + temp_audio_files
+        ):
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        for d in temp_frames_dirs:
+            if os.path.isdir(d):
+                shutil.rmtree(d, ignore_errors=True)
+        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+            if not os.listdir(temp_render_dir):
+                shutil.rmtree(temp_render_dir, ignore_errors=True)
 
         return (images_tensor, audio_out, output_path, command.to_string(), analysis, mask_overlay_path)
 
@@ -2113,7 +2116,7 @@ Token Usage{est_tag}:
         use_vision: bool = True,
         verify_output: bool = False,
         ptc_mode: str = "off",
-    ) -> tuple[torch.Tensor, dict, str, str, str]:
+    ) -> tuple[torch.Tensor, dict, str, str, str, str]:
         """Process all matching videos in a folder with the same pipeline.
 
         Uses one LLM call to generate the pipeline, then applies it to

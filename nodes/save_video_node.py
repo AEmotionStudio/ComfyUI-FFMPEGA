@@ -287,7 +287,9 @@ class SaveVideoNode:
         # Extract raw PCM
         try:
             res = subprocess.run(
-                [ffmpeg_bin, "-i", video_path, "-vn", "-f", "f32le", "-"],
+                [ffmpeg_bin, "-i", video_path, "-vn",
+                 "-t", "120",  # cap at 2 min to avoid OOM on long videos
+                 "-f", "f32le", "-"],
                 capture_output=True, check=True,
             )
             audio = torch.frombuffer(bytearray(res.stdout), dtype=torch.float32)
