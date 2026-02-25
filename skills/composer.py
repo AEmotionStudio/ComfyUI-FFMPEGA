@@ -635,6 +635,11 @@ class SkillComposer:
                 step.params["_whisper_model"] = pipeline.metadata["_whisper_model"]
             if "_sam3_device" in pipeline.metadata:
                 step.params["_sam3_device"] = pipeline.metadata["_sam3_device"]
+            if "_mask_points" in pipeline.metadata:
+                step.params["_mask_points"] = pipeline.metadata["_mask_points"]
+            # Provide mutable reference so handlers can write back metadata
+            # (e.g. _f_auto_mask stores _mask_video_path for overlay generation)
+            step.params["_metadata_ref"] = pipeline.metadata
             # Propagate xfade transition duration and still_duration so
             # fade_to_black can calculate the correct total output duration.
             if _xfade_transition_dur is not None:

@@ -540,6 +540,9 @@ app.registerExtension({
                 const folderWidget = this.widgets?.find(w => w.name === "video_folder");
                 const patternWidget = this.widgets?.find(w => w.name === "file_pattern");
                 const concurrentWidget = this.widgets?.find(w => w.name === "max_concurrent");
+                const sam3MaxObjWidget = this.widgets?.find(w => w.name === "sam3_max_objects");
+                const sam3ThreshWidget = this.widgets?.find(w => w.name === "sam3_det_threshold");
+                const maskTypeWidget = this.widgets?.find(w => w.name === "mask_output_type");
 
                 function updateAdvancedVisibility() {
                     const show = advancedWidget?.value ?? false;
@@ -549,6 +552,9 @@ app.registerExtension({
                     if (videoPathWidget) toggleWidget(videoPathWidget, show);
                     if (subtitleWidget) toggleWidget(subtitleWidget, show);
                     if (batchWidget) toggleWidget(batchWidget, show);
+                    if (sam3MaxObjWidget) toggleWidget(sam3MaxObjWidget, show);
+                    if (sam3ThreshWidget) toggleWidget(sam3ThreshWidget, show);
+                    if (maskTypeWidget) toggleWidget(maskTypeWidget, show);
                     // Batch sub-widgets only show when BOTH advanced AND batch are on
                     const showBatch = show && batchWidget?.value;
                     if (folderWidget) toggleWidget(folderWidget, showBatch);
@@ -1616,6 +1622,317 @@ app.registerExtension({
                 }
 
                 return result;
+            };
+        }
+
+        // ------------------------------------------------------------------
+        //  Point Selector popout for LoadImagePath & LoadVideoPath nodes
+        // ------------------------------------------------------------------
+
+        /** Open a modal popout where the user clicks to place positive/negative
+         *  points on the image (or first video frame). Data is stored as JSON
+         *  in the node's hidden mask_points_data widget. */
+        function openPointSelector(node, imgSrc) {
+            // Remove any existing popout
+            document.getElementById("ffmpega-point-selector")?.remove();
+
+            // Existing point data
+            let existing = { points: [], labels: [], image_width: 0, image_height: 0 };
+            const mpWidget = node.widgets?.find(w => w.name === "mask_points_data");
+            if (mpWidget?.value) {
+                try { existing = JSON.parse(mpWidget.value); } catch { }
+            }
+
+            // Build the modal
+            const overlay = document.createElement("div");
+            overlay.id = "ffmpega-point-selector";
+            overlay.style.cssText = `
+                position:fixed;top:0;left:0;width:100vw;height:100vh;
+                background:rgba(0,0,0,0.85);z-index:999999;
+                display:flex;flex-direction:column;align-items:center;
+                justify-content:center;font-family:sans-serif;
+            `;
+
+            // Header bar
+            const header = document.createElement("div");
+            header.style.cssText = `
+                color:#eee;font-size:14px;margin-bottom:8px;
+                display:flex;gap:16px;align-items:center;
+            `;
+            header.innerHTML = `
+                <span>🎯 <b>Point Selector</b></span>
+                <span style="color:#4f4">⬤ Left-click = Include</span>
+                <span style="color:#f44">⬤ Right-click = Exclude</span>
+                <span style="color:#888">Click existing point to remove</span>
+            `;
+            overlay.appendChild(header);
+
+            // Canvas container
+            const canvasWrap = document.createElement("div");
+            canvasWrap.style.cssText = "position:relative;max-width:90vw;max-height:75vh;";
+            const canvas = document.createElement("canvas");
+            canvas.style.cssText = "max-width:90vw;max-height:75vh;cursor:crosshair;display:block;";
+            canvasWrap.appendChild(canvas);
+            overlay.appendChild(canvasWrap);
+
+            // Status bar
+            const statusBar = document.createElement("div");
+            statusBar.style.cssText = "color:#aaa;font-size:12px;margin-top:6px;";
+            statusBar.textContent = "Loading image...";
+            overlay.appendChild(statusBar);
+
+            // Button bar
+            const btnBar = document.createElement("div");
+            btnBar.style.cssText = "display:flex;gap:12px;margin-top:12px;";
+
+            const makeBtn = (label, bg) => {
+                const b = document.createElement("button");
+                b.textContent = label;
+                b.style.cssText = `
+                    padding:8px 24px;border:none;border-radius:6px;
+                    font-size:14px;cursor:pointer;color:#fff;
+                    background:${bg};font-weight:600;
+                    transition:opacity 0.15s;
+                `;
+                b.onmouseenter = () => b.style.opacity = "0.85";
+                b.onmouseleave = () => b.style.opacity = "1";
+                return b;
+            };
+            const clearBtn = makeBtn("Clear All", "#555");
+            const applyBtn = makeBtn("✓ Apply", "#2a7a2a");
+            const cancelBtn = makeBtn("Cancel", "#7a2a2a");
+            btnBar.appendChild(clearBtn);
+            btnBar.appendChild(applyBtn);
+            btnBar.appendChild(cancelBtn);
+            overlay.appendChild(btnBar);
+            document.body.appendChild(overlay);
+
+            // State
+            let pts = existing.points ? [...existing.points] : [];
+            let lbls = existing.labels ? [...existing.labels] : [];
+            let imgW = 0, imgH = 0;
+            let scaleX = 1, scaleY = 1;
+            const img = new Image();
+
+            const redraw = () => {
+                const ctx = canvas.getContext("2d");
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                for (let i = 0; i < pts.length; i++) {
+                    const px = pts[i][0] / scaleX;
+                    const py = pts[i][1] / scaleY;
+                    const isPos = lbls[i] === 1;
+
+                    // Outer ring
+                    ctx.beginPath();
+                    ctx.arc(px, py, 14, 0, Math.PI * 2);
+                    ctx.fillStyle = isPos ? "rgba(0,255,0,0.25)" : "rgba(255,0,0,0.25)";
+                    ctx.fill();
+                    ctx.strokeStyle = isPos ? "#0f0" : "#f00";
+                    ctx.lineWidth = 2.5;
+                    ctx.stroke();
+
+                    // Inner dot
+                    ctx.beginPath();
+                    ctx.arc(px, py, 5, 0, Math.PI * 2);
+                    ctx.fillStyle = isPos ? "#0f0" : "#f00";
+                    ctx.fill();
+
+                    // Label
+                    ctx.font = "bold 16px sans-serif";
+                    ctx.fillStyle = "#fff";
+                    ctx.strokeStyle = "#000";
+                    ctx.lineWidth = 3;
+                    ctx.strokeText(isPos ? "+" : "×", px + 12, py - 8);
+                    ctx.fillText(isPos ? "+" : "×", px + 12, py - 8);
+                }
+                statusBar.textContent = `${pts.length} point(s) | ${imgW}×${imgH}`;
+            };
+
+            img.onload = () => {
+                imgW = img.naturalWidth;
+                imgH = img.naturalHeight;
+
+                // Fit canvas into the viewport
+                const maxW = window.innerWidth * 0.9;
+                const maxH = window.innerHeight * 0.75;
+                let dispW = imgW, dispH = imgH;
+                if (dispW > maxW) { const r = maxW / dispW; dispW *= r; dispH *= r; }
+                if (dispH > maxH) { const r = maxH / dispH; dispW *= r; dispH *= r; }
+                canvas.width = Math.round(dispW);
+                canvas.height = Math.round(dispH);
+                scaleX = imgW / canvas.width;
+                scaleY = imgH / canvas.height;
+                redraw();
+            };
+            img.onerror = () => {
+                statusBar.textContent = "Failed to load image";
+                statusBar.style.color = "#f44";
+            };
+            img.crossOrigin = "anonymous";
+            img.src = imgSrc;
+
+            // Click handling — find if near existing point (within 20px radius)
+            const HIT_RADIUS = 20;
+            const findNearPoint = (mx, my) => {
+                for (let i = 0; i < pts.length; i++) {
+                    const dx = pts[i][0] / scaleX - mx;
+                    const dy = pts[i][1] / scaleY - my;
+                    if (Math.sqrt(dx * dx + dy * dy) < HIT_RADIUS) return i;
+                }
+                return -1;
+            };
+
+            canvas.addEventListener("click", (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const my = e.clientY - rect.top;
+
+                const hitIdx = findNearPoint(mx, my);
+                if (hitIdx >= 0) {
+                    // Remove existing point
+                    pts.splice(hitIdx, 1);
+                    lbls.splice(hitIdx, 1);
+                } else {
+                    // Add positive point
+                    pts.push([Math.round(mx * scaleX), Math.round(my * scaleY)]);
+                    lbls.push(1);
+                }
+                redraw();
+            });
+
+            canvas.addEventListener("contextmenu", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const rect = canvas.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const my = e.clientY - rect.top;
+
+                const hitIdx = findNearPoint(mx, my);
+                if (hitIdx >= 0) {
+                    pts.splice(hitIdx, 1);
+                    lbls.splice(hitIdx, 1);
+                } else {
+                    // Add negative point
+                    pts.push([Math.round(mx * scaleX), Math.round(my * scaleY)]);
+                    lbls.push(0);
+                }
+                redraw();
+            });
+
+            // Prevent background interactions
+            overlay.addEventListener("contextmenu", e => e.preventDefault());
+
+            // Buttons
+            clearBtn.onclick = () => { pts = []; lbls = []; redraw(); };
+            cancelBtn.onclick = () => overlay.remove();
+
+            applyBtn.onclick = () => {
+                const data = JSON.stringify({
+                    points: pts,
+                    labels: lbls,
+                    image_width: imgW,
+                    image_height: imgH,
+                });
+                // Store in hidden widget
+                if (mpWidget) {
+                    mpWidget.value = data;
+                } else {
+                    // Create widget if it doesn't exist
+                    const w = node.addWidget("text", "mask_points_data", data,
+                        () => { }, { serialize: true });
+                    w.type = "text";
+                    // Hide it
+                    if (w.computeSize) w.computeSize = () => [0, -4];
+                }
+                node.setDirtyCanvas(true, true);
+                overlay.remove();
+                // Flash green
+                flashNode(node, "#2a7a2a");
+            };
+
+            // ESC to close
+            const keyHandler = (e) => {
+                if (e.key === "Escape") {
+                    overlay.remove();
+                    document.removeEventListener("keydown", keyHandler);
+                }
+            };
+            document.addEventListener("keydown", keyHandler);
+        }
+
+        // --- LoadImagePath: Add point selector context menu ---
+        if (nodeData.name === "FFMPEGALoadImagePath") {
+            const origGetMenuImg = nodeType.prototype.getExtraMenuOptions;
+            nodeType.prototype.getExtraMenuOptions = function (_, options) {
+                origGetMenuImg?.apply(this, arguments);
+                const self = this;
+                options.unshift({
+                    content: "🎯 Open Point Selector",
+                    callback: () => {
+                        // Get the current image filename
+                        const imgWidget = self.widgets?.find(w => w.name === "image");
+                        const filename = imgWidget?.value;
+                        if (!filename) {
+                            flashNode(self, "#7a4a4a");
+                            return;
+                        }
+                        const params = new URLSearchParams({
+                            filename, type: "input",
+                        });
+                        const src = api.apiURL("/view?" + params.toString());
+                        openPointSelector(self, src);
+                    },
+                }, null); // null = separator
+            };
+        }
+
+        // --- LoadVideoPath: Add point selector context menu ---
+        if (nodeData.name === "FFMPEGALoadVideoPath") {
+            const origGetMenuVid = nodeType.prototype.getExtraMenuOptions;
+            nodeType.prototype.getExtraMenuOptions = function (_, options) {
+                origGetMenuVid?.apply(this, arguments);
+                const self = this;
+                options.unshift({
+                    content: "🎯 Open Point Selector",
+                    callback: () => {
+                        // Get the current video filename
+                        const vidWidget = self.widgets?.find(w => w.name === "video");
+                        const filename = vidWidget?.value;
+                        if (!filename) {
+                            flashNode(self, "#7a4a4a");
+                            return;
+                        }
+                        // Extract first frame via the server-side route
+                        // (falls back to video thumbnail if route unavailable)
+                        const params = new URLSearchParams({
+                            filename, type: "input",
+                        });
+                        const src = api.apiURL("/view?" + params.toString());
+                        // Use video element to grab first frame
+                        const tmpVideo = document.createElement("video");
+                        tmpVideo.crossOrigin = "anonymous";
+                        tmpVideo.muted = true;
+                        tmpVideo.preload = "auto";
+                        tmpVideo.src = src;
+                        tmpVideo.currentTime = 0.01; // seek past potential black frame
+                        tmpVideo.addEventListener("seeked", () => {
+                            // Draw frame to canvas → data URL
+                            const c = document.createElement("canvas");
+                            c.width = tmpVideo.videoWidth;
+                            c.height = tmpVideo.videoHeight;
+                            c.getContext("2d").drawImage(tmpVideo, 0, 0);
+                            const frameDataUrl = c.toDataURL("image/jpeg", 0.95);
+                            openPointSelector(self, frameDataUrl);
+                            tmpVideo.remove();
+                        }, { once: true });
+                        tmpVideo.addEventListener("error", () => {
+                            flashNode(self, "#7a4a4a");
+                            tmpVideo.remove();
+                        }, { once: true });
+                    },
+                }, null);
             };
         }
 

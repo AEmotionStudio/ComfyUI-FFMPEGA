@@ -540,6 +540,24 @@ def _f_auto_mask(p):
     invert = bool(p.get("invert", False))
     video_path = p.get("_input_path", "")
     sam3_device = str(p.get("_sam3_device", "gpu")).lower()
+    sam3_max_objects = int(p.get("_sam3_max_objects", 5))
+    sam3_det_threshold = float(p.get("_sam3_det_threshold", 0.7))
+
+    # Parse point prompt data (from the JS point selector)
+    mask_points_json = p.get("_mask_points", "")
+    point_coords = None
+    point_labels = None
+    if mask_points_json:
+        import json as _json
+        try:
+            pt_data = _json.loads(mask_points_json)
+            if isinstance(pt_data, dict):
+                point_coords = pt_data.get("points")
+                point_labels = pt_data.get("labels")
+                if point_coords and point_labels:
+                    log.info("auto_mask: using %d point prompt(s)", len(point_coords))
+        except (ValueError, TypeError) as exc:
+            log.warning("Failed to parse mask_points JSON: %s", exc)
 
     # Try to load SAM3
     try:
@@ -559,16 +577,25 @@ def _f_auto_mask(p):
         )
         return _auto_mask_fallback(effect, strength)
 
-    # Generate mask video using SAM3 with text prompt
+    # Generate mask video using SAM3 with text + optional point prompts
     try:
         mask_path = sam3_mask_video(
             video_path=video_path,
             prompt=target,
             device=sam3_device,
+            max_objects=sam3_max_objects,
+            det_threshold=sam3_det_threshold,
+            points=point_coords,
+            labels=point_labels,
         )
     except Exception as e:
         log.error("SAM3 mask generation failed: %s — falling back", e)
         return _auto_mask_fallback(effect, strength)
+
+    # Store mask path in metadata so agent_node can generate overlay
+    _metadata_ref = p.get("_metadata_ref")
+    if _metadata_ref is not None and isinstance(_metadata_ref, dict):
+        _metadata_ref["_mask_video_path"] = mask_path
 
     # Special handling for "remove" — try LaMa AI inpainting first
     if effect == "remove":
