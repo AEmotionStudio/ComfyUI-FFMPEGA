@@ -638,6 +638,8 @@ def mask_video(
     det_threshold: float = 0.7,
     points: Optional[list] = None,
     labels: Optional[list] = None,
+    point_src_width: int = 0,
+    point_src_height: int = 0,
 ) -> str:
     """Generate a grayscale mask video for text-prompted objects.
 
@@ -658,6 +660,10 @@ def mask_video(
         points: Optional list of [x, y] pixel-space points on frame 0.
             When provided, these guide SAM3's segmentation (click-to-select).
         labels: Optional list of 1/0 labels for each point (positive/negative).
+        point_src_width: Original image width the points were drawn on.
+            If 0, uses the video frame width for normalization.
+        point_src_height: Original image height the points were drawn on.
+            If 0, uses the video frame height for normalization.
 
     Returns:
         Path to the generated grayscale mask video (MP4).
@@ -762,14 +768,18 @@ def mask_video(
             if points and labels and w > 0 and h > 0:
                 import torch as _t
                 box_size = 0.02  # 2% of image
+                # Use source image dims for normalization if provided,
+                # otherwise fall back to video frame dims.
+                norm_w = point_src_width if point_src_width > 0 else w
+                norm_h = point_src_height if point_src_height > 0 else h
                 _boxes = []
                 _lbls = []
                 for pt, lbl in zip(points, labels):
                     if not isinstance(pt, (list, tuple)) or len(pt) < 2:
                         continue
                     try:
-                        cx = float(pt[0]) / w   # normalize to [0, 1]
-                        cy = float(pt[1]) / h
+                        cx = float(pt[0]) / norm_w   # normalize to [0, 1]
+                        cy = float(pt[1]) / norm_h
                         lbl_int = int(lbl)
                     except (TypeError, ValueError):
                         continue

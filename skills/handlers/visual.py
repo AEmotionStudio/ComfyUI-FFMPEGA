@@ -547,6 +547,8 @@ def _f_auto_mask(p):
     mask_points_json = p.get("_mask_points", "")
     point_coords = None
     point_labels = None
+    point_src_w = 0
+    point_src_h = 0
     if mask_points_json:
         import json as _json
         try:
@@ -554,8 +556,11 @@ def _f_auto_mask(p):
             if isinstance(pt_data, dict):
                 point_coords = pt_data.get("points")
                 point_labels = pt_data.get("labels")
+                point_src_w = int(pt_data.get("image_width", 0))
+                point_src_h = int(pt_data.get("image_height", 0))
                 if point_coords and point_labels:
-                    log.info("auto_mask: using %d point prompt(s)", len(point_coords))
+                    log.info("auto_mask: using %d point prompt(s) (src %dx%d)",
+                             len(point_coords), point_src_w, point_src_h)
         except (ValueError, TypeError) as exc:
             log.warning("Failed to parse mask_points JSON: %s", exc)
 
@@ -587,6 +592,8 @@ def _f_auto_mask(p):
             det_threshold=sam3_det_threshold,
             points=point_coords,
             labels=point_labels,
+            point_src_width=point_src_w,
+            point_src_height=point_src_h,
         )
     except Exception as e:
         log.error("SAM3 mask generation failed: %s — falling back", e)
