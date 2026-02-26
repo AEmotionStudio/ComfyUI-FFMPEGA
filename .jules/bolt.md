@@ -15,3 +15,7 @@
 ## 2026-02-23 - String Replacement Performance
 **Learning:** For escaping a small set of characters (7) in short strings (paths), `str.translate` was found to be ~15x slower than multiple `if char in s: s.replace(...)` calls. The overhead of `translate` table lookup outweighs the benefit of a single pass for typical path lengths.
 **Action:** Use "Check First" pattern (`if char in s: s.replace(...)`) for string sanitization instead of `str.translate` or unconditional `replace`.
+
+## 2026-02-24 - Tensor to Video Encoding Performance
+**Learning:** An attempt to optimize `frames_to_tensor` using a `uint8` intermediate buffer failed because the final `float()` cast and division (`div_(255.0)`) negated the gains. However, profiling `images_to_video` revealed that `libx264` encoding speed was the bottleneck for temp file creation.
+**Action:** Switched FFMPEG preset from `fast` to `ultrafast` in `MediaConverter.images_to_video`. This yielded a **6.5x speedup** (12.5s -> 1.9s for 50 frames) for temporary video generation, which is critical for multi-input skills (concat, overlay). File size increased by ~15%, which is acceptable for transient files.
