@@ -784,53 +784,34 @@ def mask_video(
             # collect frame 0 masks for mapping user clicks to obj_ids.
             has_points = bool(points and labels and w > 0 and h > 0)
             if has_points:
-                log.info("Running initial VG propagation to populate cache...")
+                log.info("Running VG detection on frame 0 to populate cache...")
                 _vg_frame0_masks = None  # will hold frame 0 binary masks
                 _vg_frame0_obj_ids = []
-                for _vg_fidx, _vg_out in video_model.propagate_in_video(inference_state):
+                # Only propagate frame 0 — we just need the VG detection +
+                # cached output for the Tracker's _build_tracker_output.
+                # max_frame_num_to_track=0 → processes only the start frame.
+                for _vg_fidx, _vg_out in video_model.propagate_in_video(
+                    inference_state, max_frame_num_to_track=0
+                ):
                     if _vg_out is None:
                         continue
-                    # Capture frame 0 output for click→obj_id mapping
-                    if _vg_fidx == 0:
-                        _bm = _vg_out.get("out_binary_masks")
-                        _oi = _vg_out.get("out_obj_ids")
-                        if _bm is not None and _oi is not None:
-                            if torch.is_tensor(_bm):
-                                _vg_frame0_masks = _bm.cpu().numpy()
-                            elif isinstance(_bm, np.ndarray):
-                                _vg_frame0_masks = _bm
-                            if torch.is_tensor(_oi):
-                                _vg_frame0_obj_ids = _oi.cpu().tolist()
-                            elif isinstance(_oi, (list, np.ndarray)):
-                                _vg_frame0_obj_ids = list(_oi)
-                log.info("Initial VG propagation complete (detected %d objects)",
+                    _bm = _vg_out.get("out_binary_masks")
+                    _oi = _vg_out.get("out_obj_ids")
+                    if _bm is not None and _oi is not None:
+                        if torch.is_tensor(_bm):
+                            _vg_frame0_masks = _bm.cpu().numpy()
+                        elif isinstance(_bm, np.ndarray):
+                            _vg_frame0_masks = _bm
+                        if torch.is_tensor(_oi):
+                            _vg_frame0_obj_ids = _oi.cpu().tolist()
+                        elif isinstance(_oi, (list, np.ndarray)):
+                            _vg_frame0_obj_ids = list(_oi)
+                log.info("VG detection on frame 0 complete (detected %d objects)",
                          len(_vg_frame0_obj_ids))
 
-                # ── VRAM cleanup between propagation passes ───────────
-                # The first propagation accumulates per-frame cached outputs,
-                # backbone features, and detection results on GPU.  Clear them
-                # now — we've already captured what we need (frame 0 masks).
-                # Without this, the second propagation OOMs on 12 GB GPUs.
-                if "cached_frame_outputs" in inference_state:
-                    # Keep frame 0 — Tracker's _build_tracker_output needs it
-                    # when we call add_prompt(points=..., obj_id=...) below.
-                    _cfo = inference_state["cached_frame_outputs"]
-                    _frame0_cache = _cfo.get(0)
-                    _cfo.clear()
-                    if _frame0_cache is not None:
-                        _cfo[0] = _frame0_cache
-                if "feature_cache" in inference_state:
-                    # Keep tracking_bounds but clear per-frame features
-                    _tb = inference_state["feature_cache"].get("tracking_bounds")
-                    inference_state["feature_cache"].clear()
-                    if _tb is not None:
-                        inference_state["feature_cache"]["tracking_bounds"] = _tb
-                # Clear per-frame detection outputs (will be re-populated)
-                for t in range(inference_state.get("num_frames", 0)):
-                    if inference_state["previous_stages_out"][t] is not None:
-                        inference_state["previous_stages_out"][t] = None
-                # Offload model to CPU — frees ~3.35 GB VRAM.
-                # Click→obj_id mapping below is pure CPU/numpy work.
+                # ── VRAM cleanup between passes ───────────────────────
+                # Only frame 0 was cached, so cleanup is minimal.
+                # Offload model to CPU — click mapping is pure numpy work.
                 video_model.to(torch.device("cpu"))
                 torch.cuda.empty_cache()
                 log.info("Offloaded SAM3 model to CPU between propagation passes")
