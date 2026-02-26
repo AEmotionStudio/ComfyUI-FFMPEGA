@@ -808,6 +808,28 @@ def mask_video(
                 log.info("VG propagation complete (detected %d objects)",
                          len(_vg_frame0_obj_ids))
 
+                # ── Offload cached frame outputs to CPU ───────────────
+                # The VG propagation stores per-frame per-object mask
+                # tensors on GPU in cached_frame_outputs.  For 192 frames
+                # × N objects × (1, H, W) bool, this can exceed several
+                # GB.  Move them to CPU now — propagation_fetch and
+                # _build_tracker_output will move individual frames back
+                # to GPU as needed.
+                _cfo = inference_state.get("cached_frame_outputs", {})
+                _offloaded = 0
+                for _fidx in list(_cfo.keys()):
+                    if _fidx == 0:
+                        continue  # keep frame 0 on GPU for Phase 2.5 partial propagation
+                    _frame_cache = _cfo[_fidx]
+                    if isinstance(_frame_cache, dict):
+                        for _oid in list(_frame_cache.keys()):
+                            if torch.is_tensor(_frame_cache[_oid]) and _frame_cache[_oid].is_cuda:
+                                _frame_cache[_oid] = _frame_cache[_oid].cpu()
+                                _offloaded += 1
+                if _offloaded > 0:
+                    torch.cuda.empty_cache()
+                    log.info("Offloaded %d cached mask tensors to CPU", _offloaded)
+
             # ── Phase 2: Point Refinement via Tracker ─────────────────
             if has_points:
                 # Normalize coordinates to [0, 1] range for SAM3 Tracker
@@ -907,13 +929,17 @@ def mask_video(
 
                 # ── Phase 2.5: Frame-0-only partial propagation ───────
                 # Run propagation_partial on frame 0 ONLY to refine and
-                # update its cache entry.  The main loop below will then
-                # dispatch to propagation_fetch (zero inference — just
-                # reads all frames from cache).  Frame 0 = refined
-                # (VG + Tracker), frames 1+ = original VG outputs.
+                # update its cache entry.  start_frame_idx=0 is critical:
+                # SAM3 stores it in action_history and checks
+                # frame_idx in [0, num_frames-1] to decide whether to
+                # dispatch propagation_fetch on the next call.  Without
+                # it, frame_idx=None and Phase 3 re-runs partial inference
+                # on all 192 frames → OOM.
                 log.info("Refining frame 0 via partial propagation...")
                 for _ref_fidx, _ref_out in video_model.propagate_in_video(
-                    inference_state, max_frame_num_to_track=0
+                    inference_state,
+                    start_frame_idx=0,
+                    max_frame_num_to_track=0,
                 ):
                     pass  # just consume — cache is updated internally
                 log.info("Frame 0 refinement complete")
