@@ -812,7 +812,13 @@ def mask_video(
                 # now — we've already captured what we need (frame 0 masks).
                 # Without this, the second propagation OOMs on 12 GB GPUs.
                 if "cached_frame_outputs" in inference_state:
-                    inference_state["cached_frame_outputs"].clear()
+                    # Keep frame 0 — Tracker's _build_tracker_output needs it
+                    # when we call add_prompt(points=..., obj_id=...) below.
+                    _cfo = inference_state["cached_frame_outputs"]
+                    _frame0_cache = _cfo.get(0)
+                    _cfo.clear()
+                    if _frame0_cache is not None:
+                        _cfo[0] = _frame0_cache
                 if "feature_cache" in inference_state:
                     # Keep tracking_bounds but clear per-frame features
                     _tb = inference_state["feature_cache"].get("tracking_bounds")
