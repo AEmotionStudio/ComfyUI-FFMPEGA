@@ -9,6 +9,7 @@ from ..core.executor.command_builder import CommandBuilder
 from ..core.executor.process_manager import ProcessManager
 from ..skills.registry import get_registry, SkillCategory
 from ..skills.composer import SkillComposer, Pipeline, PipelineStep
+from ..core.sanitize import validate_video_path
 
 
 def analyze_video(video_path: str) -> dict:
@@ -20,6 +21,11 @@ def analyze_video(video_path: str) -> dict:
     Returns:
         Dictionary with video metadata.
     """
+    try:
+        video_path = validate_video_path(video_path)
+    except Exception as e:
+        return {"error": str(e)}
+
     analyzer = VideoAnalyzer()
     metadata = analyzer.analyze(video_path)
 
@@ -279,8 +285,10 @@ def extract_frames(
     from ..core.executor.preview import PreviewGenerator
     from ..core.executor.process_manager import ProcessManager
 
-    if not video_path or not Path(video_path).is_file():
-        return {"error": f"Video file not found: {video_path}"}
+    try:
+        video_path = validate_video_path(video_path)
+    except Exception as e:
+        return {"error": str(e)}
 
     # Cap max_frames to prevent excessive disk/token usage
     max_frames = min(max(max_frames, 1), 16)
@@ -405,6 +413,11 @@ def analyze_colors(
     Returns:
         Dictionary with color metrics and recommendations.
     """
+    try:
+        video_path = validate_video_path(video_path)
+    except Exception as e:
+        return {"error": str(e)}
+
     from .vision import analyze_colors_ffmpeg
 
     return analyze_colors_ffmpeg(
@@ -478,6 +491,11 @@ def analyze_audio(
     Returns:
         Dictionary with audio metrics and recommendations.
     """
+    try:
+        video_path = validate_video_path(video_path)
+    except Exception as e:
+        return {"error": str(e)}
+
     from .vision import analyze_audio_ffmpeg
 
     return analyze_audio_ffmpeg(

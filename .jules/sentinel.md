@@ -22,3 +22,8 @@
 **Vulnerability:** The `validate_output_path` function prevented directory traversal via `..` but allowed absolute paths to any location (e.g., `/usr/bin/malicious_file`). This could allow an attacker to overwrite critical system files if the process had sufficient permissions.
 **Learning:** Checking for `..` in path components is insufficient for preventing arbitrary file writes when absolute paths are allowed. Validation must also check if the resolved path targets sensitive system directories.
 **Prevention:** Implemented a blocklist of critical system directories (e.g., `/bin`, `/etc`, `/usr`) in `core/sanitize.py` and enforced this check in both `validate_output_path` and `validate_output_file_path`. Ideally, an allowlist of safe directories (sandbox) should be used, but a blocklist provides immediate defense-in-depth without breaking flexible workflows.
+
+## 2025-05-27 - Path Traversal in MCP Tools via Unchecked File Paths
+**Vulnerability:** MCP tools (`extract_frames`, `analyze_video`) blindly accepted file paths and only checked for existence (`Path.is_file()`) before passing them to FFMPEG/FFprobe. This allowed arbitrary file read via tool calls (e.g., extracting frames from private files or probing sensitive files).
+**Learning:** Checking for file existence is not a security check. Any tool that accepts a file path must validate it against allowed extensions and blocked directories, especially when that path is used in external commands or to extract data.
+**Prevention:** Enforce `validate_video_path` (which checks extension allowlists and sensitive directory blocklists) on ALL input paths in `mcp/tools.py` and `mcp/vision.py` before processing.

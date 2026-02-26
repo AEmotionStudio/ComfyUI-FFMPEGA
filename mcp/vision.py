@@ -11,6 +11,8 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
+from ..core.sanitize import validate_video_path
+
 logger = logging.getLogger("ffmpega")
 
 
@@ -198,8 +200,10 @@ def analyze_colors_ffmpeg(
         - color_distribution: dominant color channel info
         - recommendations: suggested adjustments
     """
-    if not Path(video_path).exists():
-        return {"error": f"Video not found: {video_path}"}
+    try:
+        video_path = validate_video_path(video_path)
+    except Exception as e:
+        return {"error": str(e)}
 
     # Use ffprobe with signalstats to get color metrics
     cmd = [
