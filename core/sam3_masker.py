@@ -778,8 +778,35 @@ def mask_video(
             log.info("Phase 1 (text VG): detected objects on frame 0 for '%s'",
                      text_prompt)
 
-            # ── Phase 2: Point Refinement via Tracker ─────────────────
+            # ── Phase 1.5: Initial VG Propagation ─────────────────────
+            # The Tracker's point refinement requires cached frame outputs.
+            # Run VG propagation first to populate the cache, and also
+            # collect frame 0 masks for mapping user clicks to obj_ids.
             has_points = bool(points and labels and w > 0 and h > 0)
+            if has_points:
+                log.info("Running initial VG propagation to populate cache...")
+                _vg_frame0_masks = None  # will hold frame 0 binary masks
+                _vg_frame0_obj_ids = []
+                for _vg_fidx, _vg_out in video_model.propagate_in_video(inference_state):
+                    if _vg_out is None:
+                        continue
+                    # Capture frame 0 output for click→obj_id mapping
+                    if _vg_fidx == 0:
+                        _bm = _vg_out.get("out_binary_masks")
+                        _oi = _vg_out.get("out_obj_ids")
+                        if _bm is not None and _oi is not None:
+                            if torch.is_tensor(_bm):
+                                _vg_frame0_masks = _bm.cpu().numpy()
+                            elif isinstance(_bm, np.ndarray):
+                                _vg_frame0_masks = _bm
+                            if torch.is_tensor(_oi):
+                                _vg_frame0_obj_ids = _oi.cpu().tolist()
+                            elif isinstance(_oi, (list, np.ndarray)):
+                                _vg_frame0_obj_ids = list(_oi)
+                log.info("Initial VG propagation complete (detected %d objects)",
+                         len(_vg_frame0_obj_ids))
+
+            # ── Phase 2: Point Refinement via Tracker ─────────────────
             if has_points:
                 # Normalize coordinates to [0, 1] range for SAM3 Tracker
                 norm_w = point_src_width if point_src_width > 0 else w
@@ -808,21 +835,9 @@ def mask_video(
                 log.info("Phase 2 (points): %d positive, %d negative clicks",
                          len(pos_pts), len(neg_pts))
 
-                # Extract frame 0 masks and obj_ids from VG output
-                vg_masks = None   # (N, H, W) numpy bool array
-                vg_obj_ids = []   # list of int obj_ids
-                if _frame0_out is not None:
-                    _bm = _frame0_out.get("out_binary_masks")
-                    _oi = _frame0_out.get("out_obj_ids")
-                    if _bm is not None and _oi is not None:
-                        if torch.is_tensor(_bm):
-                            vg_masks = _bm.cpu().numpy()
-                        elif isinstance(_bm, np.ndarray):
-                            vg_masks = _bm
-                        if torch.is_tensor(_oi):
-                            vg_obj_ids = _oi.cpu().tolist()
-                        elif isinstance(_oi, (list, np.ndarray)):
-                            vg_obj_ids = list(_oi)
+                # Use VG propagation frame 0 masks for click→obj_id mapping
+                vg_masks = _vg_frame0_masks
+                vg_obj_ids = _vg_frame0_obj_ids
 
                 # Map positive clicks → obj_ids via mask overlap
                 # grouped_pts[obj_id] = {"points": [...], "labels": [...]}
