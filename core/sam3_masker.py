@@ -809,13 +809,6 @@ def mask_video(
                 log.info("VG detection on frame 0 complete (detected %d objects)",
                          len(_vg_frame0_obj_ids))
 
-                # ── VRAM cleanup between passes ───────────────────────
-                # Only frame 0 was cached, so cleanup is minimal.
-                # Offload model to CPU — click mapping is pure numpy work.
-                video_model.to(torch.device("cpu"))
-                torch.cuda.empty_cache()
-                log.info("Offloaded SAM3 model to CPU between propagation passes")
-
             # ── Phase 2: Point Refinement via Tracker ─────────────────
             if has_points:
                 # Normalize coordinates to [0, 1] range for SAM3 Tracker
@@ -898,9 +891,6 @@ def mask_video(
                         grouped_pts[oid]["points"].extend(neg_list)
                         grouped_pts[oid]["labels"].extend(neg_labels)
 
-                # Reload model to GPU for point prompts + second propagation
-                video_model.to(torch.device("cuda"))
-                log.info("Reloaded SAM3 model to GPU for point refinement")
 
                 # Send per-object point prompts to SAM3 Tracker
                 for oid, data in grouped_pts.items():
