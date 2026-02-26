@@ -465,21 +465,25 @@ function addDownloadOverlay(container, videoEl) {
         pointer-events: auto;
     `;
 
-    // Hover logic
-    btn.onmouseenter = () => { btn.style.background = "rgba(0, 0, 0, 0.8)"; };
-    btn.onmouseleave = () => { btn.style.background = "rgba(0, 0, 0, 0.6)"; };
+    // Unified visibility and focus logic
+    let containerHover = false;
+    let btnHover = false;
+    let btnFocus = false;
 
-    // Visibility logic (Hover OR Focus)
-    let isHovered = false;
-    let isFocused = false;
-    const updateVisibility = () => {
-        btn.style.opacity = (isHovered || isFocused) ? "1" : "0";
+    const updateStyle = () => {
+        const isVisible = containerHover || btnFocus || btnHover;
+        const isActive = btnHover || btnFocus;
+        btn.style.opacity = isVisible ? "1" : "0";
+        btn.style.background = isActive ? "rgba(0, 0, 0, 0.8)" : "rgba(0, 0, 0, 0.6)";
+        btn.style.boxShadow = btnFocus ? "0 0 0 2px #4a6a8a" : "none";
     };
 
-    container.addEventListener("mouseenter", () => { isHovered = true; updateVisibility(); });
-    container.addEventListener("mouseleave", () => { isHovered = false; updateVisibility(); });
-    btn.addEventListener("focus", () => { isFocused = true; updateVisibility(); });
-    btn.addEventListener("blur", () => { isFocused = false; updateVisibility(); });
+    container.addEventListener("mouseenter", () => { containerHover = true; updateStyle(); });
+    container.addEventListener("mouseleave", () => { containerHover = false; updateStyle(); });
+    btn.addEventListener("mouseenter", () => { btnHover = true; updateStyle(); });
+    btn.addEventListener("mouseleave", () => { btnHover = false; updateStyle(); });
+    btn.addEventListener("focus", () => { btnFocus = true; updateStyle(); });
+    btn.addEventListener("blur", () => { btnFocus = false; updateStyle(); });
 
     // Click logic
     btn.onclick = (e) => {
@@ -1239,9 +1243,19 @@ app.registerExtension({
                     font-size: 12px;
                     transition: background-color 0.2s;
                 `;
-                // Hover effect
-                uploadBtn.onmouseenter = () => { if (!uploadBtn.disabled) uploadBtn.style.backgroundColor = "#333"; };
-                uploadBtn.onmouseleave = () => { if (!uploadBtn.disabled) uploadBtn.style.backgroundColor = "#222"; };
+                // Hover and Focus effect
+                let isHovered = false;
+                let isFocused = false;
+                const updateBtn = () => {
+                    if (uploadBtn.disabled) return;
+                    const active = isHovered || isFocused;
+                    uploadBtn.style.backgroundColor = active ? "#333" : "#222";
+                    uploadBtn.style.outline = isFocused ? "2px solid #4a6a8a" : "none";
+                };
+                uploadBtn.onmouseenter = () => { isHovered = true; updateBtn(); };
+                uploadBtn.onmouseleave = () => { isHovered = false; updateBtn(); };
+                uploadBtn.onfocus = () => { isFocused = true; updateBtn(); };
+                uploadBtn.onblur = () => { isFocused = false; updateBtn(); };
 
                 uploadBtn.onclick = (e) => {
                     // Stop propagation to prevent node selection issues on click
@@ -1785,8 +1799,17 @@ app.registerExtension({
                     background:${bg};font-weight:600;
                     transition:opacity 0.15s;
                 `;
-                b.onmouseenter = () => b.style.opacity = "0.85";
-                b.onmouseleave = () => b.style.opacity = "1";
+                let isHovered = false;
+                let isFocused = false;
+                const update = () => {
+                    const active = isHovered || isFocused;
+                    b.style.opacity = active ? "0.85" : "1";
+                    b.style.boxShadow = isFocused ? "0 0 0 2px #fff" : "none";
+                };
+                b.onmouseenter = () => { isHovered = true; update(); };
+                b.onmouseleave = () => { isHovered = false; update(); };
+                b.onfocus = () => { isFocused = true; update(); };
+                b.onblur = () => { isFocused = false; update(); };
                 return b;
             };
             const clearBtn = makeBtn("Clear All", "#555");
