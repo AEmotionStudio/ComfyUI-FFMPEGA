@@ -764,51 +764,129 @@ def mask_video(
                     _os.environ["TQDM_DISABLE"] = _tqdm_was
             log.info("SAM3 frames loaded (%d total)", len(frame_files))
 
-            # Add prompts on first frame
+            # ── Phase 1: Text VG Detection ────────────────────────────
             text_prompt = prompt or "object"
 
-            # Convert point prompts (if present) to small normalized boxes
-            # for SAM3's add_prompt.  Each click becomes a 2%-of-image box
-            # centered on the pixel coordinate, in [xmin, ymin, w, h] format.
-            boxes_xywh = None
-            box_labels = None
-            if points and labels and w > 0 and h > 0:
-                import torch as _t
-                box_size = 0.02  # 2% of image
-                # Use source image dims for normalization if provided,
-                # otherwise fall back to video frame dims.
+            # Text-based Visual Grounding detection on frame 0.
+            # Returns detected obj_ids and binary masks for mapping
+            # user clicks to tracked objects.
+            _frame0_idx, _frame0_out = video_model.add_prompt(
+                inference_state,
+                frame_idx=0,
+                text_str=text_prompt,
+            )
+            log.info("Phase 1 (text VG): detected objects on frame 0 for '%s'",
+                     text_prompt)
+
+            # ── Phase 2: Point Refinement via Tracker ─────────────────
+            has_points = bool(points and labels and w > 0 and h > 0)
+            if has_points:
+                # Normalize coordinates to [0, 1] range for SAM3 Tracker
                 norm_w = point_src_width if point_src_width > 0 else w
                 norm_h = point_src_height if point_src_height > 0 else h
-                _boxes = []
-                _lbls = []
+
+                # Parse and normalize all user clicks
+                pos_pts = []   # (norm_x, norm_y) — positive clicks
+                neg_pts = []   # (norm_x, norm_y) — negative clicks
                 for pt, lbl in zip(points, labels):
                     if not isinstance(pt, (list, tuple)) or len(pt) < 2:
                         continue
                     try:
-                        cx = float(pt[0]) / norm_w   # normalize to [0, 1]
-                        cy = float(pt[1]) / norm_h
+                        nx = float(pt[0]) / norm_w
+                        ny = float(pt[1]) / norm_h
                         lbl_int = int(lbl)
                     except (TypeError, ValueError):
                         continue
-                    x0 = max(0.0, cx - box_size / 2)
-                    y0 = max(0.0, cy - box_size / 2)
-                    bw = min(box_size, 1.0 - x0)
-                    bh = min(box_size, 1.0 - y0)
-                    _boxes.append([x0, y0, bw, bh])
-                    _lbls.append(lbl_int)
-                if _boxes:
-                    boxes_xywh = _t.tensor(_boxes, dtype=_t.float32)
-                    box_labels = _t.tensor(_lbls, dtype=_t.long)
-                    log.info("Point prompts → %d SAM3 box(es) for '%s'",
-                             len(_boxes), text_prompt)
+                    # Clamp to [0, 1]
+                    nx = max(0.0, min(1.0, nx))
+                    ny = max(0.0, min(1.0, ny))
+                    if lbl_int == 1:
+                        pos_pts.append((nx, ny))
+                    else:
+                        neg_pts.append((nx, ny))
 
-            video_model.add_prompt(
-                inference_state,
-                frame_idx=0,
-                text_str=text_prompt,
-                boxes_xywh=boxes_xywh,
-                box_labels=box_labels,
-            )
+                log.info("Phase 2 (points): %d positive, %d negative clicks",
+                         len(pos_pts), len(neg_pts))
+
+                # Extract frame 0 masks and obj_ids from VG output
+                vg_masks = None   # (N, H, W) numpy bool array
+                vg_obj_ids = []   # list of int obj_ids
+                if _frame0_out is not None:
+                    _bm = _frame0_out.get("out_binary_masks")
+                    _oi = _frame0_out.get("out_obj_ids")
+                    if _bm is not None and _oi is not None:
+                        if torch.is_tensor(_bm):
+                            vg_masks = _bm.cpu().numpy()
+                        elif isinstance(_bm, np.ndarray):
+                            vg_masks = _bm
+                        if torch.is_tensor(_oi):
+                            vg_obj_ids = _oi.cpu().tolist()
+                        elif isinstance(_oi, (list, np.ndarray)):
+                            vg_obj_ids = list(_oi)
+
+                # Map positive clicks → obj_ids via mask overlap
+                # grouped_pts[obj_id] = {"points": [...], "labels": [...]}
+                grouped_pts: dict[int, dict] = {}
+                unmatched_pos = []
+
+                if vg_masks is not None and len(vg_obj_ids) > 0:
+                    mask_h, mask_w = vg_masks.shape[-2], vg_masks.shape[-1]
+                    for (nx, ny) in pos_pts:
+                        px = int(nx * mask_w)
+                        py = int(ny * mask_h)
+                        px = min(px, mask_w - 1)
+                        py = min(py, mask_h - 1)
+                        matched = False
+                        for i, oid in enumerate(vg_obj_ids):
+                            mask_2d = vg_masks[i]
+                            # Squeeze extra dims if needed
+                            while mask_2d.ndim > 2:
+                                mask_2d = mask_2d[0]
+                            if mask_2d[py, px]:
+                                if oid not in grouped_pts:
+                                    grouped_pts[oid] = {"points": [], "labels": []}
+                                grouped_pts[oid]["points"].append([nx, ny])
+                                grouped_pts[oid]["labels"].append(1)
+                                matched = True
+                                break
+                        if not matched:
+                            unmatched_pos.append((nx, ny))
+                else:
+                    # No VG detections — all positive clicks are unmatched
+                    unmatched_pos = list(pos_pts)
+
+                # Unmatched positive clicks → new object
+                if unmatched_pos:
+                    new_obj_id = max(vg_obj_ids, default=0) + 1
+                    grouped_pts[new_obj_id] = {
+                        "points": [[nx, ny] for (nx, ny) in unmatched_pos],
+                        "labels": [1] * len(unmatched_pos),
+                    }
+                    log.info("  %d unmatched positive clicks → new obj_id=%d",
+                             len(unmatched_pos), new_obj_id)
+
+                # Add negative clicks to ALL tracked objects
+                if neg_pts and grouped_pts:
+                    neg_list = [[nx, ny] for (nx, ny) in neg_pts]
+                    neg_labels = [0] * len(neg_pts)
+                    for oid in grouped_pts:
+                        grouped_pts[oid]["points"].extend(neg_list)
+                        grouped_pts[oid]["labels"].extend(neg_labels)
+
+                # Send per-object point prompts to SAM3 Tracker
+                for oid, data in grouped_pts.items():
+                    video_model.add_prompt(
+                        inference_state,
+                        frame_idx=0,
+                        points=data["points"],
+                        point_labels=data["labels"],
+                        obj_id=oid,
+                        rel_coordinates=True,
+                    )
+                    n_pos = sum(1 for l in data["labels"] if l == 1)
+                    n_neg = sum(1 for l in data["labels"] if l == 0)
+                    log.info("  obj_id=%d: %d positive + %d negative point prompts",
+                             oid, n_pos, n_neg)
 
             # 3. Propagate masks — drive the iterator ourselves so we control
             # progress reporting (no tqdm bar spam in ComfyUI's non-TTY console).
