@@ -806,6 +806,26 @@ def mask_video(
                 log.info("Initial VG propagation complete (detected %d objects)",
                          len(_vg_frame0_obj_ids))
 
+                # ── VRAM cleanup between propagation passes ───────────
+                # The first propagation accumulates per-frame cached outputs,
+                # backbone features, and detection results on GPU.  Clear them
+                # now — we've already captured what we need (frame 0 masks).
+                # Without this, the second propagation OOMs on 12 GB GPUs.
+                if "cached_frame_outputs" in inference_state:
+                    inference_state["cached_frame_outputs"].clear()
+                if "feature_cache" in inference_state:
+                    # Keep tracking_bounds but clear per-frame features
+                    _tb = inference_state["feature_cache"].get("tracking_bounds")
+                    inference_state["feature_cache"].clear()
+                    if _tb is not None:
+                        inference_state["feature_cache"]["tracking_bounds"] = _tb
+                # Clear per-frame detection outputs (will be re-populated)
+                for t in range(inference_state.get("num_frames", 0)):
+                    if inference_state["previous_stages_out"][t] is not None:
+                        inference_state["previous_stages_out"][t] = None
+                torch.cuda.empty_cache()
+                log.info("Cleared VRAM between propagation passes")
+
             # ── Phase 2: Point Refinement via Tracker ─────────────────
             if has_points:
                 # Normalize coordinates to [0, 1] range for SAM3 Tracker
