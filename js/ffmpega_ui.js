@@ -1244,16 +1244,18 @@ app.registerExtension({
                     transition: background-color 0.2s;
                 `;
                 // Hover and Focus effect
+                let isHovered = false;
+                let isFocused = false;
                 const updateBtn = () => {
                     if (uploadBtn.disabled) return;
-                    const active = uploadBtn.matches(":hover") || document.activeElement === uploadBtn;
+                    const active = isHovered || isFocused;
                     uploadBtn.style.backgroundColor = active ? "#333" : "#222";
-                    uploadBtn.style.outline = (document.activeElement === uploadBtn) ? "2px solid #4a6a8a" : "none";
+                    uploadBtn.style.outline = isFocused ? "2px solid #4a6a8a" : "none";
                 };
-                uploadBtn.onmouseenter = updateBtn;
-                uploadBtn.onmouseleave = updateBtn;
-                uploadBtn.onfocus = updateBtn;
-                uploadBtn.onblur = updateBtn;
+                uploadBtn.onmouseenter = () => { isHovered = true; updateBtn(); };
+                uploadBtn.onmouseleave = () => { isHovered = false; updateBtn(); };
+                uploadBtn.onfocus = () => { isFocused = true; updateBtn(); };
+                uploadBtn.onblur = () => { isFocused = false; updateBtn(); };
 
                 uploadBtn.onclick = (e) => {
                     // Stop propagation to prevent node selection issues on click
@@ -1797,15 +1799,17 @@ app.registerExtension({
                     background:${bg};font-weight:600;
                     transition:opacity 0.15s;
                 `;
+                let isHovered = false;
+                let isFocused = false;
                 const update = () => {
-                    const active = b.matches(":hover") || document.activeElement === b;
+                    const active = isHovered || isFocused;
                     b.style.opacity = active ? "0.85" : "1";
-                    b.style.boxShadow = (document.activeElement === b) ? "0 0 0 2px #fff" : "none";
+                    b.style.boxShadow = isFocused ? "0 0 0 2px #fff" : "none";
                 };
-                b.onmouseenter = update;
-                b.onmouseleave = update;
-                b.onfocus = update;
-                b.onblur = update;
+                b.onmouseenter = () => { isHovered = true; update(); };
+                b.onmouseleave = () => { isHovered = false; update(); };
+                b.onfocus = () => { isFocused = true; update(); };
+                b.onblur = () => { isFocused = false; update(); };
                 return b;
             };
             const clearBtn = makeBtn("Clear All", "#555");
