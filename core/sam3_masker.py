@@ -784,30 +784,50 @@ def mask_video(
             # collect frame 0 masks for mapping user clicks to obj_ids.
             has_points = bool(points and labels and w > 0 and h > 0)
             if has_points:
-                log.info("Running VG detection on frame 0 to populate cache...")
+                log.info("Running full VG propagation to populate cache...")
                 _vg_frame0_masks = None  # will hold frame 0 binary masks
                 _vg_frame0_obj_ids = []
-                # Only propagate frame 0 — we just need the VG detection +
-                # cached output for the Tracker's _build_tracker_output.
-                # max_frame_num_to_track=0 → processes only the start frame.
+                # Full propagation required — SAM3's propagation_partial path
+                # merges Tracker masks with VG cached outputs per-frame, so
+                # ALL frames must be cached from the initial VG pass.
                 for _vg_fidx, _vg_out in video_model.propagate_in_video(
-                    inference_state, max_frame_num_to_track=0
+                    inference_state
                 ):
                     if _vg_out is None:
                         continue
-                    _bm = _vg_out.get("out_binary_masks")
-                    _oi = _vg_out.get("out_obj_ids")
-                    if _bm is not None and _oi is not None:
-                        if torch.is_tensor(_bm):
-                            _vg_frame0_masks = _bm.cpu().numpy()
-                        elif isinstance(_bm, np.ndarray):
-                            _vg_frame0_masks = _bm
-                        if torch.is_tensor(_oi):
-                            _vg_frame0_obj_ids = _oi.cpu().tolist()
-                        elif isinstance(_oi, (list, np.ndarray)):
-                            _vg_frame0_obj_ids = list(_oi)
-                log.info("VG detection on frame 0 complete (detected %d objects)",
+                    # Capture frame 0 output for click→obj_id mapping
+                    if _vg_fidx == 0:
+                        _bm = _vg_out.get("out_binary_masks")
+                        _oi = _vg_out.get("out_obj_ids")
+                        if _bm is not None and _oi is not None:
+                            if torch.is_tensor(_bm):
+                                _vg_frame0_masks = _bm.cpu().numpy()
+                            elif isinstance(_bm, np.ndarray):
+                                _vg_frame0_masks = _bm
+                            if torch.is_tensor(_oi):
+                                _vg_frame0_obj_ids = _oi.cpu().tolist()
+                            elif isinstance(_oi, (list, np.ndarray)):
+                                _vg_frame0_obj_ids = list(_oi)
+                log.info("VG propagation complete (detected %d objects)",
                          len(_vg_frame0_obj_ids))
+
+                # ── VRAM cleanup between propagation passes ───────────
+                # The full VG propagation accumulates per-frame backbone
+                # features and detection outputs on GPU.  Clear non-essential
+                # state and offload the model to CPU.  We keep
+                # cached_frame_outputs (needed by propagation_partial) but
+                # clear everything else.
+                if "feature_cache" in inference_state:
+                    _tb = inference_state["feature_cache"].get("tracking_bounds")
+                    inference_state["feature_cache"].clear()
+                    if _tb is not None:
+                        inference_state["feature_cache"]["tracking_bounds"] = _tb
+                for t in range(inference_state.get("num_frames", 0)):
+                    if inference_state["previous_stages_out"][t] is not None:
+                        inference_state["previous_stages_out"][t] = None
+                video_model.to(torch.device("cpu"))
+                torch.cuda.empty_cache()
+                log.info("Offloaded SAM3 model to CPU between propagation passes")
 
             # ── Phase 2: Point Refinement via Tracker ─────────────────
             if has_points:
@@ -890,6 +910,10 @@ def mask_video(
                     for oid in grouped_pts:
                         grouped_pts[oid]["points"].extend(neg_list)
                         grouped_pts[oid]["labels"].extend(neg_labels)
+
+                # Reload model to GPU for point prompts + second propagation
+                video_model.to(torch.device("cuda"))
+                log.info("Reloaded SAM3 model to GPU for point refinement")
 
 
                 # Send per-object point prompts to SAM3 Tracker
