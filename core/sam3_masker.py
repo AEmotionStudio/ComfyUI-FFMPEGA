@@ -823,8 +823,11 @@ def mask_video(
                 for t in range(inference_state.get("num_frames", 0)):
                     if inference_state["previous_stages_out"][t] is not None:
                         inference_state["previous_stages_out"][t] = None
+                # Offload model to CPU — frees ~3.35 GB VRAM.
+                # Click→obj_id mapping below is pure CPU/numpy work.
+                video_model.to(torch.device("cpu"))
                 torch.cuda.empty_cache()
-                log.info("Cleared VRAM between propagation passes")
+                log.info("Offloaded SAM3 model to CPU between propagation passes")
 
             # ── Phase 2: Point Refinement via Tracker ─────────────────
             if has_points:
@@ -907,6 +910,10 @@ def mask_video(
                     for oid in grouped_pts:
                         grouped_pts[oid]["points"].extend(neg_list)
                         grouped_pts[oid]["labels"].extend(neg_labels)
+
+                # Reload model to GPU for point prompts + second propagation
+                video_model.to(torch.device("cuda"))
+                log.info("Reloaded SAM3 model to GPU for point refinement")
 
                 # Send per-object point prompts to SAM3 Tracker
                 for oid, data in grouped_pts.items():
