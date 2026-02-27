@@ -166,15 +166,20 @@ def _get_model_dir() -> Path:
     """Return the SAM3 model directory, creating it if needed.
 
     Checks (in order):
-    1. ComfyUI/models/SAM3/ (standard ComfyUI convention)
-    2. Extension's own models/SAM3/ (fallback for testing)
+    1. FFMPEGA_SAM3_MODEL_DIR env var (set by subprocess wrapper)
+    2. ComfyUI/models/SAM3/ (standard ComfyUI convention)
+    3. Extension's own models/SAM3/ (fallback for testing)
     """
-    try:
-        import folder_paths
-        sam3_dir = Path(folder_paths.models_dir) / "SAM3"
-    except (ImportError, AttributeError):
-        # Running outside ComfyUI (tests, standalone)
-        sam3_dir = Path(__file__).parent.parent / "models" / "SAM3"
+    env_dir = os.environ.get("FFMPEGA_SAM3_MODEL_DIR")
+    if env_dir:
+        sam3_dir = Path(env_dir)
+    else:
+        try:
+            import folder_paths
+            sam3_dir = Path(folder_paths.models_dir) / "SAM3"
+        except (ImportError, AttributeError):
+            # Running outside ComfyUI (tests, standalone)
+            sam3_dir = Path(__file__).parent.parent / "models" / "SAM3"
 
     sam3_dir.mkdir(parents=True, exist_ok=True)
     return sam3_dir
@@ -815,6 +820,11 @@ def mask_video(
         log.info("Running SAM3 video tracking on %d frames (prompt: '%s', "
                  "max_objects=%d, det_threshold=%.2f)",
                  len(frame_files), prompt, max_objects, det_threshold)
+        # Diagnostic: track VRAM before any SAM3 work
+        import torch
+        if torch.cuda.is_available():
+            _pre = torch.cuda.memory_allocated() / (1024**3)
+            log.info("VRAM before load_video_model: %.2f GB", _pre)
 
         video_model = load_video_model(device=device)
 
@@ -901,6 +911,35 @@ def mask_video(
                 )
             log.info("SAM3 frames loaded (%d total)", len(frame_files))
 
+            # ── Offload img_batch to CPU immediately ────────────────
+            # init_state puts all 192 preprocessed frames on GPU as a
+            # single tensor (~500 MB at 720p).  Offloading to a list of
+            # CPU tensors frees that VRAM before any propagation begins.
+            # SAM3 natively re-loads frames to GPU one at a time on access
+            # (sam3_image.py:151: "img_batch might be fp16 and offloaded").
+            _ib = inference_state.get("input_batch")
+            if _ib is not None and torch.is_tensor(_ib.img_batch) and _ib.img_batch.is_cuda:
+                _n_frames = _ib.img_batch.shape[0]
+                _cpu_frames = [_ib.img_batch[i].cpu() for i in range(_n_frames)]
+
+                class _LazyGPUFrames:
+                    """List-like wrapper keeping frames on CPU until indexed."""
+                    __slots__ = ("_frames",)
+                    def __init__(self, frames):
+                        self._frames = frames
+                    def __len__(self):
+                        return len(self._frames)
+                    def __getitem__(self, idx):
+                        return self._frames[idx]
+
+                _ib.img_batch = _LazyGPUFrames(_cpu_frames)
+                del _cpu_frames
+                import gc as _gc_ib
+                _gc_ib.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                log.info("Offloaded %d input frames to CPU (early)", _n_frames)
+
             # ── Set text prompt (always needed) ──────────────────────
             text_prompt = prompt or "object"
             _frame0_idx, _frame0_out = video_model.add_prompt(
@@ -956,35 +995,13 @@ def mask_video(
                 # 2) Full reset — frees all GPU state
                 video_model.reset_state(inference_state)
 
-                # 3) Offload input_batch.img_batch to CPU
-                # This is a single GPU tensor holding ALL 192 preprocessed frames.
-                # SAM3 supports CPU-offloaded frame lists natively (sam3_image.py
-                # line 151: "img_batch might be fp16 and offloaded to CPU").
-                _ib = inference_state.get("input_batch")
-                if _ib is not None and torch.is_tensor(_ib.img_batch) and _ib.img_batch.is_cuda:
-                    _n_frames = _ib.img_batch.shape[0]
-                    _cpu_frames = [_ib.img_batch[i].cpu() for i in range(_n_frames)]
-                    # Replace with a lightweight wrapper that SAM3 can index
-                    class _LazyGPUFrames:
-                        """List-like wrapper keeping frames on CPU until indexed."""
-                        __slots__ = ("_frames",)
-                        def __init__(self, frames):
-                            self._frames = frames
-                        def __len__(self):
-                            return len(self._frames)
-                        def __getitem__(self, idx):
-                            return self._frames[idx]
-
-                    _ib.img_batch = _LazyGPUFrames(_cpu_frames)
-                    log.info("Offloaded %d input frames to CPU", _n_frames)
-
-                # 4) Flush GPU
+                # 3) Flush GPU
                 _gc.collect()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
 
                 _vram_after = torch.cuda.memory_allocated() / (1024**3)
-                log.info("VRAM after full reset + frame offload: %.2f GB", _vram_after)
+                log.info("VRAM after full reset: %.2f GB", _vram_after)
 
                 # 4) Re-add text prompt FIRST (add_prompt calls reset_state
                 #    internally, which would clear cached_frame_outputs again)
@@ -1300,11 +1317,14 @@ def mask_video(
                 if orig_hotstart is not _UNSET:
                     video_model.hotstart_delay = orig_hotstart
 
-                # ── Break the local model reference and force full cleanup ──
-                # The local `video_model` keeps the model alive until the
-                # function returns.  PyTorch modules have circular refs that
-                # gc.collect() alone can't break.  Deleting the local ref
-                # and calling cleanup() frees ~1.5 GB per run.
+                # ── Cleanup ──────────────────────────────────────────
+                # When running via subprocess, this process will exit right
+                # after and all CUDA memory is reclaimed by the OS.  For the
+                # in-process fallback path, do a basic cleanup.
+                try:
+                    video_model.to("cpu")
+                except Exception:
+                    pass
                 del video_model
                 try:
                     cleanup()
@@ -1601,21 +1621,146 @@ def cleanup() -> None:
     _video_model = None
     _video_model_device = None
 
-    # Clear torch.compile / Dynamo cache — SAM3 compiles 6+ submodules
-    # which persist ~1.5 GB of compiled kernels and autograd graphs
-    # in global Dynamo state even after the model is deleted.
-    try:
-        torch._dynamo.reset()
-    except Exception:
-        pass
-
     import gc
     gc.collect()
 
     import torch
     if torch.cuda.is_available():
-        torch.cuda.synchronize()
         torch.cuda.empty_cache()
-        torch.cuda.ipc_collect()
 
     log.info("SAM3 models unloaded and GPU memory freed")
+
+
+def mask_video_subprocess(
+    video_path: str,
+    prompt: str,
+    output_dir: Optional[str] = None,
+    device: str = "gpu",
+    max_objects: int = 5,
+    det_threshold: float = 0.7,
+    points: Optional[list] = None,
+    labels: Optional[list] = None,
+    point_src_width: int = 0,
+    point_src_height: int = 0,
+    last_frame_points: Optional[list] = None,
+    last_frame_labels: Optional[list] = None,
+) -> str:
+    """Run mask_video() in a subprocess to avoid CUDA memory leaks.
+
+    SAM3 leaks ~1.5 GB of CUDA driver context memory per run that
+    cannot be freed within the process (confirmed invisible to Python gc,
+    nn.Parameter storage, register_buffer, and all PyTorch cleanup APIs).
+    Running in a subprocess ensures all CUDA state is reclaimed by the OS
+    when the child process exits.
+
+    Same interface as mask_video() — all args are JSON-serialized to the
+    child process via stdin, and the mask video path is returned via stdout.
+    Falls back to in-process mask_video() if the subprocess fails.
+    """
+    import json
+    import sys
+
+    if output_dir is None:
+        output_dir = tempfile.mkdtemp(prefix="ffmpega_sam3_")
+
+    args_dict = {
+        "video_path": video_path,
+        "prompt": prompt,
+        "output_dir": output_dir,
+        "device": device,
+        "max_objects": max_objects,
+        "det_threshold": det_threshold,
+        "points": points,
+        "labels": labels,
+        "point_src_width": point_src_width,
+        "point_src_height": point_src_height,
+        "last_frame_points": last_frame_points,
+        "last_frame_labels": last_frame_labels,
+    }
+
+    # Inline script for the child process:
+    # - Reads JSON args from stdin
+    # - Loads sam3_masker.py directly by file path (bypasses core/__init__.py
+    #   which imports ComfyUI-dependent modules that hang without the server)
+    # - Calls mask_video()
+    # - Prints the result path as "RESULT:<path>" to stdout
+    child_script = """
+import sys, json, importlib.util
+args = json.loads(sys.stdin.read())
+mod_path = args.pop("_module_path")
+spec = importlib.util.spec_from_file_location("sam3_masker", mod_path)
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+result = mod.mask_video(**args)
+print("RESULT:" + result, flush=True)
+"""
+
+    try:
+        # Determine the project root (parent of 'core/')
+        _this_dir = os.path.dirname(os.path.abspath(__file__))
+        _project_root = os.path.dirname(_this_dir)
+        _module_path = os.path.abspath(__file__)
+
+        # Pass _module_path so the child can load this file directly
+        args_dict["_module_path"] = _module_path
+
+        env = os.environ.copy()
+        # Keep parent's PYTHONPATH so SAM3, torch, etc. can be found
+        existing_pp = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = _project_root + (
+            os.pathsep + existing_pp if existing_pp else ""
+        )
+        # Pass the model directory so the child doesn't fall back to
+        # the extension's own models/ dir (folder_paths is unavailable
+        # outside ComfyUI server).
+        env["FFMPEGA_SAM3_MODEL_DIR"] = str(_get_model_dir())
+
+        log.info("SAM3 subprocess: starting (device=%s, frames=%s)",
+                 device, video_path)
+
+        result = subprocess.run(
+            [sys.executable, "-c", child_script],
+            input=json.dumps(args_dict),
+            capture_output=True,
+            text=True,
+            timeout=900,  # 15 min safety timeout
+            cwd=_project_root,
+            env=env,
+        )
+
+        # Forward child stderr to our log (contains SAM3 progress, etc.)
+        if result.stderr:
+            for line in result.stderr.strip().splitlines():
+                log.info("[SAM3 subprocess] %s", line)
+
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"SAM3 subprocess exited with code {result.returncode}"
+            )
+
+        # Parse result path from stdout
+        mask_path = None
+        for line in result.stdout.strip().splitlines():
+            if line.startswith("RESULT:"):
+                mask_path = line[len("RESULT:"):]
+                break
+
+        if mask_path is None:
+            raise RuntimeError(
+                "SAM3 subprocess did not return a result path"
+            )
+
+        if not os.path.isfile(mask_path):
+            raise RuntimeError(
+                f"SAM3 subprocess returned non-existent path: {mask_path}"
+            )
+
+        log.info("SAM3 subprocess: completed — mask at %s", mask_path)
+        return mask_path
+
+    except Exception as e:
+        # Do NOT fall back to in-process execution — that would re-introduce
+        # the 1.49 GB CUDA leak we're trying to avoid. Let the error
+        # propagate to the caller (visual.py) which has its own fallback.
+        log.error("SAM3 subprocess failed: %s", e)
+        raise

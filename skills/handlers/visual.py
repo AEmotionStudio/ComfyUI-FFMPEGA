@@ -574,11 +574,11 @@ def _f_auto_mask(p):
 
     # Try to load SAM3
     try:
-        from ...core.sam3_masker import mask_video as sam3_mask_video  # noqa: F811
+        from ...core.sam3_masker import mask_video_subprocess as sam3_mask_video  # noqa: F811
         _has_sam3 = True
     except ImportError:
         try:
-            from core.sam3_masker import mask_video as sam3_mask_video  # noqa: F811
+            from core.sam3_masker import mask_video_subprocess as sam3_mask_video  # noqa: F811
             _has_sam3 = True
         except ImportError:
             _has_sam3 = False
@@ -594,6 +594,7 @@ def _f_auto_mask(p):
         return _auto_mask_fallback(effect, strength)
 
     # Generate mask video using SAM3 with text + optional point prompts
+    # Runs in a subprocess to avoid CUDA memory leaks (~1.5 GB/run).
     try:
         mask_path = sam3_mask_video(
             video_path=video_path,
@@ -614,18 +615,6 @@ def _f_auto_mask(p):
         if _metadata_ref is not None and isinstance(_metadata_ref, dict):
             _metadata_ref["_skill_degraded"] = True
         return _auto_mask_fallback(effect, strength)
-    finally:
-        # Fully unload SAM3 model after each run to reclaim VRAM.
-        # Without this, sequential runs start with ~1.6 GB more VRAM
-        # consumed and eventually OOM.  The ~3s reload cost is worth it.
-        try:
-            try:
-                from ...core.sam3_masker import cleanup as _sam3_cleanup
-            except ImportError:
-                from core.sam3_masker import cleanup as _sam3_cleanup
-            _sam3_cleanup()
-        except Exception:
-            pass
 
     # Store mask path in metadata so agent_node can generate overlay
     _metadata_ref = p.get("_metadata_ref")
