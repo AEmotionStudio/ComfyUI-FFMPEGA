@@ -1,0 +1,1369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ComfyUI-FFMPEGA — AI-Powered Video Editing with Natural Language</title>
+    <meta name="description" content="Edit videos with plain English. 200+ effects, multi-LLM support, SAM3 auto-masking, and AI object removal — all inside ComfyUI.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        /* ═══════════════════════════════════════════
+           DESIGN SYSTEM
+           ═══════════════════════════════════════════ */
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-secondary: #111827;
+            --bg-card: #1a1f2e;
+            --bg-card-hover: #222840;
+            --accent-teal: #14b8a6;
+            --accent-teal-dim: #0d9488;
+            --accent-teal-glow: rgba(20, 184, 166, 0.25);
+            --accent-orange: #f97316;
+            --accent-orange-dim: #ea580c;
+            --accent-orange-glow: rgba(249, 115, 22, 0.2);
+            --accent-purple: #a855f7;
+            --accent-blue: #3b82f6;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --border-subtle: rgba(148, 163, 184, 0.1);
+            --border-accent: rgba(20, 184, 166, 0.3);
+            --gradient-hero: linear-gradient(135deg, #0a0e17 0%, #111827 40%, #0f172a 100%);
+            --gradient-teal: linear-gradient(135deg, #14b8a6, #06b6d4);
+            --gradient-orange: linear-gradient(135deg, #f97316, #fb923c);
+            --gradient-card: linear-gradient(145deg, rgba(26, 31, 46, 0.8), rgba(17, 24, 39, 0.6));
+            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+            --radius: 16px;
+            --radius-sm: 10px;
+            --radius-xs: 6px;
+            --shadow-glow: 0 0 60px rgba(20, 184, 166, 0.15);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html {
+            scroll-behavior: smooth;
+            font-size: 16px;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.7;
+            overflow-x: hidden;
+        }
+
+        /* ═══════════════════════════════════════════
+           AMBIENT BACKGROUND
+           ═══════════════════════════════════════════ */
+        .ambient-bg {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        .ambient-bg::before {
+            content: '';
+            position: absolute;
+            top: -30%;
+            left: -10%;
+            width: 60%;
+            height: 60%;
+            background: radial-gradient(circle, var(--accent-teal-glow) 0%, transparent 60%);
+            animation: float-left 20s ease-in-out infinite;
+        }
+
+        .ambient-bg::after {
+            content: '';
+            position: absolute;
+            bottom: -20%;
+            right: -10%;
+            width: 50%;
+            height: 50%;
+            background: radial-gradient(circle, var(--accent-orange-glow) 0%, transparent 60%);
+            animation: float-right 25s ease-in-out infinite;
+        }
+
+        @keyframes float-left {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(5%, 10%); }
+        }
+
+        @keyframes float-right {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(-5%, -8%); }
+        }
+
+        /* ═══════════════════════════════════════════
+           NAVIGATION
+           ═══════════════════════════════════════════ */
+        .nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            padding: 1rem 2rem;
+            background: rgba(10, 14, 23, 0.8);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            border-bottom: 1px solid var(--border-subtle);
+            transition: all 0.3s ease;
+        }
+
+        .nav-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .nav-logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            text-decoration: none;
+            color: var(--text-primary);
+        }
+
+        .nav-logo-icon {
+            width: 36px;
+            height: 36px;
+            background: var(--gradient-teal);
+            border-radius: var(--radius-xs);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 1rem;
+            color: #0a0e17;
+        }
+
+        .nav-logo-text {
+            font-weight: 700;
+            font-size: 1.15rem;
+            letter-spacing: -0.02em;
+        }
+
+        .nav-logo-text span {
+            color: var(--accent-teal);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            list-style: none;
+        }
+
+        .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover { color: var(--accent-teal); }
+
+        .nav-cta {
+            background: var(--gradient-teal);
+            color: #0a0e17 !important;
+            padding: 0.5rem 1.25rem;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .nav-cta:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 20px var(--accent-teal-glow);
+        }
+
+        /* ═══════════════════════════════════════════
+           HERO SECTION
+           ═══════════════════════════════════════════ */
+        .hero {
+            position: relative;
+            z-index: 1;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 8rem 2rem 4rem;
+            text-align: center;
+        }
+
+        .hero-content {
+            max-width: 900px;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(20, 184, 166, 0.1);
+            border: 1px solid var(--border-accent);
+            color: var(--accent-teal);
+            padding: 0.4rem 1rem;
+            border-radius: 50px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            margin-bottom: 2rem;
+            animation: fadeInDown 0.8s ease;
+        }
+
+        .hero-badge .dot {
+            width: 6px;
+            height: 6px;
+            background: var(--accent-teal);
+            border-radius: 50%;
+            animation: pulse-dot 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .hero h1 {
+            font-size: clamp(2.5rem, 6vw, 4.5rem);
+            font-weight: 900;
+            letter-spacing: -0.03em;
+            line-height: 1.1;
+            margin-bottom: 1.5rem;
+            animation: fadeInUp 0.8s ease 0.1s both;
+        }
+
+        .hero h1 .gradient-text {
+            background: var(--gradient-teal);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero h1 .gradient-orange {
+            background: var(--gradient-orange);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero-sub {
+            font-size: 1.25rem;
+            color: var(--text-secondary);
+            max-width: 680px;
+            margin: 0 auto 3rem;
+            font-weight: 400;
+            animation: fadeInUp 0.8s ease 0.2s both;
+        }
+
+        .hero-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+            animation: fadeInUp 0.8s ease 0.3s both;
+        }
+
+        .btn-primary {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--gradient-teal);
+            color: #0a0e17;
+            padding: 0.9rem 2rem;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px var(--accent-teal-glow);
+        }
+
+        .btn-secondary {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: transparent;
+            color: var(--text-primary);
+            padding: 0.9rem 2rem;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1rem;
+            border: 1px solid var(--border-accent);
+            transition: all 0.3s ease;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(20, 184, 166, 0.08);
+            border-color: var(--accent-teal);
+        }
+
+        .hero-image {
+            margin-top: 4rem;
+            position: relative;
+            animation: fadeInUp 1s ease 0.5s both;
+        }
+
+        .hero-image img {
+            width: 100%;
+            max-width: 900px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border-subtle);
+            box-shadow: var(--shadow-glow), 0 20px 60px rgba(0,0,0,0.5);
+        }
+
+        .hero-image::after {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border-radius: var(--radius);
+            background: linear-gradient(135deg, var(--accent-teal), transparent 40%, transparent 60%, var(--accent-orange));
+            z-index: -1;
+            opacity: 0.3;
+        }
+
+        /* ═══════════════════════════════════════════
+           PROMPT DEMO
+           ═══════════════════════════════════════════ */
+        .prompt-demo {
+            position: relative;
+            z-index: 1;
+            max-width: 700px;
+            margin: 3rem auto 0;
+            animation: fadeInUp 1s ease 0.6s both;
+        }
+
+        .prompt-terminal {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius);
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+
+        .prompt-terminal-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1rem;
+            background: rgba(0,0,0,0.3);
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .terminal-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .terminal-dot.red { background: #ef4444; }
+        .terminal-dot.yellow { background: #eab308; }
+        .terminal-dot.green { background: #22c55e; }
+
+        .terminal-title {
+            flex: 1;
+            text-align: center;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+        }
+
+        .prompt-body {
+            padding: 1.5rem;
+        }
+
+        .prompt-line {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+        }
+
+        .prompt-prefix {
+            color: var(--accent-teal);
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .prompt-text {
+            color: var(--text-primary);
+            min-height: 1.5em;
+        }
+
+        .prompt-text .cursor-blink {
+            display: inline-block;
+            width: 2px;
+            height: 1.1em;
+            background: var(--accent-teal);
+            vertical-align: text-bottom;
+            animation: blink 1s step-end infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        .prompt-output {
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border-subtle);
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .prompt-output .success {
+            color: #22c55e;
+        }
+
+        .prompt-output .skill-tag {
+            display: inline-block;
+            background: rgba(20, 184, 166, 0.15);
+            color: var(--accent-teal);
+            padding: 0.1rem 0.5rem;
+            border-radius: 4px;
+            margin: 0.15rem 0.2rem;
+            font-size: 0.75rem;
+        }
+
+        /* ═══════════════════════════════════════════
+           STATS STRIPE
+           ═══════════════════════════════════════════ */
+        .stats {
+            position: relative;
+            z-index: 1;
+            padding: 4rem 2rem;
+            background: rgba(17, 24, 39, 0.5);
+            border-top: 1px solid var(--border-subtle);
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .stats-grid {
+            max-width: 1000px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 2rem;
+            text-align: center;
+        }
+
+        .stat-item {
+            padding: 1rem;
+        }
+
+        .stat-number {
+            font-size: 3rem;
+            font-weight: 900;
+            letter-spacing: -0.03em;
+            line-height: 1;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-number.teal { color: var(--accent-teal); }
+        .stat-number.orange { color: var(--accent-orange); }
+        .stat-number.purple { color: var(--accent-purple); }
+        .stat-number.blue { color: var(--accent-blue); }
+
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        /* ═══════════════════════════════════════════
+           FEATURES SECTION
+           ═══════════════════════════════════════════ */
+        .features {
+            position: relative;
+            z-index: 1;
+            padding: 6rem 2rem;
+        }
+
+        .section-header {
+            text-align: center;
+            max-width: 700px;
+            margin: 0 auto 4rem;
+        }
+
+        .section-label {
+            display: inline-block;
+            color: var(--accent-teal);
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 1rem;
+        }
+
+        .section-title {
+            font-size: 2.5rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            line-height: 1.15;
+            margin-bottom: 1rem;
+        }
+
+        .section-desc {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+        }
+
+        .features-grid {
+            max-width: 1100px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+        }
+
+        .feature-card {
+            background: var(--gradient-card);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius);
+            padding: 2rem;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--gradient-teal);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .feature-card:hover {
+            background: var(--bg-card-hover);
+            border-color: var(--border-accent);
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+        }
+
+        .feature-card:hover::before { opacity: 1; }
+
+        .feature-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            margin-bottom: 1.25rem;
+        }
+
+        .feature-icon.teal { background: rgba(20, 184, 166, 0.15); }
+        .feature-icon.orange { background: rgba(249, 115, 22, 0.15); }
+        .feature-icon.purple { background: rgba(168, 85, 247, 0.15); }
+        .feature-icon.blue { background: rgba(59, 130, 246, 0.15); }
+        .feature-icon.green { background: rgba(34, 197, 94, 0.15); }
+        .feature-icon.pink { background: rgba(236, 72, 153, 0.15); }
+
+        .feature-card h3 {
+            font-size: 1.15rem;
+            font-weight: 700;
+            margin-bottom: 0.75rem;
+            letter-spacing: -0.01em;
+        }
+
+        .feature-card p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+
+        /* ═══════════════════════════════════════════
+           BEFORE/AFTER SHOWCASE
+           ═══════════════════════════════════════════ */
+        .showcase {
+            position: relative;
+            z-index: 1;
+            padding: 6rem 2rem;
+            background: rgba(17, 24, 39, 0.3);
+        }
+
+        .showcase-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 3rem;
+            max-width: 1100px;
+            margin: 0 auto;
+            align-items: center;
+        }
+
+        .showcase-image img {
+            width: 100%;
+            border-radius: var(--radius);
+            border: 1px solid var(--border-subtle);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+
+        .showcase-content h2 {
+            font-size: 2.2rem;
+            font-weight: 800;
+            line-height: 1.15;
+            margin-bottom: 1.5rem;
+            letter-spacing: -0.02em;
+        }
+
+        .showcase-content p {
+            color: var(--text-secondary);
+            font-size: 1.05rem;
+            margin-bottom: 2rem;
+            line-height: 1.7;
+        }
+
+        .showcase-prompts {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .prompt-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            padding: 0.6rem 1rem;
+            border-radius: var(--radius-xs);
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            transition: all 0.2s ease;
+        }
+
+        .prompt-pill:hover {
+            border-color: var(--border-accent);
+            color: var(--text-primary);
+        }
+
+        .prompt-pill .arrow {
+            color: var(--accent-teal);
+            font-weight: 700;
+        }
+
+        /* ═══════════════════════════════════════════
+           LLM PROVIDERS
+           ═══════════════════════════════════════════ */
+        .providers {
+            position: relative;
+            z-index: 1;
+            padding: 6rem 2rem;
+        }
+
+        .provider-logos {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 3rem;
+            flex-wrap: wrap;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .provider-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 1.5rem 2rem;
+            background: var(--gradient-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius);
+            transition: all 0.3s ease;
+            min-width: 140px;
+        }
+
+        .provider-item:hover {
+            border-color: var(--border-accent);
+            transform: translateY(-2px);
+        }
+
+        .provider-icon {
+            font-size: 2rem;
+        }
+
+        .provider-name {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .provider-sub {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        /* ═══════════════════════════════════════════
+           SKILL SHOWCASE CAROUSEL
+           ═══════════════════════════════════════════ */
+        .skills-section {
+            position: relative;
+            z-index: 1;
+            padding: 6rem 2rem;
+            background: rgba(17, 24, 39, 0.3);
+            overflow: hidden;
+        }
+
+        .skill-scroll {
+            display: flex;
+            gap: 1rem;
+            animation: scroll-skills 40s linear infinite;
+            width: max-content;
+        }
+
+        .skill-scroll:hover { animation-play-state: paused; }
+
+        @keyframes scroll-skills {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+
+        .skill-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 50px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            transition: all 0.2s ease;
+        }
+
+        .skill-chip:hover {
+            border-color: var(--accent-teal);
+            color: var(--accent-teal);
+        }
+
+        .skill-chip .emoji {
+            font-size: 0.9rem;
+        }
+
+        /* ═══════════════════════════════════════════
+           CTA SECTION
+           ═══════════════════════════════════════════ */
+        .cta {
+            position: relative;
+            z-index: 1;
+            padding: 8rem 2rem;
+            text-align: center;
+        }
+
+        .cta-box {
+            max-width: 800px;
+            margin: 0 auto;
+            background: var(--gradient-card);
+            border: 1px solid var(--border-accent);
+            border-radius: var(--radius);
+            padding: 4rem 3rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .cta-box::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--gradient-teal);
+        }
+
+        .cta-box::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 50% 0%, var(--accent-teal-glow) 0%, transparent 50%);
+            pointer-events: none;
+        }
+
+        .cta h2 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin-bottom: 1rem;
+        }
+
+        .cta p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-bottom: 2rem;
+            max-width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .cta-actions {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* ═══════════════════════════════════════════
+           FOOTER
+           ═══════════════════════════════════════════ */
+        .footer {
+            position: relative;
+            z-index: 1;
+            padding: 3rem 2rem;
+            border-top: 1px solid var(--border-subtle);
+            text-align: center;
+        }
+
+        .footer-content {
+            max-width: 1100px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .footer-text {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .footer-links {
+            display: flex;
+            gap: 2rem;
+        }
+
+        .footer-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.85rem;
+            transition: color 0.2s;
+        }
+
+        .footer-links a:hover { color: var(--accent-teal); }
+
+        /* ═══════════════════════════════════════════
+           ANIMATIONS
+           ═══════════════════════════════════════════ */
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .reveal {
+            opacity: 0;
+            transform: translateY(40px);
+            transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .reveal.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* ═══════════════════════════════════════════
+           RESPONSIVE
+           ═══════════════════════════════════════════ */
+        @media (max-width: 768px) {
+            .nav-links { display: none; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .features-grid { grid-template-columns: 1fr; }
+            .showcase-grid { grid-template-columns: 1fr; }
+            .provider-logos { gap: 1rem; }
+            .provider-item { min-width: 110px; padding: 1rem; }
+            .cta-box { padding: 2.5rem 1.5rem; }
+            .footer-content { flex-direction: column; gap: 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="ambient-bg"></div>
+
+    <!-- ─── NAVIGATION ─── -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="#" class="nav-logo">
+                <div class="nav-logo-icon">⚡</div>
+                <div class="nav-logo-text">ComfyUI-<span>FFMPEGA</span></div>
+            </a>
+            <ul class="nav-links">
+                <li><a href="#features">Features</a></li>
+                <li><a href="#demo">Demo</a></li>
+                <li><a href="#skills">200+ Skills</a></li>
+                <li><a href="#providers">LLM Support</a></li>
+                <li><a href="https://youtu.be/UV2jBzSyb-k" target="_blank">🎬 Watch Overview</a></li>
+                <li><a href="https://github.com/AEmotionStudio/ComfyUI-FFMPEGA" target="_blank" class="nav-cta">⭐ Star on GitHub</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- ─── HERO ─── -->
+    <section class="hero">
+        <div class="hero-content">
+            <div class="hero-badge">
+                <span class="dot"></span>
+                v2.7.1 — Now with SAM3 Auto-Mask & AI Object Removal
+            </div>
+
+            <h1>
+                Edit videos with<br>
+                <span class="gradient-text">plain English.</span>
+            </h1>
+
+            <p class="hero-sub">
+                Drop a video into ComfyUI, describe what you want — the AI builds the FFMPEG pipeline. 200+ effects, multi-LLM support, and zero command-line knowledge required.
+            </p>
+
+            <div class="hero-actions">
+                <a href="https://github.com/AEmotionStudio/ComfyUI-FFMPEGA" class="btn-primary" target="_blank">
+                    🚀 Install Now — Free & Open Source
+                </a>
+                <a href="https://youtu.be/UV2jBzSyb-k" class="btn-secondary" target="_blank">
+                    ▶ Watch Demo
+                </a>
+            </div>
+
+            <!-- Prompt Demo Terminal -->
+            <div class="prompt-demo">
+                <div class="prompt-terminal">
+                    <div class="prompt-terminal-header">
+                        <span class="terminal-dot red"></span>
+                        <span class="terminal-dot yellow"></span>
+                        <span class="terminal-dot green"></span>
+                        <span class="terminal-title">FFMPEGA Agent</span>
+                    </div>
+                    <div class="prompt-body">
+                        <div class="prompt-line">
+                            <span class="prompt-prefix">prompt ›</span>
+                            <span class="prompt-text" id="typewriter"></span>
+                        </div>
+                        <div class="prompt-output" id="terminal-output" style="display: none;">
+                            <div class="success">✓ Pipeline resolved</div>
+                            <div style="margin-top: 0.5rem;" id="skill-tags"></div>
+                            <div style="margin-top: 0.5rem; color: #22c55e;" id="render-status"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="hero-image">
+                <img src="hero.png" alt="FFMPEGA in action" loading="eager">
+            </div>
+        </div>
+    </section>
+
+    <!-- ─── STATS ─── -->
+    <section class="stats reveal">
+        <div class="stats-grid">
+            <div class="stat-item">
+                <div class="stat-number teal" data-target="200">0</div>
+                <div class="stat-label">Video Skills</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number orange" data-target="656">0</div>
+                <div class="stat-label">Passing Tests</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number purple" data-target="7">0</div>
+                <div class="stat-label">LLM Providers</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number blue" data-target="2">0</div>
+                <div class="stat-label">Dependencies</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ─── FEATURES ─── -->
+    <section class="features" id="features">
+        <div class="section-header reveal">
+            <span class="section-label">Features</span>
+            <h2 class="section-title">Everything you need to edit video — powered by AI.</h2>
+            <p class="section-desc">No FFMPEG knowledge needed. Describe what you want, and the agent handles the rest.</p>
+        </div>
+
+        <div class="features-grid">
+            <div class="feature-card reveal">
+                <div class="feature-icon teal">🗣️</div>
+                <h3>Natural Language Editing</h3>
+                <p>Type "make it cinematic with a vignette" or "speed up 2x, keep audio pitch" — the AI maps your words to precise FFMPEG filters.</p>
+            </div>
+
+            <div class="feature-card reveal">
+                <div class="feature-icon orange">🎭</div>
+                <h3>SAM3 Auto-Mask</h3>
+                <p>Describe what to remove — "remove the person" — and Segment Anything Model 3 generates per-frame masks with LaMa AI inpainting.</p>
+            </div>
+
+            <div class="feature-card reveal">
+                <div class="feature-icon purple">🤖</div>
+                <h3>Multi-LLM Support</h3>
+                <p>Works with Ollama (free local), OpenAI, Anthropic, Google Gemini, Gemini CLI, Claude CLI, Cursor Agent, and Qwen CLI.</p>
+            </div>
+
+            <div class="feature-card reveal">
+                <div class="feature-icon blue">⚡</div>
+                <h3>Programmatic Tool Calling</h3>
+                <p>LLMs write a single Python script that orchestrates multiple tool calls in one pass — reducing 6 round-trips to 1.</p>
+            </div>
+
+            <div class="feature-card reveal">
+                <div class="feature-icon green">🎙️</div>
+                <h3>Whisper Auto-Transcribe</h3>
+                <p>Transcribe audio with OpenAI Whisper and burn subtitles directly into video. Word-by-word karaoke mode included.</p>
+            </div>
+
+            <div class="feature-card reveal">
+                <div class="feature-icon pink">👁️</div>
+                <h3>AI Vision System</h3>
+                <p>The agent extracts frames and "sees" your video — analyzing colors, composition, and motion to make intelligent editing decisions.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ─── BEFORE/AFTER SHOWCASE ─── -->
+    <section class="showcase" id="demo">
+        <div class="showcase-grid reveal">
+            <div class="showcase-image">
+                <img src="before_after.png" alt="Before and After comparison">
+            </div>
+            <div class="showcase-content">
+                <span class="section-label">One Prompt. Unlimited Possibility.</span>
+                <h2>From raw footage to <span style="color: var(--accent-teal);">cinematic masterpiece.</span></h2>
+                <p>Chain multiple effects in a single prompt. The AI understands context, resolves filter ordering, and handles the technical complexity for you.</p>
+                <div class="showcase-prompts">
+                    <div class="prompt-pill">
+                        <span class="arrow">›</span>
+                        "Add cinematic teal & orange, vignette, fade in from black"
+                    </div>
+                    <div class="prompt-pill">
+                        <span class="arrow">›</span>
+                        "VHS look with grain, scanlines, and color shift"
+                    </div>
+                    <div class="prompt-pill">
+                        <span class="arrow">›</span>
+                        "Remove the person, fill background with AI"
+                    </div>
+                    <div class="prompt-pill">
+                        <span class="arrow">›</span>
+                        "Concatenate clips with crossfade, add bouncing logo"
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ─── AI CONCEPT ─── -->
+    <section class="showcase">
+        <div class="showcase-grid reveal" style="direction: rtl;">
+            <div class="showcase-image" style="direction: ltr;">
+                <img src="ai_concept.png" alt="AI translating language to video edits">
+            </div>
+            <div class="showcase-content" style="direction: ltr;">
+                <span class="section-label">How It Works</span>
+                <h2>Your words become <span style="color: var(--accent-orange);">FFMPEG commands.</span></h2>
+                <p>The AI agent analyzes your video, interprets your natural language instruction, selects the right skills from 200+ options, resolves parameter values, and composes a complete FFMPEG pipeline — with automatic error correction and output verification.</p>
+                <div class="showcase-prompts">
+                    <div class="prompt-pill">
+                        <span class="arrow">1.</span>
+                        You describe the edit in plain English
+                    </div>
+                    <div class="prompt-pill">
+                        <span class="arrow">2.</span>
+                        AI selects skills, resolves parameters
+                    </div>
+                    <div class="prompt-pill">
+                        <span class="arrow">3.</span>
+                        Pipeline composed, dry-run validated
+                    </div>
+                    <div class="prompt-pill">
+                        <span class="arrow">4.</span>
+                        Output verified — auto-corrects if needed
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ─── LLM PROVIDERS ─── -->
+    <section class="providers" id="providers">
+        <div class="section-header reveal">
+            <span class="section-label">LLM Providers</span>
+            <h2 class="section-title">Bring your own brain.</h2>
+            <p class="section-desc">Use any LLM — local and free, cloud APIs, or CLI tools. All auto-detected.</p>
+        </div>
+
+        <div class="provider-logos reveal">
+            <div class="provider-item">
+                <div class="provider-icon">🦙</div>
+                <div class="provider-name">Ollama</div>
+                <div class="provider-sub">Free · Local</div>
+            </div>
+            <div class="provider-item">
+                <div class="provider-icon">✨</div>
+                <div class="provider-name">Gemini</div>
+                <div class="provider-sub">API + CLI</div>
+            </div>
+            <div class="provider-item">
+                <div class="provider-icon">🧠</div>
+                <div class="provider-name">OpenAI</div>
+                <div class="provider-sub">GPT-4 / GPT-5</div>
+            </div>
+            <div class="provider-item">
+                <div class="provider-icon">🎭</div>
+                <div class="provider-name">Claude</div>
+                <div class="provider-sub">API + CLI</div>
+            </div>
+            <div class="provider-item">
+                <div class="provider-icon">🔮</div>
+                <div class="provider-name">Cursor</div>
+                <div class="provider-sub">Agent CLI</div>
+            </div>
+            <div class="provider-item">
+                <div class="provider-icon">🌐</div>
+                <div class="provider-name">Qwen</div>
+                <div class="provider-sub">Free CLI</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ─── SKILLS MARQUEE ─── -->
+    <section class="skills-section" id="skills">
+        <div class="section-header reveal">
+            <span class="section-label">200+ Skills</span>
+            <h2 class="section-title">Every effect you can imagine.</h2>
+            <p class="section-desc">Visual effects, audio processing, transitions, text, encoding — organized into intuitive categories the AI selects from automatically.</p>
+        </div>
+
+        <div class="skill-scroll" id="skill-scroll-1">
+            <!-- Filled by JS -->
+        </div>
+        <div class="skill-scroll" id="skill-scroll-2" style="margin-top: 1rem; animation-direction: reverse;">
+            <!-- Filled by JS -->
+        </div>
+    </section>
+
+    <!-- ─── CTA ─── -->
+    <section class="cta">
+        <div class="cta-box reveal">
+            <h2>Start editing with <span style="color: var(--accent-teal);">your words.</span></h2>
+            <p>Free, open source, zero API keys required with Ollama. Install in 2 minutes.</p>
+            <div class="cta-actions">
+                <a href="https://github.com/AEmotionStudio/ComfyUI-FFMPEGA" class="btn-primary" target="_blank">
+                    🚀 Get ComfyUI-FFMPEGA
+                </a>
+                <a href="https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/wiki" class="btn-secondary" target="_blank">
+                    📖 Read the Docs
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- ─── FOOTER ─── -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-text">
+                © 2026 Æmotion Studio · ComfyUI-FFMPEGA v2.7.1 · GPLv3 License
+            </div>
+            <div class="footer-links">
+                <a href="https://github.com/AEmotionStudio/ComfyUI-FFMPEGA" target="_blank">GitHub</a>
+                <a href="https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/blob/main/CHANGELOG.md" target="_blank">Changelog</a>
+                <a href="https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/issues" target="_blank">Issues</a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // ═══════════════════════════════════════════
+        // TYPEWRITER EFFECT
+        // ═══════════════════════════════════════════
+        const prompts = [
+            {
+                text: '"Make it cinematic with a vignette and fade in"',
+                skills: ['cinematic', 'vignette', 'fade'],
+            },
+            {
+                text: '"Remove the person, fill with AI inpainting"',
+                skills: ['remove', 'lama_inpaint'],
+            },
+            {
+                text: '"Speed up 2x, VHS look, add grain overlay"',
+                skills: ['speed', 'vhs', 'grain_overlay'],
+            },
+            {
+                text: '"Concatenate clips with crossfade transitions"',
+                skills: ['concat', 'xfade'],
+            },
+            {
+                text: '"Transcribe and burn karaoke subtitles"',
+                skills: ['auto_transcribe', 'karaoke_subtitles'],
+            },
+            {
+                text: '"Neon glow edges, chromatic aberration, slow-mo"',
+                skills: ['edge_detect', 'chromatic_aberration', 'speed'],
+            },
+        ];
+
+        let promptIdx = 0;
+        const typewriterEl = document.getElementById('typewriter');
+        const outputEl = document.getElementById('terminal-output');
+        const skillTagsEl = document.getElementById('skill-tags');
+        const renderStatusEl = document.getElementById('render-status');
+
+        function typePrompt(prompt) {
+            const { text, skills } = prompt;
+            typewriterEl.innerHTML = '<span class="cursor-blink"></span>';
+            outputEl.style.display = 'none';
+            let i = 0;
+
+            function typeChar() {
+                if (i < text.length) {
+                    typewriterEl.innerHTML = text.substring(0, i + 1) + '<span class="cursor-blink"></span>';
+                    i++;
+                    setTimeout(typeChar, 30 + Math.random() * 40);
+                } else {
+                    setTimeout(showOutput, 500);
+                }
+            }
+
+            function showOutput() {
+                outputEl.style.display = 'block';
+                skillTagsEl.innerHTML = skills.map(s => `<span class="skill-tag">${s}</span>`).join('');
+                renderStatusEl.textContent = '✓ Rendered → output/FFMPEGA_' + String(Math.floor(Math.random() * 900) + 100).padStart(5, '0') + '.mp4';
+
+                setTimeout(() => {
+                    promptIdx = (promptIdx + 1) % prompts.length;
+                    typePrompt(prompts[promptIdx]);
+                }, 3000);
+            }
+
+            typeChar();
+        }
+
+        // Start after a short delay
+        setTimeout(() => typePrompt(prompts[0]), 1000);
+
+        // ═══════════════════════════════════════════
+        // SKILLS MARQUEE
+        // ═══════════════════════════════════════════
+        const skillsRow1 = [
+            '🎨 brightness', '🎨 contrast', '🎨 saturation', '🎨 vignette', '🎨 color_grade',
+            '🎨 cinematic', '🎨 vhs', '🎨 noir', '🎨 cyberpunk', '🎨 chromakey',
+            '⏱️ speed', '⏱️ trim', '⏱️ reverse', '⏱️ loop', '⏱️ freeze_frame',
+            '📐 resize', '📐 crop', '📐 rotate', '📐 flip', '📐 aspect',
+            '🔊 volume', '🔊 normalize', '🔊 echo', '🔊 pitch', '🔊 bass',
+        ];
+
+        const skillsRow2 = [
+            '🎬 concat', '🎬 xfade', '🎬 split_screen', '🎬 grid', '🎬 slideshow',
+            '✍️ text_overlay', '✍️ watermark', '✍️ scrolling_text', '✍️ lower_third', '✍️ countdown',
+            '💫 datamosh', '💫 pixelate', '💫 edge_detect', '💫 radial_blur', '💫 grain_overlay',
+            '🎭 remove', '🎭 greenscreen', '🎭 lama_inpaint', '🎙️ auto_transcribe', '🎙️ karaoke',
+            '🎵 waveform', '💾 quality', '💾 thumbnail', '🌈 lut_apply', '🌈 curves',
+        ];
+
+        function populateSkills(containerId, skills) {
+            const el = document.getElementById(containerId);
+            // Duplicate for infinite scroll
+            const doubled = [...skills, ...skills];
+            el.innerHTML = doubled.map(s => {
+                const [emoji, ...name] = s.split(' ');
+                return `<span class="skill-chip"><span class="emoji">${emoji}</span>${name.join(' ')}</span>`;
+            }).join('');
+        }
+
+        populateSkills('skill-scroll-1', skillsRow1);
+        populateSkills('skill-scroll-2', skillsRow2);
+
+        // ═══════════════════════════════════════════
+        // COUNTER ANIMATION
+        // ═══════════════════════════════════════════
+        function animateCounters() {
+            document.querySelectorAll('.stat-number[data-target]').forEach(el => {
+                const target = parseInt(el.dataset.target);
+                const suffix = target > 100 ? '+' : '+';
+                const duration = 2000;
+                const start = performance.now();
+
+                function update(now) {
+                    const elapsed = now - start;
+                    const progress = Math.min(elapsed / duration, 1);
+                    const eased = 1 - Math.pow(1 - progress, 4);
+                    el.textContent = Math.floor(target * eased) + suffix;
+                    if (progress < 1) requestAnimationFrame(update);
+                }
+
+                requestAnimationFrame(update);
+            });
+        }
+
+        // ═══════════════════════════════════════════
+        // SCROLL REVEAL
+        // ═══════════════════════════════════════════
+        let countersAnimated = false;
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+
+                    // Animate counters when stats section is visible
+                    if (entry.target.classList.contains('stats') && !countersAnimated) {
+                        countersAnimated = true;
+                        animateCounters();
+                    }
+                }
+            });
+        }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+
+        document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+        // ═══════════════════════════════════════════
+        // NAV SCROLL EFFECT
+        // ═══════════════════════════════════════════
+        window.addEventListener('scroll', () => {
+            const nav = document.querySelector('.nav');
+            if (window.scrollY > 50) {
+                nav.style.background = 'rgba(10, 14, 23, 0.95)';
+                nav.style.boxShadow = '0 4px 20px rgba(0,0,0,0.3)';
+            } else {
+                nav.style.background = 'rgba(10, 14, 23, 0.8)';
+                nav.style.boxShadow = 'none';
+            }
+        });
+    </script>
+</body>
+</html>
