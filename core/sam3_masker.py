@@ -1630,12 +1630,20 @@ mod_path = args.pop("_module_path")
 # Propagate download restriction
 allow_downloads = args.pop("_allow_downloads", True)
 
-# Set the flag via direct import (since we run in project root)
-try:
-    from core import model_manager
-    model_manager.set_downloads_allowed(allow_downloads)
-except ImportError:
-    pass
+# Load model_manager directly to avoid triggering core/__init__.py
+# which might fail if optional dependencies (like pydantic) are missing
+# when running outside the ComfyUI server environment.
+import os
+import sys
+
+mm_path = os.path.join(os.path.dirname(mod_path), "model_manager.py")
+spec_mm = importlib.util.spec_from_file_location("core.model_manager", mm_path)
+model_manager = importlib.util.module_from_spec(spec_mm)
+sys.modules["core.model_manager"] = model_manager
+sys.modules["core"] = type(sys)("core") # Dummy core module for relative imports
+spec_mm.loader.exec_module(model_manager)
+
+model_manager.set_downloads_allowed(allow_downloads)
 
 spec = importlib.util.spec_from_file_location("sam3_masker", mod_path)
 mod = importlib.util.module_from_spec(spec)
