@@ -609,6 +609,21 @@ class SkillComposer:
                     )
                     del step.params[name]
 
+            # 6. Security: Strict Allowlist Filtering
+            # Remove any parameters not defined in the schema to prevent handlers
+            # from using unvalidated input (e.g. arbitrary file paths in 'font').
+            allowed_params = set(skill._param_map.keys())
+            filtered_params = {}
+            for k, v in step.params.items():
+                if k in allowed_params:
+                    filtered_params[k] = v
+                else:
+                    import logging
+                    logging.getLogger("ffmpega").warning(
+                        f"Security: Dropping unknown parameter '{k}' for skill '{step.skill_name}'"
+                    )
+            step.params = filtered_params
+
             # Inject multi-input metadata for handlers that need it
             if pipeline.input_path:
                 step.params["_input_path"] = pipeline.input_path

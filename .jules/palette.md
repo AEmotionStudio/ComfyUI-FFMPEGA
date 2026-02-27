@@ -27,3 +27,11 @@
 ## 2026-03-24 - Stable Temporary Feedback
 **Learning:** When providing temporary UI feedback (like "Copied!"), rapid interactions can lead to race conditions where the restoration logic accidentally saves the feedback message as the "original" text.
 **Action:** Always store the true original state in a dedicated property (e.g., `_originalText`) on the element itself, and clear any pending timeouts before applying new feedback. This ensures 100% stability regardless of click speed.
+
+## 2026-03-25 - Invisible Focusable Overlays
+**Learning:** Overlay buttons that appear on hover (opacity: 0 -> 1) are invisible to keyboard users when focused unless explicit `focus` listeners toggle their visibility.
+**Action:** Always pair `mouseenter`/`mouseleave` listeners with `focus`/`blur` listeners for opacity toggling on interactive overlay elements to ensure keyboard accessibility.
+
+## 2026-03-30 - Inline Styles and Focus States
+**Learning:** Using inline styles for hover effects (via JS mouseenter/mouseleave) often leaves keyboard users behind because focus states are missed.
+**Action:** When implementing inline hover styles, always implement a corresponding focus style (or use a unified state manager) to ensure keyboard users receive visual feedback.
