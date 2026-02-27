@@ -1,0 +1,53 @@
+name: 🐛 Watchdog PR Review (Jules)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  watchdog-review:
+    runs-on: ubuntu-latest
+
+    # Prevent Jules from reviewing its own PRs (infinite loop guard)
+    if: >-
+      github.event.pull_request.user.login != 'jules[bot]' &&
+      github.event.pull_request.user.login != 'jules-google[bot]'
+
+    steps:
+      - name: Trigger Jules Watchdog Review
+        env:
+          JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
+        run: |
+          SESSION_RESPONSE=$(curl -s -w "\n%{http_code}" \
+            'https://jules.googleapis.com/v1alpha/sessions' \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -H "X-Goog-Api-Key: ${JULES_API_KEY}" \
+            -d @- <<'PAYLOAD'
+          {
+            "title": "Watchdog: PR #${{ github.event.pull_request.number }}",
+            "prompt": "You are Watchdog. Read .jules/bugbot_prompt.md for your full instructions.\n\nReview Pull Request #${{ github.event.pull_request.number }} on repo ${{ github.repository }}.\n- Head branch: ${{ github.head_ref }}\n- Base branch: ${{ github.base_ref }}\n\n1. Run: git fetch origin\n2. Run: git diff origin/${{ github.base_ref }}...origin/${{ github.head_ref }}\n3. Analyze ONLY the changed code for real bugs as described in your prompt.\n4. If bugs found: use 'gh pr review ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --request-changes --body \"<your findings>\"'\n5. If no bugs found: exit silently.",
+            "sourceContext": {
+              "source": "sources/github/AEmotionStudio/ComfyUI-FFMPEGA",
+              "githubRepoContext": {
+                "startingBranch": "${{ github.head_ref }}"
+              }
+            }
+          }
+          PAYLOAD
+          )
+
+          HTTP_CODE=$(echo "$SESSION_RESPONSE" | tail -1)
+          BODY=$(echo "$SESSION_RESPONSE" | sed '$d')
+
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+
+          if [ "$HTTP_CODE" -ge 400 ]; then
+            echo "::error::Jules API returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+          SESSION_ID=$(echo "$BODY" | jq -r '.id // empty')
+          echo "Jules session created: $SESSION_ID"
+          echo "View at: https://jules.google.com/sessions/$SESSION_ID"
