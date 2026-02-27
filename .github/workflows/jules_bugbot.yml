@@ -172,31 +172,47 @@ jobs:
           echo "final_status=timeout" >> "$GITHUB_OUTPUT"
           echo "::warning::Jules session timed out after $((MAX_POLLS * POLL_INTERVAL))s"
 
-      - name: Check for Review Comments
+      - name: Check for Jules Output
         id: check_review
         if: steps.create_session.outputs.session_id != ''
         uses: actions/github-script@v7
         with:
           script: |
+            const prNumber = ${{ steps.pr_context.outputs.pr_number }};
+
             // Check if Jules left any review comments on this PR
             const reviews = await github.rest.pulls.listReviews({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: ${{ steps.pr_context.outputs.pr_number }}
+              pull_number: prNumber
             });
 
-            const julesReview = reviews.data.find(r =>
-              r.user.login === 'google-labs-jules[bot]' ||
-              r.user.login === 'jules[bot]'
+            const julesLogins = ['google-labs-jules[bot]', 'jules[bot]', 'google-labs-jules'];
+            const julesReview = reviews.data.find(r => julesLogins.includes(r.user.login));
+            const hasRequestedChanges = reviews.data.some(r =>
+              julesLogins.includes(r.user.login) && r.state === 'CHANGES_REQUESTED'
+            );
+            const hasApproval = reviews.data.some(r =>
+              julesLogins.includes(r.user.login) && r.state === 'APPROVED'
             );
 
-            const hasRequestedChanges = reviews.data.some(r =>
-              (r.user.login === 'google-labs-jules[bot]' || r.user.login === 'jules[bot]') &&
-              r.state === 'CHANGES_REQUESTED'
+            // Check if Jules created a fix PR referencing this PR
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 20
+            });
+            const fixPr = prs.find(pr =>
+              pr.title.toLowerCase().includes('watchdog') &&
+              (pr.body || '').includes(`${prNumber}`)
             );
 
             core.setOutput('has_review', julesReview ? 'true' : 'false');
             core.setOutput('has_issues', hasRequestedChanges ? 'true' : 'false');
+            core.setOutput('has_approval', hasApproval ? 'true' : 'false');
+            core.setOutput('has_fix_pr', fixPr ? 'true' : 'false');
+            core.setOutput('fix_pr_url', fixPr ? fixPr.html_url : '');
 
       - name: Update Check — Completed
         if: always() && steps.create_check.outputs.check_id
@@ -208,6 +224,10 @@ jobs:
             const finalStatus = '${{ steps.poll_status.outputs.final_status }}';
             const hasIssues = '${{ steps.check_review.outputs.has_issues }}';
             const hasReview = '${{ steps.check_review.outputs.has_review }}';
+            const hasApproval = '${{ steps.check_review.outputs.has_approval }}';
+            const hasFixPr = '${{ steps.check_review.outputs.has_fix_pr }}';
+            const fixPrUrl = '${{ steps.check_review.outputs.fix_pr_url }}';
+            const sessionUrl = `https://jules.google.com/session/${sessionId}`;
 
             let conclusion, title, summary;
 
@@ -218,19 +238,32 @@ jobs:
             } else if (finalStatus === 'timeout') {
               conclusion = 'neutral';
               title = 'Watchdog timed out';
-              summary = `⏱️ Jules session timed out. [View session](https://jules.google.com/session/${sessionId})`;
+              summary = `⏱️ Jules session timed out. [View session](${sessionUrl})`;
             } else if (finalStatus === 'failed' || finalStatus === 'cancelled') {
               conclusion = 'neutral';
-              title = 'Watchdog session ' + finalStatus;
-              summary = `⚠️ Jules session ${finalStatus}. [View session](https://jules.google.com/session/${sessionId})`;
+              title = `Watchdog session ${finalStatus}`;
+              summary = `⚠️ Jules session ${finalStatus}. [View session](${sessionUrl})`;
+            } else if (hasFixPr === 'true') {
+              conclusion = 'neutral';
+              title = 'Watchdog created a fix PR';
+              summary = `🐛 Bugs found and a fix PR was created: ${fixPrUrl}\n\n[View Jules session](${sessionUrl})`;
             } else if (hasIssues === 'true') {
               conclusion = 'neutral';
               title = 'Watchdog found potential issues';
-              summary = `🐛 Bugs were found in this PR. Check the review comments below.\n\n[View Jules session](https://jules.google.com/session/${sessionId})`;
-            } else {
+              summary = `🐛 Bugs were found. Check the review comments.\n\n[View Jules session](${sessionUrl})`;
+            } else if (hasApproval === 'true') {
               conclusion = 'success';
               title = 'Watchdog review passed';
-              summary = `✅ No bugs detected in the PR diff.\n\n[View Jules session](https://jules.google.com/session/${sessionId})`;
+              summary = `✅ Watchdog reviewed and approved the code.\n\n[View Jules session](${sessionUrl})`;
+            } else if (hasReview === 'true') {
+              conclusion = 'success';
+              title = 'Watchdog review passed';
+              summary = `✅ Watchdog reviewed the code.\n\n[View Jules session](${sessionUrl})`;
+            } else {
+              // Jules completed but produced no visible output
+              conclusion = 'neutral';
+              title = 'Watchdog completed — no output';
+              summary = `⚠️ Watchdog finished but did not post a review or create a fix PR. Check the session for details.\n\n[View Jules session](${sessionUrl})`;
             }
 
             await github.rest.checks.update({
@@ -244,3 +277,4 @@ jobs:
                 summary: summary
               }
             });
+
