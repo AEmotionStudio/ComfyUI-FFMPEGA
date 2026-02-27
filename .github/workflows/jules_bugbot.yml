@@ -278,3 +278,42 @@ jobs:
               }
             });
 
+      - name: Post Summary Comment
+        if: always() && steps.create_session.outputs.session_id != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = ${{ steps.pr_context.outputs.pr_number }};
+            const sessionId = '${{ steps.create_session.outputs.session_id }}';
+            const finalStatus = '${{ steps.poll_status.outputs.final_status }}';
+            const hasFixPr = '${{ steps.check_review.outputs.has_fix_pr }}';
+            const fixPrUrl = '${{ steps.check_review.outputs.fix_pr_url }}';
+            const hasIssues = '${{ steps.check_review.outputs.has_issues }}';
+            const hasApproval = '${{ steps.check_review.outputs.has_approval }}';
+            const hasReview = '${{ steps.check_review.outputs.has_review }}';
+            const sessionUrl = `https://jules.google.com/session/${sessionId}`;
+
+            let body;
+
+            if (!sessionId) {
+              return; // Nothing to report
+            } else if (finalStatus === 'timeout') {
+              body = `### ⏱️ Watchdog timed out\n\nJules session did not complete within 30 minutes.\n\n[View session](${sessionUrl})`;
+            } else if (finalStatus === 'failed' || finalStatus === 'cancelled') {
+              body = `### ⚠️ Watchdog session ${finalStatus}\n\nJules session ${finalStatus} unexpectedly.\n\n[View session](${sessionUrl})`;
+            } else if (hasFixPr === 'true') {
+              body = `### 🐛 Watchdog found a bug and created a fix\n\n**Fix PR:** ${fixPrUrl}\n\nPlease review the fix PR for details on what was found and how it was resolved.\n\n[View Jules session](${sessionUrl})`;
+            } else if (hasIssues === 'true') {
+              body = `### 🐛 Watchdog found potential issues\n\nCheck the review comments above for details.\n\n[View Jules session](${sessionUrl})`;
+            } else if (hasApproval === 'true' || hasReview === 'true') {
+              body = `### ✅ Watchdog review passed\n\nNo bugs detected in the changed code.\n\n[View Jules session](${sessionUrl})`;
+            } else {
+              body = `### ⚠️ Watchdog completed — no output\n\nWatchdog finished analyzing but did not post a review or create a fix PR. This may mean no bugs were found, or that Jules encountered an issue.\n\n[View Jules session](${sessionUrl})`;
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: body
+            });
