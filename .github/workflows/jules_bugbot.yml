@@ -99,13 +99,14 @@ jobs:
             -d @- <<PAYLOAD
           {
             "title": "Watchdog: PR #${{ steps.pr_context.outputs.pr_number }}",
-            "prompt": "You are Watchdog — a precision PR bug reviewer. Read .jules/bugbot_prompt.md for your full instructions and review format.\n\nReview Pull Request #${{ steps.pr_context.outputs.pr_number }} on repo ${{ github.repository }}.\n- Head branch: ${{ steps.pr_context.outputs.head_ref }}\n- Base branch: ${{ steps.pr_context.outputs.base_ref }}\n- PR Title: ${{ steps.pr_context.outputs.pr_title }}\n\nFollow ALL instructions in .jules/bugbot_prompt.md exactly. You MUST post a review comment on the PR whether you find bugs or not.",
+            "prompt": "You are Watchdog — a precision PR bug reviewer and fixer. Read .jules/bugbot_prompt.md for your full instructions.\n\nReview Pull Request #${{ steps.pr_context.outputs.pr_number }} on repo ${{ github.repository }}.\n- Head branch: ${{ steps.pr_context.outputs.head_ref }}\n- Base branch: ${{ steps.pr_context.outputs.base_ref }}\n- PR Title: ${{ steps.pr_context.outputs.pr_title }}\n\nFollow ALL instructions in .jules/bugbot_prompt.md exactly.",
             "sourceContext": {
               "source": "sources/github/AEmotionStudio/ComfyUI-FFMPEGA",
               "githubRepoContext": {
                 "startingBranch": "${{ steps.pr_context.outputs.head_ref }}"
               }
-            }
+            },
+            "automationMode": "AUTO_CREATE_PR"
           }
           PAYLOAD
           )
