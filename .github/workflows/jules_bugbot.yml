@@ -15,12 +15,16 @@ jobs:
   watchdog-review:
     runs-on: ubuntu-latest
 
-    # Run on PR events (not from Jules bots) OR on "bugbot go" comment on a PR
+    # Run on PR events (not from Jules/Watchdog) OR on "bugbot go" comment on a PR
     if: >-
       (github.event_name == 'pull_request' &&
        github.event.pull_request.user.login != 'jules[bot]' &&
        github.event.pull_request.user.login != 'jules-google[bot]' &&
-       github.event.pull_request.user.login != 'google-labs-jules[bot]')
+       github.event.pull_request.user.login != 'google-labs-jules[bot]' &&
+       !contains(github.event.pull_request.title, 'Watchdog') &&
+       !contains(github.event.pull_request.title, 'Sentinel') &&
+       !contains(github.event.pull_request.title, 'Palette') &&
+       !contains(github.event.pull_request.title, 'Bolt'))
       ||
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request &&
