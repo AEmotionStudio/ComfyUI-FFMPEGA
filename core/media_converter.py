@@ -48,8 +48,8 @@ class MediaConverter:
                 arr = first_frame.to_ndarray(format="rgb24")
                 h, w, c = arr.shape
 
-                # Allocate full float32 tensor
-                tensor = torch.empty((num_frames, h, w, c), dtype=torch.float32)
+                # Allocate full uint8 tensor
+                tensor = torch.empty((num_frames, h, w, c), dtype=torch.uint8)
 
                 # Fill first frame
                 tensor[0] = torch.from_numpy(arr)
@@ -74,16 +74,18 @@ class MediaConverter:
                 # Optimization: Vectorized normalization
                 # Perform a single division on the entire tensor at once instead of
                 # N individual divisions per frame. This is significantly faster.
-                tensor.div_(255.0)
+                # NOTE: We now do this at the very end after converting from uint8 to float.
 
                 # Handle frame count mismatch (common with VFR or corrupt metadata)
                 if count < num_frames:
-                    return tensor[:count]
+                    return tensor[:count].float().div_(255.0)
                 elif overflow:
                     overflow_tensor = torch.stack(overflow).float().div_(255.0)
-                    return torch.cat([tensor, overflow_tensor], dim=0)
+                    # Convert main tensor to float and normalize before concat
+                    tensor_float = tensor.float().div_(255.0)
+                    return torch.cat([tensor_float, overflow_tensor], dim=0)
                 else:
-                    return tensor
+                    return tensor.float().div_(255.0)
 
             # Fallback for unknown frame count: accumulate in list
             frames = []
