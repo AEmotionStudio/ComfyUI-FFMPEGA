@@ -1693,29 +1693,60 @@ print("RESULT:" + result, flush=True)
         log.info("SAM3 subprocess: starting (device=%s, frames=%s)",
                  device, video_path)
 
-        result = subprocess.run(
-            [sys.executable, "-c", child_script],
-            input=json.dumps(args_dict),
-            capture_output=True,
+        # Force unbuffered output so stderr lines arrive in real-time
+        env["PYTHONUNBUFFERED"] = "1"
+
+        proc = subprocess.Popen(
+            [sys.executable, "-u", "-c", child_script],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=900,  # 15 min safety timeout
             cwd=_project_root,
             env=env,
         )
 
-        # Forward child stderr to our log (contains SAM3 progress, etc.)
-        if result.stderr:
-            for line in result.stderr.strip().splitlines():
-                log.info("[SAM3 subprocess] %s", line)
+        # Send args via stdin then close it
+        proc.stdin.write(json.dumps(args_dict))
+        proc.stdin.close()
 
-        if result.returncode != 0:
+        # Stream stderr in real-time (SAM3 progress, VRAM diag, etc.)
+        import threading
+        _stderr_lines = []
+
+        def _stream_stderr():
+            for line in proc.stderr:
+                line = line.rstrip()
+                if not line:
+                    continue
+                _stderr_lines.append(line)
+                # Filter out noisy pkg_resources deprecation warnings
+                if "pkg_resources" in line or "slated for removal" in line:
+                    continue
+                log.info("[SAM3] %s", line)
+            proc.stderr.close()
+
+        stderr_thread = threading.Thread(target=_stream_stderr, daemon=True)
+        stderr_thread.start()
+
+        # Wait for process to finish (with timeout)
+        try:
+            stdout_data, _ = proc.communicate(timeout=900)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            raise RuntimeError("SAM3 subprocess timed out after 15 minutes")
+
+        stderr_thread.join(timeout=5)
+
+        if proc.returncode != 0:
             raise RuntimeError(
-                f"SAM3 subprocess exited with code {result.returncode}"
+                f"SAM3 subprocess exited with code {proc.returncode}"
             )
 
         # Parse result path from stdout
         mask_path = None
-        for line in result.stdout.strip().splitlines():
+        for line in (stdout_data or "").strip().splitlines():
             if line.startswith("RESULT:"):
                 mask_path = line[len("RESULT:"):]
                 break
