@@ -4,6 +4,11 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+permissions:
+  checks: write
+  pull-requests: write
+  contents: read
+
 jobs:
   watchdog-review:
     runs-on: ubuntu-latest
@@ -11,10 +16,30 @@ jobs:
     # Prevent Jules from reviewing its own PRs (infinite loop guard)
     if: >-
       github.event.pull_request.user.login != 'jules[bot]' &&
-      github.event.pull_request.user.login != 'jules-google[bot]'
+      github.event.pull_request.user.login != 'jules-google[bot]' &&
+      github.event.pull_request.user.login != 'google-labs-jules[bot]'
 
     steps:
-      - name: Trigger Jules Watchdog Review
+      - name: Create Pending Check
+        id: create_check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const check = await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Watchdog / Jules Bugbot',
+              head_sha: context.payload.pull_request.head.sha,
+              status: 'in_progress',
+              output: {
+                title: 'Watchdog is reviewing your code...',
+                summary: '🐛 Analyzing PR diff for bugs. This may take a few minutes.'
+              }
+            });
+            core.setOutput('check_id', check.data.id);
+
+      - name: Create Jules Session
+        id: create_session
         env:
           JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
         run: |
@@ -23,10 +48,10 @@ jobs:
             -X POST \
             -H "Content-Type: application/json" \
             -H "X-Goog-Api-Key: ${JULES_API_KEY}" \
-            -d @- <<'PAYLOAD'
+            -d @- <<PAYLOAD
           {
             "title": "Watchdog: PR #${{ github.event.pull_request.number }}",
-            "prompt": "You are Watchdog. Read .jules/bugbot_prompt.md for your full instructions.\n\nReview Pull Request #${{ github.event.pull_request.number }} on repo ${{ github.repository }}.\n- Head branch: ${{ github.head_ref }}\n- Base branch: ${{ github.base_ref }}\n\n1. Run: git fetch origin\n2. Run: git diff origin/${{ github.base_ref }}...origin/${{ github.head_ref }}\n3. Analyze ONLY the changed code for real bugs as described in your prompt.\n4. If bugs found: use 'gh pr review ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --request-changes --body \"<your findings>\"'\n5. If no bugs found: exit silently.",
+            "prompt": "You are Watchdog — a precision PR bug reviewer. Read .jules/bugbot_prompt.md for your full instructions and review format.\n\nReview Pull Request #${{ github.event.pull_request.number }} on repo ${{ github.repository }}.\n- Head branch: ${{ github.head_ref }}\n- Base branch: ${{ github.base_ref }}\n- PR Title: ${{ github.event.pull_request.title }}\n\nFollow ALL instructions in .jules/bugbot_prompt.md exactly. You MUST post a review comment on the PR whether you find bugs or not.",
             "sourceContext": {
               "source": "sources/github/AEmotionStudio/ComfyUI-FFMPEGA",
               "githubRepoContext": {
@@ -45,9 +70,128 @@ jobs:
 
           if [ "$HTTP_CODE" -ge 400 ]; then
             echo "::error::Jules API returned HTTP $HTTP_CODE"
+            echo "session_id=" >> "$GITHUB_OUTPUT"
             exit 1
           fi
 
           SESSION_ID=$(echo "$BODY" | jq -r '.id // empty')
+          echo "session_id=$SESSION_ID" >> "$GITHUB_OUTPUT"
           echo "Jules session created: $SESSION_ID"
-          echo "View at: https://jules.google.com/sessions/$SESSION_ID"
+
+      - name: Poll Jules Session Status
+        id: poll_status
+        if: steps.create_session.outputs.session_id != ''
+        env:
+          JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
+        run: |
+          SESSION_ID="${{ steps.create_session.outputs.session_id }}"
+          MAX_POLLS=60       # 60 polls × 30s = 30 min max
+          POLL_INTERVAL=30   # seconds
+
+          echo "Polling session $SESSION_ID (max ${MAX_POLLS} polls, ${POLL_INTERVAL}s interval)"
+
+          for i in $(seq 1 $MAX_POLLS); do
+            sleep $POLL_INTERVAL
+
+            STATUS_RESPONSE=$(curl -s \
+              "https://jules.googleapis.com/v1alpha/sessions/${SESSION_ID}" \
+              -H "X-Goog-Api-Key: ${JULES_API_KEY}")
+
+            SESSION_STATUS=$(echo "$STATUS_RESPONSE" | jq -r '.status // .state // empty')
+            echo "Poll $i/$MAX_POLLS: status=$SESSION_STATUS"
+
+            # Check for terminal states
+            case "$SESSION_STATUS" in
+              COMPLETED|completed|Completed)
+                echo "final_status=completed" >> "$GITHUB_OUTPUT"
+                echo "Session completed successfully"
+                exit 0
+                ;;
+              FAILED|failed|Failed|ERROR|error|Error)
+                echo "final_status=failed" >> "$GITHUB_OUTPUT"
+                echo "Session failed"
+                exit 0
+                ;;
+              CANCELLED|cancelled|Cancelled)
+                echo "final_status=cancelled" >> "$GITHUB_OUTPUT"
+                echo "Session was cancelled"
+                exit 0
+                ;;
+            esac
+          done
+
+          echo "final_status=timeout" >> "$GITHUB_OUTPUT"
+          echo "::warning::Jules session timed out after $((MAX_POLLS * POLL_INTERVAL))s"
+
+      - name: Check for Review Comments
+        id: check_review
+        if: steps.create_session.outputs.session_id != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Check if Jules left any review comments on this PR
+            const reviews = await github.rest.pulls.listReviews({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number
+            });
+
+            const julesReview = reviews.data.find(r =>
+              r.user.login === 'google-labs-jules[bot]' ||
+              r.user.login === 'jules[bot]'
+            );
+
+            const hasRequestedChanges = reviews.data.some(r =>
+              (r.user.login === 'google-labs-jules[bot]' || r.user.login === 'jules[bot]') &&
+              r.state === 'CHANGES_REQUESTED'
+            );
+
+            core.setOutput('has_review', julesReview ? 'true' : 'false');
+            core.setOutput('has_issues', hasRequestedChanges ? 'true' : 'false');
+
+      - name: Update Check — Completed
+        if: always() && steps.create_check.outputs.check_id
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const checkId = ${{ steps.create_check.outputs.check_id }};
+            const sessionId = '${{ steps.create_session.outputs.session_id }}';
+            const finalStatus = '${{ steps.poll_status.outputs.final_status }}';
+            const hasIssues = '${{ steps.check_review.outputs.has_issues }}';
+            const hasReview = '${{ steps.check_review.outputs.has_review }}';
+
+            let conclusion, title, summary;
+
+            if (!sessionId) {
+              conclusion = 'failure';
+              title = 'Watchdog failed to start';
+              summary = '❌ Could not create Jules session. Check the JULES_API_KEY secret.';
+            } else if (finalStatus === 'timeout') {
+              conclusion = 'neutral';
+              title = 'Watchdog timed out';
+              summary = `⏱️ Jules session timed out. [View session](https://jules.google.com/session/${sessionId})`;
+            } else if (finalStatus === 'failed' || finalStatus === 'cancelled') {
+              conclusion = 'neutral';
+              title = 'Watchdog session ' + finalStatus;
+              summary = `⚠️ Jules session ${finalStatus}. [View session](https://jules.google.com/session/${sessionId})`;
+            } else if (hasIssues === 'true') {
+              conclusion = 'neutral';
+              title = 'Watchdog found potential issues';
+              summary = `🐛 Bugs were found in this PR. Check the review comments below.\n\n[View Jules session](https://jules.google.com/session/${sessionId})`;
+            } else {
+              conclusion = 'success';
+              title = 'Watchdog review passed';
+              summary = `✅ No bugs detected in the PR diff.\n\n[View Jules session](https://jules.google.com/session/${sessionId})`;
+            }
+
+            await github.rest.checks.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              check_run_id: checkId,
+              status: 'completed',
+              conclusion: conclusion,
+              output: {
+                title: title,
+                summary: summary
+              }
+            });
