@@ -3,6 +3,8 @@ name: 🐛 Watchdog PR Review (Jules)
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
 
 permissions:
   checks: write
@@ -13,13 +15,59 @@ jobs:
   watchdog-review:
     runs-on: ubuntu-latest
 
-    # Prevent Jules from reviewing its own PRs (infinite loop guard)
+    # Run on PR events (not from Jules bots) OR on "bugbot go" comment on a PR
     if: >-
-      github.event.pull_request.user.login != 'jules[bot]' &&
-      github.event.pull_request.user.login != 'jules-google[bot]' &&
-      github.event.pull_request.user.login != 'google-labs-jules[bot]'
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.user.login != 'jules[bot]' &&
+       github.event.pull_request.user.login != 'jules-google[bot]' &&
+       github.event.pull_request.user.login != 'google-labs-jules[bot]')
+      ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, 'bugbot go'))
 
     steps:
+      - name: Resolve PR Context
+        id: pr_context
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let prNumber, headRef, baseRef, headSha, prTitle;
+
+            if (context.eventName === 'pull_request') {
+              prNumber = context.payload.pull_request.number;
+              headRef = context.payload.pull_request.head.ref;
+              baseRef = context.payload.pull_request.base.ref;
+              headSha = context.payload.pull_request.head.sha;
+              prTitle = context.payload.pull_request.title;
+            } else {
+              // issue_comment — fetch PR details
+              prNumber = context.payload.issue.number;
+              const { data: pr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber
+              });
+              headRef = pr.head.ref;
+              baseRef = pr.base.ref;
+              headSha = pr.head.sha;
+              prTitle = pr.title;
+
+              // React with 👀 to acknowledge the command
+              await github.rest.reactions.createForIssueComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: context.payload.comment.id,
+                content: 'eyes'
+              });
+            }
+
+            core.setOutput('pr_number', prNumber);
+            core.setOutput('head_ref', headRef);
+            core.setOutput('base_ref', baseRef);
+            core.setOutput('head_sha', headSha);
+            core.setOutput('pr_title', prTitle);
+
       - name: Create Pending Check
         id: create_check
         uses: actions/github-script@v7
@@ -29,7 +77,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               name: 'Watchdog / Jules Bugbot',
-              head_sha: context.payload.pull_request.head.sha,
+              head_sha: '${{ steps.pr_context.outputs.head_sha }}',
               status: 'in_progress',
               output: {
                 title: 'Watchdog is reviewing your code...',
@@ -50,12 +98,12 @@ jobs:
             -H "X-Goog-Api-Key: ${JULES_API_KEY}" \
             -d @- <<PAYLOAD
           {
-            "title": "Watchdog: PR #${{ github.event.pull_request.number }}",
-            "prompt": "You are Watchdog — a precision PR bug reviewer. Read .jules/bugbot_prompt.md for your full instructions and review format.\n\nReview Pull Request #${{ github.event.pull_request.number }} on repo ${{ github.repository }}.\n- Head branch: ${{ github.head_ref }}\n- Base branch: ${{ github.base_ref }}\n- PR Title: ${{ github.event.pull_request.title }}\n\nFollow ALL instructions in .jules/bugbot_prompt.md exactly. You MUST post a review comment on the PR whether you find bugs or not.",
+            "title": "Watchdog: PR #${{ steps.pr_context.outputs.pr_number }}",
+            "prompt": "You are Watchdog — a precision PR bug reviewer. Read .jules/bugbot_prompt.md for your full instructions and review format.\n\nReview Pull Request #${{ steps.pr_context.outputs.pr_number }} on repo ${{ github.repository }}.\n- Head branch: ${{ steps.pr_context.outputs.head_ref }}\n- Base branch: ${{ steps.pr_context.outputs.base_ref }}\n- PR Title: ${{ steps.pr_context.outputs.pr_title }}\n\nFollow ALL instructions in .jules/bugbot_prompt.md exactly. You MUST post a review comment on the PR whether you find bugs or not.",
             "sourceContext": {
               "source": "sources/github/AEmotionStudio/ComfyUI-FFMPEGA",
               "githubRepoContext": {
-                "startingBranch": "${{ github.head_ref }}"
+                "startingBranch": "${{ steps.pr_context.outputs.head_ref }}"
               }
             }
           }
@@ -133,7 +181,7 @@ jobs:
             const reviews = await github.rest.pulls.listReviews({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: context.payload.pull_request.number
+              pull_number: ${{ steps.pr_context.outputs.pr_number }}
             });
 
             const julesReview = reviews.data.find(r =>
