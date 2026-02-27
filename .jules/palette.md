@@ -35,3 +35,7 @@
 ## 2026-03-30 - Inline Styles and Focus States
 **Learning:** Using inline styles for hover effects (via JS mouseenter/mouseleave) often leaves keyboard users behind because focus states are missed.
 **Action:** When implementing inline hover styles, always implement a corresponding focus style (or use a unified state manager) to ensure keyboard users receive visual feedback.
+
+## 2026-04-12 - Drag-and-Drop Discoverability
+**Learning:** In canvas-based UIs like ComfyUI, users often don't realize that standard HTML drag-and-drop works unless the drop target visually responds *during* the drag (e.g., dashed border, text change).
+**Action:** Add explicit `dragover` handlers to DOM widgets that update their style (border: dashed, background: highlight) and text ("Drop to Upload") to confirm the drop target is active.
