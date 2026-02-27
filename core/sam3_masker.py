@@ -712,8 +712,6 @@ def mask_video(
     labels: Optional[list] = None,
     point_src_width: int = 0,
     point_src_height: int = 0,
-    last_frame_points: Optional[list] = None,
-    last_frame_labels: Optional[list] = None,
 ) -> str:
     """Generate a grayscale mask video for text-prompted objects.
 
@@ -738,9 +736,6 @@ def mask_video(
             If 0, uses the video frame width for normalization.
         point_src_height: Original image height the points were drawn on.
             If 0, uses the video frame height for normalization.
-        last_frame_points: Optional list of [x, y] pixel-space points on
-            the last frame. Provides an endpoint anchor for tracking.
-        last_frame_labels: Optional list of 1/0 labels for last-frame points.
 
     Returns:
         Path to the generated grayscale mask video (MP4).
@@ -1096,64 +1091,6 @@ def mask_video(
                     log.info("  obj_id=%d: %d positive + %d negative point prompts",
                              oid, n_pos, n_neg)
 
-                # Last-frame point anchors
-                _has_last_pts = bool(
-                    last_frame_points and last_frame_labels and w > 0 and h > 0
-                )
-                if _has_last_pts:
-                    last_idx = len(frame_files) - 1
-                    log.info("Adding last-frame points on frame %d", last_idx)
-
-                    lf_pos_pts = []
-                    lf_neg_pts = []
-                    for pt, lbl in zip(last_frame_points, last_frame_labels):
-                        if not isinstance(pt, (list, tuple)) or len(pt) < 2:
-                            continue
-                        try:
-                            nx = max(0.0, min(1.0, float(pt[0]) / norm_w))
-                            ny = max(0.0, min(1.0, float(pt[1]) / norm_h))
-                            lbl_int = int(lbl)
-                        except (TypeError, ValueError):
-                            continue
-                        if lbl_int == 1:
-                            lf_pos_pts.append((nx, ny))
-                        else:
-                            lf_neg_pts.append((nx, ny))
-
-                    log.info("  %d positive, %d negative last-frame clicks",
-                             len(lf_pos_pts), len(lf_neg_pts))
-
-                    lf_grouped: dict[int, dict] = {}
-                    lf_unmatched = list(lf_pos_pts)
-
-                    if lf_unmatched:
-                        lf_oid = max(grouped_pts.keys(), default=0)
-                        if lf_oid == 0:
-                            lf_oid = 1
-                        lf_grouped[lf_oid] = {
-                            "points": [[nx, ny] for nx, ny in lf_unmatched],
-                            "labels": [1] * len(lf_unmatched),
-                        }
-
-                    if lf_neg_pts and lf_grouped:
-                        neg_list = [[nx, ny] for nx, ny in lf_neg_pts]
-                        for oid in lf_grouped:
-                            lf_grouped[oid]["points"].extend(neg_list)
-                            lf_grouped[oid]["labels"].extend([0] * len(lf_neg_pts))
-
-                    for oid, data in lf_grouped.items():
-                        video_model.add_prompt(
-                            inference_state,
-                            frame_idx=last_idx,
-                            points=data["points"],
-                            point_labels=data["labels"],
-                            obj_id=oid,
-                            rel_coordinates=True,
-                        )
-                        n_pos = sum(1 for l in data["labels"] if l == 1)
-                        n_neg = sum(1 for l in data["labels"] if l == 0)
-                        log.info("  obj_id=%d: %d pos + %d neg on frame %d",
-                                 oid, n_pos, n_neg, last_idx)
 
             # 3. Propagate masks — drive the iterator ourselves so we control
             # progress reporting (no tqdm bar spam in ComfyUI's non-TTY console).
@@ -1642,8 +1579,6 @@ def mask_video_subprocess(
     labels: Optional[list] = None,
     point_src_width: int = 0,
     point_src_height: int = 0,
-    last_frame_points: Optional[list] = None,
-    last_frame_labels: Optional[list] = None,
 ) -> str:
     """Run mask_video() in a subprocess to avoid CUDA memory leaks.
 
@@ -1674,8 +1609,6 @@ def mask_video_subprocess(
         "labels": labels,
         "point_src_width": point_src_width,
         "point_src_height": point_src_height,
-        "last_frame_points": last_frame_points,
-        "last_frame_labels": last_frame_labels,
     }
 
     # Inline script for the child process:

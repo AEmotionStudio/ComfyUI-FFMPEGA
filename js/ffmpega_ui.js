@@ -1643,7 +1643,6 @@ app.registerExtension({
             // Existing point data
             let existing = {
                 points: [], labels: [], image_width: 0, image_height: 0,
-                last_frame_points: [], last_frame_labels: [],
             };
             const mpWidget = node.widgets?.find(w => w.name === "mask_points_data");
             if (mpWidget?.value) {
@@ -1674,32 +1673,6 @@ app.registerExtension({
             `;
             overlay.appendChild(header);
 
-            // ── Frame toggle bar ──
-            const toggleBar = document.createElement("div");
-            toggleBar.style.cssText = `
-                display:flex;gap:4px;margin-bottom:8px;
-            `;
-            const makeToggleBtn = (label, active) => {
-                const b = document.createElement("button");
-                b.textContent = label;
-                b.style.cssText = `
-                    padding:6px 20px;border:none;border-radius:6px 6px 0 0;
-                    font-size:13px;cursor:pointer;font-weight:600;
-                    transition:all 0.15s;
-                    background:${active ? "#336" : "#222"};
-                    color:${active ? "#8cf" : "#888"};
-                    border-bottom:${active ? "2px solid #8cf" : "2px solid transparent"};
-                `;
-                return b;
-            };
-            const firstBtn = makeToggleBtn("▶ First Frame", true);
-            const lastBtn = makeToggleBtn("◀ Last Frame", false);
-            toggleBar.appendChild(firstBtn);
-            toggleBar.appendChild(lastBtn);
-            // Only show toggle if we have a video source for last-frame extraction
-            if (videoSrc) {
-                overlay.appendChild(toggleBar);
-            }
 
             // Canvas container
             const canvasWrap = document.createElement("div");
@@ -1741,32 +1714,20 @@ app.registerExtension({
             overlay.appendChild(btnBar);
             document.body.appendChild(overlay);
 
-            // State — separate arrays for first and last frame
-            let frame0Pts = existing.points ? [...existing.points] : [];
-            let frame0Lbls = existing.labels ? [...existing.labels] : [];
-            let lastPts = existing.last_frame_points ? [...existing.last_frame_points] : [];
-            let lastLbls = existing.last_frame_labels ? [...existing.last_frame_labels] : [];
-            let activeFrame = "first"; // "first" or "last"
+            // State
+            let pts = existing.points ? [...existing.points] : [];
+            let lbls = existing.labels ? [...existing.labels] : [];
             let imgW = 0, imgH = 0;
             let scaleX = 1, scaleY = 1;
             const firstImg = new Image();
-            let lastImgDataUrl = null; // cached last-frame capture
-            const lastImg = new Image();
-
-            // Get active point arrays
-            const activePts = () => activeFrame === "first" ? frame0Pts : lastPts;
-            const activeLbls = () => activeFrame === "first" ? frame0Lbls : lastLbls;
 
             const redraw = () => {
                 const ctx = canvas.getContext("2d");
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
-                const drawImg = activeFrame === "first" ? firstImg : lastImg;
-                if (drawImg.complete && drawImg.naturalWidth > 0) {
-                    ctx.drawImage(drawImg, 0, 0, canvas.width, canvas.height);
+                if (firstImg.complete && firstImg.naturalWidth > 0) {
+                    ctx.drawImage(firstImg, 0, 0, canvas.width, canvas.height);
                 }
 
-                const pts = activePts();
-                const lbls = activeLbls();
                 for (let i = 0; i < pts.length; i++) {
                     const px = pts[i][0] / scaleX;
                     const py = pts[i][1] / scaleY;
@@ -1795,8 +1756,7 @@ app.registerExtension({
                     ctx.strokeText(isPos ? "+" : "×", px + 12, py - 8);
                     ctx.fillText(isPos ? "+" : "×", px + 12, py - 8);
                 }
-                const frameLabel = activeFrame === "first" ? "First Frame" : "Last Frame";
-                statusBar.textContent = `${frameLabel} | ${pts.length} point(s) | ${imgW}×${imgH}`;
+                statusBar.textContent = `${pts.length} point(s) | ${imgW}×${imgH}`;
             };
 
             const fitCanvas = (w, h) => {
@@ -1824,62 +1784,10 @@ app.registerExtension({
             firstImg.crossOrigin = "anonymous";
             firstImg.src = imgSrc;
 
-            // Extract last frame from video (if videoSrc provided)
-            if (videoSrc) {
-                const tmpVid = document.createElement("video");
-                tmpVid.crossOrigin = "anonymous";
-                tmpVid.muted = true;
-                tmpVid.preload = "auto";
-                tmpVid.src = videoSrc;
-                tmpVid.addEventListener("loadedmetadata", () => {
-                    // Seek near the end (slightly before to avoid empty frame)
-                    tmpVid.currentTime = Math.max(0, tmpVid.duration - 0.05);
-                });
-                tmpVid.addEventListener("seeked", () => {
-                    const c = document.createElement("canvas");
-                    c.width = tmpVid.videoWidth;
-                    c.height = tmpVid.videoHeight;
-                    c.getContext("2d").drawImage(tmpVid, 0, 0);
-                    lastImgDataUrl = c.toDataURL("image/jpeg", 0.95);
-                    lastImg.src = lastImgDataUrl;
-                    tmpVid.remove();
-                    lastBtn.style.color = "#8cf"; // indicate ready
-                }, { once: true });
-                tmpVid.addEventListener("error", () => {
-                    lastBtn.style.color = "#f44";
-                    lastBtn.title = "Failed to load last frame";
-                });
-            }
-
-            // Toggle handlers
-            const setFrame = (frame) => {
-                activeFrame = frame;
-                firstBtn.style.background = frame === "first" ? "#336" : "#222";
-                firstBtn.style.color = frame === "first" ? "#8cf" : "#888";
-                firstBtn.style.borderBottom = frame === "first" ? "2px solid #8cf" : "2px solid transparent";
-                lastBtn.style.background = frame === "last" ? "#336" : "#222";
-                lastBtn.style.color = frame === "last" ? "#8cf" : "#888";
-                lastBtn.style.borderBottom = frame === "last" ? "2px solid #8cf" : "2px solid transparent";
-                if (frame === "last" && lastImg.complete && lastImg.naturalWidth > 0) {
-                    fitCanvas(lastImg.naturalWidth, lastImg.naturalHeight);
-                } else if (frame === "first" && firstImg.complete) {
-                    fitCanvas(firstImg.naturalWidth, firstImg.naturalHeight);
-                }
-                redraw();
-            };
-            firstBtn.onclick = () => setFrame("first");
-            lastBtn.onclick = () => {
-                if (!lastImgDataUrl) {
-                    statusBar.textContent = "Last frame not yet loaded...";
-                    return;
-                }
-                setFrame("last");
-            };
 
             // Click handling — find if near existing point (within 20px radius)
             const HIT_RADIUS = 20;
             const findNearPoint = (mx, my) => {
-                const pts = activePts();
                 for (let i = 0; i < pts.length; i++) {
                     const dx = pts[i][0] / scaleX - mx;
                     const dy = pts[i][1] / scaleY - my;
@@ -1895,8 +1803,6 @@ app.registerExtension({
                 const mx = (e.clientX - rect.left) * cssScaleX;
                 const my = (e.clientY - rect.top) * cssScaleY;
 
-                const pts = activePts();
-                const lbls = activeLbls();
                 const hitIdx = findNearPoint(mx, my);
                 if (hitIdx >= 0) {
                     // Remove existing point
@@ -1919,8 +1825,6 @@ app.registerExtension({
                 const mx = (e.clientX - rect.left) * cssScaleX;
                 const my = (e.clientY - rect.top) * cssScaleY;
 
-                const pts = activePts();
-                const lbls = activeLbls();
                 const hitIdx = findNearPoint(mx, my);
                 if (hitIdx >= 0) {
                     pts.splice(hitIdx, 1);
@@ -1938,13 +1842,8 @@ app.registerExtension({
 
             // Buttons
             clearBtn.onclick = () => {
-                if (activeFrame === "first") {
-                    frame0Pts.length = 0;
-                    frame0Lbls.length = 0;
-                } else {
-                    lastPts.length = 0;
-                    lastLbls.length = 0;
-                }
+                pts.length = 0;
+                lbls.length = 0;
                 redraw();
             };
             cancelBtn.onclick = () => {
@@ -1954,12 +1853,10 @@ app.registerExtension({
 
             applyBtn.onclick = () => {
                 const data = JSON.stringify({
-                    points: frame0Pts,
-                    labels: frame0Lbls,
+                    points: pts,
+                    labels: lbls,
                     image_width: imgW,
                     image_height: imgH,
-                    last_frame_points: lastPts,
-                    last_frame_labels: lastLbls,
                 });
                 // Store in hidden widget
                 if (mpWidget) {

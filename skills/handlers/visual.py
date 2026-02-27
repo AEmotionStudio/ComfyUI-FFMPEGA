@@ -549,8 +549,6 @@ def _f_auto_mask(p):
     point_labels = None
     point_src_w = 0
     point_src_h = 0
-    lf_point_coords = None
-    lf_point_labels = None
     if mask_points_json:
         import json as _json
         try:
@@ -563,12 +561,6 @@ def _f_auto_mask(p):
                 if point_coords and point_labels:
                     log.info("auto_mask: using %d point prompt(s) (src %dx%d)",
                              len(point_coords), point_src_w, point_src_h)
-                # Last-frame points (optional)
-                lf_point_coords = pt_data.get("last_frame_points")
-                lf_point_labels = pt_data.get("last_frame_labels")
-                if lf_point_coords and lf_point_labels:
-                    log.info("auto_mask: using %d last-frame point(s)",
-                             len(lf_point_coords))
         except (ValueError, TypeError) as exc:
             log.warning("Failed to parse mask_points JSON: %s", exc)
 
@@ -606,8 +598,6 @@ def _f_auto_mask(p):
             labels=point_labels,
             point_src_width=point_src_w,
             point_src_height=point_src_h,
-            last_frame_points=lf_point_coords,
-            last_frame_labels=lf_point_labels,
         )
     except Exception as e:
         log.error("SAM3 mask generation failed: %s — falling back", e)
