@@ -103,6 +103,9 @@ def validate_path(path: str, allowed_extensions: set[str], must_exist: bool = Tr
             f"Allowed: {sorted(list(allowed_extensions))}"
         )
 
+    # Check for unsafe paths (sensitive dirs, etc.)
+    _check_unsafe_path(resolved)
+
     if must_exist:
         if not resolved.exists():
             raise ValidationError(f"File not found: {resolved}")
