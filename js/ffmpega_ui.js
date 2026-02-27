@@ -1755,13 +1755,19 @@ app.registerExtension({
 
         /** Open a modal popout where the user clicks to place positive/negative
          *  points on the image (or first video frame). Data is stored as JSON
-         *  in the node's hidden mask_points_data widget. */
-        function openPointSelector(node, imgSrc) {
+         *  in the node's hidden mask_points_data widget.
+         *  @param {object} node   - the ComfyUI node
+         *  @param {string} imgSrc - data-URL or URL for the first frame
+         *  @param {string} [videoSrc] - optional video URL for last-frame extraction
+         */
+        function openPointSelector(node, imgSrc, videoSrc) {
             // Remove any existing popout
             document.getElementById("ffmpega-point-selector")?.remove();
 
             // Existing point data
-            let existing = { points: [], labels: [], image_width: 0, image_height: 0 };
+            let existing = {
+                points: [], labels: [], image_width: 0, image_height: 0,
+            };
             const mpWidget = node.widgets?.find(w => w.name === "mask_points_data");
             if (mpWidget?.value) {
                 try { existing = JSON.parse(mpWidget.value); } catch { }
@@ -1790,6 +1796,7 @@ app.registerExtension({
                 <span style="color:#888">Click existing point to remove</span>
             `;
             overlay.appendChild(header);
+
 
             // Canvas container
             const canvasWrap = document.createElement("div");
@@ -1845,12 +1852,14 @@ app.registerExtension({
             let lbls = existing.labels ? [...existing.labels] : [];
             let imgW = 0, imgH = 0;
             let scaleX = 1, scaleY = 1;
-            const img = new Image();
+            const firstImg = new Image();
 
             const redraw = () => {
                 const ctx = canvas.getContext("2d");
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                if (firstImg.complete && firstImg.naturalWidth > 0) {
+                    ctx.drawImage(firstImg, 0, 0, canvas.width, canvas.height);
+                }
 
                 for (let i = 0; i < pts.length; i++) {
                     const px = pts[i][0] / scaleX;
@@ -1883,11 +1892,9 @@ app.registerExtension({
                 statusBar.textContent = `${pts.length} point(s) | ${imgW}×${imgH}`;
             };
 
-            img.onload = () => {
-                imgW = img.naturalWidth;
-                imgH = img.naturalHeight;
-
-                // Fit canvas into the viewport
+            const fitCanvas = (w, h) => {
+                imgW = w;
+                imgH = h;
                 const maxW = window.innerWidth * 0.9;
                 const maxH = window.innerHeight * 0.75;
                 let dispW = imgW, dispH = imgH;
@@ -1897,14 +1904,19 @@ app.registerExtension({
                 canvas.height = Math.round(dispH);
                 scaleX = imgW / canvas.width;
                 scaleY = imgH / canvas.height;
+            };
+
+            firstImg.onload = () => {
+                fitCanvas(firstImg.naturalWidth, firstImg.naturalHeight);
                 redraw();
             };
-            img.onerror = () => {
+            firstImg.onerror = () => {
                 statusBar.textContent = "Failed to load image";
                 statusBar.style.color = "#f44";
             };
-            img.crossOrigin = "anonymous";
-            img.src = imgSrc;
+            firstImg.crossOrigin = "anonymous";
+            firstImg.src = imgSrc;
+
 
             // Click handling — find if near existing point (within 20px radius)
             const HIT_RADIUS = 20;
@@ -1962,7 +1974,11 @@ app.registerExtension({
             overlay.addEventListener("contextmenu", e => e.preventDefault());
 
             // Buttons
-            clearBtn.onclick = () => { pts = []; lbls = []; redraw(); };
+            clearBtn.onclick = () => {
+                pts.length = 0;
+                lbls.length = 0;
+                redraw();
+            };
             cancelBtn.onclick = () => {
                 document.removeEventListener("keydown", keyHandler);
                 overlay.remove();
@@ -2066,7 +2082,7 @@ app.registerExtension({
                             c.height = tmpVideo.videoHeight;
                             c.getContext("2d").drawImage(tmpVideo, 0, 0);
                             const frameDataUrl = c.toDataURL("image/jpeg", 0.95);
-                            openPointSelector(self, frameDataUrl);
+                            openPointSelector(self, frameDataUrl, src);
                             tmpVideo.remove();
                         }, { once: true });
                         tmpVideo.addEventListener("error", () => {

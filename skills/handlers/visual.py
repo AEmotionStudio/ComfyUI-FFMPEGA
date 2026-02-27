@@ -566,11 +566,11 @@ def _f_auto_mask(p):
 
     # Try to load SAM3
     try:
-        from ...core.sam3_masker import mask_video as sam3_mask_video  # noqa: F811
+        from ...core.sam3_masker import mask_video_subprocess as sam3_mask_video  # noqa: F811
         _has_sam3 = True
     except ImportError:
         try:
-            from core.sam3_masker import mask_video as sam3_mask_video  # noqa: F811
+            from core.sam3_masker import mask_video_subprocess as sam3_mask_video  # noqa: F811
             _has_sam3 = True
         except ImportError:
             _has_sam3 = False
@@ -580,9 +580,13 @@ def _f_auto_mask(p):
             "SAM3 not available for auto_mask — falling back to full-frame "
             "effect. Install with: pip install git+https://github.com/facebookresearch/sam3.git"
         )
+        _metadata_ref = p.get("_metadata_ref")
+        if _metadata_ref is not None and isinstance(_metadata_ref, dict):
+            _metadata_ref["_skill_degraded"] = True
         return _auto_mask_fallback(effect, strength)
 
     # Generate mask video using SAM3 with text + optional point prompts
+    # Runs in a subprocess to avoid CUDA memory leaks (~1.5 GB/run).
     try:
         mask_path = sam3_mask_video(
             video_path=video_path,
@@ -597,6 +601,9 @@ def _f_auto_mask(p):
         )
     except Exception as e:
         log.error("SAM3 mask generation failed: %s — falling back", e)
+        _metadata_ref = p.get("_metadata_ref")
+        if _metadata_ref is not None and isinstance(_metadata_ref, dict):
+            _metadata_ref["_skill_degraded"] = True
         return _auto_mask_fallback(effect, strength)
 
     # Store mask path in metadata so agent_node can generate overlay
