@@ -701,6 +701,56 @@ def _suppress_tqdm():
         for _mod, _orig in _patches:
             _mod.tqdm = _orig
 
+@_contextlib.contextmanager
+def _patch_postprocess_keyerror():
+    """Fix SAM3 KeyError in _postprocess_output.
+
+    SAM3's ``_postprocess_output`` (sam3_video_inference.py:449) does a bare
+    ``out["obj_id_to_score"][obj_id]`` for every obj in ``obj_id_to_mask``.
+    When ``max_num_objects`` suppresses objects, some obj_ids exist in the
+    mask dict but NOT in the score dict → KeyError.
+
+    This context manager monkey-patches the class method to use ``.get()``
+    with a 0.0 fallback, matching how ``obj_id_to_tracker_score`` is already
+    handled (line 454-456 in the same file).
+    """
+    _patched = False
+    _orig_method = None
+    _cls = None
+    try:
+        import importlib
+        _mod = importlib.import_module("sam3.model.sam3_video_inference")
+        # Find the class that has _postprocess_output
+        for _name in dir(_mod):
+            _obj = getattr(_mod, _name)
+            if isinstance(_obj, type) and hasattr(_obj, "_postprocess_output"):
+                _cls = _obj
+                break
+        if _cls is not None:
+            _orig_method = _cls._postprocess_output
+
+            import functools
+            @functools.wraps(_orig_method)
+            def _safe_postprocess(self, inference_state, out, *args, **kwargs):
+                # Wrap obj_id_to_score with a defaultdict-like fallback
+                score_dict = out.get("obj_id_to_score", {})
+                class _SafeScoreDict(dict):
+                    """Dict that returns 0.0 for missing keys."""
+                    def __missing__(self, key):
+                        return 0.0
+                out["obj_id_to_score"] = _SafeScoreDict(score_dict)
+                return _orig_method(self, inference_state, out, *args, **kwargs)
+
+            _cls._postprocess_output = _safe_postprocess
+            _patched = True
+    except (ImportError, AttributeError):
+        pass
+    try:
+        yield
+    finally:
+        if _patched and _cls is not None and _orig_method is not None:
+            _cls._postprocess_output = _orig_method
+
 def mask_video(
     video_path: str,
     prompt: str,
@@ -890,7 +940,7 @@ def mask_video(
         _sam3_base_logger.setLevel(_logging.ERROR)
         _sam3_inf_logger.setLevel(_logging.ERROR)
 
-        with torch.inference_mode(), autocast_ctx, _suppress_tqdm():
+        with torch.inference_mode(), autocast_ctx, _suppress_tqdm(), _patch_postprocess_keyerror():
             # init_state loads all frames
             try:
                 inference_state = video_model.init_state(
