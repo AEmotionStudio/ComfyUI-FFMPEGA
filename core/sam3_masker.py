@@ -1144,14 +1144,6 @@ def mask_video(
 
             # 3. Propagate masks — drive the iterator ourselves so we control
             # progress reporting (no tqdm bar spam in ComfyUI's non-TTY console).
-            if has_points:
-                # Cap tracked objects to point-prompted ones (min 2).
-                # Without this, VG detection spawns new objects on every
-                # frame, each adding tracker memory banks (~9 MB/frame).
-                n_point_objs = max(len(grouped_pts), 2)
-                video_model.max_num_objects = n_point_objs
-                log.info("Phase 3: max_num_objects capped to %d (point-only)",
-                         n_point_objs)
             log.info("Propagating SAM3 masks across %d frames", len(frame_files))
             mask_frames_saved = set()
             _total = len(frame_files)
