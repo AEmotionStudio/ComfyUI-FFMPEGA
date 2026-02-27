@@ -1594,6 +1594,10 @@ def mask_video_subprocess(
     """
     import json
     import sys
+    try:
+        from . import model_manager
+    except ImportError:
+        from core import model_manager  # type: ignore
 
     if output_dir is None:
         output_dir = tempfile.mkdtemp(prefix="ffmpega_sam3_")
@@ -1609,6 +1613,7 @@ def mask_video_subprocess(
         "labels": labels,
         "point_src_width": point_src_width,
         "point_src_height": point_src_height,
+        "_allow_downloads": model_manager.downloads_allowed(),
     }
 
     # Inline script for the child process:
@@ -1621,9 +1626,21 @@ def mask_video_subprocess(
 import sys, json, importlib.util
 args = json.loads(sys.stdin.read())
 mod_path = args.pop("_module_path")
+
+# Propagate download restriction
+allow_downloads = args.pop("_allow_downloads", True)
+
+# Set the flag via direct import (since we run in project root)
+try:
+    from core import model_manager
+    model_manager.set_downloads_allowed(allow_downloads)
+except ImportError:
+    pass
+
 spec = importlib.util.spec_from_file_location("sam3_masker", mod_path)
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
+
 result = mod.mask_video(**args)
 print("RESULT:" + result, flush=True)
 """
