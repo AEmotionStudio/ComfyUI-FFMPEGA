@@ -1338,7 +1338,26 @@ app.registerExtension({
 
                 // Support drag-and-drop of video files onto the node
                 this.onDragOver = (e) => {
-                    return !!e?.dataTransfer?.types?.includes?.("Files");
+                    if (e?.dataTransfer?.types?.includes?.("Files")) {
+                        // Visual feedback on the button
+                        if (!uploadBtn.disabled) {
+                            uploadBtn.textContent = "📂 Drop to Upload";
+                            uploadBtn.style.border = "1px dashed #4a6a8a";
+                            uploadBtn.style.backgroundColor = "#333";
+
+                            // Reset after short delay (debounce)
+                            if (uploadBtn._dragTimeout) clearTimeout(uploadBtn._dragTimeout);
+                            uploadBtn._dragTimeout = setTimeout(() => {
+                                if (!uploadBtn.disabled) {
+                                    uploadBtn.textContent = "Upload Video...";
+                                    uploadBtn.style.border = "1px solid #333";
+                                    uploadBtn.style.backgroundColor = "#222";
+                                }
+                            }, 100);
+                        }
+                        return true;
+                    }
+                    return false;
                 };
                 this.onDragDrop = async (e) => {
                     if (!e?.dataTransfer?.types?.includes?.("Files")) return false;
