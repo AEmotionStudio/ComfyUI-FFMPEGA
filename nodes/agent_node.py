@@ -255,9 +255,9 @@ class FFMPEGAgentNode:
                     "step": 0.05,
                     "tooltip": "Minimum detection confidence for SAM3 to track a new object (0.0–1.0). Higher values = fewer objects tracked = less VRAM. Default 0.7 filters out low-confidence detections.",
                 }),
-                "mask_output_type": (["colored_overlay", "black_white"], {
-                    "default": "colored_overlay",
-                    "tooltip": "Mask preview output format. 'colored_overlay' composites colored SAM3-style regions + contours onto the video. 'black_white' outputs a raw B&W mask video (white = detected object) for use in external compositing.",
+                "mask_output_type": (["black_white", "colored_overlay"], {
+                    "default": "black_white",
+                    "tooltip": "Mask preview output format. 'black_white' outputs a raw B&W mask video (white = detected object) for use in external compositing. 'colored_overlay' composites colored SAM3-style regions + contours onto the video.",
                 }),
                 "mask_points": ("STRING", {
                     "forceInput": True,
