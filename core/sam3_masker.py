@@ -336,6 +336,33 @@ def _free_vram() -> None:
         torch.cuda.empty_cache()
 
 
+def _offload_inference_state_to_cpu(
+    inference_state: dict,
+    flush_cuda: bool = False,
+) -> None:
+    """Move cached_frame_outputs GPU tensors to CPU.
+
+    Called after each frame yield during propagation to keep VRAM bounded.
+    Only sweeps ``cached_frame_outputs`` — other state (feature_cache,
+    tracker_inference_states) is left on GPU as SAM3 reads them directly.
+    """
+    import torch
+
+    _cfo = inference_state.get("cached_frame_outputs", {})
+    for _cf_idx in list(_cfo.keys()):
+        _cf_val = _cfo.get(_cf_idx)
+        if _cf_val is None:
+            continue
+        if isinstance(_cf_val, dict):
+            for _oid in list(_cf_val.keys()):
+                t = _cf_val[_oid]
+                if torch.is_tensor(t) and t.is_cuda:
+                    _cf_val[_oid] = t.cpu()
+
+    if flush_cuda and torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
 # ---------------------------------------------------------------------------
 #  Model loading
 # ---------------------------------------------------------------------------
@@ -629,6 +656,46 @@ def _get_video_fps(video_path: str) -> float:
     except (ValueError, ZeroDivisionError):
         return 30.0
 
+# ── tqdm suppression ──────────────────────────────────────────────────
+# SAM3's propagate_in_video uses tqdm bars internally.  In ComfyUI's
+# non-TTY console every \r update prints as a new line, producing
+# hundreds of duplicate progress lines.  We wrap SAM3's tqdm reference
+# to force disable=True, preserving all tqdm internals while silencing
+# the output.
+import contextlib as _contextlib
+
+def _make_silent_tqdm(real_tqdm):
+    """Return a wrapper that forces disable=True on the real tqdm."""
+    def _silent_tqdm(*args, **kwargs):
+        kwargs["disable"] = True
+        return real_tqdm(*args, **kwargs)
+    return _silent_tqdm
+
+@_contextlib.contextmanager
+def _suppress_tqdm():
+    """Monkey-patch SAM3's tqdm references to suppress progress bars."""
+    _patches: list[tuple] = []  # (module, original_tqdm)
+    _modules = [
+        "sam3.model.sam3_video_inference",
+        "sam3.model.io_utils",
+        "sam3.model.utils.sam2_utils",
+    ]
+    for mod_name in _modules:
+        try:
+            import importlib
+            _mod = importlib.import_module(mod_name)
+            _orig = getattr(_mod, "tqdm", None)
+            if _orig is not None:
+                _patches.append((_mod, _orig))
+                _mod.tqdm = _make_silent_tqdm(_orig)
+        except (ImportError, AttributeError):
+            pass
+    try:
+        yield
+    finally:
+        for _mod, _orig in _patches:
+            _mod.tqdm = _orig
+
 def mask_video(
     video_path: str,
     prompt: str,
@@ -640,6 +707,8 @@ def mask_video(
     labels: Optional[list] = None,
     point_src_width: int = 0,
     point_src_height: int = 0,
+    last_frame_points: Optional[list] = None,
+    last_frame_labels: Optional[list] = None,
 ) -> str:
     """Generate a grayscale mask video for text-prompted objects.
 
@@ -664,6 +733,9 @@ def mask_video(
             If 0, uses the video frame width for normalization.
         point_src_height: Original image height the points were drawn on.
             If 0, uses the video frame height for normalization.
+        last_frame_points: Optional list of [x, y] pixel-space points on
+            the last frame. Provides an endpoint anchor for tracking.
+        last_frame_labels: Optional list of 1/0 labels for last-frame points.
 
     Returns:
         Path to the generated grayscale mask video (MP4).
@@ -678,7 +750,7 @@ def mask_video(
     os.makedirs(frames_dir, exist_ok=True)
     os.makedirs(masks_dir, exist_ok=True)
 
-    # 1. Extract frames using ffmpeg
+    # 1. Extract ALL frames using ffmpeg
     log.info("Extracting frames from %s", video_path)
     subprocess.run(
         [
@@ -690,11 +762,53 @@ def mask_video(
         check=True,
     )
 
-    frame_files = sorted(Path(frames_dir).glob("*.jpg"))
-    if not frame_files:
+    all_frame_files = sorted(Path(frames_dir).glob("*.jpg"))
+    if not all_frame_files:
         raise RuntimeError(f"No frames extracted from {video_path}")
 
     fps = _get_video_fps(video_path)
+    total_frames = len(all_frame_files)
+
+    # ── Auto frame stride ──────────────────────────────────────────
+    # SAM3's Tracker accumulates ~10 MB of internal memory per frame.
+    # On limited VRAM, processing all frames causes OOM.  We auto-
+    # calculate a stride so SAM3 sees fewer frames, then duplicate
+    # masks for the skipped in-between frames.
+    import torch as _torch_stride
+    _TRACKER_MB_PER_FRAME = 10  # empirical: ~100 MB per 10 frames
+    _MODEL_BASE_MB = 3500       # SAM3 model weights ~3.5 GB
+    _WORKING_MB = 3200          # working memory for one frame ~3.2 GB
+    _SAFETY_MB = 500            # safety margin
+
+    stride = 1
+    if _torch_stride.cuda.is_available():
+        _total_mb = _torch_stride.cuda.get_device_properties(0).total_memory / (1024**2)
+        _usable_mb = _total_mb - _MODEL_BASE_MB - _WORKING_MB - _SAFETY_MB
+        _max_frames = max(10, int(_usable_mb / _TRACKER_MB_PER_FRAME))
+        if total_frames > _max_frames:
+            stride = max(1, total_frames // _max_frames)
+            log.info("Auto frame stride: %d (processing %d/%d frames to fit %.0f MB VRAM)",
+                     stride, total_frames // stride, total_frames, _total_mb)
+
+    # Build the list of frames SAM3 will process
+    if stride > 1:
+        # Create a sparse frames directory with only the strided frames
+        sparse_dir = os.path.join(output_dir, "sparse_frames")
+        os.makedirs(sparse_dir, exist_ok=True)
+        import shutil
+        strided_indices = list(range(0, total_frames, stride))
+        # Always include the last frame for better tracking
+        if strided_indices[-1] != total_frames - 1:
+            strided_indices.append(total_frames - 1)
+        for new_idx, orig_idx in enumerate(strided_indices):
+            src = all_frame_files[orig_idx]
+            dst = os.path.join(sparse_dir, f"{new_idx+1:06d}.jpg")
+            shutil.copy2(str(src), dst)
+        frame_files = sorted(Path(sparse_dir).glob("*.jpg"))
+        log.info("Sparse frames: %d frames (stride=%d) in %s",
+                 len(frame_files), stride, sparse_dir)
+    else:
+        frame_files = all_frame_files
 
     try:
         # 2. Run SAM3 video predictor with text prompt
@@ -712,6 +826,26 @@ def mask_video(
         _UNSET = object()  # sentinel distinct from None
         orig_det_thresh = getattr(video_model, "new_det_thresh", _UNSET)
         video_model.new_det_thresh = det_threshold
+
+        # ── Enforce object limit at detection time ──────────────────
+        # SAM3 defaults to max_num_objects=10000 (effectively unlimited).
+        # Without a hard cap the VG detector finds dozens of objects
+        # (e.g. each individual balloon), and EVERY tracked object gets
+        # its own set of Tracker memory banks.  Setting this to the
+        # user's max_objects prevents SAM3 from ever allocating Tracker
+        # memory for excess objects — the single biggest VRAM saving.
+        orig_max_num_objects = getattr(video_model, "max_num_objects", _UNSET)
+        video_model.max_num_objects = max_objects
+        log.info("SAM3 max_num_objects set to %d (was %s)", max_objects,
+                 orig_max_num_objects if orig_max_num_objects is not _UNSET else "unset")
+
+        # ── Disable hotstart buffering ──────────────────────────────
+        # Hotstart buffers ~15 frames on GPU before yielding the first
+        # result.  Our inline offloading runs after each yield, so with
+        # hotstart active the first 15 frames accumulate on GPU and OOM.
+        # Disabling it lets frames yield immediately for offloading.
+        orig_hotstart = getattr(video_model, "hotstart_delay", _UNSET)
+        video_model.hotstart_delay = 0
 
         # Flush VRAM again right before inference (GPU mode only).
         # ComfyUI may have reloaded its models between load_video_model() and here.
@@ -739,12 +873,20 @@ def mask_video(
             else nullcontext()
         )
         inference_state = None  # declared here so finally block can always reach it
-        with torch.inference_mode(), autocast_ctx:
-            # init_state loads all frames — suppress SAM3's per-frame tqdm bar
-            # (in a non-TTY environment each \r update prints as a new line).
-            import os as _os
-            _tqdm_was = _os.environ.get("TQDM_DISABLE")
-            _os.environ["TQDM_DISABLE"] = "1"
+
+        # Suppress SAM3's noisy 'hitting max_num_objects' warnings.
+        # These fire on every frame when the object limit is active,
+        # producing hundreds of log lines.
+        import logging as _logging
+        _sam3_base_logger = _logging.getLogger("sam3.model.sam3_video_base")
+        _sam3_inf_logger = _logging.getLogger("sam3.model.sam3_video_inference")
+        _orig_level = _sam3_base_logger.level
+        _orig_inf_level = _sam3_inf_logger.level
+        _sam3_base_logger.setLevel(_logging.ERROR)
+        _sam3_inf_logger.setLevel(_logging.ERROR)
+
+        with torch.inference_mode(), autocast_ctx, _suppress_tqdm():
+            # init_state loads all frames
             try:
                 inference_state = video_model.init_state(
                     resource_path=frames_dir,
@@ -757,154 +899,158 @@ def mask_video(
                     resource_path=frames_dir,
                     video_loader_type="cv2",
                 )
-            finally:
-                if _tqdm_was is None:
-                    _os.environ.pop("TQDM_DISABLE", None)
-                else:
-                    _os.environ["TQDM_DISABLE"] = _tqdm_was
             log.info("SAM3 frames loaded (%d total)", len(frame_files))
 
-            # ── Phase 1: Text VG Detection ────────────────────────────
+            # ── Set text prompt (always needed) ──────────────────────
             text_prompt = prompt or "object"
-
-            # Text-based Visual Grounding detection on frame 0.
-            # Returns detected obj_ids and binary masks for mapping
-            # user clicks to tracked objects.
             _frame0_idx, _frame0_out = video_model.add_prompt(
                 inference_state,
                 frame_idx=0,
                 text_str=text_prompt,
             )
-            log.info("Phase 1 (text VG): detected objects on frame 0 for '%s'",
+            log.info("Text VG: detected objects on frame 0 for '%s'",
                      text_prompt)
 
-            # ── Phase 1.5: Full VG Propagation ────────────────────────
-            # The Tracker's point refinement requires cached frame outputs
-            # for ALL frames (SAM3's propagation_partial merges Tracker
-            # masks with VG cached outputs per-frame).
+            # ── Point prompts ─────────────────────────────────────────
+            # SAM3's point/interactivity refinement path requires
+            # cached_frame_outputs to be pre-populated for every frame.
+            # This means we MUST run a VG propagation pass first when
+            # points are provided, then add the point prompts and let
+            # Phase 3's propagation handle the combined output.
             has_points = bool(points and labels and w > 0 and h > 0)
+
             if has_points:
-                log.info("Running full VG propagation to populate cache...")
-                _vg_frame0_masks = None  # will hold frame 0 binary masks
-                _vg_frame0_obj_ids = []
+                # ── Pass 1: VG propagation to populate cache ──────────
+                log.info("Running VG propagation to populate cache for point refinement...")
                 for _vg_fidx, _vg_out in video_model.propagate_in_video(
                     inference_state
                 ):
-                    if _vg_out is None:
-                        continue
-                    # Capture frame 0 output for click→obj_id mapping
-                    if _vg_fidx == 0:
-                        _bm = _vg_out.get("out_binary_masks")
-                        _oi = _vg_out.get("out_obj_ids")
-                        if _bm is not None and _oi is not None:
-                            if torch.is_tensor(_bm):
-                                _vg_frame0_masks = _bm.cpu().numpy()
-                            elif isinstance(_bm, np.ndarray):
-                                _vg_frame0_masks = _bm
-                            if torch.is_tensor(_oi):
-                                _vg_frame0_obj_ids = _oi.cpu().tolist()
-                            elif isinstance(_oi, (list, np.ndarray)):
-                                _vg_frame0_obj_ids = list(_oi)
-                log.info("VG propagation complete (detected %d objects)",
-                         len(_vg_frame0_obj_ids))
+                    # Offload cached_frame_outputs to CPU
+                    _offload_inference_state_to_cpu(inference_state)
+                    # Evict feature_cache and previous_stages_out for processed frame
+                    _fc = inference_state.get("feature_cache", {})
+                    if _vg_fidx in _fc:
+                        del _fc[_vg_fidx]
+                    _pso = inference_state.get("previous_stages_out", {})
+                    if isinstance(_pso, dict) and _vg_fidx in _pso:
+                        _pso[_vg_fidx] = None
+                    # Flush every frame
+                    import gc as _gc
+                    _gc.collect()
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                log.info("VG propagation complete — cache populated")
 
-                # ── Offload cached frame outputs to CPU ───────────────
-                # The VG propagation stores per-frame per-object mask
-                # tensors on GPU in cached_frame_outputs.  For 192 frames
-                # × N objects × (1, H, W) bool, this can exceed several
-                # GB.  Move them to CPU now — propagation_fetch and
-                # _build_tracker_output will move individual frames back
-                # to GPU as needed.
-                _cfo = inference_state.get("cached_frame_outputs", {})
-                _offloaded = 0
-                for _fidx in list(_cfo.keys()):
-                    if _fidx == 0:
-                        continue  # keep frame 0 on GPU for Phase 2.5 partial propagation
-                    _frame_cache = _cfo[_fidx]
-                    if isinstance(_frame_cache, dict):
-                        for _oid in list(_frame_cache.keys()):
-                            if torch.is_tensor(_frame_cache[_oid]) and _frame_cache[_oid].is_cuda:
-                                _frame_cache[_oid] = _frame_cache[_oid].cpu()
-                                _offloaded += 1
-                if _offloaded > 0:
+                # ── Full state reset between Phase 1 and Phase 2 ─────
+                # reset_state() clears ALL GPU state (tracker memory banks,
+                # feature_cache, per_frame_* dicts, previous_stages_out,
+                # visual_prompt_embed, etc.).  We backup cached_frame_outputs
+                # first (needed by Phase 3's _build_tracker_output) and
+                # re-add the text prompt after reset.
+                import gc as _gc
+
+                # 1) Move cached_frame_outputs to CPU & copy to new dict
+                _offload_inference_state_to_cpu(inference_state)
+                _saved_cfo = dict(inference_state["cached_frame_outputs"])
+
+                # 2) Full reset — frees all GPU state
+                video_model.reset_state(inference_state)
+
+                # 3) Offload input_batch.img_batch to CPU
+                # This is a single GPU tensor holding ALL 192 preprocessed frames.
+                # SAM3 supports CPU-offloaded frame lists natively (sam3_image.py
+                # line 151: "img_batch might be fp16 and offloaded to CPU").
+                _ib = inference_state.get("input_batch")
+                if _ib is not None and torch.is_tensor(_ib.img_batch) and _ib.img_batch.is_cuda:
+                    _n_frames = _ib.img_batch.shape[0]
+                    _cpu_frames = [_ib.img_batch[i].cpu() for i in range(_n_frames)]
+                    # Replace with a lightweight wrapper that SAM3 can index
+                    class _LazyGPUFrames:
+                        """List-like wrapper keeping frames on CPU until indexed."""
+                        __slots__ = ("_frames",)
+                        def __init__(self, frames):
+                            self._frames = frames
+                        def __len__(self):
+                            return len(self._frames)
+                        def __getitem__(self, idx):
+                            return self._frames[idx]
+
+                    _ib.img_batch = _LazyGPUFrames(_cpu_frames)
+                    log.info("Offloaded %d input frames to CPU", _n_frames)
+
+                # 4) Flush GPU
+                _gc.collect()
+                if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-                    log.info("Offloaded %d cached mask tensors to CPU", _offloaded)
 
-            # ── Phase 2: Point Refinement via Tracker ─────────────────
-            if has_points:
-                # Normalize coordinates to [0, 1] range for SAM3 Tracker
+                _vram_after = torch.cuda.memory_allocated() / (1024**3)
+                log.info("VRAM after full reset + frame offload: %.2f GB", _vram_after)
+
+                # 4) Re-add text prompt FIRST (add_prompt calls reset_state
+                #    internally, which would clear cached_frame_outputs again)
+                video_model.add_prompt(
+                    inference_state,
+                    frame_idx=0,
+                    text_str=text_prompt,
+                )
+
+                # 5) Now restore cached outputs — AFTER add_prompt's reset
+                _gpu_dev = torch.device("cuda:0")
+
+                class _LazyGPUDict(dict):
+                    """Dict wrapper — moves tensor values to GPU on read."""
+                    def _ensure_gpu(self, val):
+                        if isinstance(val, dict):
+                            for k in list(val.keys()):
+                                t = val[k]
+                                if torch.is_tensor(t) and not t.is_cuda:
+                                    val[k] = t.to(_gpu_dev)
+                        return val
+
+                    def __getitem__(self, key):
+                        return self._ensure_gpu(super().__getitem__(key))
+
+                    def get(self, key, default=None):
+                        try:
+                            return self.__getitem__(key)
+                        except KeyError:
+                            return default
+
+                inference_state["cached_frame_outputs"] = _LazyGPUDict(_saved_cfo)
+                log.info("Cached outputs restored (%d entries on CPU, lazy GPU reload)",
+                         len(_saved_cfo))
+
+                # ── Add point prompts ─────────────────────────────────
                 norm_w = point_src_width if point_src_width > 0 else w
                 norm_h = point_src_height if point_src_height > 0 else h
-
-                # Parse and normalize all user clicks
-                pos_pts = []   # (norm_x, norm_y) — positive clicks
-                neg_pts = []   # (norm_x, norm_y) — negative clicks
+                pos_pts = []
+                neg_pts = []
                 for pt, lbl in zip(points, labels):
                     if not isinstance(pt, (list, tuple)) or len(pt) < 2:
                         continue
                     try:
-                        nx = float(pt[0]) / norm_w
-                        ny = float(pt[1]) / norm_h
+                        nx = max(0.0, min(1.0, float(pt[0]) / norm_w))
+                        ny = max(0.0, min(1.0, float(pt[1]) / norm_h))
                         lbl_int = int(lbl)
                     except (TypeError, ValueError):
                         continue
-                    # Clamp to [0, 1]
-                    nx = max(0.0, min(1.0, nx))
-                    ny = max(0.0, min(1.0, ny))
                     if lbl_int == 1:
                         pos_pts.append((nx, ny))
                     else:
                         neg_pts.append((nx, ny))
 
-                log.info("Phase 2 (points): %d positive, %d negative clicks",
+                log.info("Point prompts: %d positive, %d negative clicks",
                          len(pos_pts), len(neg_pts))
 
-                # Use VG propagation frame 0 masks for click→obj_id mapping
-                vg_masks = _vg_frame0_masks
-                vg_obj_ids = _vg_frame0_obj_ids
-
-                # Map positive clicks → obj_ids via mask overlap
-                # grouped_pts[obj_id] = {"points": [...], "labels": [...]}
+                # Group all positive clicks into a single object
                 grouped_pts: dict[int, dict] = {}
-                unmatched_pos = []
-
-                if vg_masks is not None and len(vg_obj_ids) > 0:
-                    mask_h, mask_w = vg_masks.shape[-2], vg_masks.shape[-1]
-                    for (nx, ny) in pos_pts:
-                        px = int(nx * mask_w)
-                        py = int(ny * mask_h)
-                        px = min(px, mask_w - 1)
-                        py = min(py, mask_h - 1)
-                        matched = False
-                        for i, oid in enumerate(vg_obj_ids):
-                            mask_2d = vg_masks[i]
-                            # Squeeze extra dims if needed
-                            while mask_2d.ndim > 2:
-                                mask_2d = mask_2d[0]
-                            if mask_2d[py, px]:
-                                if oid not in grouped_pts:
-                                    grouped_pts[oid] = {"points": [], "labels": []}
-                                grouped_pts[oid]["points"].append([nx, ny])
-                                grouped_pts[oid]["labels"].append(1)
-                                matched = True
-                                break
-                        if not matched:
-                            unmatched_pos.append((nx, ny))
-                else:
-                    # No VG detections — all positive clicks are unmatched
-                    unmatched_pos = list(pos_pts)
-
-                # Unmatched positive clicks → new object
-                if unmatched_pos:
-                    new_obj_id = max(vg_obj_ids, default=0) + 1
-                    grouped_pts[new_obj_id] = {
-                        "points": [[nx, ny] for (nx, ny) in unmatched_pos],
-                        "labels": [1] * len(unmatched_pos),
+                if pos_pts:
+                    grouped_pts[1] = {
+                        "points": [[nx, ny] for (nx, ny) in pos_pts],
+                        "labels": [1] * len(pos_pts),
                     }
-                    log.info("  %d unmatched positive clicks → new obj_id=%d",
-                             len(unmatched_pos), new_obj_id)
 
-                # Add negative clicks to ALL tracked objects
+                # Attach negative clicks to every group
                 if neg_pts and grouped_pts:
                     neg_list = [[nx, ny] for (nx, ny) in neg_pts]
                     neg_labels = [0] * len(neg_pts)
@@ -912,42 +1058,96 @@ def mask_video(
                         grouped_pts[oid]["points"].extend(neg_list)
                         grouped_pts[oid]["labels"].extend(neg_labels)
 
-                # Send per-object point prompts to SAM3 Tracker
                 for oid, data in grouped_pts.items():
-                    video_model.add_prompt(
-                        inference_state,
-                        frame_idx=0,
-                        points=data["points"],
-                        point_labels=data["labels"],
-                        obj_id=oid,
-                        rel_coordinates=True,
-                    )
+                    try:
+                        video_model.add_prompt(
+                            inference_state,
+                            frame_idx=0,
+                            points=data["points"],
+                            point_labels=data["labels"],
+                            obj_id=oid,
+                            rel_coordinates=True,
+                        )
+                    except Exception as _pt_err:
+                        log.error("add_prompt(points) failed for obj_id=%d: %s (%s)",
+                                  oid, _pt_err, type(_pt_err).__name__)
+                        import traceback
+                        log.error("Traceback:\n%s", traceback.format_exc())
+                        raise
                     n_pos = sum(1 for l in data["labels"] if l == 1)
                     n_neg = sum(1 for l in data["labels"] if l == 0)
                     log.info("  obj_id=%d: %d positive + %d negative point prompts",
                              oid, n_pos, n_neg)
 
-                # ── Phase 2.5: Frame-0-only partial propagation ───────
-                # Run propagation_partial on frame 0 ONLY to refine and
-                # update its cache entry.  start_frame_idx=0 is critical:
-                # SAM3 stores it in action_history and checks
-                # frame_idx in [0, num_frames-1] to decide whether to
-                # dispatch propagation_fetch on the next call.  Without
-                # it, frame_idx=None and Phase 3 re-runs partial inference
-                # on all 192 frames → OOM.
-                log.info("Refining frame 0 via partial propagation...")
-                for _ref_fidx, _ref_out in video_model.propagate_in_video(
-                    inference_state,
-                    start_frame_idx=0,
-                    max_frame_num_to_track=0,
-                ):
-                    pass  # just consume — cache is updated internally
-                log.info("Frame 0 refinement complete")
+                # Last-frame point anchors
+                _has_last_pts = bool(
+                    last_frame_points and last_frame_labels and w > 0 and h > 0
+                )
+                if _has_last_pts:
+                    last_idx = len(frame_files) - 1
+                    log.info("Adding last-frame points on frame %d", last_idx)
+
+                    lf_pos_pts = []
+                    lf_neg_pts = []
+                    for pt, lbl in zip(last_frame_points, last_frame_labels):
+                        if not isinstance(pt, (list, tuple)) or len(pt) < 2:
+                            continue
+                        try:
+                            nx = max(0.0, min(1.0, float(pt[0]) / norm_w))
+                            ny = max(0.0, min(1.0, float(pt[1]) / norm_h))
+                            lbl_int = int(lbl)
+                        except (TypeError, ValueError):
+                            continue
+                        if lbl_int == 1:
+                            lf_pos_pts.append((nx, ny))
+                        else:
+                            lf_neg_pts.append((nx, ny))
+
+                    log.info("  %d positive, %d negative last-frame clicks",
+                             len(lf_pos_pts), len(lf_neg_pts))
+
+                    lf_grouped: dict[int, dict] = {}
+                    lf_unmatched = list(lf_pos_pts)
+
+                    if lf_unmatched:
+                        lf_oid = max(grouped_pts.keys(), default=0)
+                        if lf_oid == 0:
+                            lf_oid = 1
+                        lf_grouped[lf_oid] = {
+                            "points": [[nx, ny] for nx, ny in lf_unmatched],
+                            "labels": [1] * len(lf_unmatched),
+                        }
+
+                    if lf_neg_pts and lf_grouped:
+                        neg_list = [[nx, ny] for nx, ny in lf_neg_pts]
+                        for oid in lf_grouped:
+                            lf_grouped[oid]["points"].extend(neg_list)
+                            lf_grouped[oid]["labels"].extend([0] * len(lf_neg_pts))
+
+                    for oid, data in lf_grouped.items():
+                        video_model.add_prompt(
+                            inference_state,
+                            frame_idx=last_idx,
+                            points=data["points"],
+                            point_labels=data["labels"],
+                            obj_id=oid,
+                            rel_coordinates=True,
+                        )
+                        n_pos = sum(1 for l in data["labels"] if l == 1)
+                        n_neg = sum(1 for l in data["labels"] if l == 0)
+                        log.info("  obj_id=%d: %d pos + %d neg on frame %d",
+                                 oid, n_pos, n_neg, last_idx)
 
             # 3. Propagate masks — drive the iterator ourselves so we control
             # progress reporting (no tqdm bar spam in ComfyUI's non-TTY console).
-            # When points were used, this dispatches to propagation_fetch
-            # (zero inference — reads all frames from cached VG + refined frame 0).
+            if has_points:
+                # Cap tracked objects to point-prompted ones (min 2).
+                # Without this, VG detection spawns new objects on every
+                # frame, each adding tracker memory banks (~9 MB/frame).
+                n_point_objs = max(len(grouped_pts), 2)
+                video_model.max_num_objects = n_point_objs
+                log.info("Phase 3: max_num_objects capped to %d (point-only)",
+                         n_point_objs)
             log.info("Propagating SAM3 masks across %d frames", len(frame_files))
             mask_frames_saved = set()
             _total = len(frame_files)
@@ -1006,6 +1206,60 @@ def mask_video(
                     mask_img.save(os.path.join(masks_dir, f"{frame_idx:06d}.png"))
                     mask_frames_saved.add(frame_idx)
 
+                    # ── Phase 3 cleanup: evict processed state ──────────
+                    # Once a frame is saved to disk we no longer need its
+                    # cached_frame_outputs, feature_cache, or previous_stages_out.
+                    _cfo = inference_state.get("cached_frame_outputs", {})
+                    if frame_idx in _cfo:
+                        del _cfo[frame_idx]
+                    _fc = inference_state.get("feature_cache", {})
+                    if frame_idx in _fc:
+                        del _fc[frame_idx]
+                    _pso = inference_state.get("previous_stages_out", {})
+                    if isinstance(_pso, dict) and frame_idx in _pso:
+                        _pso[frame_idx] = None
+
+                    # Move any remaining GPU tensors in cached_frame_outputs
+                    # to CPU (covers the entry SAM3 just wrote for this frame).
+                    _offload_inference_state_to_cpu(inference_state)
+
+                    # Flush CUDA + gc every frame to keep VRAM bounded
+                    import gc as _gc
+                    _gc.collect()
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+
+                    # Diagnostic: track VRAM and cache sizes (every 10 frames)
+                    if frame_idx % 10 == 0:
+                        _alloc_gb = torch.cuda.memory_allocated() / (1024**3)
+                        _cfo_diag = inference_state.get("cached_frame_outputs", {})
+                        _cfo_count = len(_cfo_diag)
+                        _gpu_tensors = 0
+                        _sample_entry = None
+                        for _fidx, _fval in _cfo_diag.items():
+                            if _sample_entry is None:
+                                _sample_entry = f"key={_fidx} type={type(_fval).__name__}"
+                                if isinstance(_fval, dict):
+                                    for _oid, _oval in _fval.items():
+                                        _sample_entry += f" sub_key={_oid} sub_type={type(_oval).__name__}"
+                                        if torch.is_tensor(_oval):
+                                            _sample_entry += f" device={_oval.device} shape={list(_oval.shape)}"
+                                        break
+                                elif torch.is_tensor(_fval):
+                                    _sample_entry += f" device={_fval.device} shape={list(_fval.shape)}"
+                            if isinstance(_fval, dict):
+                                for _oval in _fval.values():
+                                    if torch.is_tensor(_oval) and _oval.is_cuda:
+                                        _gpu_tensors += 1
+                            elif torch.is_tensor(_fval) and _fval.is_cuda:
+                                _gpu_tensors += 1
+                        log.info(
+                            "  [VRAM diag] frame=%d alloc=%.2f GB, "
+                            "cfo=%d entries (%d GPU tensors), sample=[%s]",
+                            frame_idx, _alloc_gb, _cfo_count, _gpu_tensors,
+                            _sample_entry,
+                        )
+
                     # Log progress at ~10% intervals
                     if (frame_idx + 1) % _report_every == 0 or frame_idx + 1 == _total:
                         log.info("SAM3 propagation: %d/%d frames (%.0f%%)",
@@ -1020,23 +1274,109 @@ def mask_video(
                         video_model.reset_state(inference_state)
                     except Exception:
                         pass
+                    # Clear all inference state dicts to break circular refs
+                    for _k in list(inference_state.keys()):
+                        v = inference_state[_k]
+                        if isinstance(v, dict):
+                            v.clear()
+                        elif isinstance(v, list):
+                            v.clear()
                     inference_state = None
+                # Clear SAM3's internal backbone/feature caches that accumulate
+                # during propagation and survive across runs on the cached model.
+                for _cache_attr in (
+                    "_bb_feat_cache", "backbone_feature_cache",
+                    "_features", "_bb_feat_sizes",
+                ):
+                    cache = getattr(video_model, _cache_attr, None)
+                    if isinstance(cache, dict):
+                        cache.clear()
                 # Restore original detection threshold so subsequent runs
                 # with different settings aren't affected.
                 if orig_det_thresh is not _UNSET:
                     video_model.new_det_thresh = orig_det_thresh
+                if orig_max_num_objects is not _UNSET:
+                    video_model.max_num_objects = orig_max_num_objects
+                if orig_hotstart is not _UNSET:
+                    video_model.hotstart_delay = orig_hotstart
+
+                # ── Break the local model reference and force full cleanup ──
+                # The local `video_model` keeps the model alive until the
+                # function returns.  PyTorch modules have circular refs that
+                # gc.collect() alone can't break.  Deleting the local ref
+                # and calling cleanup() frees ~1.5 GB per run.
+                del video_model
+                try:
+                    cleanup()
+                except Exception:
+                    pass
+                import gc
+                gc.collect()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+                # Restore SAM3 logger levels
+                _sam3_base_logger.setLevel(_orig_level)
+                _sam3_inf_logger.setLevel(_orig_inf_level)
 
-        # Fill any missing frames with empty masks
-        for i in range(len(frame_files)):
-            if i not in mask_frames_saved:
-                mask = np.zeros((h, w), dtype=np.uint8)
-                mask_img = Image.fromarray(mask, mode="L")
-                mask_img.save(os.path.join(masks_dir, f"{i:06d}.png"))
+        # ── Expand masks for strided frames ────────────────────────────
+        if stride > 1:
+            # SAM3 generated masks with sparse indices (0, 1, 2, ...).
+            # Remap them to original frame positions, then fill gaps by
+            # copying the nearest processed mask.
+            import shutil as _shutil_masks
+
+            # Rename sparse masks to their real frame indices
+            sparse_mask_files = sorted(Path(masks_dir).glob("*.png"))
+            _real_masks = {}  # orig_frame_idx -> mask path
+            for sparse_idx, orig_idx in enumerate(strided_indices):
+                sparse_path = os.path.join(masks_dir, f"{sparse_idx:06d}.png")
+                real_path = os.path.join(masks_dir, f"real_{orig_idx:06d}.png")
+                if os.path.exists(sparse_path):
+                    os.rename(sparse_path, real_path)
+                    _real_masks[orig_idx] = real_path
+
+            # Now generate masks for ALL original frames
+            _sorted_real = sorted(_real_masks.keys())
+            for orig_idx in range(total_frames):
+                final_path = os.path.join(masks_dir, f"{orig_idx:06d}.png")
+                if orig_idx in _real_masks:
+                    # Just rename the real mask to the final name
+                    os.rename(_real_masks[orig_idx], final_path)
+                else:
+                    # Find nearest processed frame via binary search
+                    import bisect
+                    pos = bisect.bisect_left(_sorted_real, orig_idx)
+                    if pos == 0:
+                        nearest = _sorted_real[0]
+                    elif pos >= len(_sorted_real):
+                        nearest = _sorted_real[-1]
+                    else:
+                        before = _sorted_real[pos - 1]
+                        after = _sorted_real[pos]
+                        nearest = before if (orig_idx - before) <= (after - orig_idx) else after
+                    # Copy the nearest mask
+                    nearest_path = os.path.join(masks_dir, f"{nearest:06d}.png")
+                    if os.path.exists(nearest_path):
+                        _shutil_masks.copy2(nearest_path, final_path)
+                    else:
+                        # Fallback: empty mask
+                        mask = np.zeros((h, w), dtype=np.uint8)
+                        Image.fromarray(mask, mode="L").save(final_path)
+            log.info("Expanded %d sparse masks → %d total frames (stride=%d)",
+                     len(_real_masks), total_frames, stride)
+            # Update frame_files to reflect all original frames for video assembly
+            frame_files = all_frame_files
+        else:
+            # Fill any missing frames with empty masks
+            for i in range(len(frame_files)):
+                if i not in mask_frames_saved:
+                    mask = np.zeros((h, w), dtype=np.uint8)
+                    mask_img = Image.fromarray(mask, mode="L")
+                    mask_img.save(os.path.join(masks_dir, f"{i:06d}.png"))
 
         log.info("Saved %d mask frames (%d with detections)",
-                 len(frame_files), len(mask_frames_saved))
+                 total_frames if stride > 1 else len(frame_files),
+                 len(mask_frames_saved))
 
         # 4. Encode mask frames into a video
         mask_video_path = os.path.join(output_dir, "mask.mp4")
@@ -1058,7 +1398,10 @@ def mask_video(
     finally:
         # Clean up intermediate frame/mask images (even on failure)
         import shutil
-        for d in (frames_dir, masks_dir):
+        _cleanup_dirs = [frames_dir, masks_dir]
+        if stride > 1:
+            _cleanup_dirs.append(os.path.join(output_dir, "sparse_frames"))
+        for d in _cleanup_dirs:
             try:
                 shutil.rmtree(d)
             except OSError:
@@ -1251,14 +1594,28 @@ def generate_mask_overlay(
 
 def cleanup() -> None:
     """Free GPU memory and clear cached models."""
-    global _image_model, _image_processor, _video_model
+    global _image_model, _image_processor, _video_model, _video_model_device
 
     _image_model = None
     _image_processor = None
     _video_model = None
+    _video_model_device = None
+
+    # Clear torch.compile / Dynamo cache — SAM3 compiles 6+ submodules
+    # which persist ~1.5 GB of compiled kernels and autograd graphs
+    # in global Dynamo state even after the model is deleted.
+    try:
+        torch._dynamo.reset()
+    except Exception:
+        pass
+
+    import gc
+    gc.collect()
 
     import torch
     if torch.cuda.is_available():
+        torch.cuda.synchronize()
         torch.cuda.empty_cache()
+        torch.cuda.ipc_collect()
 
     log.info("SAM3 models unloaded and GPU memory freed")

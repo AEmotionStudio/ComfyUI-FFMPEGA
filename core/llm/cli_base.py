@@ -433,7 +433,7 @@ class CLIConnectorBase(LLMConnector):
             ]
             if "search_skills" in available_names:
                 usage_lines.append(
-                    "- ALWAYS call search_skills first to discover correct skill names\n"
+                    "- Call search_skills once to discover correct skill names\n"
                 )
             if "get_skill_details" in available_names:
                 usage_lines.append(

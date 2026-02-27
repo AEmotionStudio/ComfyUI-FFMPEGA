@@ -1084,7 +1084,10 @@ class FFMPEGAgentNode:
         # Output verification
         _VERIFICATION_TIMEOUT = 90.0
         _MAX_CORRECTION_ATTEMPTS = 2
-        if verify_output and result.success:
+        _skill_degraded = pipeline.metadata.get("_skill_degraded", False)
+        if _skill_degraded:
+            logger.info("Skipping output verification — skill handler reported degraded output (e.g. SAM3 OOM fallback)")
+        elif verify_output and result.success:
             logger.info("Output verification enabled — inspecting result...")
             for attempt in range(_MAX_CORRECTION_ATTEMPTS):
                 try:

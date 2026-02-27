@@ -20,6 +20,21 @@ def analyze_video(video_path: str) -> dict:
     Returns:
         Dictionary with video metadata.
     """
+    # Resolve relative paths against the ComfyUI input directory
+    if not Path(video_path).is_file():
+        try:
+            import folder_paths
+            input_dir = folder_paths.get_input_directory()
+        except Exception:
+            input_dir = str(
+                Path(__file__).resolve().parent.parent.parent.parent / "input"
+            )
+        candidate = Path(input_dir) / Path(video_path).name
+        if candidate.is_file():
+            video_path = str(candidate)
+        else:
+            return {"error": f"Video file not found: {video_path}"}
+
     analyzer = VideoAnalyzer()
     metadata = analyzer.analyze(video_path)
 

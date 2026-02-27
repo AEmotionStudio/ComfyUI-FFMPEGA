@@ -549,6 +549,8 @@ def _f_auto_mask(p):
     point_labels = None
     point_src_w = 0
     point_src_h = 0
+    lf_point_coords = None
+    lf_point_labels = None
     if mask_points_json:
         import json as _json
         try:
@@ -561,6 +563,12 @@ def _f_auto_mask(p):
                 if point_coords and point_labels:
                     log.info("auto_mask: using %d point prompt(s) (src %dx%d)",
                              len(point_coords), point_src_w, point_src_h)
+                # Last-frame points (optional)
+                lf_point_coords = pt_data.get("last_frame_points")
+                lf_point_labels = pt_data.get("last_frame_labels")
+                if lf_point_coords and lf_point_labels:
+                    log.info("auto_mask: using %d last-frame point(s)",
+                             len(lf_point_coords))
         except (ValueError, TypeError) as exc:
             log.warning("Failed to parse mask_points JSON: %s", exc)
 
@@ -580,6 +588,9 @@ def _f_auto_mask(p):
             "SAM3 not available for auto_mask — falling back to full-frame "
             "effect. Install with: pip install git+https://github.com/facebookresearch/sam3.git"
         )
+        _metadata_ref = p.get("_metadata_ref")
+        if _metadata_ref is not None and isinstance(_metadata_ref, dict):
+            _metadata_ref["_skill_degraded"] = True
         return _auto_mask_fallback(effect, strength)
 
     # Generate mask video using SAM3 with text + optional point prompts
@@ -594,10 +605,27 @@ def _f_auto_mask(p):
             labels=point_labels,
             point_src_width=point_src_w,
             point_src_height=point_src_h,
+            last_frame_points=lf_point_coords,
+            last_frame_labels=lf_point_labels,
         )
     except Exception as e:
         log.error("SAM3 mask generation failed: %s — falling back", e)
+        _metadata_ref = p.get("_metadata_ref")
+        if _metadata_ref is not None and isinstance(_metadata_ref, dict):
+            _metadata_ref["_skill_degraded"] = True
         return _auto_mask_fallback(effect, strength)
+    finally:
+        # Fully unload SAM3 model after each run to reclaim VRAM.
+        # Without this, sequential runs start with ~1.6 GB more VRAM
+        # consumed and eventually OOM.  The ~3s reload cost is worth it.
+        try:
+            try:
+                from ...core.sam3_masker import cleanup as _sam3_cleanup
+            except ImportError:
+                from core.sam3_masker import cleanup as _sam3_cleanup
+            _sam3_cleanup()
+        except Exception:
+            pass
 
     # Store mask path in metadata so agent_node can generate overlay
     _metadata_ref = p.get("_metadata_ref")
