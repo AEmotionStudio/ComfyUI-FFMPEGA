@@ -10,9 +10,20 @@ import re
 import shutil
 import subprocess
 import tempfile
+import functools
 
 import numpy as np  # type: ignore[import-not-found]
 import torch  # type: ignore[import-not-found]
+
+
+@functools.lru_cache(maxsize=None)
+def _get_ffmpeg_bin() -> str | None:
+    return shutil.which("ffmpeg")
+
+
+@functools.lru_cache(maxsize=None)
+def _get_ffprobe_bin() -> str | None:
+    return shutil.which("ffprobe")
 
 
 class MediaConverter:
@@ -111,8 +122,8 @@ class MediaConverter:
 
         If the video has no audio stream, returns a short silent mono buffer.
         """
-        ffmpeg_bin = shutil.which("ffmpeg")
-        ffprobe_bin = shutil.which("ffprobe")
+        ffmpeg_bin = _get_ffmpeg_bin()
+        ffprobe_bin = _get_ffprobe_bin()
         if not ffmpeg_bin or not ffprobe_bin:
             return self._silence()
 
@@ -159,7 +170,7 @@ class MediaConverter:
         Returns:
             Path to the created temporary video file.
         """
-        ffmpeg_bin = shutil.which("ffmpeg")
+        ffmpeg_bin = _get_ffmpeg_bin()
         if not ffmpeg_bin:
             raise RuntimeError("ffmpeg not found in PATH")
 
@@ -261,7 +272,7 @@ class MediaConverter:
 
         Returns 0.0 if probing fails.
         """
-        ffprobe_bin = shutil.which("ffprobe")
+        ffprobe_bin = _get_ffprobe_bin()
         if not ffprobe_bin:
             return 0.0
         try:
@@ -294,7 +305,7 @@ class MediaConverter:
                 - "trim": Use -shortest — output ends at the shorter
                   stream (original behavior).
         """
-        ffmpeg_bin = shutil.which("ffmpeg")
+        ffmpeg_bin = _get_ffmpeg_bin()
         if not ffmpeg_bin:
             return
 
@@ -414,7 +425,7 @@ class MediaConverter:
             self.mux_audio(video_path, audio_dicts[0], audio_mode=audio_mode)
             return
 
-        ffmpeg_bin = shutil.which("ffmpeg")
+        ffmpeg_bin = _get_ffmpeg_bin()
         if not ffmpeg_bin:
             return
 
@@ -491,7 +502,7 @@ class MediaConverter:
 
     def has_audio_stream(self, video_path: str) -> bool:
         """Check whether a video file contains an audio stream."""
-        ffprobe_bin = shutil.which("ffprobe")
+        ffprobe_bin = _get_ffprobe_bin()
         if not ffprobe_bin:
             return False
         try:
@@ -511,7 +522,7 @@ class MediaConverter:
         video duration. This ensures [idx:a] references work in concat/xfade
         filter graphs where all inputs must have audio streams.
         """
-        ffmpeg_bin = shutil.which("ffmpeg")
+        ffmpeg_bin = _get_ffmpeg_bin()
         if not ffmpeg_bin:
             return
 
