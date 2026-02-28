@@ -971,6 +971,11 @@ class SkillComposer:
                     val_str = sanitize_text_param(val_str)
                 template = template.replace(f"{{{key}}}", val_str)
 
+            # Resolve any remaining {placeholder} with skill defaults
+            for sp in (skill.parameters or []):
+                if sp.default is not None:
+                    template = template.replace(f"{{{sp.name}}}", str(sp.default))
+
             # Determine if it's a video filter, audio filter, or output option
             if template.startswith("-"):
                 output_options.extend(template.split())
@@ -981,10 +986,23 @@ class SkillComposer:
 
         # If skill has a pipeline, recursively compose
         elif skill.pipeline:
+            # Build a defaults map from the skill's parameter definitions
+            # so we can resolve placeholders that weren't in the user params
+            # (e.g. when validation dropped a param, or it wasn't provided).
+            _defaults = {}
+            for sp in (skill.parameters or []):
+                if sp.default is not None:
+                    _defaults[sp.name] = str(sp.default)
+
             for step_str in skill.pipeline:
                 # Substitute {placeholder} values from parent params
                 for key, value in params.items():
                     step_str = step_str.replace(f"{{{key}}}", str(value))
+
+                # Resolve any remaining {placeholder} with skill defaults
+                # to prevent literal "{ratio}" from reaching handlers.
+                for key, default_val in _defaults.items():
+                    step_str = step_str.replace(f"{{{key}}}", default_val)
 
                 # Parse step string (format: "skill_name:param1=val1,param2=val2")
                 if ":" in step_str:
