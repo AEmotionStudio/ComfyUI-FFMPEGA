@@ -7,6 +7,7 @@ from .load_video_path_node import LoadVideoPathNode
 from .text_input_node import TextInputNode
 from .save_video_node import SaveVideoNode
 from .video_to_path_node import VideoToPathNode
+from .effects_node import FFMPEGAEffectsNode
 
 # Node class mappings for ComfyUI
 NODE_CLASS_MAPPINGS = {
@@ -17,6 +18,7 @@ NODE_CLASS_MAPPINGS = {
     "FFMPEGASaveVideo": SaveVideoNode,
     "FFMPEGAVideoToPath": VideoToPathNode,
     "FFMPEGATextInput": TextInputNode,
+    "FFMPEGAEffects": FFMPEGAEffectsNode,
 }
 
 # Display names for nodes
@@ -28,6 +30,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FFMPEGASaveVideo": "Save Video (FFMPEGA)",
     "FFMPEGAVideoToPath": "Video to Path (FFMPEGA)",
     "FFMPEGATextInput": "FFMPEGA Text",
+    "FFMPEGAEffects": "FFMPEGA Effects Builder",
 }
 
 __all__ = [
@@ -38,6 +41,8 @@ __all__ = [
     "SaveVideoNode",
     "VideoToPathNode",
     "TextInputNode",
+    "FFMPEGAEffectsNode",
     "NODE_CLASS_MAPPINGS",
     "NODE_DISPLAY_NAME_MAPPINGS",
 ]
+
