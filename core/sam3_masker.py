@@ -889,8 +889,9 @@ def mask_video(
         # user's max_objects prevents SAM3 from ever allocating Tracker
         # memory for excess objects — the single biggest VRAM saving.
         orig_max_num_objects = getattr(video_model, "max_num_objects", _UNSET)
-        video_model.max_num_objects = 2
-        log.info("SAM3 max_num_objects set to %d (was %s)", 2,
+        effective_max_objects = 2 if points else max_objects
+        video_model.max_num_objects = effective_max_objects
+        log.info("SAM3 max_num_objects set to %d (was %s)", effective_max_objects,
                  orig_max_num_objects if orig_max_num_objects is not _UNSET else "unset")
 
         # ── Disable hotstart buffering ──────────────────────────────
