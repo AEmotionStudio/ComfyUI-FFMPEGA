@@ -162,6 +162,10 @@ class FFMPEGAgentNode:
                     "forceInput": True,
                     "tooltip": "Text input for subtitles, overlays, watermarks, or title cards. Connect an FFMPEGA Text node or any STRING source. More slots appear automatically (text_b, text_c, ...).",
                 }),
+                "pipeline_json": ("STRING", {
+                    "forceInput": True,
+                    "tooltip": "Connect the output from the FFMPEGA Effects Builder node here. The agent will inject the selected effects as hints into your prompt.",
+                }),
                 "subtitle_path": ("STRING", {
                     "default": "",
                     "multiline": False,
@@ -394,6 +398,44 @@ class FFMPEGAgentNode:
     # ------------------------------------------------------------------ #
     #  Private helpers extracted from process()                           #
     # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _inject_effects_hints(prompt: str, pipeline_json: str) -> str:
+        """Inject FFMPEGAEffectsBuilder parameters into the prompt.
+
+        This converts the pipeline_json from the effects builder node
+        into explicit instructions for the LLM to follow.
+        """
+        import json as _json
+        try:
+            data = _json.loads(pipeline_json)
+        except (ValueError, TypeError):
+            return prompt
+
+        steps = data.get("pipeline", [])
+        raw = data.get("raw_ffmpeg", "")
+        if not steps and not raw:
+            return prompt
+
+        hint_lines = [
+            "\n\n--- EFFECTS BUILDER (pre-selected by user) ---",
+            "The user has pre-selected the following effects. You MUST include",
+            "these EXACT skills in your pipeline with the specified parameters.",
+            "You may add additional skills if the user's prompt requires them.",
+        ]
+
+        for step in steps:
+            skill = step.get("skill", "")
+            params = step.get("params", {})
+            if skill:
+                params_str = ", ".join(f"{k}={v}" for k, v in params.items()) if params else "defaults"
+                hint_lines.append(f"  - {skill} ({params_str})")
+
+        if raw:
+            hint_lines.append(f"  - RAW FFMPEG FILTERS: {raw}")
+
+        hint_lines.append("--- END EFFECTS BUILDER ---")
+        return prompt + "\n".join(hint_lines)
 
     def _resolve_inputs(
         self,
@@ -1242,6 +1284,7 @@ class FFMPEGAgentNode:
         video_a: str = "",
         image_path_a: str = "",
         text_a: str = "",
+        pipeline_json: str = "",
         advanced_options: bool = False,
         subtitle_path: str = "",
         preview_mode: bool = False,
@@ -1299,6 +1342,10 @@ class FFMPEGAgentNode:
             from core import model_manager  # type: ignore
         model_manager.set_downloads_allowed(allow_model_downloads)
 
+        # --- Inject FFMPEGA Effects Builder pipeline if provided ---
+        if pipeline_json and pipeline_json.strip():
+            prompt = self._inject_effects_hints(prompt, pipeline_json)
+
         # --- Batch mode ---
         if batch_mode:
             return await self._process_batch(
@@ -1321,6 +1368,7 @@ class FFMPEGAgentNode:
                 sam3_max_objects=sam3_max_objects,
                 sam3_det_threshold=sam3_det_threshold,
                 mask_points=mask_points,
+                pipeline_json=pipeline_json,
             )
 
         # --- Resolve inputs ---
@@ -2587,6 +2635,7 @@ Token Usage{est_tag}:
         sam3_max_objects: int = 5,
         sam3_det_threshold: float = 0.7,
         mask_points: str = "",
+        pipeline_json: str = "",
     ) -> tuple[torch.Tensor, dict, str, str, str, str]:
         """Process all matching videos in a folder with the same pipeline.
 
