@@ -1,14 +1,12 @@
 """MCP Tool implementations for FFMPEGA."""
 
-import asyncio
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from ..core.video.analyzer import VideoAnalyzer
-from ..core.executor.command_builder import CommandBuilder
 from ..core.executor.process_manager import ProcessManager
 from ..skills.registry import get_registry, SkillCategory
-from ..skills.composer import SkillComposer, Pipeline, PipelineStep
+from ..skills.composer import SkillComposer, Pipeline
 from ..core.sanitize import validate_video_path
 
 
@@ -281,9 +279,7 @@ def extract_frames(
     Returns:
         Dictionary with frame_count, paths, and folder.
     """
-    from pathlib import Path
     from ..core.executor.preview import PreviewGenerator
-    from ..core.executor.process_manager import ProcessManager
 
     try:
         video_path = validate_video_path(video_path)
@@ -352,7 +348,6 @@ def cleanup_vision_frames(run_id: str = "") -> None:
     Called after pipeline generation completes to clean up disk space.
     """
     import shutil
-    from pathlib import Path
 
     base_dir = Path(__file__).resolve().parent.parent / "_vision_frames"
     if run_id:
@@ -436,7 +431,6 @@ def list_luts() -> dict:
     Returns:
         Dictionary with list of available LUTs and the folder path.
     """
-    from pathlib import Path
 
     luts_dir = Path(__file__).resolve().parent.parent / "luts"
     if not luts_dir.is_dir():

@@ -1,5 +1,4 @@
 
-import pytest
 from skills.registry import Skill, SkillParameter, SkillCategory, ParameterType
 
 def test_skill_caching_initialization():

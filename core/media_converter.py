@@ -10,7 +10,6 @@ import re
 import shutil
 import subprocess
 import tempfile
-from typing import Optional
 
 import numpy as np  # type: ignore[import-not-found]
 import torch  # type: ignore[import-not-found]

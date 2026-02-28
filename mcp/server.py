@@ -1,8 +1,7 @@
 """MCP Server implementation for FFMPEGA."""
 
-import asyncio
 import json
-from typing import Any, Optional
+from typing import Optional
 
 from .tools import analyze_video, list_skills, build_pipeline, execute_pipeline
 from .resources import get_resource

@@ -4,7 +4,7 @@ import copy
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, Callable, Any, Union
+from typing import Optional, Any
 
 logger = logging.getLogger("ffmpega")
 
@@ -519,7 +519,6 @@ class SkillRegistry:
                 ``custom_skills/`` sibling directory next to this file.
             interval: Poll interval in seconds (default 5.0).
         """
-        import os
         import threading
         from pathlib import Path
 

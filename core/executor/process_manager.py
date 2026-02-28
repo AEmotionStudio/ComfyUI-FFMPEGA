@@ -6,7 +6,7 @@ import re
 import shutil
 import subprocess
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Callable, AsyncIterator
 from .command_builder import FFMPEGCommand

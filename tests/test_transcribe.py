@@ -6,10 +6,8 @@ Tests for:
 - Skill registry and dispatch table entries
 """
 
-import json
 import os
 import sys
-import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
