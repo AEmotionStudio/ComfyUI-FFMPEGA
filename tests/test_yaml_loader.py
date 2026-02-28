@@ -7,13 +7,11 @@ from pathlib import Path
 
 from skills.yaml_loader import (
     load_skill_from_yaml,
-    load_custom_skills,
     _parse_parameter,
 )
 from skills.registry import (
     SkillRegistry,
     SkillCategory,
-    ParameterType,
 )
 
 

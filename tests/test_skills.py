@@ -1,6 +1,5 @@
 """Tests for the skill system."""
 
-import pytest
 
 from skills.registry import (
     SkillRegistry,
@@ -10,7 +9,7 @@ from skills.registry import (
     ParameterType,
     get_registry,
 )
-from skills.composer import SkillComposer, Pipeline, PipelineStep
+from skills.composer import SkillComposer, Pipeline
 
 
 class TestSkillParameter:

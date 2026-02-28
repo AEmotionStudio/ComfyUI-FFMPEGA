@@ -2,7 +2,6 @@
 
 import asyncio
 import pytest
-import threading
 import time
 
 
@@ -151,7 +150,6 @@ class TestProcessManagerCancel:
 
     def test_cancel_releases_active_proc_slot(self):
         # Simulate cancelling a stored proc reference (mock it)
-        import subprocess
         from core.executor.process_manager import ProcessManager
         pm = ProcessManager()
         # Put a fake proc object in the slot

@@ -1,9 +1,7 @@
 """Gemini CLI connector — runs the `gemini` binary in headless mode."""
 
-import asyncio
 import json
 import logging
-from pathlib import Path
 from typing import Optional
 
 from .base import LLMConfig, LLMResponse, LLMProvider

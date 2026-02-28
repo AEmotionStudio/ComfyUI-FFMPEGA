@@ -5,7 +5,6 @@ escaping for text parameters embedded in FFMPEG filter strings.
 """
 
 import os
-import re
 from pathlib import Path
 
 from .errors import ValidationError

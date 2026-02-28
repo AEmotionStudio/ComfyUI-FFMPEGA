@@ -30,8 +30,8 @@ def write_cube(filepath: str, title: str, size: int, transform_fn):
     with open(filepath, "w") as f:
         f.write(f"TITLE \"{title}\"\n")
         f.write(f"LUT_3D_SIZE {size}\n")
-        f.write(f"DOMAIN_MIN 0.0 0.0 0.0\n")
-        f.write(f"DOMAIN_MAX 1.0 1.0 1.0\n")
+        f.write("DOMAIN_MIN 0.0 0.0 0.0\n")
+        f.write("DOMAIN_MAX 1.0 1.0 1.0\n")
         f.write("\n")
         for bi in range(size):
             b = bi / (size - 1)

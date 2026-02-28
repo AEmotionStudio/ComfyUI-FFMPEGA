@@ -260,7 +260,6 @@ def _find_checkpoint() -> str:
 
 def _load_safetensors(model, checkpoint_path: str) -> None:
     """Load a safetensors checkpoint into a SAM3 model."""
-    import torch
     from safetensors.torch import load_file
 
     ckpt = load_file(checkpoint_path)
@@ -1712,30 +1711,43 @@ print("RESULT:" + result, flush=True)
 
         # Stream stderr in real-time (SAM3 progress, VRAM diag, etc.)
         import threading
-        _stderr_lines = []
 
         def _stream_stderr():
-            for line in proc.stderr:
-                line = line.rstrip()
-                if not line:
-                    continue
-                _stderr_lines.append(line)
-                # Filter out noisy pkg_resources deprecation warnings
-                if "pkg_resources" in line or "slated for removal" in line:
-                    continue
-                log.info("[SAM3] %s", line)
-            proc.stderr.close()
+            try:
+                for line in proc.stderr:
+                    line = line.rstrip()
+                    if not line:
+                        continue
+                    # Filter out noisy pkg_resources deprecation warnings
+                    if "pkg_resources" in line or "slated for removal" in line:
+                        continue
+                    log.info("[SAM3] %s", line)
+            except ValueError:
+                pass  # stderr closed
+            finally:
+                try:
+                    proc.stderr.close()
+                except OSError:
+                    pass
 
         stderr_thread = threading.Thread(target=_stream_stderr, daemon=True)
         stderr_thread.start()
 
-        # Wait for process to finish (with timeout)
+        # Wait for process to finish (with timeout) first so we don't block
+        # forever reading stdout if the process hangs.
         try:
-            stdout_data, _ = proc.communicate(timeout=900)
+            proc.wait(timeout=900)
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait()
             raise RuntimeError("SAM3 subprocess timed out after 15 minutes")
+
+        # Read stdout (contains RESULT: line) — don't use communicate()
+        # because we already closed stdin and are reading stderr in a thread.
+        try:
+            stdout_data = proc.stdout.read()
+        finally:
+            proc.stdout.close()
 
         stderr_thread.join(timeout=5)
 

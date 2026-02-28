@@ -1,9 +1,8 @@
 """Phase 5 tests: model_config loader, py.typed, batch analysis."""
 
-import os
 import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 # ── core/model_config ─────────────────────────────────────────────────────────

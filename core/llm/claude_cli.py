@@ -1,9 +1,7 @@
 """Claude Code CLI connector — runs the `claude` binary in non-interactive mode."""
 
-import asyncio
 import json
 import logging
-from pathlib import Path
 from typing import Optional
 
 from .base import LLMConfig, LLMResponse, LLMProvider

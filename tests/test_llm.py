@@ -1,6 +1,5 @@
 """Tests for the LLM integration."""
 
-import pytest
 import json
 
 from core.llm.base import LLMConfig, LLMProvider, LLMResponse

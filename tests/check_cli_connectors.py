@@ -119,9 +119,9 @@ async def main():
                 available = await connector.is_available()
                 print(f"  is_available: {available}")
                 if available:
-                    print(f"    ✅ binary found")
+                    print("    ✅ binary found")
                 else:
-                    print(f"    ⚠️  binary not installed (expected on this system)")
+                    print("    ⚠️  binary not installed (expected on this system)")
             except Exception as e:
                 print(f"  is_available: error ({e})")
 
@@ -138,7 +138,7 @@ async def main():
                 print(f"  binary_names: {connector._binary_names()}")
 
             results.append((name, "PASS", has_vision))
-            print(f"  PASS")
+            print("  PASS")
 
         except Exception as e:
             results.append((name, f"FAIL: {e}", False))

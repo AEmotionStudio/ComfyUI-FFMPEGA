@@ -6,11 +6,10 @@ Tests the chat_with_tools implementation for:
 - Tool ID propagation for the agentic loop
 """
 
-import pytest
 import json
 
-from core.llm.base import LLMConfig, LLMProvider, LLMResponse
-from core.llm.cli_base import CLIConnectorBase, _TOOL_CALL_MARKER
+from core.llm.base import LLMConfig, LLMProvider
+from core.llm.cli_base import CLIConnectorBase
 
 
 # ── Sample tools for testing ──────────────────────────────────────────

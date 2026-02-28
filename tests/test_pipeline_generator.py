@@ -11,7 +11,8 @@ import json
 try:
     from core.pipeline_generator import PipelineGenerator
 except (ImportError, ModuleNotFoundError):
-    import importlib.util, os
+    import importlib.util
+    import os
     _spec = importlib.util.spec_from_file_location(
         "core.pipeline_generator",
         os.path.join(os.path.dirname(__file__), "..", "core", "pipeline_generator.py"),
