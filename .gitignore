@@ -153,3 +153,4 @@ uv.lock
 
 # MiniMax-Remover (local-only, not pushed to public — unlicensed code)
 core/minimax_remover.py
+advert/

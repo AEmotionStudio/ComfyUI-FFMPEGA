@@ -490,29 +490,29 @@ function addDownloadOverlay(container, videoEl) {
         e.stopPropagation();
         e.preventDefault();
         if (videoEl.src) {
-             const a = document.createElement("a");
-             a.href = videoEl.src;
-             a.download = "video.mp4"; // Simple default
-             try {
-                 const params = new URL(a.href, window.location.href).searchParams;
-                 const f = params.get("filename");
-                 if (f) a.download = f;
-             } catch(e) {}
+            const a = document.createElement("a");
+            a.href = videoEl.src;
+            a.download = "video.mp4"; // Simple default
+            try {
+                const params = new URL(a.href, window.location.href).searchParams;
+                const f = params.get("filename");
+                if (f) a.download = f;
+            } catch (e) { }
 
-             document.body.appendChild(a);
-             a.click();
-             setTimeout(() => a.remove(), 0);
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => a.remove(), 0);
 
-             // Feedback animation
-             if (btn._timeout) clearTimeout(btn._timeout);
-             btn.textContent = "✅";
-             btn.setAttribute("aria-label", "Saved!");
+            // Feedback animation
+            if (btn._timeout) clearTimeout(btn._timeout);
+            btn.textContent = "✅";
+            btn.setAttribute("aria-label", "Saved!");
 
-             btn._timeout = setTimeout(() => {
-                 btn.textContent = "💾";
-                 btn.setAttribute("aria-label", "Save Video");
-                 btn._timeout = null;
-             }, 1000);
+            btn._timeout = setTimeout(() => {
+                btn.textContent = "💾";
+                btn.setAttribute("aria-label", "Save Video");
+                btn._timeout = null;
+            }, 1000);
         }
     };
 
@@ -575,9 +575,14 @@ app.registerExtension({
                 if (llmWidget) {
                     const customWidget = this.widgets?.find(w => w.name === "custom_model");
                     const apiKeyWidget = this.widgets?.find(w => w.name === "api_key");
+                    const ollamaUrlWidget = this.widgets?.find(w => w.name === "ollama_url");
+                    const verifyWidget = this.widgets?.find(w => w.name === "verify_output");
+                    const visionWidget = this.widgets?.find(w => w.name === "use_vision");
+                    const ptcWidget = this.widgets?.find(w => w.name === "ptc_mode");
 
                     function needsApiKey(model) {
                         if (!model) return false;
+                        if (model === "none") return false;
                         // CLI-based models use their own auth — no api_key needed
                         if (model === "gemini-cli" || model === "claude-cli" || model === "cursor-agent" || model === "qwen-cli") return false;
                         return model.startsWith("gpt") ||
@@ -588,8 +593,14 @@ app.registerExtension({
 
                     function updateLlmVisibility() {
                         const model = llmWidget.value;
+                        const isNone = model === "none";
                         toggleWidget(customWidget, model === "custom");
                         toggleWidget(apiKeyWidget, needsApiKey(model));
+                        // Hide LLM-only widgets when no model is selected
+                        if (ollamaUrlWidget) toggleWidget(ollamaUrlWidget, !isNone);
+                        if (verifyWidget) toggleWidget(verifyWidget, !isNone);
+                        if (visionWidget) toggleWidget(visionWidget, !isNone);
+                        if (ptcWidget) toggleWidget(ptcWidget, !isNone);
                         fitHeight();
                     }
 
