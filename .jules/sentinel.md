@@ -27,3 +27,8 @@
 **Vulnerability:** MCP tools (`extract_frames`, `analyze_video`) blindly accepted file paths and only checked for existence (`Path.is_file()`) before passing them to FFMPEG/FFprobe. This allowed arbitrary file read via tool calls (e.g., extracting frames from private files or probing sensitive files).
 **Learning:** Checking for file existence is not a security check. Any tool that accepts a file path must validate it against allowed extensions and blocked directories, especially when that path is used in external commands or to extract data.
 **Prevention:** Enforce `validate_video_path` (which checks extension allowlists and sensitive directory blocklists) on ALL input paths in `mcp/tools.py` and `mcp/vision.py` before processing.
+
+## 2025-05-28 - Unchecked Input and Output Paths in Pipeline Generation and Audio Visualization MCP Tools
+**Vulnerability:** Similar to the previous MCP tool vulnerability, `build_pipeline` in `mcp/tools.py` accepted `input_path` and `output_path` without checking them against safety limits. `generate_audio_visualization` in `mcp/vision.py` also accepted `video_path` blindly. This allows arbitrary file reading and even potential path traversal and unintended file overwriting.
+**Learning:** Any entry point accessible by the LLM (like MCP tools) needs strict argument validation. `Path(video_path).exists()` does not stop the user from pointing to sensitive files (e.g. `/etc/passwd`).
+**Prevention:** Always enforce path sanitization wrappers like `validate_video_path` and `validate_output_file_path` on all file path inputs at the exact interface boundary (MCP tools).

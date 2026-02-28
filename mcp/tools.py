@@ -7,7 +7,7 @@ from ..core.video.analyzer import VideoAnalyzer
 from ..core.executor.process_manager import ProcessManager
 from ..skills.registry import get_registry, SkillCategory
 from ..skills.composer import SkillComposer, Pipeline
-from ..core.sanitize import validate_video_path
+from ..core.sanitize import validate_video_path, validate_output_file_path
 
 
 def analyze_video(video_path: str) -> dict:
@@ -119,6 +119,15 @@ def build_pipeline(
     Returns:
         Dictionary with pipeline information and command string.
     """
+    try:
+        input_path = validate_video_path(input_path)
+        output_path = validate_output_file_path(output_path)
+    except Exception as e:
+        return {
+            "success": False,
+            "errors": [str(e)],
+        }
+
     registry = get_registry()
     composer = SkillComposer(registry)
 

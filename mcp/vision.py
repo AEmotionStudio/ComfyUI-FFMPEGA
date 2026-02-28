@@ -832,9 +832,10 @@ def generate_audio_visualization(
         - spectrogram_path: Path to spectrogram PNG (or None on failure)
         - audio_metrics: Dict with loudness/volume text summary
     """
-    video_path = str(video_path)
-    if not Path(video_path).exists():
-        return {"error": f"File not found: {video_path}"}
+    try:
+        video_path = validate_video_path(video_path)
+    except Exception as e:
+        return {"error": str(e)}
 
     # Check for audio stream first
     props = _get_audio_properties(video_path)
