@@ -87,7 +87,7 @@ class FFMPEGAgentNode:
     def INPUT_TYPES(cls):
         """Define input types for the node."""
         ollama_models = cls._fetch_ollama_models()
-        all_models = ollama_models + cls._get_api_models() + ["custom"]
+        all_models = ["none"] + ollama_models + cls._get_api_models() + ["custom"]
 
         # --- CLI auto-detection -------------------------------------------
         # Use shared resolver that checks PATH + well-known user-local dirs.
@@ -126,7 +126,7 @@ class FFMPEGAgentNode:
                 }),
                 "llm_model": (all_models, {
                     "default": all_models[0],
-                    "tooltip": "AI model used to interpret your prompt. Local Ollama models appear first, followed by cloud API models (require api_key).",
+                    "tooltip": "AI model used to interpret your prompt. Select 'none' for SAM3-only mode — your prompt text is used directly as the SAM3 text target (no LLM needed). Local Ollama models appear next, followed by cloud API models (require api_key).",
                 }),
                 "quality_preset": (cls.QUALITY_PRESETS, {
                     "default": "standard",
@@ -262,6 +262,10 @@ class FFMPEGAgentNode:
                 "mask_points": ("STRING", {
                     "forceInput": True,
                     "tooltip": "JSON-encoded point selection data from the Load Image/Video Path node's Point Selector. Guides SAM3 masking with click-to-select points instead of relying on text prompts alone.",
+                }),
+                "pipeline_json": ("STRING", {
+                    "forceInput": True,
+                    "tooltip": "Pipeline JSON from the FFMPEGA Effects Builder node. When llm_model='none', this pipeline is executed directly. When an LLM is active, the selected skills are injected as hints into the prompt.",
                 }),
 
                 "batch_mode": ("BOOLEAN", {
@@ -1257,6 +1261,7 @@ class FFMPEGAgentNode:
         sam3_max_objects: int = 5,
         sam3_det_threshold: float = 0.7,
         mask_points: str = "",
+        pipeline_json: str = "",
         batch_mode: bool = False,
         video_folder: str = "",
         file_pattern: str = "*.mp4",
@@ -1348,6 +1353,51 @@ class FFMPEGAgentNode:
         video_metadata = self.analyzer.analyze(effective_video_path)
         metadata_str = video_metadata.to_analysis_string()
 
+        # ================================================================== #
+        #  No-LLM mode — bypass pipeline generation entirely                #
+        # ================================================================== #
+        if llm_model == "none":
+            # Effects Builder connected → execute its pipeline directly
+            if pipeline_json and pipeline_json.strip():
+                return await self._process_effects_pipeline(
+                    pipeline_json=pipeline_json,
+                    prompt=prompt,
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
+                    sam3_device=sam3_device,
+                    sam3_max_objects=sam3_max_objects,
+                    sam3_det_threshold=sam3_det_threshold,
+                    mask_points=mask_points,
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    **kwargs,
+                )
+            # No Effects Builder → SAM3-only mode (prompt = text target)
+            return await self._process_sam3_only(
+                prompt=prompt,
+                effective_video_path=effective_video_path,
+                video_metadata=video_metadata,
+                save_output=save_output,
+                output_path=output_path,
+                preview_mode=preview_mode,
+                quality_preset=quality_preset,
+                crf=crf,
+                encoding_preset=encoding_preset,
+                sam3_device=sam3_device,
+                sam3_max_objects=sam3_max_objects,
+                sam3_det_threshold=sam3_det_threshold,
+                mask_points=mask_points,
+                temp_video_from_images=temp_video_from_images,
+                temp_video_with_audio=temp_video_with_audio,
+                **kwargs,
+            )
+
         # --- Build connected-inputs context string ---
         connected_inputs_str = self._build_connected_inputs_summary(
             images_a=images_a,
@@ -1374,9 +1424,15 @@ class FFMPEGAgentNode:
                 )
             effective_model = custom_model.strip()
         connector = self.pipeline_generator.create_connector(effective_model, ollama_url, api_key)
+
+        # --- LLM Hint Mode: inject Effects Builder selections into prompt ---
+        effective_prompt = prompt
+        if pipeline_json and pipeline_json.strip():
+            effective_prompt = self._inject_effects_hints(prompt, pipeline_json)
+
         try:
             spec = await self.pipeline_generator.generate(
-                connector, prompt, metadata_str,
+                connector, effective_prompt, metadata_str,
                 connected_inputs=connected_inputs_str,
                 video_path=effective_video_path,
                 use_vision=use_vision,
@@ -1684,6 +1740,413 @@ Token Usage{est_tag}:
 
         return (images_tensor, audio_out, output_path, command.to_string(), analysis, mask_overlay_path)
 
+    # ------------------------------------------------------------------ #
+    #  Effects Builder support                                             #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _inject_effects_hints(prompt: str, pipeline_json: str) -> str:
+        """Append Effects Builder selections as explicit skill hints.
+
+        When an LLM is active and the Effects Builder is connected, the
+        selected skills are injected as anchors so the LLM doesn't have
+        to search through all skills — particularly helpful for smaller
+        models.
+        """
+        import json as _json
+        try:
+            data = _json.loads(pipeline_json)
+        except (ValueError, TypeError):
+            return prompt
+
+        steps = data.get("pipeline", [])
+        raw = data.get("raw_ffmpeg", "")
+        if not steps and not raw:
+            return prompt
+
+        hint_lines = [
+            "\n\n--- EFFECTS BUILDER (pre-selected by user) ---",
+            "The user has pre-selected the following effects. You MUST include",
+            "these EXACT skills in your pipeline with the specified parameters.",
+            "You may add additional skills if the user's prompt requires them.",
+        ]
+
+        for step in steps:
+            skill = step.get("skill", "")
+            params = step.get("params", {})
+            if skill:
+                params_str = ", ".join(f"{k}={v}" for k, v in params.items()) if params else "defaults"
+                hint_lines.append(f"  - {skill} ({params_str})")
+
+        if raw:
+            hint_lines.append(f"  - RAW FFMPEG FILTERS: {raw}")
+
+        hint_lines.append("--- END EFFECTS BUILDER ---")
+
+        return prompt + "\n".join(hint_lines)
+
+    async def _process_effects_pipeline(
+        self,
+        pipeline_json: str,
+        prompt: str,
+        effective_video_path: str,
+        video_metadata,
+        save_output: bool,
+        output_path: str,
+        preview_mode: bool,
+        quality_preset: str,
+        crf: int,
+        encoding_preset: str,
+        sam3_device: str,
+        sam3_max_objects: int,
+        sam3_det_threshold: float,
+        mask_points: str,
+        temp_video_from_images: Optional[str],
+        temp_video_with_audio: Optional[str],
+        **kwargs,
+    ) -> tuple[torch.Tensor, dict, str, str, str, str]:
+        """Execute an Effects Builder pipeline directly (no LLM).
+
+        Parses the JSON from the Effects Builder node and constructs a
+        Pipeline from the skill steps + optional raw FFmpeg filters.
+
+        Returns the standard 6-tuple.
+        """
+        import json as _json
+        from ..skills.composer import Pipeline  # type: ignore[import-not-found]
+
+        try:
+            data = _json.loads(pipeline_json)
+        except (ValueError, TypeError) as exc:
+            raise RuntimeError(f"Effects Builder: invalid pipeline JSON: {exc}") from exc
+
+        steps = data.get("pipeline", [])
+        raw_ffmpeg = data.get("raw_ffmpeg", "")
+        effects_mode = data.get("effects_mode", "empty")
+
+        if effects_mode == "empty" and not raw_ffmpeg:
+            raise RuntimeError(
+                "Effects Builder: no effects selected and no raw FFmpeg filters. "
+                "Please select at least one effect or provide raw filters."
+            )
+
+        logger.info(
+            "Effects Builder mode: %s — %d skills, raw=%s",
+            effects_mode, len(steps), bool(raw_ffmpeg),
+        )
+
+        # --- Build output path ---
+        output_path, temp_render_dir = self._build_output_path(
+            effective_video_path=effective_video_path,
+            save_output=save_output,
+            output_path=output_path,
+            preview_mode=preview_mode,
+        )
+
+        # --- Construct Pipeline from effects JSON ---
+        pipeline = Pipeline(input_path=effective_video_path, output_path=output_path)
+
+        # Set metadata
+        input_fps = (
+            video_metadata.primary_video.frame_rate
+            if video_metadata.primary_video and video_metadata.primary_video.frame_rate
+            else 24
+        )
+        pipeline.metadata["_input_fps"] = int(round(input_fps))
+        if video_metadata.primary_video:
+            pipeline.metadata["_input_width"] = video_metadata.primary_video.width
+            pipeline.metadata["_input_height"] = video_metadata.primary_video.height
+
+        # SAM3 preferences (for auto_mask steps)
+        pipeline.metadata["_sam3_device"] = sam3_device
+        pipeline.metadata["_sam3_max_objects"] = sam3_max_objects
+        pipeline.metadata["_sam3_det_threshold"] = sam3_det_threshold
+        if mask_points and mask_points.strip():
+            pipeline.metadata["_mask_points"] = mask_points.strip()
+
+        # Add skill steps from the effects builder
+        for step in steps:
+            skill_name = step.get("skill", "")
+            params = step.get("params", {})
+            if skill_name:
+                pipeline.add_step(skill_name, params)
+
+        # Quality preset (unless overridden by skills)
+        _NO_QUALITY_PRESET_SKILLS = {"gif", "webm"}
+        if quality_preset and not any(
+            s.skill_name in _NO_QUALITY_PRESET_SKILLS for s in pipeline.steps
+        ):
+            crf_map = {"draft": 28, "standard": 23, "high": 18, "lossless": 0}
+            preset_map = {"draft": "ultrafast", "standard": "medium", "high": "slow", "lossless": "veryslow"}
+            pipeline.add_step("quality", {
+                "crf": crf if crf >= 0 else crf_map.get(quality_preset, 23),
+                "preset": encoding_preset if encoding_preset != "auto" else preset_map.get(quality_preset, "medium"),
+            })
+
+        # --- Compose & execute ---
+        command = self.composer.compose(pipeline)
+
+        # Inject raw FFmpeg filters (appended to video filter chain)
+        if raw_ffmpeg and raw_ffmpeg.strip():
+            for raw_filter in raw_ffmpeg.strip().split(","):
+                raw_filter = raw_filter.strip()
+                if raw_filter:
+                    # Parse "name=params" into a Filter object
+                    if "=" in raw_filter:
+                        name, _, param_str = raw_filter.partition("=")
+                        command.video_filters.add_filter(name.strip(), {"": param_str})
+                    else:
+                        command.video_filters.add_filter(raw_filter)
+            logger.info("Effects Builder: appended raw filters: %s", raw_ffmpeg.strip())
+
+        logger.debug("Effects Builder command: %s", command.to_string())
+
+        if preview_mode:
+            if command.complex_filter:
+                command.output_options.extend(["-s", "480x270"])
+            else:
+                command.video_filters.add_filter("scale", {"w": 480, "h": -1})
+            command.output_options.extend(["-t", "10"])
+
+        result = self.process_manager.execute(command, timeout=600)
+        if not result.success:
+            raise RuntimeError(
+                f"Effects Builder: FFMPEG execution failed: {result.error_message}\n"
+                f"Command: {command.to_string()}"
+            )
+
+        # --- Collect frame/audio output ---
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = self._collect_frame_output(
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio="-an" in command.output_options,
+        )
+
+        # --- Mask overlay (if auto_mask was used) ---
+        mask_overlay_path = ""
+        mask_video_path = pipeline.metadata.get("_mask_video_path", "")
+        if mask_video_path and os.path.isfile(mask_video_path):
+            mask_type = kwargs.get("mask_output_type", "colored_overlay")
+            if mask_type == "black_white":
+                mask_overlay_path = mask_video_path
+            else:
+                try:
+                    from ..core.sam3_masker import generate_mask_overlay
+                    mask_overlay_path = generate_mask_overlay(
+                        video_path=effective_video_path,
+                        mask_video_path=mask_video_path,
+                    )
+                except Exception as e:
+                    logger.warning("Effects Builder: mask overlay failed: %s", e)
+
+        # --- Build analysis string ---
+        step_summary = "\n".join(
+            f"  {i+1}. {s.get('skill', '?')} {s.get('params', {})}"
+            for i, s in enumerate(steps)
+        )
+        analysis = (
+            f"Effects Builder Mode (no LLM)\n"
+            f"Mode: {effects_mode}\n"
+            f"Steps:\n{step_summary}\n"
+            f"{'Raw filters: ' + raw_ffmpeg if raw_ffmpeg else ''}\n\n"
+            f"Pipeline:\n{self.composer.explain_pipeline(pipeline)}"
+        )
+
+        # --- Cleanup temp files ---
+        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+            if not os.listdir(temp_render_dir):
+                shutil.rmtree(temp_render_dir, ignore_errors=True)
+
+        return (images_tensor, audio_out, output_path, command.to_string(), analysis, mask_overlay_path)
+
+    # ------------------------------------------------------------------ #
+    #  SAM3-only mode (no LLM)                                            #
+    # ------------------------------------------------------------------ #
+
+    async def _process_sam3_only(
+        self,
+        prompt: str,
+        effective_video_path: str,
+        video_metadata,
+        save_output: bool,
+        output_path: str,
+        preview_mode: bool,
+        quality_preset: str,
+        crf: int,
+        encoding_preset: str,
+        sam3_device: str,
+        sam3_max_objects: int,
+        sam3_det_threshold: float,
+        mask_points: str,
+        temp_video_from_images: Optional[str],
+        temp_video_with_audio: Optional[str],
+        **kwargs,
+    ) -> tuple[torch.Tensor, dict, str, str, str, str]:
+        """Run SAM3 masking directly without any LLM involvement.
+
+        Calls ``mask_video_subprocess`` directly — the main video output is
+        a clean copy of the source (no effects applied).  The SAM3 mask is
+        output via the ``mask_overlay_path`` (colored overlay or raw B&W).
+
+        Returns the standard 6-tuple:
+            (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
+        """
+        import subprocess as _sp
+
+        logger.info("SAM3-only mode: using prompt as text target → '%s'", prompt)
+
+        # --- Build output path ---
+        output_path, temp_render_dir = self._build_output_path(
+            effective_video_path=effective_video_path,
+            save_output=save_output,
+            output_path=output_path,
+            preview_mode=preview_mode,
+        )
+
+        # --- Parse point prompts (from the JS point selector) ---
+        point_coords = None
+        point_labels = None
+        point_src_w = 0
+        point_src_h = 0
+        if mask_points and mask_points.strip():
+            import json as _json
+            try:
+                pt_data = _json.loads(mask_points)
+                if isinstance(pt_data, dict):
+                    point_coords = pt_data.get("points")
+                    point_labels = pt_data.get("labels")
+                    point_src_w = int(pt_data.get("image_width", 0))
+                    point_src_h = int(pt_data.get("image_height", 0))
+                    if point_coords and point_labels:
+                        logger.info("SAM3-only: using %d point prompt(s) (src %dx%d)",
+                                    len(point_coords), point_src_w, point_src_h)
+            except (ValueError, TypeError) as exc:
+                logger.warning("SAM3-only: failed to parse mask_points JSON: %s", exc)
+
+        # --- Run SAM3 directly (no auto_mask handler, no effects) ---
+        try:
+            from ..core.sam3_masker import mask_video_subprocess as sam3_mask_video
+        except ImportError:
+            from core.sam3_masker import mask_video_subprocess as sam3_mask_video
+
+        try:
+            mask_video_path = sam3_mask_video(
+                video_path=effective_video_path,
+                prompt=prompt,
+                device=sam3_device,
+                max_objects=sam3_max_objects,
+                det_threshold=sam3_det_threshold,
+                points=point_coords,
+                labels=point_labels,
+                point_src_width=point_src_w,
+                point_src_height=point_src_h,
+            )
+        except Exception as e:
+            logger.error("SAM3-only: mask generation failed: %s", e)
+            raise RuntimeError(f"SAM3 mask generation failed: {e}") from e
+
+        # --- Copy source video through as the main output (no effects) ---
+        crf_map = {"draft": 28, "standard": 23, "high": 18, "lossless": 0}
+        preset_map = {"draft": "ultrafast", "standard": "medium", "high": "slow", "lossless": "veryslow"}
+        effective_crf = crf if crf >= 0 else crf_map.get(quality_preset, 23)
+        effective_preset = encoding_preset if encoding_preset != "auto" else preset_map.get(quality_preset, "medium")
+
+        ffmpeg_cmd = [
+            "ffmpeg", "-y",
+            "-i", effective_video_path,
+            "-c:v", "libx264",
+            "-crf", str(effective_crf),
+            "-preset", effective_preset,
+            "-pix_fmt", "yuv420p",
+            "-c:a", "copy",
+            output_path,
+        ]
+
+        if preview_mode:
+            # Insert scale + duration limit before output path
+            ffmpeg_cmd = [
+                "ffmpeg", "-y",
+                "-i", effective_video_path,
+                "-vf", "scale=480:trunc(ow/a/2)*2",
+                "-t", "10",
+                "-c:v", "libx264",
+                "-crf", str(effective_crf),
+                "-preset", effective_preset,
+                "-pix_fmt", "yuv420p",
+                "-c:a", "copy",
+                output_path,
+            ]
+
+        logger.debug("SAM3-only passthrough command: %s", " ".join(ffmpeg_cmd))
+        proc = _sp.run(ffmpeg_cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"SAM3-only mode: video passthrough failed:\n{proc.stderr[-500:]}"
+            )
+
+        # --- Collect frame/audio output ---
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = self._collect_frame_output(
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=False,
+        )
+
+        # --- Generate mask overlay ---
+        mask_overlay_path = ""
+        if mask_video_path and os.path.isfile(mask_video_path):
+            mask_type = kwargs.get("mask_output_type", "colored_overlay")
+            if mask_type == "black_white":
+                mask_overlay_path = mask_video_path
+                logger.info("SAM3-only: B&W mask video → %s", mask_overlay_path)
+            else:
+                try:
+                    from ..core.sam3_masker import generate_mask_overlay
+                    mask_overlay_path = generate_mask_overlay(
+                        video_path=effective_video_path,
+                        mask_video_path=mask_video_path,
+                    )
+                    logger.info("SAM3-only: colored overlay → %s", mask_overlay_path)
+                except Exception as e:
+                    logger.warning("SAM3-only: mask overlay generation failed: %s", e)
+
+        # --- Build analysis string ---
+        cmd_log = " ".join(ffmpeg_cmd)
+        analysis = (
+            f"SAM3-Only Mode (no LLM)\n"
+            f"Text target: {prompt}\n"
+            f"Device: {sam3_device}\n"
+            f"Max objects: {sam3_max_objects}\n"
+            f"Detection threshold: {sam3_det_threshold}\n"
+            f"Point prompts: {'yes' if mask_points else 'no'}\n\n"
+            f"Main output: clean passthrough (no effects)\n"
+            f"Mask output: {mask_overlay_path or mask_video_path or 'none'}"
+        )
+
+        # --- Cleanup temp files ---
+        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+            if not os.listdir(temp_render_dir):
+                shutil.rmtree(temp_render_dir, ignore_errors=True)
+
+        return (images_tensor, audio_out, output_path, cmd_log, analysis, mask_overlay_path)
+
     async def _verify_output(
         self,
         connector,
@@ -1851,7 +2314,7 @@ Token Usage{est_tag}:
                 )
 
             verify_text = (verify_response.content or "").strip()
-            logger.info(f"Verification result: {verify_text[:200]}")
+            logger.info(f"Verification result: {verify_text}")
 
             if verify_text.upper() == "PASS":
                 logger.info("Output verification: PASS — output looks good")
