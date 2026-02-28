@@ -2001,7 +2001,6 @@ Token Usage{est_tag}:
             (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
         """
         import subprocess as _sp
-        from ..skills.composer import Pipeline  # type: ignore[import-not-found]
 
         logger.info("SAM3-only mode: using prompt as text target → '%s'", prompt)
 
@@ -2077,7 +2076,7 @@ Token Usage{est_tag}:
             ffmpeg_cmd = [
                 "ffmpeg", "-y",
                 "-i", effective_video_path,
-                "-vf", "scale=480:-1",
+                "-vf", "scale=480:trunc(ow/a/2)*2",
                 "-t", "10",
                 "-c:v", "libx264",
                 "-crf", str(effective_crf),
