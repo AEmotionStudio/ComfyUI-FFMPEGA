@@ -1,7 +1,6 @@
 """Tests for the FFMPEG executor module."""
 
 import pytest
-from pathlib import Path
 import tempfile
 
 from core.executor.command_builder import CommandBuilder, Filter, FilterChain, FFMPEGCommand

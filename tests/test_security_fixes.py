@@ -1,7 +1,7 @@
 
 import pytest
 from pathlib import Path
-from core.sanitize import validate_output_path, sanitize_text_param, validate_path
+from core.sanitize import validate_output_path, sanitize_text_param
 
 def test_sensitive_dir_traversal_blocked():
     # Test path inside a sensitive directory like .ssh

@@ -12,7 +12,6 @@ before the FFMPEGA Agent even starts running.
 
 import gc
 import logging
-import tempfile
 
 import torch
 

@@ -260,7 +260,6 @@ def _find_checkpoint() -> str:
 
 def _load_safetensors(model, checkpoint_path: str) -> None:
     """Load a safetensors checkpoint into a SAM3 model."""
-    import torch
     from safetensors.torch import load_file
 
     ckpt = load_file(checkpoint_path)
@@ -1734,20 +1733,21 @@ print("RESULT:" + result, flush=True)
         stderr_thread = threading.Thread(target=_stream_stderr, daemon=True)
         stderr_thread.start()
 
-        # Read stdout (contains RESULT: line) — don't use communicate()
-        # because we already closed stdin and are reading stderr in a thread.
-        try:
-            stdout_data = proc.stdout.read()
-        finally:
-            proc.stdout.close()
-
-        # Wait for process to finish (with timeout)
+        # Wait for process to finish (with timeout) first so we don't block
+        # forever reading stdout if the process hangs.
         try:
             proc.wait(timeout=900)
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait()
             raise RuntimeError("SAM3 subprocess timed out after 15 minutes")
+
+        # Read stdout (contains RESULT: line) — don't use communicate()
+        # because we already closed stdin and are reading stderr in a thread.
+        try:
+            stdout_data = proc.stdout.read()
+        finally:
+            proc.stdout.close()
 
         stderr_thread.join(timeout=5)
 

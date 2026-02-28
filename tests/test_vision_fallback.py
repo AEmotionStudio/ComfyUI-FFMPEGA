@@ -33,11 +33,11 @@ for f in output_dir.rglob("*.mp4"):
     break
 
 if not TEST_VIDEO:
-    print("ERROR: No test video found!")
-    sys.exit(1)
+    import pytest
+    pytest.skip("No test video found!", allow_module_level=True)
 
 print(f"Using test video: {TEST_VIDEO}")
-print(f"Model: qwen3:8b (non-vision, text-only)")
+print("Model: qwen3:8b (non-vision, text-only)")
 print()
 
 

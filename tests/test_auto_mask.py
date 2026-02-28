@@ -11,7 +11,6 @@ Tests cover:
 """
 
 import pytest
-from unittest.mock import patch, MagicMock
 
 # PyTorch import can fail on Python 3.14 — guard torch-dependent tests
 try:

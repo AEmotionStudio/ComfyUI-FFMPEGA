@@ -19,7 +19,7 @@ from abc import abstractmethod
 from pathlib import Path
 from typing import Optional, AsyncIterator
 
-from .base import LLMConnector, LLMConfig, LLMResponse, LLMProvider
+from .base import LLMConnector, LLMResponse, LLMProvider
 from .cli_utils import resolve_cli_binary
 
 logger = logging.getLogger("ffmpega")

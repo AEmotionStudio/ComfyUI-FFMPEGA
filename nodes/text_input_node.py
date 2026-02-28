@@ -7,7 +7,6 @@ text, watermarks, and raw text with auto-mode detection.
 
 import json
 import logging
-import re
 
 logger = logging.getLogger("FFMPEGA")
 

@@ -2,7 +2,6 @@
 
 import sys
 import os
-import pytest
 
 # Ensure the project root is on sys.path
 _project_root = os.path.abspath(

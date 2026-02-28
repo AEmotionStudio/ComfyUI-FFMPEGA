@@ -7,7 +7,6 @@ so regressions are caught at the right layer.
 All handlers now return ``HandlerResult`` (always 5 fields via __iter__).
 """
 
-import pytest
 
 from skills.handler_contract import HandlerResult
 

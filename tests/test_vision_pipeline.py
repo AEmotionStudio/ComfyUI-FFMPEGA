@@ -9,15 +9,14 @@ Validates that:
 6. The full flow works for each CLI connector (Gemini, Claude, Cursor, Qwen)
 """
 
-import asyncio
 import json
 import os
 import shutil
 import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, AsyncMock
 
-from core.llm.base import LLMConfig, LLMProvider, LLMResponse
+from core.llm.base import LLMResponse
 from core.llm.cli_base import CLIConnectorBase
 from core.llm.gemini_cli import GeminiCLIConnector
 from core.llm.claude_cli import ClaudeCodeCLIConnector
@@ -534,7 +533,9 @@ class TestToolPromptWithVision:
 
     def _get_extract_frames_tool_def(self):
         """Load extract_frames definition from tool_defs.py."""
-        import importlib, importlib.util, sys
+        import importlib
+        import importlib.util
+        import sys
         mod_name = "mcp.tool_defs"
         if mod_name in sys.modules:
             mod = sys.modules[mod_name]

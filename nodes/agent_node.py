@@ -706,7 +706,6 @@ class FFMPEGAgentNode:
             temp_frames_dirs (set[str]),
             temp_audio_input (str | None),
         """
-        from ..skills.composer import Pipeline  # type: ignore[import-not-found]
 
         temp_multi_videos = []
         temp_audio_files = []

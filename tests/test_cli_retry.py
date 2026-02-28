@@ -4,7 +4,6 @@ Tests the _is_retryable_error and _extract_clean_error static methods
 on CLIConnectorBase, plus the retry-loop behaviour in generate().
 """
 
-import pytest
 
 from core.llm.cli_base import CLIConnectorBase
 
