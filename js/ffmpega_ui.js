@@ -297,7 +297,7 @@ function addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, get
                         // Text feedback if infoEl is available
                         if (infoEl) {
                             // If this is our first time overriding, save the original text
-                            if (!infoEl._originalText) {
+                            if (!Object.prototype.hasOwnProperty.call(infoEl, '_originalText')) {
                                 infoEl._originalText = infoEl.textContent;
                             }
 
@@ -310,7 +310,7 @@ function addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, get
                             infoEl._timeoutId = setTimeout(() => {
                                 if (infoEl.textContent === msg) {
                                     // Restore original text
-                                    if (infoEl._originalText) {
+                                    if (Object.prototype.hasOwnProperty.call(infoEl, '_originalText')) {
                                         infoEl.textContent = infoEl._originalText;
                                         delete infoEl._originalText;
                                     }
@@ -392,7 +392,7 @@ function addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, get
                         // Text feedback if infoEl is available
                         if (infoEl && msg) {
                             // If this is our first time overriding, save the original text
-                            if (!infoEl._originalText) {
+                            if (!Object.prototype.hasOwnProperty.call(infoEl, '_originalText')) {
                                 infoEl._originalText = infoEl.textContent;
                             }
 
@@ -404,7 +404,7 @@ function addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, get
                             infoEl._timeoutId = setTimeout(() => {
                                 if (infoEl.textContent === msg) {
                                     // Restore original text
-                                    if (infoEl._originalText) {
+                                    if (Object.prototype.hasOwnProperty.call(infoEl, '_originalText')) {
                                         infoEl.textContent = infoEl._originalText;
                                         delete infoEl._originalText;
                                     }
@@ -1341,6 +1341,13 @@ app.registerExtension({
                     if (e?.dataTransfer?.types?.includes?.("Files")) {
                         // Visual feedback on the button
                         if (!uploadBtn.disabled) {
+                            if (!Object.prototype.hasOwnProperty.call(uploadBtn, '_originalTextContent')) {
+                                uploadBtn._originalTextContent = uploadBtn.textContent;
+                            }
+                            if (!Object.prototype.hasOwnProperty.call(uploadBtn, '_originalBorder')) {
+                                uploadBtn._originalBorder = uploadBtn.style.border;
+                            }
+
                             uploadBtn.textContent = "📂 Drop to Upload";
                             uploadBtn.style.border = "1px dashed #4a6a8a";
                             uploadBtn.style.backgroundColor = "#333";
@@ -1349,9 +1356,15 @@ app.registerExtension({
                             if (uploadBtn._dragTimeout) clearTimeout(uploadBtn._dragTimeout);
                             uploadBtn._dragTimeout = setTimeout(() => {
                                 if (!uploadBtn.disabled) {
-                                    uploadBtn.textContent = "Upload Video...";
-                                    uploadBtn.style.border = "1px solid #333";
-                                    uploadBtn.style.backgroundColor = "#222";
+                                    if (Object.prototype.hasOwnProperty.call(uploadBtn, '_originalTextContent')) {
+                                        uploadBtn.textContent = uploadBtn._originalTextContent;
+                                        delete uploadBtn._originalTextContent;
+                                    }
+                                    if (Object.prototype.hasOwnProperty.call(uploadBtn, '_originalBorder')) {
+                                        uploadBtn.style.border = uploadBtn._originalBorder;
+                                        delete uploadBtn._originalBorder;
+                                    }
+                                    updateBtn();
                                 }
                             }, 100);
                         }
