@@ -121,45 +121,60 @@ class TestSkillRegistryWatcher:
 class TestProcessManagerCancel:
 
     def test_cancel_with_no_active_process_returns_false(self):
-        from core.executor.process_manager import ProcessManager
-        pm = ProcessManager()
-        result = pm.cancel()
-        assert result is False
+        from unittest.mock import patch
+        with patch('core.executor.process_manager.shutil.which', return_value='/usr/bin/ffmpeg'):
+            from core.executor.process_manager import ProcessManager
+            pm = ProcessManager()
+            result = pm.cancel()
+            assert result is False
 
     def test_cancel_clears_cancelled_flag_before_new_execute(self):
-        from core.executor.process_manager import ProcessManager
-        pm = ProcessManager()
-        pm._cancelled = True
-        pm._reset_cancel()
-        assert pm._cancelled is False
+        from unittest.mock import patch
+        with patch('core.executor.process_manager.shutil.which', return_value='/usr/bin/ffmpeg'):
+            from core.executor.process_manager import ProcessManager
+            pm = ProcessManager()
+            pm._cancelled = True
+            pm._reset_cancel()
+            assert pm._cancelled is False
 
     def test_execute_still_works_after_cancel(self):
-        from core.executor.process_manager import ProcessManager
-        pm = ProcessManager()
-        pm.cancel()  # cancel with nothing running
-        # A fresh execute should still work
-        result = pm.execute(["ffmpeg", "-version"])
-        assert result.return_code == 0
+        from unittest.mock import patch, MagicMock
+        with patch('core.executor.process_manager.shutil.which', return_value='/usr/bin/ffmpeg'):
+            from core.executor.process_manager import ProcessManager
+            pm = ProcessManager()
+            pm.cancel()  # cancel with nothing running
+            # A fresh execute should still work
+            with patch('subprocess.Popen') as mock_popen:
+                mock_proc = MagicMock()
+                mock_proc.returncode = 0
+                mock_proc.communicate.return_value = (b"", b"")
+                mock_popen.return_value = mock_proc
+                result = pm.execute(["ffmpeg", "-version"])
+                assert result.return_code == 0
 
     def test_cancel_sets_cancelled_flag(self):
-        from core.executor.process_manager import ProcessManager
-        pm = ProcessManager()
-        pm.cancel()
-        # _cancelled should be set (even though no process was running)
-        assert pm._cancelled is True
+        from unittest.mock import patch
+        with patch('core.executor.process_manager.shutil.which', return_value='/usr/bin/ffmpeg'):
+            from core.executor.process_manager import ProcessManager
+            pm = ProcessManager()
+            pm.cancel()
+            # _cancelled should be set (even though no process was running)
+            assert pm._cancelled is True
 
     def test_cancel_releases_active_proc_slot(self):
         # Simulate cancelling a stored proc reference (mock it)
-        from core.executor.process_manager import ProcessManager
-        pm = ProcessManager()
-        # Put a fake proc object in the slot
-        class FakeProc:
-            pid = 99999
-            def kill(self): pass
-        pm._active_proc = FakeProc()
-        result = pm.cancel()
-        assert result is True
-        assert pm._active_proc is None
+        from unittest.mock import patch
+        with patch('core.executor.process_manager.shutil.which', return_value='/usr/bin/ffmpeg'):
+            from core.executor.process_manager import ProcessManager
+            pm = ProcessManager()
+            # Put a fake proc object in the slot
+            class FakeProc:
+                pid = 99999
+                def kill(self): pass
+            pm._active_proc = FakeProc()
+            result = pm.cancel()
+            assert result is True
+            assert pm._active_proc is None
 
 
 # ── AgenticSession ────────────────────────────────────────────────────

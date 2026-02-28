@@ -12,7 +12,7 @@ class TestMediaConverter:
     def setup_method(self):
         self.converter = MediaConverter()
 
-    @patch("shutil.which")
+    @patch("core.media_converter._get_ffmpeg_bin")
     @patch("subprocess.Popen")
     def test_images_to_video_optimization(self, mock_popen, mock_which):
         """Test that images_to_video uses direct write instead of tobytes()."""
@@ -222,9 +222,10 @@ class TestMuxAudioMode:
                 return args
         return None
 
-    @patch("core.media_converter.shutil.which", return_value="/usr/bin/ffmpeg")
+    @patch("core.media_converter._get_ffmpeg_bin", return_value="/usr/bin/ffmpeg")
+    @patch("core.media_converter._get_ffprobe_bin", return_value="/usr/bin/ffprobe")
     @patch("core.media_converter.subprocess.run")
-    def test_mux_audio_trim_mode(self, mock_run, mock_which):
+    def test_mux_audio_trim_mode(self, mock_run, mock_ffprobe, mock_ffmpeg):
         """Trim mode should use -shortest without any looping."""
         mock_run.return_value = MagicMock(returncode=0)
 
@@ -236,12 +237,13 @@ class TestMuxAudioMode:
         assert "-stream_loop" not in cmd
         assert "-af" not in cmd
 
-    @patch("core.media_converter.shutil.which", return_value="/usr/bin/ffmpeg")
+    @patch("core.media_converter._get_ffmpeg_bin", return_value="/usr/bin/ffmpeg")
+    @patch("core.media_converter._get_ffprobe_bin", return_value="/usr/bin/ffprobe")
     @patch("core.media_converter.shutil.move")
     @patch("core.media_converter.subprocess.run")
     @patch.object(MediaConverter, "_probe_media_duration")
     def test_mux_audio_loop_mode_audio_shorter(
-        self, mock_probe, mock_run, mock_move, mock_which,
+        self, mock_probe, mock_run, mock_move, mock_ffprobe, mock_ffmpeg,
     ):
         """Loop mode with audio shorter than video should use -stream_loop and afade."""
         # Video = 30s, Audio = 10s -> needs looping
@@ -263,12 +265,13 @@ class TestMuxAudioMode:
         assert "afade" in af_str
         assert "atrim" in af_str
 
-    @patch("core.media_converter.shutil.which", return_value="/usr/bin/ffmpeg")
+    @patch("core.media_converter._get_ffmpeg_bin", return_value="/usr/bin/ffmpeg")
+    @patch("core.media_converter._get_ffprobe_bin", return_value="/usr/bin/ffprobe")
     @patch("core.media_converter.shutil.move")
     @patch("core.media_converter.subprocess.run")
     @patch.object(MediaConverter, "_probe_media_duration")
     def test_mux_audio_loop_mode_audio_longer(
-        self, mock_probe, mock_run, mock_move, mock_which,
+        self, mock_probe, mock_run, mock_move, mock_ffprobe, mock_ffmpeg,
     ):
         """Loop mode with audio longer than video should NOT loop."""
         # Video = 10s, Audio = 30s -> no looping needed
@@ -282,9 +285,10 @@ class TestMuxAudioMode:
         assert "-stream_loop" not in cmd
         assert "-shortest" in cmd
 
-    @patch("core.media_converter.shutil.which", return_value="/usr/bin/ffmpeg")
+    @patch("core.media_converter._get_ffmpeg_bin", return_value="/usr/bin/ffmpeg")
+    @patch("core.media_converter._get_ffprobe_bin", return_value="/usr/bin/ffprobe")
     @patch("core.media_converter.subprocess.run")
-    def test_mux_audio_pad_mode(self, mock_run, mock_which):
+    def test_mux_audio_pad_mode(self, mock_run, mock_ffprobe, mock_ffmpeg):
         """Pad mode should use apad filter and -shortest."""
         mock_run.return_value = MagicMock(returncode=0)
 
@@ -297,9 +301,10 @@ class TestMuxAudioMode:
         assert "apad" in cmd[af_idx + 1]
         assert "-shortest" in cmd
 
-    @patch("core.media_converter.shutil.which", return_value="/usr/bin/ffmpeg")
+    @patch("core.media_converter._get_ffmpeg_bin", return_value="/usr/bin/ffmpeg")
+    @patch("core.media_converter._get_ffprobe_bin", return_value="/usr/bin/ffprobe")
     @patch("core.media_converter.subprocess.run")
-    def test_mux_audio_default_is_loop(self, mock_run, mock_which):
+    def test_mux_audio_default_is_loop(self, mock_run, mock_ffprobe, mock_ffmpeg):
         """Default audio_mode should be 'loop'."""
         mock_run.return_value = MagicMock(returncode=0)
 
@@ -312,9 +317,10 @@ class TestMuxAudioMode:
         assert cmd is not None, "No mux command found"
         assert "-shortest" in cmd
 
-    @patch("core.media_converter.shutil.which", return_value="/usr/bin/ffmpeg")
+    @patch("core.media_converter._get_ffmpeg_bin", return_value="/usr/bin/ffmpeg")
+    @patch("core.media_converter._get_ffprobe_bin", return_value="/usr/bin/ffprobe")
     @patch("core.media_converter.subprocess.run")
-    def test_mux_audio_mix_forwards_audio_mode(self, mock_run, mock_which):
+    def test_mux_audio_mix_forwards_audio_mode(self, mock_run, mock_ffprobe, mock_ffmpeg):
         """mux_audio_mix with single audio should forward audio_mode."""
         mock_run.return_value = MagicMock(returncode=0)
 
