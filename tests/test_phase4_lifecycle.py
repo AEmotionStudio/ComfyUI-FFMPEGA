@@ -138,14 +138,19 @@ class TestProcessManagerCancel:
             assert pm._cancelled is False
 
     def test_execute_still_works_after_cancel(self):
-        from unittest.mock import patch
+        from unittest.mock import patch, MagicMock
         with patch('core.executor.process_manager.shutil.which', return_value='/usr/bin/ffmpeg'):
             from core.executor.process_manager import ProcessManager
             pm = ProcessManager()
             pm.cancel()  # cancel with nothing running
             # A fresh execute should still work
-            result = pm.execute(["ffmpeg", "-version"])
-            assert result.return_code == 0
+            with patch('subprocess.Popen') as mock_popen:
+                mock_proc = MagicMock()
+                mock_proc.returncode = 0
+                mock_proc.communicate.return_value = (b"", b"")
+                mock_popen.return_value = mock_proc
+                result = pm.execute(["ffmpeg", "-version"])
+                assert result.return_code == 0
 
     def test_cancel_sets_cancelled_flag(self):
         from unittest.mock import patch
@@ -162,14 +167,14 @@ class TestProcessManagerCancel:
         with patch('core.executor.process_manager.shutil.which', return_value='/usr/bin/ffmpeg'):
             from core.executor.process_manager import ProcessManager
             pm = ProcessManager()
-        # Put a fake proc object in the slot
-        class FakeProc:
-            pid = 99999
-            def kill(self): pass
-        pm._active_proc = FakeProc()
-        result = pm.cancel()
-        assert result is True
-        assert pm._active_proc is None
+            # Put a fake proc object in the slot
+            class FakeProc:
+                pid = 99999
+                def kill(self): pass
+            pm._active_proc = FakeProc()
+            result = pm.cancel()
+            assert result is True
+            assert pm._active_proc is None
 
 
 # ── AgenticSession ────────────────────────────────────────────────────
