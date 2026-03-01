@@ -24,6 +24,12 @@ except ImportError:
 # Web directory for custom JavaScript (relative to this module)
 WEB_DIRECTORY = "./js"
 
+# Register custom API routes (video preview, metadata endpoints)
+try:
+    from . import server as _server  # noqa: F401
+except Exception:
+    pass
+
 __all__ = [
     "NODE_CLASS_MAPPINGS",
     "NODE_DISPLAY_NAME_MAPPINGS",

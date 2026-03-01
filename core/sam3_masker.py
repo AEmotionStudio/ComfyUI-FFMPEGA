@@ -227,23 +227,29 @@ def _find_checkpoint() -> str:
 
         # Try safetensors first (safe format)
         try:
-            path = hf_hub_download(
-                repo_id=_HF_REPO,
-                filename=_SAFETENSORS_NAME,
-                local_dir=str(model_dir),
+            path = model_manager.download_with_progress(
+                "sam3",
+                lambda: hf_hub_download(
+                    repo_id=_HF_REPO,
+                    filename=_SAFETENSORS_NAME,
+                    local_dir=str(model_dir),
+                ),
+                extra="safetensors",
             )
-            log.info("Downloaded SAM3 checkpoint: %s", path)
             return path
         except Exception:
             pass
 
         # Fall back to .pt
-        path = hf_hub_download(
-            repo_id=_HF_REPO,
-            filename=_PT_NAME,
-            local_dir=str(model_dir),
+        path = model_manager.download_with_progress(
+            "sam3",
+            lambda: hf_hub_download(
+                repo_id=_HF_REPO,
+                filename=_PT_NAME,
+                local_dir=str(model_dir),
+            ),
+            extra=".pt format",
         )
-        log.info("Downloaded SAM3 checkpoint: %s", path)
         return path
 
     except ImportError:

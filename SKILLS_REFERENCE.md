@@ -1602,8 +1602,8 @@ Create a slideshow from images with fade transitions. Optionally starts with the
 | `duration_per_image` | float | 3.0 | 0.5 to 30 seconds |
 | `transition` | choice | fade | none, fade |
 | `transition_duration` | float | 0.5 | 0.1 to 3.0 seconds |
-| `width` | int | 1920 | -1 to 3840 |
-| `height` | int | 1080 | -1 to 2160 |
+| `width` | int | *(input)* | output width (defaults to input resolution) |
+| `height` | int | *(input)* | output height (defaults to input resolution) |
 | `include_video` | bool | false | include main video as first segment |
 
 **Example prompts:**
@@ -1635,8 +1635,8 @@ Overlay images on the video (picture-in-picture / watermark). Supports multiple 
 Concatenate (join) the main video with extra video/image inputs sequentially.
 | Parameter | Type | Default | Range |
 |-----------|------|---------|-------|
-| `width` | int | 1920 | output width |
-| `height` | int | 1080 | output height |
+| `width` | int | *(input)* | output width (defaults to input resolution) |
+| `height` | int | *(input)* | output height (defaults to input resolution) |
 | `still_duration` | float | 5.0 | seconds per still image |
 
 **Example prompts:**
@@ -1653,8 +1653,8 @@ Concatenate segments with smooth transitions. Supports 18+ transition types.
 | `transition` | choice | fade | fade, fadeblack, fadewhite, wipeleft, wiperight, wipeup, wipedown, slideleft, slideright, dissolve, pixelize, radial, circlecrop, smoothleft, smoothright, squeezev, squeezeh |
 | `duration` | float | 1.0 | 0.1 to 5.0 seconds |
 | `still_duration` | float | 4.0 | seconds per segment |
-| `width` | int | 1920 | output width |
-| `height` | int | 1080 | output height |
+| `width` | int | *(input)* | output width (defaults to input resolution) |
+| `height` | int | *(input)* | output height (defaults to input resolution) |
 
 **Example prompts:**
 - "Join clips with a dissolve transition"
@@ -2335,6 +2335,42 @@ Generate a sprite sheet of evenly-spaced frames.
 **Example prompts:**
 - "Create a sprite sheet"
 - "Generate a contact sheet of frames"
+
+---
+
+## 🤖 AI-Powered Skills
+
+### auto_mask
+Apply an effect only to specific objects using SAM3 AI segmentation. Describe the target with a text prompt and SAM3 generates pixel-level masks.
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `target` | string | *(required)* | text describing what to segment (e.g. "the dog", "face", "background") |
+| `effect` | choice | blur | blur, pixelate, remove, grayscale, highlight, greenscreen, transparent |
+| `strength` | int | 50 | 1 to 100 |
+| `invert` | bool | false | apply effect to everything EXCEPT the target |
+
+**Example prompts:**
+- "Blur all faces for privacy using auto_mask"
+- "Keep the subject in color and grayscale everything else"
+- "Pixelate the license plates"
+- "Remove the watermark"
+- "Isolate the person on a green screen"
+- "Make the background transparent (WebM output)"
+
+---
+
+### mix_audio
+Mix/blend audio tracks from two video inputs together (both audible simultaneously).
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `duration` | choice | longest | longest, shortest, first |
+| `weights` | string | 1 1 | volume weights per input (e.g. "1 0.5" to keep main louder) |
+| `dropout_transition` | float | 2.0 | 0.0 to 10.0 seconds |
+
+**Example prompts:**
+- "Mix audio from both video inputs equally"
+- "Blend the two audio tracks, keeping the main louder"
+- "Combine audio — stop when the shortest input ends"
 
 ---
 

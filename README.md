@@ -2,10 +2,10 @@
 
 # ComfyUI-FFMPEGA
 
-**An AI-powered FFMPEG agent node for ComfyUI — edit videos with natural language.**
+**The ultimate video editing suite for ComfyUI — edit with natural language or hands-on manual controls.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-2.7.1-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-2.8.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-2-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 [![Downloads](https://img.shields.io/badge/dynamic/json?color=blueviolet&label=Downloads&query=downloads.smart_count&url=https://raw.githubusercontent.com/AEmotionStudio/ComfyUI-FFMPEGA/refs/heads/badges/traffic_stats.json&style=for-the-badge&logo=github)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
@@ -16,7 +16,7 @@
 
 ![FFMPEGA Showcase](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases/download/assets-v1/Screenshot_20260219_165846.png)
 
-*Describe what you want in plain English — the AI translates your words into precise FFMPEG commands.*
+*Use AI to describe edits in plain English, or take full manual control with the Effects Builder and text presets — no LLM required.*
 
 [Features](#-features) • [Examples](#-examples) • [Installation](#-installation) • [Quick Start](#-quick-start) • [Prompt Guide](#-prompt-guide) • [Skills](#-skill-system) • [LLM Setup](#-llm-configuration) • [Troubleshooting](#-troubleshooting) • [Contributing](#-contributing) • [Changelog](CHANGELOG.md)
 
@@ -24,15 +24,34 @@
 
 ---
 
-## 🚀 What's New in v2.7.1 (February 24, 2026)
+## 🚀 What's New in v2.8.0 (February 28, 2026)
 
-**Cleaner Node UI, Dynamic Input Fix & Default Refinements**
+**Effects Builder, Manual Mode, SAM3 Hardening & 15+ Bug Fixes**
+
+*   **🏗️ Effects Builder Node**: New companion node for manual effect composition — select up to 3 skills with params, combine with raw FFmpeg filters, and use presets. No LLM required.
+*   **🎬 Effects Builder Presets**: Right-click the Effects Builder for quick access to all 18 built-in presets, plus save/load/delete custom presets and a "Clear All Effects" reset.
+*   **📝 Text Node Presets**: Right-click the FFMPEGA Text node for 10 built-in presets (SRT Subtitle Example, Cinematic Subtitles, Watermark, Title Card, Social Caption, Meme Text, Lower Third, Copyright Notice, Credits Roll, Chapter Marker) with example text. Custom save/load/delete and "Clear Text" reset.
+*   **💬 No-LLM Text Support**: Connect a Text node to the Agent in no-LLM manual mode (without an Effects Builder) and it auto-generates a text overlay or subtitle pipeline.
+*   **🏛️ Manual Mode (Default)**: New `manual` no-LLM mode — set `llm_model` to `none` and use the Effects Builder to edit videos without any AI. This is now the default `no_llm_mode`.
+*   **🎙️ Whisper No-LLM Modes**: `transcribe` and `karaoke_subtitles` in the `no_llm_mode` dropdown — run Whisper directly without an LLM. Also available as Effects Builder presets.
+*   **🧠 SAM3 Subprocess Isolation**: SAM3 now runs in a separate subprocess to prevent CUDA memory leaks. Multiple OOM fixes, point prompt support, and real-time progress streaming.
+*   **🔒 MCP Security**: Fixed path traversal vulnerabilities in MCP tools. SkillComposer parameter hardening.
+*   **🔗 Effects Builder Multi-Input**: Fixed concat, grid, xfade, and all multi-input skills in the Effects Builder. Extra inputs (`video_b`, etc.) now correctly injected.
+*   **📐 Concat Resolution Fix**: Concat/xfade/slideshow now default to input resolution instead of hardcoded 1920×1080.
+*   **🔧 Dynamic Slot Root Cause Fix**: `video_b` no longer disappears on page refresh.
+*   **⚡ Performance**: Ultrafast temp video encoding, optimized pipe buffers, SAM3 VRAM offloading.
+*   **🐛 Template Placeholder Fix**: Unsubstituted template placeholders no longer crash ffmpeg.
+
+<details>
+<summary><b>Previous: v2.7.1 — Advanced Options Toggle, Dynamic Input Fix & Default Refinements</b></summary>
 
 *   **⚙️ Advanced Options Toggle**: New Simple/Advanced toggle hides power-user settings (`preview_mode`, `crf`, `encoding_preset`, `video_path`, `subtitle_path`, `batch_mode`) behind a single switch. The node is now much more compact by default.
 *   **🔧 Dynamic Input Persistence**: Fixed dynamic input slots (e.g. `video_b` auto-appearing when `video_a` is connected) not restoring when loading saved workflows or images.
 *   **🎛️ Default Refinements**: Whisper defaults to CPU (avoids VRAM pressure), token tracking enabled by default, PTC mode and SAM3 CPU inputs removed from UI.
 *   **⚠️ SAM3 Checkpoint Warnings**: Detects wrong checkpoint format and logs reconversion instructions.
 *   **🧹 Code Cleanup**: Removed ~1100 lines of dead code, added `ValidationError` for path validation, token log rotation for `usage_log.jsonl`.
+
+</details>
 
 <details>
 <summary><b>Previous: v2.7.0 — SAM3 Auto-Mask, LaMa Inpainting & PTC</b></summary>
@@ -43,6 +62,7 @@
 *   **⚡ Programmatic Tool Calling (PTC)**: New `execute_code` tool lets LLMs write a single Python script that orchestrates multiple tool calls in one pass, reducing round-trips from ~6 to 1. Three modes: `off`, `auto`, `on`.
 *   **🔒 PTC Sandbox**: Hardened with 25+ escape vector blocks — dunder introspection, module access, traceback traversal, dynamic attribute access, and `chr()` construction bypasses.
 *   **🧪 656 Tests**: Expanded test suite from 516 → 656 with 0 failures. 34 new PTC executor tests, security hardening tests, and corrected mock contracts.
+
 
 </details>
 
@@ -123,16 +143,30 @@ Describe edits in plain text: *"Make it cinematic with a fade in"*, *"Speed up 2
 </td>
 <td width="50%">
 
-### 🤖 Multi-LLM Support
-Works with **Ollama** (local, free), **OpenAI**, **Anthropic**, **Google Gemini**, and **CLI tools** (Gemini CLI, Claude Code, Cursor Agent, Qwen Code). Use any local model — Llama 3.1, Qwen3, Mistral, and more. CLI tools are auto-detected on PATH.
+### 🏗️ Manual Mode — No AI Required
+Use the **Effects Builder** to visually compose up to 3 effects with parameters. Add **text overlays and subtitles** via preset-powered Text nodes. Full editing control with zero LLM dependency.
 
 </td>
 </tr>
 <tr>
 <td width="50%">
 
-### 🎨 200 Skills
-200 video editing skills across visual effects, audio processing, spatial transforms, temporal edits, encoding, cinematic presets, vintage looks, social media, creative effects, text animations, editing & composition, audio visualization, multi-input operations (grids, slideshows, overlays), transitions (xfade), concat, split screen, animated overlays, and text overlays.
+### 🤖 Multi-LLM Support
+Works with **Ollama** (local, free), **OpenAI**, **Anthropic**, **Google Gemini**, and **CLI tools** (Gemini CLI, Claude Code, Cursor Agent, Qwen Code). Use any local model — Llama 3.1, Qwen3, Mistral, and more. Or skip the LLM entirely.
+
+</td>
+<td width="50%">
+
+### 🎨 200+ Skills
+200+ video editing skills across visual effects, audio processing, spatial transforms, temporal edits, encoding, cinematic presets, vintage looks, social media, creative effects, text animations, editing & composition, audio visualization, multi-input operations, transitions, concat, split screen, and AI-powered skills (Whisper transcription, SAM3 masking).
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+### 🎨 Right-Click Presets
+18 built-in Effects Builder presets and 10 Text node presets with example content. Save/load/delete your own custom presets. One-click clear to reset.
 
 </td>
 <td width="50%">
@@ -148,7 +182,7 @@ Process multiple videos with the same instruction. Generate quick low-res previe
 
 ## 🎬 Examples
 
-See what FFMPEGA can do — each example shows the prompt used, the input clip, and the AI-generated result.
+See what FFMPEGA can do — each example shows the prompt or preset used, the input clip, and the result.
 
 ---
 
@@ -491,7 +525,7 @@ Restart ComfyUI after installation.
 
 ## 💬 Prompt Guide
 
-The AI agent interprets your natural language and maps it to skills with specific parameters. Here's how to get the best results.
+When using an LLM, the AI agent interprets your natural language and maps it to skills with specific parameters. Here's how to get the best results. *(For manual editing without an LLM, see the [Effects Builder](#-effects-builder) and [Text Input](#text-input-ffmpega) sections.)*
 
 ### Specifying Exact Values
 
@@ -522,10 +556,38 @@ You can request specific parameter values and the agent will use them directly:
 - **Complex compositing**: Multi-layer effects with precise timing may need to be broken into separate passes
 - **Format-dependent features**: Some effects (like transparency) require specific output formats. H.264/MP4 doesn't support alpha channels
 
+## 🧠 AI Models (Auto-Downloaded)
+
+Some skills use AI models that **auto-download on first use**. You can disable automatic downloads with the `allow_model_downloads` toggle on the FFMPEG Agent node — runs requiring a missing model will fail with a clear message and a manual download link.
+
+| Model | Size | Stored In | Triggered By | Manual Download |
+| :--- | :--- | :--- | :--- | :--- |
+| **SAM3** (Segment Anything 3) | ~300 MB | `ComfyUI/models/SAM3/` | `auto_mask` skill, `sam3_masking` no-LLM mode, Effects Builder SAM3 target | [AEmotionStudio/sam3](https://huggingface.co/AEmotionStudio/sam3) — download `sam3.safetensors` |
+| **Whisper** large-v3 | ~3 GB | `ComfyUI/models/whisper/` | `auto_transcribe`, `karaoke_subtitles` skills, `transcribe` / `karaoke_subtitles` no-LLM modes | [openai/whisper](https://github.com/openai/whisper) — auto-fetched by the `whisper` Python package |
+| **Whisper** medium | ~1.5 GB | `ComfyUI/models/whisper/` | Same as above (set `whisper_model` to `medium`) | Same as above |
+| **Whisper** small | ~500 MB | `ComfyUI/models/whisper/` | Same as above (set `whisper_model` to `small`) | Same as above |
+| **Whisper** base | ~150 MB | `ComfyUI/models/whisper/` | Same as above (set `whisper_model` to `base`) | Same as above |
+| **Whisper** tiny | ~75 MB | `ComfyUI/models/whisper/` | Same as above (set `whisper_model` to `tiny`) | Same as above |
+| **LaMa** (Large Mask Inpainting) | ~200 MB | Auto-managed by `simple-lama-inpainting` | `auto_mask:effect=remove` (object removal) | [simple-lama-inpainting](https://github.com/enesmsahin/simple-lama-inpainting) — auto-fetched by pip package |
+| **U²-Net** (rembg) | ~170 MB | `~/.u2net/` | `remove_background` skill | Install with `pip install 'comfyui-ffmpega[masking]'` — model auto-fetched by rembg |
+
+> [!NOTE]
+> Models are only downloaded when you use the corresponding skill for the first time. Core FFmpeg editing skills (200+ of them) require **zero model downloads**.
+
+---
+
 ## 🎛️ Nodes
 
+FFMPEGA provides **8 nodes** that work together:
+
+> [!TIP]
+> **One task per run.** Instead of cramming multiple edits into a single prompt, focus each run on one editing task — then feed the output back into FFMPEGA for the next. This keeps context low and model focus high, leading to significantly better results. Chain FFMPEGA Agent → Save Video → Load Video Path → FFMPEGA Agent for multi-step workflows.
+
+> [!WARNING]
+> **Low VRAM?** Skills that load AI models (SAM3 masking, Whisper transcription, LaMa inpainting) each consume significant VRAM. On GPUs with limited memory, limit each run to **one model-loading task** — e.g. do your SAM3 removal pass first, save the result, then run Whisper subtitles as a separate pass.
+
 <details>
-<summary><b>FFMPEG Agent</b> — The main node, translates natural language into FFMPEG commands.</summary>
+<summary><b>FFMPEG Agent</b> — The main node. Translates natural language into FFMPEG commands.</summary>
 
 <details>
 <summary>Required Inputs</summary>
@@ -533,8 +595,9 @@ You can request specific parameter values and the agent will use them directly:
 | Input | Type | Description |
 | :--- | :--- | :--- |
 | `video_path` | STRING | Absolute path to source video. Used as ffmpeg input unless `images_a` is connected. |
-| `prompt` | STRING | Natural language editing instruction (e.g. *"Add cinematic letterbox"*, *"Speed up 2x"*). |
-| `llm_model` | DROPDOWN | AI model selection — local Ollama models appear first, then CLI tools (gemini-cli, claude-cli, cursor-agent, qwen-cli), then cloud APIs. |
+| `prompt` | STRING | Natural language editing instruction (e.g. *"Add cinematic letterbox"*, *"Speed up 2x"*). Not required in `manual` mode. |
+| `llm_model` | DROPDOWN | AI model selection — local Ollama models, CLI tools, or cloud APIs. Select `none` for no-LLM mode. |
+| `no_llm_mode` | DROPDOWN | Mode when `llm_model` is `none`: `manual` (Effects Builder, default), `sam3_masking`, `transcribe`, `karaoke_subtitles`. |
 | `quality_preset` | DROPDOWN | Output quality: `draft`, `standard`, `high`, `lossless`. |
 | `seed` | INT | Change to force re-execution with the same prompt. Supports randomize control. |
 
@@ -548,14 +611,36 @@ You can request specific parameter values and the agent will use them directly:
 | `images_a` | IMAGE | Video frames from upstream (e.g. Load Video). Auto-expands: `images_b`, `images_c`... |
 | `image_a` | IMAGE | Extra image input for multi-input skills (grid, slideshow, overlay). Auto-expands: `image_b`, `image_c`... |
 | `audio_a` | AUDIO | Audio input for muxing or multi-audio workflows. Auto-expands: `audio_b`, `audio_c`... |
+| `video_a` | STRING | File path to extra video for concat, split screen, grid, xfade. Zero memory. Auto-expands: `video_b`, `video_c`... |
+| `image_path_a` | STRING | File path to image for overlay, grid, slideshow. Zero memory. Auto-expands: `image_path_b`... |
+| `text_a` | STRING | Text input from FFMPEGA Text node for subtitles, overlays, watermarks. Auto-expands: `text_b`... |
+| `pipeline_json` | STRING | Connect from FFMPEGA Effects Builder. In `manual` mode the pipeline is executed directly; with an LLM it provides skill hints. |
+| `subtitle_path` | STRING | Direct path to a `.srt` or `.ass` subtitle file. |
+| `advanced_options` | BOOLEAN | Simple/Advanced toggle — shows preview mode, CRF, encoding preset, batch processing when enabled. |
 | `preview_mode` | BOOLEAN | Quick low-res preview (480p, 10s) instead of full render. |
-| `save_output` | BOOLEAN | Save video + workflow PNG to output folder. Off when a downstream Save node handles output. |
+| `save_output` | BOOLEAN | Save video + workflow PNG to output folder. |
 | `output_path` | STRING | Custom output file/folder path. Empty = ComfyUI default. |
 | `ollama_url` | STRING | Ollama server URL (default: `http://localhost:11434`). |
 | `api_key` | STRING | API key for cloud models (GPT, Claude, Gemini). Auto-redacted from outputs. |
-| `custom_model` | STRING | Exact model name when `llm_model` is set to `custom` (e.g. `gpt-5.2`, `claude-sonnet-4-6`). |
-| `crf` | INT | Override CRF (0 = lossless, 23 = default, 51 = worst). Set to -1 to use `quality_preset`. |
+| `custom_model` | STRING | Exact model name when `llm_model` is set to `custom`. |
+| `crf` | INT | Override CRF (0 = lossless, 23 = default, 51 = worst). -1 uses `quality_preset`. |
 | `encoding_preset` | DROPDOWN | Override x264/x265 speed preset (`ultrafast` → `veryslow`). `auto` follows `quality_preset`. |
+| `use_vision` | BOOLEAN | Embed video frames as images for vision-capable LLMs. Off = numeric color analysis only. |
+| `verify_output` | BOOLEAN | Agent inspects output after rendering and auto-corrects if it doesn't match intent. |
+
+</details>
+
+<details>
+<summary>Whisper / SAM3 Inputs</summary>
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `whisper_device` | DROPDOWN | Device for Whisper model: `cpu` (default, avoids VRAM pressure) or `gpu` (faster, ~3 GB VRAM). |
+| `whisper_model` | DROPDOWN | Whisper model size: `large-v3` (default, most accurate), `medium`, `small`, `base`, `tiny`. |
+| `sam3_max_objects` | INT | Max objects SAM3 tracks per frame (1–20, default 5). Lower = less VRAM. |
+| `sam3_det_threshold` | FLOAT | Minimum detection confidence for SAM3 (0.0–1.0, default 0.70). Higher = fewer objects. |
+| `mask_output_type` | DROPDOWN | `black_white` (raw mask for compositing) or `colored_overlay` (SAM3-style preview). |
+| `mask_points` | STRING | JSON point selection data from Load Video Path's Point Selector. Guides SAM3 with click-to-select. |
 
 </details>
 
@@ -578,6 +663,32 @@ You can request specific parameter values and the agent will use them directly:
 | `video_path` | Absolute path to the rendered output video file |
 | `command_log` | The ffmpeg command(s) that were executed |
 | `analysis` | LLM interpretation, pipeline steps, and warnings |
+
+</details>
+
+<details>
+<summary><b>FFMPEGA Effects Builder</b> — Compose video effects visually without an LLM.</summary>
+
+Select up to 3 skills with parameters, add raw FFmpeg filters, and use presets. Outputs a pipeline JSON that connects to the FFMPEG Agent's `pipeline_json` input.
+
+**Built-in presets:** 🎬 Cinematic Look, 📼 VHS Retro, 🎥 High Quality Export, 🎵 Clean Audio, ✨ Glow + Saturation, 🎙️ Auto Subtitles, 🎤 Karaoke Subtitles, 🌑 Fade In + Out, 🪞 Mirror Horizontal, 🎬 Ken Burns Zoom.
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `preset` | DROPDOWN | Quick-start preset. Auto-fills effect slots and params. Set to `none` to build your own. |
+| `effect_1` | DROPDOWN | First effect. Categorized by type (🎨 Visual, ⏱️ Temporal, 📐 Spatial, 🔊 Audio, 📦 Encoding, ✨ Outcome). |
+| `effect_1_params` | STRING | JSON parameters for effect 1 (e.g. `{"strength": 5}`). Auto-filled from defaults. |
+| `effect_2` | DROPDOWN | Second effect (chained after effect 1). |
+| `effect_2_params` | STRING | JSON parameters for effect 2. |
+| `effect_3` | DROPDOWN | Third effect (chained after effect 2). |
+| `effect_3_params` | STRING | JSON parameters for effect 3. |
+| `raw_ffmpeg` | STRING | Raw FFmpeg `-vf` filter string applied after skill effects. |
+| `sam3_target` | STRING | SAM3 text target — apply effects only to the masked region. Leave empty for full-frame. |
+| `sam3_effect` | DROPDOWN | Effect for SAM3-detected region: `blur`, `pixelate`, `remove`, `grayscale`, `highlight`, `greenscreen`, `transparent`. |
+
+| Output | Description |
+| :--- | :--- |
+| `pipeline_json` | JSON pipeline — connect to FFMPEG Agent's `pipeline_json` input |
 
 </details>
 
@@ -655,6 +766,10 @@ Takes a video path (from FFMPEGA Agent or Load Video Path), copies the file to C
 
 Auto-detects whether text is SRT subtitles, a short watermark, or overlay text. Outputs JSON-encoded metadata that the FFMPEGA Agent node parses for `burn_subtitles`, `text_overlay`, or `watermark` skills.
 
+**Right-click Presets**: 10 built-in presets with example text (SRT Subtitle Example, Cinematic Subtitles, Bold Watermark, Title Card, Social Caption, Meme Text, Lower Third, Copyright Notice, Credits Roll, Chapter Marker). Save/load/delete custom presets. "Clear Text" resets all fields to defaults.
+
+**No-LLM Text Mode**: Connect a Text node to the Agent's `text_a` input in no-LLM manual mode (without an Effects Builder). The Agent auto-generates a text overlay or subtitle pipeline from the Text node's mode, position, font size, and color settings.
+
 | Input | Type | Description |
 | :--- | :--- | :--- |
 | `text` | STRING | Text content — plain text, multi-line subtitles, or full SRT format with timestamps. |
@@ -692,14 +807,14 @@ Bridge node between Load Video nodes (which output IMAGE tensors) and FFMPEGA Ag
 
 ## 🎯 Skill System
 
-FFMPEGA includes a comprehensive skill system with **200 operations** organized into categories. The AI agent selects the right skills based on your prompt.
+FFMPEGA includes a comprehensive skill system with **200+ operations** organized into categories. Use them in two ways: let the **AI agent** select skills from your prompt, or pick them yourself with the **Effects Builder** — no LLM needed.
 
 > 📄 **See [SKILLS_REFERENCE.md](SKILLS_REFERENCE.md) for the complete skill reference with all parameters and example prompts.**
 >
 > 🧪 **See [SKILL_TEST_PROMPTS.md](SKILL_TEST_PROMPTS.md) for ready-to-use copy-and-paste test prompts for every skill.**
 
 <details>
-<summary><b>🎨 Visual Effects (25 skills)</b></summary>
+<summary><b>🎨 Visual Effects (30 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -722,12 +837,17 @@ FFMPEGA includes a comprehensive skill system with **200 operations** organized 
 | `gamma` | Gamma correction |
 | `exposure` | Exposure adjustment |
 | `chromakey` | Green screen removal |
+| `colorkey` | Key out any arbitrary color and replace with a background |
+| `colorhold` | Keep only a selected color, desaturate everything else (spot color) |
+| `lumakey` | Key out regions based on brightness (luma) |
+| `despill` | Remove green/blue color spill from chroma-keyed edges |
 | `deband` | Remove color banding artifacts |
 | `white_balance` | Adjust color temperature (2000K–12000K) |
 | `shadows_highlights` | Separately adjust shadows and highlights |
 | `split_tone` | Warm highlights, cool shadows |
 | `deflicker` | Remove fluorescent/timelapse flicker |
 | `unsharp_mask` | Fine-grained luma/chroma sharpening |
+| `remove_background` | Remove backgrounds using AI (rembg) |
 
 </details>
 
@@ -765,7 +885,7 @@ FFMPEGA includes a comprehensive skill system with **200 operations** organized 
 </details>
 
 <details>
-<summary><b>🔊 Audio (26 skills)</b></summary>
+<summary><b>🔊 Audio (27 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -794,6 +914,7 @@ FFMPEGA includes a comprehensive skill system with **200 operations** organized 
 | `split_audio` | Extract left/right channel |
 | `audio_normalize_loudness` | EBU R128 loudness normalization |
 | `replace_audio` | Replace original audio track |
+| `mix_audio` | Mix/blend audio tracks from two inputs (both audible) |
 | `audio_bitrate` | Set audio encoding bitrate |
 
 </details>
@@ -1037,9 +1158,20 @@ FFMPEGA includes a comprehensive skill system with **200 operations** organized 
 
 </details>
 
+<details>
+<summary><b>🤖 AI-Powered (3 skills)</b></summary>
+
+| Skill | Description |
+| :--- | :--- |
+| `auto_transcribe` | Transcribe audio with Whisper AI and burn SRT subtitles |
+| `karaoke_subtitles` | Word-by-word karaoke subtitles with progressive color fill (Whisper) |
+| `auto_mask` | SAM3-powered object segmentation from text prompts |
+
+</details>
+
 ### 🧠 Agentic Tools
 
-Beyond the 200+ editing skills, the agent has autonomous tools it calls on its own to analyze media and make better decisions. You don't invoke these directly — the agent uses them automatically based on your prompt.
+Beyond the 200+ editing skills, the agent has built-in tools for analyzing media and making better decisions. In LLM mode, the agent calls these autonomously based on your prompt. Some (like `analyze_video` and `search_skills`) are also invoked directly by internal skills, the Effects Builder, and no-LLM modes.
 
 <details>
 <summary><b>🔍 Analysis & Discovery</b></summary>

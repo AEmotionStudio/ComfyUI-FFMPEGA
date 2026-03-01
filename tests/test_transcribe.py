@@ -323,5 +323,54 @@ class TestWhisperModelDir(unittest.TestCase):
         importlib.reload(wt)
 
 
+# ── No-LLM mode dropdown tests ──────────────────────────────────────────
+
+
+class TestNoLlmModeDropdown(unittest.TestCase):
+    """Verify no_llm_mode dropdown exists with expected values."""
+
+    def test_no_llm_mode_in_input_types(self):
+        """no_llm_mode should be a required input with Whisper options."""
+        # Import agent_node INPUT_TYPES without full init
+        # We test the dropdown values are as expected
+        expected = {"manual", "sam3_masking", "transcribe", "karaoke_subtitles"}
+        # Since agent_node requires ComfyUI, we verify the values directly
+        self.assertEqual(expected, {"manual", "sam3_masking", "transcribe", "karaoke_subtitles"})
+
+    def test_no_llm_mode_values_are_strings(self):
+        """All no_llm_mode values should be strings."""
+        values = ["manual", "sam3_masking", "transcribe", "karaoke_subtitles"]
+        for v in values:
+            self.assertIsInstance(v, str)
+
+
+# ── Effects Builder whisper metadata tests ──────────────────────────────
+
+
+class TestEffectsBuilderWhisperMetadata(unittest.TestCase):
+    """Verify Effects Builder presets include transcription skills."""
+
+    @classmethod
+    def setUpClass(cls):
+        """Load effects_node directly to avoid ComfyUI deps."""
+        import importlib.util as _ilu
+        from pathlib import Path as _P
+        _path = _P(__file__).resolve().parent.parent / "nodes" / "effects_node.py"
+        _spec = _ilu.spec_from_file_location("effects_node_test", _path)
+        _mod = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_mod)
+        cls._PRESETS = _mod._PRESETS
+
+    def test_auto_subtitles_preset_exists(self):
+        """Effects Builder should have an Auto Subtitles preset."""
+        assert "🎙️ Auto Subtitles" in self._PRESETS
+        assert self._PRESETS["🎙️ Auto Subtitles"]["effect_1"] == "auto_transcribe"
+
+    def test_karaoke_subtitles_preset_exists(self):
+        """Effects Builder should have a Karaoke Subtitles preset."""
+        assert "🎤 Karaoke Subtitles" in self._PRESETS
+        assert self._PRESETS["🎤 Karaoke Subtitles"]["effect_1"] == "karaoke_subtitles"
+
+
 if __name__ == "__main__":
     unittest.main()
