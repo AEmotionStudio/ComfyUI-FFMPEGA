@@ -50,14 +50,26 @@ def load_model():
     if _lama_model is not None:
         return _lama_model
 
-    # Check if a local model exists (SimpleLama caches in ~/.cache/huggingface by default)
-    # to determine whether a download would be required
+    # Check if a local model exists — SimpleLama looks in both the
+    # HuggingFace cache and the torch hub checkpoints directory.
+    # We must check both: the HF cache (upstream) and the torch hub
+    # cache (where our AEmotionStudio mirror downloads to).
+    model_cached = False
     try:
         from huggingface_hub import try_to_load_from_cache  # type: ignore
         cached = try_to_load_from_cache("enesmsahin/simple-lama-inpainting", "big-lama.pt")
         model_cached = cached is not None
     except Exception:
-        model_cached = False  # Can't check — assume download needed
+        pass  # Can't check HF cache — fall through to torch hub check
+
+    if not model_cached:
+        # Also check torch hub checkpoints (where mirror downloads land)
+        try:
+            import torch.hub as _th
+            _hub_path = os.path.join(_th.get_dir(), "checkpoints", "big-lama.pt")
+            model_cached = os.path.isfile(_hub_path)
+        except Exception:
+            pass
 
     if not model_cached:
         # Guard: raise if downloads are disabled

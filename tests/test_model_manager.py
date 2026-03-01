@@ -49,6 +49,12 @@ class TestModelInfoRegistry(unittest.TestCase):
 class TestTryMirrorDownload(unittest.TestCase):
     """Verify try_mirror_download fallback behaviour."""
 
+    def setUp(self):
+        # Ensure require_downloads_allowed never blocks during tests
+        patcher = patch("core.model_manager.require_downloads_allowed")
+        self.mock_require = patcher.start()
+        self.addCleanup(patcher.stop)
+
     @patch("core.model_manager.log")
     def test_returns_none_for_unknown_model_key(self, mock_log):
         """Unknown model key should return None immediately."""
