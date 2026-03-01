@@ -1,8 +1,7 @@
 """Tests for model_manager mirror download and registry."""
 
-import os
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from pathlib import Path
 
 # Import from project
