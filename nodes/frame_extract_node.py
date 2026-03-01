@@ -386,6 +386,7 @@ class FrameExtractNode:
             subprocess.run(
                 cmd,
                 capture_output=True,
+                check=True,
                 timeout=30,
             )
 
