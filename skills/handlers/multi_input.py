@@ -7,10 +7,14 @@ concat, xfade, grid, slideshow, overlay, PIP, split screen, etc.
 try:
     from ...core.sanitize import (
         sanitize_text_param,
+        validate_path,
+        ALLOWED_EXTENSIONS,
     )
 except ImportError:
     from core.sanitize import (
         sanitize_text_param,
+        validate_path,
+        ALLOWED_EXTENSIONS,
     )
 
 try:
@@ -37,10 +41,11 @@ def _probe_duration(path):
     if not ffprobe_bin:
         return 0.0
     try:
+        valid_path = validate_path(str(path), ALLOWED_EXTENSIONS)
         result = subprocess.run(
             [ffprobe_bin, "-v", "error", "-show_entries",
              "format=duration", "-of",
-             "default=noprint_wrappers=1:nokey=1", str(path)],
+             "default=noprint_wrappers=1:nokey=1", valid_path],
             capture_output=True, text=True, check=True,
         )
         return float(result.stdout.strip())
