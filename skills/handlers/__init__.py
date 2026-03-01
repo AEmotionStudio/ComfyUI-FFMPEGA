@@ -11,6 +11,10 @@ from .audio import (  # noqa: F401
     _f_mix_audio,
 )
 
+from .generate_audio import (  # noqa: F401
+    _f_generate_audio,
+)
+
 from .multi_input import (  # noqa: F401
     _f_grid,
     _f_slideshow,

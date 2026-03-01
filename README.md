@@ -1161,13 +1161,16 @@ FFMPEGA includes a comprehensive skill system with **200+ operations** organized
 </details>
 
 <details>
-<summary><b>🤖 AI-Powered (3 skills)</b></summary>
+<summary><b>🤖 AI-Powered (4 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
 | `auto_transcribe` | Transcribe audio with Whisper AI and burn SRT subtitles |
 | `karaoke_subtitles` | Word-by-word karaoke subtitles with progressive color fill (Whisper) |
 | `auto_mask` | SAM3-powered object segmentation from text prompts |
+| `generate_audio` | AI-generate synchronized audio/foley from video + text (MMAudio) |
+
+> ⚠️ **License Notice:** The `generate_audio` skill uses [MMAudio](https://github.com/hkchengrex/MMAudio) model weights which are licensed under **CC-BY-NC 4.0** (non-commercial use only). Model weights are downloaded on first use — by downloading them you accept the [CC-BY-NC 4.0 license](https://creativecommons.org/licenses/by-nc/4.0/). The FFMPEGA code itself remains GPL-3.0.
 
 </details>
 

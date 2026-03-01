@@ -57,6 +57,36 @@ class FrameExtractNode:
                     "max": 1000,
                     "tooltip": "Maximum number of frames to return. Limits output to prevent memory issues with long videos.",
                 }),
+                "images": ("IMAGE", {
+                    "tooltip": (
+                        "Optional upstream IMAGE input (e.g. from VHS "
+                        "or Save Video). Accepted for wiring but "
+                        "frames are always extracted from the video."
+                    ),
+                }),
+                "audio": ("AUDIO", {
+                    "tooltip": (
+                        "Optional upstream AUDIO. If connected, this "
+                        "audio is output instead of extracting from "
+                        "the video."
+                    ),
+                }),
+                "input_video_path": ("STRING", {
+                    "forceInput": True,
+                    "tooltip": (
+                        "Optional upstream video path (e.g. from "
+                        "Save Video or Load Video Path). Overrides "
+                        "the video_path text field when connected."
+                    ),
+                }),
+                "mask_points": ("STRING", {
+                    "forceInput": True,
+                    "tooltip": (
+                        "Optional upstream mask_points pass-through. "
+                        "When connected, overrides the locally drawn "
+                        "mask points."
+                    ),
+                }),
             },
             "hidden": {
                 "mask_points_data": "STRING",
@@ -99,19 +129,44 @@ class FrameExtractNode:
         duration: float = 10.0,
         max_frames: int = 100,
         mask_points_data: str = "",
+        images=None,
+        audio=None,
+        input_video_path=None,
+        mask_points=None,
     ) -> dict:
         """Extract frames and audio from video.
 
         Args:
-            video_path: Path to video file.
+            video_path: Path to video file (text field).
             fps: Frames per second to extract.
             start_time: Start time in seconds.
             duration: Duration in seconds.
             max_frames: Maximum number of frames.
+            images: Optional upstream IMAGE (accepted for wiring).
+            audio: Optional upstream AUDIO (replaces extracted audio).
+            input_video_path: Optional upstream video path (overrides
+                video_path text field).
 
         Returns:
             Dict with 'ui' data and 'result' tuple for ComfyUI.
         """
+        # --- Determine the actual video path ---
+        if (
+            input_video_path
+            and isinstance(input_video_path, str)
+            and input_video_path.strip()
+        ):
+            video_path = input_video_path.strip()
+            logger.info(
+                "FrameExtract: using upstream input_video_path: %s",
+                video_path,
+            )
+
+        # Upstream mask_points overrides locally drawn points
+        if mask_points and isinstance(mask_points, str) and mask_points.strip():
+            mask_points_data = mask_points.strip()
+            logger.info("FrameExtract: using upstream mask_points")
+
         # Resolve relative ComfyUI paths (e.g. "input/video.mp4")
         for prefix, getter in [
             ("input/", folder_paths.get_input_directory),
@@ -179,8 +234,14 @@ class FrameExtractNode:
 
         frame_count = len(frames)
 
-        # --- Extract audio for the same segment ---
-        audio_out = self._extract_audio(video_path, start_time, actual_duration)
+        # --- Audio: use upstream if connected, otherwise extract ---
+        if audio is not None:
+            audio_out = audio
+            logger.info("FrameExtract: using upstream audio")
+        else:
+            audio_out = self._extract_audio(
+                video_path, start_time, actual_duration,
+            )
 
         logger.info(
             "FrameExtract: %d frames @ %.1f fps (%dx%d) from %.1f–%.1fs "

@@ -739,3 +739,70 @@ def register_skills(registry: SkillRegistry) -> None:
         ],
         tags=["loudness", "lufs", "ebu", "r128", "broadcast", "normalize", "streaming"],
     ))
+
+    # Generate audio — AI-powered audio synthesis (MMAudio)
+    registry.register(Skill(
+        name="generate_audio",
+        category=SkillCategory.AUDIO,
+        description=(
+            "AI-generate synchronized audio/sound effects from video content "
+            "or text description using MMAudio. Analyzes video frames to "
+            "produce matching sounds, or generates audio from a text prompt. "
+            "NOTE: MMAudio model weights are licensed CC-BY-NC 4.0 "
+            "(non-commercial use only). By using this skill you accept that "
+            "license: https://creativecommons.org/licenses/by-nc/4.0/"
+        ),
+        parameters=[
+            SkillParameter(
+                name="prompt",
+                type=ParameterType.STRING,
+                description="Text description to guide audio generation (e.g. 'ocean waves crashing')",
+                required=False,
+                default="",
+            ),
+            SkillParameter(
+                name="negative_prompt",
+                type=ParameterType.STRING,
+                description="What to avoid in the generated audio (e.g. 'music, speech')",
+                required=False,
+                default="",
+            ),
+            SkillParameter(
+                name="mode",
+                type=ParameterType.CHOICE,
+                description="How to combine generated audio with existing audio",
+                required=False,
+                default="replace",
+                choices=["replace", "mix"],
+            ),
+            SkillParameter(
+                name="seed",
+                type=ParameterType.INT,
+                description="Random seed for reproducibility",
+                required=False,
+                default=42,
+                min_value=0,
+                max_value=999999,
+            ),
+            SkillParameter(
+                name="cfg_strength",
+                type=ParameterType.FLOAT,
+                description="Guidance strength (higher = more prompt adherence)",
+                required=False,
+                default=4.5,
+                min_value=1.0,
+                max_value=15.0,
+            ),
+        ],
+        examples=[
+            "generate_audio - Generate matching audio for the video",
+            "generate_audio:prompt=ocean waves crashing - Generate ocean sounds",
+            "generate_audio:prompt=footsteps on gravel,mode=mix - Add footstep foley, mixed with original",
+            "generate_audio:mode=replace - Replace audio with AI-generated audio",
+        ],
+        tags=[
+            "generate", "synthesize", "foley", "sound", "effects", "ai",
+            "mmaudio", "v2a", "video_to_audio", "sound_effects", "sfx",
+            "non_commercial", "cc_by_nc",
+        ],
+    ))

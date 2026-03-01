@@ -142,6 +142,16 @@ class SkillComposer:
         "sam_mask": "auto_mask",
         "ai_mask": "auto_mask",
         "object_mask": "auto_mask",
+        "add_audio": "generate_audio",
+        "ai_audio": "generate_audio",
+        "sound_effects": "generate_audio",
+        "foley": "generate_audio",
+        "video_to_audio": "generate_audio",
+        "v2a": "generate_audio",
+        "mmaudio": "generate_audio",
+        "synthesize_audio": "generate_audio",
+        "generate_sound": "generate_audio",
+        "add_sound": "generate_audio",
     }
 
     def __init__(self, registry: Optional[SkillRegistry] = None):
@@ -1205,6 +1215,8 @@ def _get_dispatch() -> dict:
         _f_auto_transcribe, _f_karaoke_subtitles,
         # masking (SAM2)
         _f_auto_mask,
+        # generate audio (MMAudio)
+        _f_generate_audio,
         # presets
         _f_fade_to_black, _f_fade_to_white, _f_flash,
         _f_spin, _f_shake, _f_pulse, _f_bounce, _f_drift,
@@ -1372,6 +1384,18 @@ def _get_dispatch() -> dict:
         "sam_mask": _f_auto_mask,
         "ai_mask": _f_auto_mask,
         "object_mask": _f_auto_mask,
+        # MMAudio — AI Audio Generation
+        "generate_audio": _f_generate_audio,
+        "add_audio": _f_generate_audio,
+        "ai_audio": _f_generate_audio,
+        "sound_effects": _f_generate_audio,
+        "foley": _f_generate_audio,
+        "video_to_audio": _f_generate_audio,
+        "v2a": _f_generate_audio,
+        "mmaudio": _f_generate_audio,
+        "synthesize_audio": _f_generate_audio,
+        "generate_sound": _f_generate_audio,
+        "add_sound": _f_generate_audio,
         # Presets / Transitions
         "fade_to_black": _f_fade_to_black,
         "fade_to_white": _f_fade_to_white,

@@ -65,6 +65,17 @@ _MODEL_INFO: dict[str, dict] = {
                   "https://huggingface.co/AEmotionStudio/whisper-models "
                   "and place it in ComfyUI/models/whisper/",
     },
+    "mmaudio": {
+        "name": "MMAudio (Video-to-Audio Synthesis)",
+        "size": "~5.5 GB total (3 core + CLIP + BigVGAN)",
+        "url": "https://huggingface.co/hkchengrex/MMAudio",
+        "mirror_repo": "AEmotionStudio/mmaudio-models",
+        "license": "CC-BY-NC 4.0 (non-commercial use only)",
+        "manual": "Download model files from "
+                  "https://huggingface.co/AEmotionStudio/mmaudio-models "
+                  "and place them in ComfyUI/models/mmaudio/. "
+                  "⚠️ Model weights are CC-BY-NC 4.0 (non-commercial).",
+    },
 }
 
 

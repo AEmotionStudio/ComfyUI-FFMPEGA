@@ -24,6 +24,8 @@ import os
 import shutil
 import subprocess
 
+import torch
+
 import folder_paths
 
 logger = logging.getLogger("FFMPEGA")
@@ -156,13 +158,44 @@ class LoadVideoPathNode:
                     "tooltip": "Select every Nth frame (1 = every frame).",
                 }),
             },
+            "optional": {
+                "images": ("IMAGE", {
+                    "tooltip": (
+                        "Optional upstream IMAGE pass-through "
+                        "(e.g. from Save Video or VHS)."
+                    ),
+                }),
+                "audio": ("AUDIO", {
+                    "tooltip": (
+                        "Optional upstream AUDIO pass-through. "
+                        "If connected, this audio is forwarded "
+                        "instead of silence."
+                    ),
+                }),
+                "video_path": ("STRING", {
+                    "forceInput": True,
+                    "tooltip": (
+                        "Optional upstream video path string "
+                        "(e.g. from Save Video). Overrides "
+                        "the file-picker selector when connected."
+                    ),
+                }),
+                "mask_points": ("STRING", {
+                    "forceInput": True,
+                    "tooltip": (
+                        "Optional upstream mask_points pass-through. "
+                        "When connected, overrides the locally drawn "
+                        "mask points."
+                    ),
+                }),
+            },
             "hidden": {
                 "mask_points_data": "STRING",
             },
         }
 
-    RETURN_TYPES = ("STRING", "INT", "FLOAT", "FLOAT", "STRING")
-    RETURN_NAMES = ("video_path", "frame_count", "fps", "duration", "mask_points")
+    RETURN_TYPES = ("STRING", "INT", "FLOAT", "FLOAT", "STRING", "IMAGE", "AUDIO")
+    RETURN_NAMES = ("video_path", "frame_count", "fps", "duration", "mask_points", "images", "audio")
     OUTPUT_TOOLTIPS = (
         "Validated video file path — connect to FFMPEGA Agent's "
         "video_a / video_b / video_c input slots.",
@@ -171,6 +204,8 @@ class LoadVideoPathNode:
         "Effective duration in seconds after applying trim parameters.",
         "JSON-encoded point selection data from the Point Selector. "
         "Connect to FFMPEGA Agent's mask_points input for guided masking.",
+        "Upstream IMAGE pass-through (or empty tensor if not connected).",
+        "Upstream AUDIO pass-through (or silence if not connected).",
     )
     FUNCTION = "load_path"
     CATEGORY = "FFMPEGA"
@@ -180,7 +215,9 @@ class LoadVideoPathNode:
         "FFMPEGA Agent's video_a/b/c slots. Features video preview, "
         "metadata display, and VHS-style trim parameters. Loads ZERO "
         "frames into memory — perfect for long videos or combining "
-        "many clips without running out of memory."
+        "many clips without running out of memory. Accepts optional "
+        "upstream IMAGE, AUDIO, and video_path inputs for chaining "
+        "from Save Video or VHS nodes."
     )
 
     @classmethod
@@ -217,18 +254,41 @@ class LoadVideoPathNode:
         frame_load_cap: int = 0,
         select_every_nth: int = 1,
         mask_points_data: str = "",
+        images=None,
+        audio=None,
+        video_path=None,
+        mask_points=None,
     ) -> dict:
         """Resolve path, probe metadata, compute effective values.
 
         Returns dict with outputs and UI data for video preview.
-        """
-        video_path = folder_paths.get_annotated_filepath(video)
 
-        if not video_path or not os.path.isfile(video_path):
-            raise FileNotFoundError(f"Video file not found: {video}")
+        If ``video_path`` is provided (upstream connection), it overrides
+        the file-picker combo.  ``images`` and ``audio`` are passed
+        through to the new output slots.
+        """
+        # --- Determine the actual video path ---
+        upstream = False
+        if video_path and isinstance(video_path, str) and video_path.strip():
+            # Upstream connection overrides the file-picker
+            resolved_path = video_path.strip()
+            upstream = True
+            logger.info("LoadVideoPath: using upstream video_path: %s", resolved_path)
+        else:
+            resolved_path = folder_paths.get_annotated_filepath(video)
+
+        # Upstream mask_points overrides locally drawn points
+        if mask_points and isinstance(mask_points, str) and mask_points.strip():
+            mask_points_data = mask_points.strip()
+            logger.info("LoadVideoPath: using upstream mask_points")
+
+        if not resolved_path or not os.path.isfile(resolved_path):
+            raise FileNotFoundError(
+                f"Video file not found: {video_path if upstream else video}"
+            )
 
         # Probe metadata
-        meta = _probe_video(video_path)
+        meta = _probe_video(resolved_path)
         source_fps = meta["fps"]
         source_frames = meta["total_frames"]
         source_duration = meta["duration"]
@@ -264,7 +324,7 @@ class LoadVideoPathNode:
 
         logger.info(
             "LoadVideoPath: %s | %dx%d | %.1ffps | %d frames | %.1fs",
-            video_path, meta["width"], meta["height"],
+            resolved_path, meta["width"], meta["height"],
             effective_fps, available_frames, effective_duration,
         )
 
@@ -282,14 +342,44 @@ class LoadVideoPathNode:
             "effective_duration": effective_duration,
         }
 
+        # --- Pass-through upstream IMAGE / AUDIO ---
+        images_out = images if images is not None else torch.zeros(
+            1, 64, 64, 3, dtype=torch.float32,
+        )
+        audio_out = audio if audio is not None else {
+            "waveform": torch.zeros(1, 1, 1), "sample_rate": 44100,
+        }
+
+        # --- Build UI data ---
+        # For upstream paths, copy to temp so /view can serve it
+        if upstream:
+            import shutil as _shutil
+            temp_dir = folder_paths.get_temp_directory()
+            os.makedirs(temp_dir, exist_ok=True)
+            ext = os.path.splitext(resolved_path)[1] or ".mp4"
+            preview_name = f"ffmpega_lvp_upstream_{os.getpid()}{ext}"
+            preview_path = os.path.join(temp_dir, preview_name)
+            try:
+                _shutil.copy2(resolved_path, preview_path)
+            except Exception as e:
+                logger.warning("LoadVideoPath: upstream preview copy failed: %s", e)
+            ui_video = [{
+                "filename": preview_name,
+                "subfolder": "",
+                "type": "temp",
+            }]
+        else:
+            ui_video = [{
+                "filename": video,
+                "type": "input",
+            }]
+
         return {
-            "result": (video_path, available_frames, effective_fps,
-                       effective_duration, mask_points_data or ""),
+            "result": (resolved_path, available_frames, effective_fps,
+                       effective_duration, mask_points_data or "",
+                       images_out, audio_out),
             "ui": {
-                "video": [{
-                    "filename": video,
-                    "type": "input",
-                }],
+                "video": ui_video,
                 "video_info": [video_info],
             },
         }

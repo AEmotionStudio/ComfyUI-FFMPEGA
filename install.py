@@ -50,6 +50,19 @@ def main():
     else:
         print("[FFMPEGA] ✓ simple-lama-inpainting already installed")
 
+    # --- MMAudio (AI audio synthesis for generate_audio) ---
+    if not is_installed("mmaudio"):
+        print("[FFMPEGA] Installing MMAudio (--no-deps to avoid torch/numpy conflicts)...")
+        result = subprocess.run(
+            [*pip, "--no-deps", "mmaudio"],
+        )
+        if result.returncode == 0:
+            print("[FFMPEGA] ✓ MMAudio installed successfully")
+        else:
+            print("[FFMPEGA] ✗ MMAudio installation failed — generate_audio skill will be unavailable")
+    else:
+        print("[FFMPEGA] ✓ MMAudio already installed")
+
     print("[FFMPEGA] Dependency installation complete")
 
 

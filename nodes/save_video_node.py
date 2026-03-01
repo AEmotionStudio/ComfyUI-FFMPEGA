@@ -79,6 +79,14 @@ class SaveVideoNode:
                         "the filename counter."
                     ),
                 }),
+                "mask_points": ("STRING", {
+                    "forceInput": True,
+                    "tooltip": (
+                        "Optional upstream mask_points pass-through. "
+                        "Forwarded as-is to the mask_points output "
+                        "for downstream nodes."
+                    ),
+                }),
             },
             "hidden": {
                 "prompt": "PROMPT",
@@ -86,8 +94,8 @@ class SaveVideoNode:
             },
         }
 
-    RETURN_TYPES = ("IMAGE", "AUDIO", "STRING")
-    RETURN_NAMES = ("images", "audio", "video_path")
+    RETURN_TYPES = ("IMAGE", "AUDIO", "STRING", "STRING")
+    RETURN_NAMES = ("images", "audio", "video_path", "mask_points")
     FUNCTION = "save_video"
     OUTPUT_NODE = True
     CATEGORY = "FFMPEGA"
@@ -106,6 +114,7 @@ class SaveVideoNode:
         filename_prefix: str = "FFMPEGA",
         save_output: bool = True,
         overwrite: bool = False,
+        mask_points: str = "",
         prompt=None,
         extra_pnginfo=None,
     ) -> dict:
@@ -128,7 +137,7 @@ class SaveVideoNode:
             silent_audio = {"waveform": torch.zeros(1, 1, 1), "sample_rate": 44100}
             return {
                 "ui": {"video": [], "file_size": ["0 B"]},
-                "result": (empty_tensor, silent_audio, ""),
+                "result": (empty_tensor, silent_audio, "", mask_points or ""),
             }
 
         # Determine output path
@@ -241,7 +250,7 @@ class SaveVideoNode:
                 "video": video_ui,
                 "file_size": [size_str],
             },
-            "result": (images_tensor, audio_out, output_path),
+            "result": (images_tensor, audio_out, output_path, mask_points or ""),
         }
 
     def _extract_frames(self, video_path: str) -> torch.Tensor:

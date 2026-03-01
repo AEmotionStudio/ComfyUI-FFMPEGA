@@ -1592,6 +1592,66 @@ app.registerExtension({
                 this.color = "#5a4a2a";
                 this.bgcolor = "#4a3a1a";
 
+                // --- Dynamic output slot visibility ---
+                // Remove "images" and "audio" outputs initially.  They are
+                // added back (always as a pair, to keep indices 5/6 aligned
+                // with Python's RETURN_TYPES) when EITHER input is connected.
+                const _syncDynamicOutputs = () => {
+                    const imagesIn = node.findInputSlot("images");
+                    const audioIn = node.findInputSlot("audio");
+
+                    const anyConnected =
+                        (imagesIn >= 0 && node.inputs[imagesIn].link != null) ||
+                        (audioIn >= 0 && node.inputs[audioIn].link != null);
+
+                    const imagesOut = node.findOutputSlot("images");
+                    const audioOut = node.findOutputSlot("audio");
+                    const hasOutputs = imagesOut >= 0 || audioOut >= 0;
+
+                    if (anyConnected && !hasOutputs) {
+                        // Add both outputs (images first → idx 5, audio → idx 6)
+                        node.addOutput("images", "IMAGE");
+                        node.addOutput("audio", "AUDIO");
+                    } else if (!anyConnected && hasOutputs) {
+                        // Remove in reverse index order to avoid shifting
+                        const aIdx = node.findOutputSlot("audio");
+                        if (aIdx >= 0) node.removeOutput(aIdx);
+                        const iIdx = node.findOutputSlot("images");
+                        if (iIdx >= 0) node.removeOutput(iIdx);
+                    }
+
+                    node.setDirtyCanvas(true, true);
+                };
+
+                // Initial state: remove both outputs (they were added by
+                // ComfyUI from Python's RETURN_TYPES)
+                requestAnimationFrame(() => {
+                    const aIdx = node.findOutputSlot("audio");
+                    if (aIdx >= 0) node.removeOutput(aIdx);
+                    const iIdx = node.findOutputSlot("images");
+                    if (iIdx >= 0) node.removeOutput(iIdx);
+                    node.setDirtyCanvas(true, true);
+                });
+
+                // React to connection changes
+                const origOnCC = this.onConnectionsChange;
+                this.onConnectionsChange = function (type, slotIndex, isConnected, link, ioSlot) {
+                    origOnCC?.apply(this, arguments);
+                    if (type === LiteGraph.INPUT) {
+                        const name = this.inputs?.[slotIndex]?.name;
+                        if (name === "images" || name === "audio") {
+                            _syncDynamicOutputs();
+                        }
+                    }
+                };
+
+                // Restore on workflow load / page refresh
+                const origConfigure = this.onConfigure;
+                this.onConfigure = function (data) {
+                    origConfigure?.apply(this, arguments);
+                    requestAnimationFrame(_syncDynamicOutputs);
+                };
+
                 // --- Video preview DOM widget ---
                 const previewContainer = document.createElement("div");
                 previewContainer.className = "ffmpega_preview";
@@ -2122,6 +2182,21 @@ app.registerExtension({
                 const origOnExecuted = this.onExecuted;
                 this.onExecuted = function (data) {
                     origOnExecuted?.apply(this, arguments);
+
+                    // Update video preview if upstream video was used
+                    // (backend copies upstream file to temp for /view)
+                    if (data?.video?.[0]) {
+                        const v = data.video[0];
+                        const params = new URLSearchParams({
+                            filename: v.filename,
+                            subfolder: v.subfolder || "",
+                            type: v.type || "input",
+                            timestamp: String(Date.now()),
+                        });
+                        previewContainer.style.display = "";
+                        videoEl.src = api.apiURL("/view?" + params.toString());
+                    }
+
                     if (data?.video_info?.[0]) {
                         const info = data.video_info[0];
                         // Update cached metadata with accurate backend values
@@ -3015,8 +3090,87 @@ app.registerExtension({
             const origOnCreatedImg = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {
                 const result = origOnCreatedImg?.apply(this, arguments);
+                const node = this;
                 this.color = "#3a5a5a";
                 this.bgcolor = "#2a4a4a";
+
+                // --- Dynamic output: hide "images" output until input connected ---
+                const _syncImagesOutput = () => {
+                    const imagesIn = node.findInputSlot("images");
+                    const connected = imagesIn >= 0
+                        && node.inputs[imagesIn].link != null;
+                    const imagesOut = node.findOutputSlot("images");
+                    const hasOutput = imagesOut >= 0;
+
+                    if (connected && !hasOutput) {
+                        node.addOutput("images", "IMAGE");
+                    } else if (!connected && hasOutput) {
+                        const idx = node.findOutputSlot("images");
+                        if (idx >= 0) node.removeOutput(idx);
+                    }
+                    node.setDirtyCanvas(true, true);
+                };
+
+                // Remove on creation
+                requestAnimationFrame(() => {
+                    const idx = node.findOutputSlot("images");
+                    if (idx >= 0) node.removeOutput(idx);
+                    node.setDirtyCanvas(true, true);
+                });
+
+                // React to connection changes
+                const origOnCCImg = this.onConnectionsChange;
+                this.onConnectionsChange = function (type, slotIndex, isConnected, link, ioSlot) {
+                    origOnCCImg?.apply(this, arguments);
+                    if (type === LiteGraph.INPUT) {
+                        const name = this.inputs?.[slotIndex]?.name;
+                        if (name === "images") {
+                            _syncImagesOutput();
+                        }
+                    }
+                };
+
+                // Restore on workflow load
+                const origConfigureImg = this.onConfigure;
+                this.onConfigure = function (data) {
+                    origConfigureImg?.apply(this, arguments);
+                    requestAnimationFrame(_syncImagesOutput);
+                };
+
+                // Handle execution results — update preview from upstream
+                const origOnExecutedImg = this.onExecuted;
+                this.onExecuted = function (data) {
+                    origOnExecutedImg?.apply(this, arguments);
+
+                    // If upstream image was used, the backend returns
+                    // ui.images with type "temp" — update the native
+                    // image preview widget if present
+                    if (data?.images?.[0]) {
+                        const img = data.images[0];
+                        // ComfyUI's native image preview will pick this
+                        // up automatically via the standard onExecuted
+                        // mechanism, but we also update any custom
+                        // preview elements if they exist
+                        const imgWidgets = this.widgets?.filter(
+                            w => w.name === "image_preview" || w.type === "preview",
+                        );
+                        if (imgWidgets?.length) {
+                            const params = new URLSearchParams({
+                                filename: img.filename,
+                                subfolder: img.subfolder || "",
+                                type: img.type || "input",
+                                timestamp: String(Date.now()),
+                            });
+                            const src = api.apiURL("/view?" + params.toString());
+                            for (const w of imgWidgets) {
+                                if (w.element?.querySelector?.("img")) {
+                                    w.element.querySelector("img").src = src;
+                                }
+                            }
+                        }
+                    }
+                };
+
                 return result;
             };
             const origGetMenuImg = nodeType.prototype.getExtraMenuOptions;

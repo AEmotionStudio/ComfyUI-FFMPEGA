@@ -13,4 +13,6 @@ openai-whisper>=20240930
 #
 # LaMa inpainting (AI object removal for the remove skill):
 #   pip install --no-deps simple-lama-inpainting
-
+#
+# MMAudio (AI audio synthesis for generate_audio skill):
+#   pip install --no-deps mmaudio
