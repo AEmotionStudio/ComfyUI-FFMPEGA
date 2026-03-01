@@ -36,3 +36,8 @@
 **Vulnerability:** The `_probe_duration` function in `skills/handlers/multi_input.py` blindly accepted a `path` argument and passed it directly to a `subprocess.run` call for `ffprobe` without any validation. This could allow an attacker to probe or potentially read arbitrary files on the system if they could control the path input.
 **Learning:** Even internal helper functions that wrap shell commands like `ffprobe` must validate file paths, especially when those paths originate from dynamically computed inputs (like multi-input pipelines). Path traversal is a risk wherever user-influenced paths reach the file system or external processes.
 **Prevention:** Enforce `validate_path` (which checks extension allowlists and sensitive directory blocklists) on ALL file paths before passing them to external command execution, even in seemingly benign helper functions.
+
+## 2025-06-03 - Re-Emergence of Path Traversal in Copied _probe_duration Implementations
+**Vulnerability:** A second implementation of `_probe_duration` existed in `nodes/agent_node.py` which had the exact same vulnerability as the one previously fixed in `skills/handlers/multi_input.py`. It blindly accepted `video_path` and passed it to `ffprobe`.
+**Learning:** When fixing a security vulnerability in a utility function, you must globally search the codebase for copied-and-pasted versions of that same logic. Fixing it in one place does not secure the system if the vulnerable pattern exists elsewhere.
+**Prevention:** Enforce `validate_video_path` on ALL file paths before passing them to external command execution, and search globally for similar functions when fixing a localized vulnerability.

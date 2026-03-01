@@ -15,7 +15,10 @@ logger = logging.getLogger("ffmpega")
 import torch  # type: ignore[import-not-found]
 
 import folder_paths  # type: ignore[import-not-found]
-
+try:
+    from ..core.sanitize import validate_path, ALLOWED_EXTENSIONS
+except ImportError:
+    from core.sanitize import validate_path, ALLOWED_EXTENSIONS
 
 class FFMPEGAgentNode:
     """Main FFMPEG Agent node that transforms natural language prompts into video edits."""
@@ -2845,10 +2848,11 @@ Token Usage{est_tag}:
         if not ffprobe_bin:
             return 0.0
         try:
+            valid_path = validate_path(str(video_path), ALLOWED_EXTENSIONS)
             result = subprocess.run(
                 [ffprobe_bin, "-v", "error", "-show_entries",
                  "format=duration", "-of", "default=noprint_wrappers=1:nokey=1",
-                 video_path],
+                 valid_path],
                 capture_output=True, text=True, check=True,
             )
             return float(result.stdout.strip())
