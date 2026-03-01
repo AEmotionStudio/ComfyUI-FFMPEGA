@@ -1418,6 +1418,7 @@ app.registerExtension({
 
                 const uploadBtn = document.createElement("button");
                 uploadBtn.textContent = "Upload Video...";
+                uploadBtn.setAttribute("aria-label", "Upload Video");
                 uploadBtn.style.cssText = `
                     width: 100%;
                     margin-top: 4px;
@@ -1453,6 +1454,7 @@ app.registerExtension({
                 const setUploadState = (uploading, filename = "") => {
                     if (uploading) {
                         uploadBtn.textContent = "⏳ Uploading...";
+                        uploadBtn.setAttribute("aria-label", "Uploading Video");
                         uploadBtn.disabled = true;
                         uploadBtn.style.cursor = "wait";
                         infoEl.textContent = `Uploading ${filename}...`;
@@ -1460,6 +1462,7 @@ app.registerExtension({
                         videoEl.style.display = "none";
                     } else {
                         uploadBtn.textContent = "Upload Video...";
+                        uploadBtn.setAttribute("aria-label", "Upload Video");
                         uploadBtn.disabled = false;
                         uploadBtn.style.cursor = "pointer";
                         videoEl.style.display = "block";
@@ -1939,6 +1942,7 @@ app.registerExtension({
                 // Add upload button widget (DOM)
                 const uploadBtn = document.createElement("button");
                 uploadBtn.textContent = "Upload Video...";
+                uploadBtn.setAttribute("aria-label", "Upload Video");
                 uploadBtn.style.cssText = `
                     width: 100%;
                     margin-top: 4px;
@@ -1983,6 +1987,7 @@ app.registerExtension({
                 const setUploadState = (isUploading, filename = "") => {
                     if (isUploading) {
                         uploadBtn.textContent = "⏳ Uploading...";
+                        uploadBtn.setAttribute("aria-label", "Uploading Video");
                         uploadBtn.disabled = true;
                         uploadBtn.style.cursor = "wait";
                         infoEl.textContent = `Uploading ${filename}...`;
@@ -1990,6 +1995,7 @@ app.registerExtension({
                         videoEl.style.display = "none";      // Hide stale video
                     } else {
                         uploadBtn.textContent = "Upload Video...";
+                        uploadBtn.setAttribute("aria-label", "Upload Video");
                         uploadBtn.disabled = false;
                         uploadBtn.style.cursor = "pointer";
                         videoEl.style.display = "block";     // Restore video visibility
