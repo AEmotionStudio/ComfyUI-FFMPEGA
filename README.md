@@ -560,15 +560,17 @@ You can request specific parameter values and the agent will use them directly:
 
 Some skills use AI models that **auto-download on first use**. You can disable automatic downloads with the `allow_model_downloads` toggle on the FFMPEG Agent node — runs requiring a missing model will fail with a clear message and a manual download link.
 
+All models are mirrored to first-party [AEmotionStudio](https://huggingface.co/AEmotionStudio) HuggingFace repos for supply chain resilience. Downloads try the AEmotionStudio mirror first, then fall back to upstream sources.
+
 | Model | Size | Stored In | Triggered By | Manual Download |
 | :--- | :--- | :--- | :--- | :--- |
 | **SAM3** (Segment Anything 3) | ~300 MB | `ComfyUI/models/SAM3/` | `auto_mask` skill, `sam3_masking` no-LLM mode, Effects Builder SAM3 target | [AEmotionStudio/sam3](https://huggingface.co/AEmotionStudio/sam3) — download `sam3.safetensors` |
-| **Whisper** large-v3 | ~3 GB | `ComfyUI/models/whisper/` | `auto_transcribe`, `karaoke_subtitles` skills, `transcribe` / `karaoke_subtitles` no-LLM modes | [openai/whisper](https://github.com/openai/whisper) — auto-fetched by the `whisper` Python package |
+| **Whisper** large-v3 | ~3 GB | `ComfyUI/models/whisper/` | `auto_transcribe`, `karaoke_subtitles` skills, `transcribe` / `karaoke_subtitles` no-LLM modes | [AEmotionStudio/whisper-models](https://huggingface.co/AEmotionStudio/whisper-models) |
 | **Whisper** medium | ~1.5 GB | `ComfyUI/models/whisper/` | Same as above (set `whisper_model` to `medium`) | Same as above |
 | **Whisper** small | ~500 MB | `ComfyUI/models/whisper/` | Same as above (set `whisper_model` to `small`) | Same as above |
 | **Whisper** base | ~150 MB | `ComfyUI/models/whisper/` | Same as above (set `whisper_model` to `base`) | Same as above |
 | **Whisper** tiny | ~75 MB | `ComfyUI/models/whisper/` | Same as above (set `whisper_model` to `tiny`) | Same as above |
-| **LaMa** (Large Mask Inpainting) | ~200 MB | Auto-managed by `simple-lama-inpainting` | `auto_mask:effect=remove` (object removal) | [simple-lama-inpainting](https://github.com/enesmsahin/simple-lama-inpainting) — auto-fetched by pip package |
+| **LaMa** (Large Mask Inpainting) | ~200 MB | `~/.cache/torch/hub/checkpoints/` | `auto_mask:effect=remove` (object removal) | [AEmotionStudio/lama-inpainting](https://huggingface.co/AEmotionStudio/lama-inpainting) — download `big-lama.pt` |
 | **U²-Net** (rembg) | ~170 MB | `~/.u2net/` | `remove_background` skill | Install with `pip install 'comfyui-ffmpega[masking]'` — model auto-fetched by rembg |
 
 > [!NOTE]
