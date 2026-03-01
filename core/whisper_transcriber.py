@@ -137,6 +137,12 @@ def _load_model(model_size: str = "large-v3", device: str = "gpu"):
             # Re-check — file is now local, whisper.load_model will find it
             needs_download = False
 
+    # If the file is cached locally (either pre-fetched from mirror or downloaded
+    # normally), we must pass the explicit file path to whisper.load_model().
+    # Passing the model name (e.g., "tiny") triggers whisper's strict SHA256 check,
+    # which fails for safetensor-converted .pt files and forces a re-download.
+    _load_target = model_file if not needs_download else model_size
+
     if use_cpu:
         # CPU mode — no VRAM needed, slower but safe for low-VRAM systems
         download_dir = _get_whisper_model_dir()
@@ -148,13 +154,13 @@ def _load_model(model_size: str = "large-v3", device: str = "gpu"):
             _model = model_manager.download_with_progress(
                 "whisper",
                 lambda: whisper.load_model(
-                    model_size, device="cpu", download_root=download_dir,
+                    _load_target, device="cpu", download_root=download_dir,
                 ),
                 extra=model_size,
             )
         else:
             _model = whisper.load_model(
-                model_size, device="cpu", download_root=download_dir,
+                _load_target, device="cpu", download_root=download_dir,
             )
     else:
         # GPU mode — free ComfyUI VRAM first
@@ -168,14 +174,20 @@ def _load_model(model_size: str = "large-v3", device: str = "gpu"):
             _model = model_manager.download_with_progress(
                 "whisper",
                 lambda: whisper.load_model(
-                    model_size, download_root=download_dir,
+                    _load_target, download_root=download_dir,
                 ),
                 extra=model_size,
             )
         else:
             _model = whisper.load_model(
-                model_size, download_root=download_dir,
+                _load_target, download_root=download_dir,
             )
+
+    # When loading from a file path, whisper skips applying alignment heads.
+    # We must apply them manually to ensure word-level timestamps work.
+    if not needs_download and hasattr(whisper, "_ALIGNMENT_HEADS"):
+        if model_size in whisper._ALIGNMENT_HEADS:
+            _model.set_alignment_heads(whisper._ALIGNMENT_HEADS[model_size])
 
     _model_name = cache_key
     logger.info("Whisper model '%s' loaded successfully on %s", model_size, "CPU" if use_cpu else "GPU")
