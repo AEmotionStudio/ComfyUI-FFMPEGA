@@ -264,13 +264,76 @@ def _find_checkpoint() -> str:
         )
 
 
-def _load_safetensors(model, checkpoint_path: str) -> None:
-    """Load a safetensors checkpoint into a SAM3 model."""
-    from safetensors.torch import load_file
+# ---------------------------------------------------------------------------
+#  Accelerate integration for memory-efficient loading
+# ---------------------------------------------------------------------------
 
-    ckpt = load_file(checkpoint_path)
+try:
+    from accelerate import init_empty_weights
+    from accelerate.utils import set_module_tensor_to_device
+    _HAS_ACCELERATE = True
+except ImportError:
+    _HAS_ACCELERATE = False
 
-    # SAM3's _load_checkpoint extracts detector keys
+
+def _load_state_dict(path: str, device: str = "cpu") -> dict:
+    """Load a state dict from .safetensors or .pt using best available loader.
+
+    Tries comfy.utils.load_torch_file first (supports both formats natively),
+    falls back to safetensors.torch.load_file / torch.load.
+    """
+    try:
+        from comfy.utils import load_torch_file
+        return load_torch_file(path, device=device)
+    except ImportError:
+        pass
+
+    if path.endswith(".safetensors"):
+        from safetensors.torch import load_file
+        return load_file(path, device=device)
+    else:
+        import torch
+        return torch.load(path, map_location=device, weights_only=False)
+
+
+def _load_efficient(model, ckpt: dict, device: str = "cpu") -> None:
+    """Load checkpoint into model, tensor-by-tensor if accelerate is available.
+
+    With accelerate: uses set_module_tensor_to_device() to avoid the 2x memory
+    spike of load_state_dict() (model weights + full state dict in RAM).
+    Without: falls back to standard load_state_dict(strict=False).
+    """
+    if _HAS_ACCELERATE:
+        loaded, skipped = 0, 0
+        param_names = {n for n, _ in model.named_parameters()}
+        buffer_names = {n for n, _ in model.named_buffers()}
+        valid_names = param_names | buffer_names
+        for key, tensor in ckpt.items():
+            if key in valid_names:
+                try:
+                    set_module_tensor_to_device(
+                        model, key, device, value=tensor,
+                    )
+                    loaded += 1
+                except Exception:
+                    skipped += 1
+            else:
+                skipped += 1
+        log.info(
+            "SAM3 efficient load: %d tensors loaded, %d skipped",
+            loaded, skipped,
+        )
+    else:
+        missing, unexpected = model.load_state_dict(ckpt, strict=False)
+        if missing:
+            log.debug("SAM3 loaded with missing keys: %s", missing[:5])
+
+
+def _remap_image_keys(model, ckpt: dict) -> dict:
+    """Remap a raw SAM3 checkpoint to image model key format.
+
+    SAM3's _load_checkpoint extracts detector/tracker keys.
+    """
     sam3_image_ckpt = {
         k.replace("detector.", ""): v for k, v in ckpt.items() if "detector" in k
     }
@@ -279,51 +342,35 @@ def _load_safetensors(model, checkpoint_path: str) -> None:
             k.replace("tracker.", "inst_interactive_predictor.model."): v
             for k, v in ckpt.items() if "tracker" in k
         })
-
     # If no detector keys found, try loading directly (already extracted)
     if not sam3_image_ckpt:
         sam3_image_ckpt = ckpt
-
-    missing_keys, unexpected_keys = model.load_state_dict(sam3_image_ckpt, strict=False)
-    if missing_keys:
-        log.debug("SAM3 loaded with missing keys: %s", missing_keys[:5])
-    # Guard: if nearly all keys are missing, the checkpoint format is wrong
-    if len(missing_keys) > len(sam3_image_ckpt) * 0.5:
-        log.warning(
-            "SAM3 image checkpoint has %d/%d missing keys — likely wrong "
-            "format (e.g. HuggingFace Transformers vs original .pt). "
-            "Reconvert from .pt with: safetensors.torch.save_file(torch.load('sam3.pt'), 'sam3.safetensors')",
-            len(missing_keys), len(sam3_image_ckpt),
-        )
+    return sam3_image_ckpt
 
 
-def _load_safetensors_video(model, checkpoint_path: str) -> None:
-    """Load a safetensors checkpoint into a SAM3 video model.
+def _remap_video_keys(ckpt: dict) -> dict:
+    """Remap a raw SAM3 checkpoint to video model key format.
 
-    The video model loads all keys directly (no detector/tracker split),
-    matching build_sam3_video_model's internal loading.
+    Video model's builder loads 'model' sub-dict if present.
     """
-    from safetensors.torch import load_file
-
-    ckpt = load_file(checkpoint_path)
-
-    # Video model's builder loads "model" sub-dict if present,
-    # otherwise loads all keys directly
     if "model" in ckpt and isinstance(ckpt["model"], dict):
-        ckpt = ckpt["model"]
+        return ckpt["model"]
+    return ckpt
 
-    missing_keys, unexpected_keys = model.load_state_dict(ckpt, strict=False)
-    if missing_keys:
-        log.debug("SAM3 video model missing keys: %s", missing_keys[:5])
-    if unexpected_keys:
-        log.debug("SAM3 video model unexpected keys: %s", unexpected_keys[:5])
-    # Guard: if nearly all keys are missing, the checkpoint format is wrong
-    if len(missing_keys) > len(ckpt) * 0.5:
+
+def _warn_if_bad_checkpoint(ckpt: dict, model, model_type: str = "image") -> None:
+    """Warn if checkpoint format appears wrong (>50% missing keys)."""
+    param_names = {n for n, _ in model.named_parameters()}
+    buffer_names = {n for n, _ in model.named_buffers()}
+    valid_names = param_names | buffer_names
+    matched = sum(1 for k in ckpt if k in valid_names)
+    if matched < len(ckpt) * 0.5 and len(ckpt) > 0:
         log.warning(
-            "SAM3 video checkpoint has %d/%d missing keys — likely wrong "
+            "SAM3 %s checkpoint has only %d/%d matching keys — likely wrong "
             "format (e.g. HuggingFace Transformers vs original .pt). "
-            "Reconvert from .pt with: safetensors.torch.save_file(torch.load('sam3.pt'), 'sam3.safetensors')",
-            len(missing_keys), len(ckpt),
+            "Reconvert from .pt with: safetensors.torch.save_file("
+            "torch.load('sam3.pt'), 'sam3.safetensors')",
+            model_type, matched, len(ckpt),
         )
 
 
@@ -434,11 +481,45 @@ def load_image_model(device: str = "gpu"):
     # Determine loading strategy based on file extension
     if checkpoint_path.endswith(".safetensors"):
         log.info("Loading SAM3 image model from safetensors: %s", checkpoint_path)
-        model = build_sam3_image_model(
-            checkpoint_path=None,
-            load_from_HF=False,
-        )
-        _load_safetensors(model, checkpoint_path)
+
+        # Try accelerate zero-copy init (allocates model with 0 bytes)
+        _used_empty = False
+        if _HAS_ACCELERATE:
+            try:
+                log.info("Using accelerate init_empty_weights for SAM3 image model")
+                with init_empty_weights():
+                    model = build_sam3_image_model(
+                        checkpoint_path=None,
+                        load_from_HF=False,
+                    )
+                _used_empty = True
+            except Exception as e:
+                log.info(
+                    "init_empty_weights failed for SAM3 image model (%s), "
+                    "falling back to standard init", e,
+                )
+                model = build_sam3_image_model(
+                    checkpoint_path=None,
+                    load_from_HF=False,
+                )
+        else:
+            model = build_sam3_image_model(
+                checkpoint_path=None,
+                load_from_HF=False,
+            )
+
+        ckpt = _load_state_dict(checkpoint_path, device="cpu")
+        ckpt = _remap_image_keys(model, ckpt)
+        _warn_if_bad_checkpoint(ckpt, model, "image")
+
+        load_device = "cpu" if use_cpu else target_device
+        if _used_empty:
+            _load_efficient(model, ckpt, device=load_device)
+        else:
+            _load_efficient(model, ckpt, device="cpu")
+            if not use_cpu:
+                import torch
+                model.to(torch.device(target_device))
     else:
         # .pt file — monkey-patch torch.load for weights_only compat
         log.info("Loading SAM3 image model from .pt: %s", checkpoint_path)
@@ -532,25 +613,61 @@ def load_video_model(device: str = "gpu"):
     if checkpoint_path.endswith(".safetensors"):
         # build_sam3_video_model uses torch.load internally which can't
         # handle safetensors. Build without checkpoint, then load manually.
-        if use_cpu:
-            # Temporarily hide CUDA so build_sam3_video_model constructs the
-            # model on CPU. Without this, it calls torch.device('cuda') internally
-            # and OOMs before we even get to .to(cpu).
-            _orig_cuda_available = torch.cuda.is_available
-            torch.cuda.is_available = lambda: False
+        log.info("Loading SAM3 video model from safetensors: %s", checkpoint_path)
+
+        # Try accelerate zero-copy init
+        _used_empty = False
+        if _HAS_ACCELERATE:
             try:
+                log.info("Using accelerate init_empty_weights for SAM3 video model")
+                if use_cpu:
+                    _orig_cuda_available = torch.cuda.is_available
+                    torch.cuda.is_available = lambda: False
+                try:
+                    with init_empty_weights():
+                        model = build_sam3_video_model(
+                            checkpoint_path=None,
+                            load_from_HF=False,
+                        )
+                    _used_empty = True
+                finally:
+                    if use_cpu:
+                        torch.cuda.is_available = _orig_cuda_available
+            except Exception as e:
+                log.info(
+                    "init_empty_weights failed for SAM3 video model (%s), "
+                    "falling back to standard init", e,
+                )
+                # Fall through to standard init below
+
+        if not _used_empty:
+            if use_cpu:
+                _orig_cuda_available = torch.cuda.is_available
+                torch.cuda.is_available = lambda: False
+                try:
+                    model = build_sam3_video_model(
+                        checkpoint_path=None,
+                        load_from_HF=False,
+                    )
+                finally:
+                    torch.cuda.is_available = _orig_cuda_available
+            else:
                 model = build_sam3_video_model(
                     checkpoint_path=None,
                     load_from_HF=False,
                 )
-            finally:
-                torch.cuda.is_available = _orig_cuda_available
+
+        ckpt = _load_state_dict(checkpoint_path, device="cpu")
+        ckpt = _remap_video_keys(ckpt)
+        _warn_if_bad_checkpoint(ckpt, model, "video")
+
+        load_device = "cpu" if use_cpu else target_device
+        if _used_empty:
+            _load_efficient(model, ckpt, device=load_device)
         else:
-            model = build_sam3_video_model(
-                checkpoint_path=None,
-                load_from_HF=False,
-            )
-        _load_safetensors_video(model, checkpoint_path)
+            _load_efficient(model, ckpt, device="cpu")
+            if not use_cpu:
+                model.to(torch.device(target_device))
     else:
         # .pt file — sam3's builder uses torch.load(weights_only=True)
         # which fails on PyTorch 2.6+ with some checkpoints.
