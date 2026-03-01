@@ -1,4 +1,3 @@
-import pytest
 from skills.composer import SkillComposer, Pipeline
 from skills.registry import Skill, SkillCategory, ParameterType, SkillParameter
 

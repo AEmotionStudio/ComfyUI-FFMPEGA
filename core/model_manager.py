@@ -43,21 +43,27 @@ _MODEL_INFO: dict[str, dict] = {
         "name": "SAM3 (Segment Anything Model 3)",
         "size": "~300 MB",
         "url": "https://huggingface.co/AEmotionStudio/sam3",
+        "mirror_repo": "AEmotionStudio/sam3",
         "manual": "Download sam3.safetensors and place it in ComfyUI/models/SAM3/",
     },
     "lama": {
         "name": "LaMa (Large Mask Inpainting)",
         "size": "~200 MB",
-        "url": "https://github.com/enesmsahin/simple-lama-inpainting",
-        "manual": "Model auto-downloads via simple-lama-inpainting on first use "
-                  "when allow_model_downloads is enabled.",
+        "url": "https://huggingface.co/AEmotionStudio/lama-inpainting",
+        "mirror_repo": "AEmotionStudio/lama-inpainting",
+        "mirror_filename": "big-lama.pt",
+        "manual": "Download big-lama.pt from "
+                  "https://huggingface.co/AEmotionStudio/lama-inpainting "
+                  "and place it in ~/.cache/torch/hub/checkpoints/",
     },
     "whisper": {
         "name": "OpenAI Whisper",
         "size": "75 MB (tiny) – 3 GB (large-v3)",
-        "url": "https://github.com/openai/whisper",
-        "manual": "Download from https://openaipublic.blob.core.windows.net/gpt-2/encodings "
-                  "or enable allow_model_downloads and let Whisper fetch it automatically.",
+        "url": "https://huggingface.co/AEmotionStudio/whisper-models",
+        "mirror_repo": "AEmotionStudio/whisper-models",
+        "manual": "Download the model .pt file from "
+                  "https://huggingface.co/AEmotionStudio/whisper-models "
+                  "and place it in ComfyUI/models/whisper/",
     },
 }
 
@@ -107,6 +113,134 @@ def require_downloads_allowed(model_key: str) -> None:
         f"'allow_model_downloads' is disabled on the FFMPEG Agent node. "
         f"Enable it to auto-download, or download manually from: {info['url']}"
     )
+
+
+# ---------------------------------------------------------------------------
+#  Mirror-first download helper
+# ---------------------------------------------------------------------------
+
+
+def try_mirror_download(
+    model_key: str,
+    filename: str,
+    local_dir: str,
+    *,
+    convert_safetensors: bool = False,
+    pt_metadata: dict | None = None,
+) -> str | None:
+    """Try downloading a model file from the AEmotionStudio HF mirror.
+
+    Supports two modes:
+
+    * **Direct** (``convert_safetensors=False``): downloads the file
+      as-is (e.g. a TorchScript ``.pt`` for LaMa).
+    * **Safetensors → .pt** (``convert_safetensors=True``): downloads
+      the ``.safetensors`` version from the mirror and reconstructs a
+      ``.pt`` file locally so downstream loaders work unchanged.
+
+    Args:
+        model_key: Registry key (e.g. ``"lama"``, ``"whisper"``).
+        filename: Target filename that the caller expects locally.
+        local_dir: Directory to save the downloaded/converted file.
+        convert_safetensors: If ``True``, the mirror stores
+            ``.safetensors`` and the helper will convert to ``.pt``.
+        pt_metadata: Extra metadata to embed in the ``.pt`` file
+            alongside ``model_state_dict`` (used by Whisper for
+            ``dims``).  Only used when ``convert_safetensors=True``.
+
+    Returns:
+        Path to the local file, or ``None`` on any failure.
+    """
+    require_downloads_allowed(model_key)
+
+    info = _MODEL_INFO.get(model_key, {})
+    mirror_repo = info.get("mirror_repo")
+    if not mirror_repo:
+        return None
+
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError:
+        return None
+
+    import os
+    os.makedirs(local_dir, exist_ok=True)
+
+    if not convert_safetensors:
+        # ── Direct download (.pt as-is) ──────────────────────────
+        try:
+            log.info(
+                "Trying AEmotionStudio mirror for %s (%s)...",
+                filename, mirror_repo,
+            )
+            path = hf_hub_download(
+                repo_id=mirror_repo,
+                filename=filename,
+                local_dir=local_dir,
+            )
+            log.info("Mirror download succeeded: %s", path)
+            return path
+        except Exception as e:
+            log.debug(
+                "Mirror download failed for %s/%s: %s — falling back",
+                mirror_repo, filename, e,
+            )
+            return None
+
+    # ── Safetensors → .pt conversion ─────────────────────────────
+    stem = filename.rsplit(".", 1)[0] if "." in filename else filename
+    st_filename = f"{stem}.safetensors"
+    pt_target = os.path.join(local_dir, filename)
+
+    try:
+        log.info(
+            "Trying AEmotionStudio mirror for %s (%s)...",
+            st_filename, mirror_repo,
+        )
+        st_path = hf_hub_download(
+            repo_id=mirror_repo,
+            filename=st_filename,
+        )
+
+        # Convert safetensors → .pt
+        from safetensors.torch import load_file
+        import torch
+        import json as _json
+
+        state_dict = load_file(st_path, device="cpu")
+
+        # Read safetensors metadata (may contain dims for Whisper)
+        st_meta = {}
+        try:
+            from safetensors import safe_open
+            with safe_open(st_path, framework="pt") as f:
+                st_meta = f.metadata() or {}
+        except Exception:
+            pass
+
+        # Build the .pt payload
+        pt_data: dict = {}
+        if pt_metadata:
+            pt_data.update(pt_metadata)
+
+        # Restore metadata from safetensors header (e.g. Whisper dims)
+        if "dims" in st_meta and "dims" not in pt_data:
+            try:
+                pt_data["dims"] = _json.loads(st_meta["dims"])
+            except Exception:
+                pass
+
+        pt_data["model_state_dict"] = state_dict
+        torch.save(pt_data, pt_target)
+
+        log.info("Mirror download + conversion succeeded: %s", pt_target)
+        return pt_target
+    except Exception as e:
+        log.debug(
+            "Mirror download failed for %s/%s: %s — falling back",
+            mirror_repo, st_filename, e,
+        )
+        return None
 
 
 # ---------------------------------------------------------------------------

@@ -1297,7 +1297,7 @@ class FFMPEGAgentNode:
         llm_model: str,
         quality_preset: str,
         seed: int = 0,
-        no_llm_mode: str = "sam3_masking",
+        no_llm_mode: str = "manual",
         images_a: Optional[torch.Tensor] = None,
         image_a: Optional[torch.Tensor] = None,
         audio_a: Optional[dict] = None,
