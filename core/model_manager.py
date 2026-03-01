@@ -151,6 +151,8 @@ def try_mirror_download(
     Returns:
         Path to the local file, or ``None`` on any failure.
     """
+    require_downloads_allowed(model_key)
+
     info = _MODEL_INFO.get(model_key, {})
     mirror_repo = info.get("mirror_repo")
     if not mirror_repo:
