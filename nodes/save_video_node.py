@@ -331,7 +331,14 @@ class SaveVideoNode:
                  "-f", "f32le", "-"],
                 capture_output=True, check=True,
             )
-            audio = torch.frombuffer(bytearray(res.stdout), dtype=torch.float32)
+
+            # Ensure buffer size is a multiple of element size (4 bytes for float32)
+            stdout_bytes = bytearray(res.stdout)
+            rem = len(stdout_bytes) % 4
+            if rem != 0:
+                stdout_bytes = stdout_bytes[:-rem]
+
+            audio = torch.frombuffer(stdout_bytes, dtype=torch.float32)
             match = re.search(
                 r", (\d+) Hz, (\w+), ",
                 res.stderr.decode("utf-8", "backslashreplace"),

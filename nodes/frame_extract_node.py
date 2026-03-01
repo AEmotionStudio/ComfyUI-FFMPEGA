@@ -317,7 +317,14 @@ class FrameExtractNode:
                 cmd,
                 capture_output=True, check=True, timeout=60,
             )
-            audio = torch.frombuffer(bytearray(res.stdout), dtype=torch.float32)
+
+            # Ensure buffer size is a multiple of element size (4 bytes for float32)
+            stdout_bytes = bytearray(res.stdout)
+            rem = len(stdout_bytes) % 4
+            if rem != 0:
+                stdout_bytes = stdout_bytes[:-rem]
+
+            audio = torch.frombuffer(stdout_bytes, dtype=torch.float32)
 
             # Parse sample rate and channel count from stderr
             match = re.search(
