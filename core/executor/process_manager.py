@@ -4,6 +4,7 @@ import asyncio
 import logging
 import re
 import shutil
+import functools
 import subprocess
 import threading
 from dataclasses import dataclass
@@ -12,6 +13,11 @@ from typing import Optional, Callable, AsyncIterator
 from .command_builder import FFMPEGCommand
 
 logger = logging.getLogger("ffmpega")
+
+
+@functools.lru_cache(maxsize=None)
+def _get_ffmpeg_bin() -> str | None:
+    return shutil.which("ffmpeg")
 
 
 @dataclass
@@ -55,7 +61,7 @@ class ProcessManager:
         Args:
             ffmpeg_path: Path to ffmpeg executable. If None, searches PATH.
         """
-        self.ffmpeg_path = ffmpeg_path or shutil.which("ffmpeg")
+        self.ffmpeg_path = ffmpeg_path or _get_ffmpeg_bin()
         if not self.ffmpeg_path:
             raise RuntimeError("ffmpeg not found in PATH")
 
