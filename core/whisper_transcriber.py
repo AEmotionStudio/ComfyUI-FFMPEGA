@@ -121,6 +121,22 @@ def _load_model(model_size: str = "large-v3", device: str = "gpu"):
             from core import model_manager  # type: ignore
         model_manager.require_downloads_allowed("whisper")
 
+        # Try AEmotionStudio mirror first — pre-fetch the .pt file into
+        # the whisper download dir so whisper.load_model() finds it locally
+        # and skips its own OpenAI CDN download.
+        _mirror_filename = _WHISPER_FILENAMES.get(model_size, f"{model_size}.pt")
+        _mirror_path = model_manager.try_mirror_download(
+            "whisper", _mirror_filename, download_dir,
+            convert_safetensors=True,
+        )
+        if _mirror_path:
+            logger.info(
+                "Whisper model '%s' pre-fetched from AEmotionStudio mirror",
+                model_size,
+            )
+            # Re-check — file is now local, whisper.load_model will find it
+            needs_download = False
+
     if use_cpu:
         # CPU mode — no VRAM needed, slower but safe for low-VRAM systems
         download_dir = _get_whisper_model_dir()

@@ -88,15 +88,28 @@ def load_model():
 
     log.info("Loading LaMa inpainting model...")
     if not model_cached:
-        # Model needs downloading — show progress
+        # Model needs downloading — try AEmotionStudio mirror first
         try:
             from . import model_manager as _mm
         except ImportError:
             from core import model_manager as _mm  # type: ignore
-        _lama_model = _mm.download_with_progress(
-            "lama",
-            lambda: SimpleLama(),
+
+        # Pre-fetch big-lama.pt into torch hub cache so SimpleLama()
+        # finds it locally and skips its own upstream download.
+        import torch.hub as _th
+        _cache_dir = os.path.join(_th.get_dir(), "checkpoints")
+        _mirror_path = _mm.try_mirror_download(
+            "lama", "big-lama.pt", _cache_dir,
         )
+        if _mirror_path:
+            log.info("LaMa model pre-fetched from AEmotionStudio mirror")
+            _lama_model = SimpleLama()
+        else:
+            # Mirror failed — fall back to upstream via SimpleLama + progress
+            _lama_model = _mm.download_with_progress(
+                "lama",
+                lambda: SimpleLama(),
+            )
     else:
         _lama_model = SimpleLama()
 
