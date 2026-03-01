@@ -117,8 +117,8 @@ def _f_slideshow(p):
     dur = float(p.get("duration_per_image", 3.0))
     transition = p.get("transition", "fade")
     trans_dur = float(p.get("transition_duration", 0.5))
-    width = int(p.get("width", p.get("_input_width", 1920)))
-    height = int(p.get("height", p.get("_input_height", 1080)))
+    width = int(p.get("width") or p.get("_input_width") or 1280)
+    height = int(p.get("height") or p.get("_input_height") or 720)
     include_video = str(p.get("include_video", "false")).lower() in ("true", "1", "yes")
     n_extra = int(p.get("_extra_input_count", 0))
 
@@ -282,8 +282,8 @@ def _f_concat(p):
     transition = p.get("transition")
     if transition and str(transition).lower() not in ("none", "cut", ""):
         return _f_xfade(p)
-    width = int(p.get("width", p.get("_input_width", 1920)))
-    height = int(p.get("height", p.get("_input_height", 1080)))
+    width = int(p.get("width") or p.get("_input_width") or 1280)
+    height = int(p.get("height") or p.get("_input_height") or 720)
     still_dur = float(p.get("still_duration", 5.0))
     n_extra = int(p.get("_extra_input_count", 0))
 
@@ -350,8 +350,8 @@ def _f_xfade(p):
     transition = sanitize_text_param(str(p.get("transition", "fade")))
     trans_dur = float(p.get("duration", 1.0))
     still_dur = float(p.get("still_duration", 4.0))
-    width = int(p.get("width", p.get("_input_width", 1920)))
-    height = int(p.get("height", p.get("_input_height", 1080)))
+    width = int(p.get("width") or p.get("_input_width") or 1280)
+    height = int(p.get("height") or p.get("_input_height") or 720)
     n_extra = int(p.get("_extra_input_count", 0))
 
     extra_paths = p.get("_extra_input_paths", [])

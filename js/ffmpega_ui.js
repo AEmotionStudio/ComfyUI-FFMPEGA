@@ -601,6 +601,9 @@ app.registerExtension({
                         if (verifyWidget) toggleWidget(verifyWidget, !isNone);
                         if (visionWidget) toggleWidget(visionWidget, !isNone);
                         if (ptcWidget) toggleWidget(ptcWidget, !isNone);
+                        // Show no_llm_mode selector only when llm_model is 'none'
+                        const noLlmModeWidget = node.widgets?.find(w => w.name === "no_llm_mode");
+                        if (noLlmModeWidget) toggleWidget(noLlmModeWidget, isNone);
                         fitHeight();
                     }
 
@@ -629,37 +632,55 @@ app.registerExtension({
                     };
                 }
 
-                // --- advanced_options → preview_mode / crf / encoding_preset / batch_mode / video_path / subtitle_path visibility ---
+                // --- advanced_options toggle → all advanced widgets visibility ---
                 const advancedWidget = this.widgets?.find(w => w.name === "advanced_options");
                 const previewWidget = this.widgets?.find(w => w.name === "preview_mode");
                 const crfWidget = this.widgets?.find(w => w.name === "crf");
                 const encodingWidget = this.widgets?.find(w => w.name === "encoding_preset");
-                const videoPathWidget = this.widgets?.find(w => w.name === "video_path");
                 const subtitleWidget = this.widgets?.find(w => w.name === "subtitle_path");
+                const visionWidget = this.widgets?.find(w => w.name === "use_vision");
+                const verifyWidget = this.widgets?.find(w => w.name === "verify_output");
+                const whisperDevWidget = this.widgets?.find(w => w.name === "whisper_device");
+                const whisperModelWidget = this.widgets?.find(w => w.name === "whisper_model");
+                const sam3MaxObjWidget = this.widgets?.find(w => w.name === "sam3_max_objects");
+                const sam3ThreshWidget = this.widgets?.find(w => w.name === "sam3_det_threshold");
+                const maskTypeWidget = this.widgets?.find(w => w.name === "mask_output_type");
                 const batchWidget = this.widgets?.find(w => w.name === "batch_mode");
                 const folderWidget = this.widgets?.find(w => w.name === "video_folder");
                 const patternWidget = this.widgets?.find(w => w.name === "file_pattern");
                 const concurrentWidget = this.widgets?.find(w => w.name === "max_concurrent");
-                const sam3MaxObjWidget = this.widgets?.find(w => w.name === "sam3_max_objects");
-                const sam3ThreshWidget = this.widgets?.find(w => w.name === "sam3_det_threshold");
-                const maskTypeWidget = this.widgets?.find(w => w.name === "mask_output_type");
+                const trackTokensWidget = this.widgets?.find(w => w.name === "track_tokens");
+                const logUsageWidget = this.widgets?.find(w => w.name === "log_usage");
+                const allowDownloadsWidget = this.widgets?.find(w => w.name === "allow_model_downloads");
 
                 function updateAdvancedVisibility() {
                     const show = advancedWidget?.value ?? false;
+                    // Rendering
                     if (previewWidget) toggleWidget(previewWidget, show);
+                    if (subtitleWidget) toggleWidget(subtitleWidget, show);
                     if (crfWidget) toggleWidget(crfWidget, show);
                     if (encodingWidget) toggleWidget(encodingWidget, show);
-                    if (videoPathWidget) toggleWidget(videoPathWidget, show);
-                    if (subtitleWidget) toggleWidget(subtitleWidget, show);
-                    if (batchWidget) toggleWidget(batchWidget, show);
+                    // LLM behavior
+                    if (visionWidget) toggleWidget(visionWidget, show);
+                    if (verifyWidget) toggleWidget(verifyWidget, show);
+                    // Whisper
+                    if (whisperDevWidget) toggleWidget(whisperDevWidget, show);
+                    if (whisperModelWidget) toggleWidget(whisperModelWidget, show);
+                    // SAM3
                     if (sam3MaxObjWidget) toggleWidget(sam3MaxObjWidget, show);
                     if (sam3ThreshWidget) toggleWidget(sam3ThreshWidget, show);
                     if (maskTypeWidget) toggleWidget(maskTypeWidget, show);
+                    // Batch
+                    if (batchWidget) toggleWidget(batchWidget, show);
                     // Batch sub-widgets only show when BOTH advanced AND batch are on
                     const showBatch = show && batchWidget?.value;
                     if (folderWidget) toggleWidget(folderWidget, showBatch);
                     if (patternWidget) toggleWidget(patternWidget, showBatch);
                     if (concurrentWidget) toggleWidget(concurrentWidget, showBatch);
+                    // Usage tracking & downloads
+                    if (trackTokensWidget) toggleWidget(trackTokensWidget, show);
+                    if (logUsageWidget) toggleWidget(logUsageWidget, show);
+                    if (allowDownloadsWidget) toggleWidget(allowDownloadsWidget, show);
                     fitHeight();
                 }
 
@@ -702,7 +723,7 @@ app.registerExtension({
                         updateDynamicSlots(this, "images_", "IMAGE");
                         updateDynamicSlots(this, "image_", "IMAGE", ["images_", "image_path_"]);
                         updateDynamicSlots(this, "audio_", "AUDIO");
-                        updateDynamicSlots(this, "video_", "STRING");
+                        updateDynamicSlots(this, "video_", "STRING", ["video_path", "video_folder"]);
                         updateDynamicSlots(this, "image_path_", "STRING");
                         updateDynamicSlots(this, "text_", "STRING");
                         fitHeight();
@@ -718,22 +739,65 @@ app.registerExtension({
                 this.onConfigure = function (info) {
                     origOnConfigure?.apply(this, arguments);
 
+                    // DEBUG removed
+
                     // Pre-create any dynamic slots that were saved in the workflow
                     // before LiteGraph tries to restore their links.
                     // This ensures slots exist for link reconnection.
+                    const dynamicPrefixes = [
+                        { prefix: "images_", type: "IMAGE", excludes: [] },
+                        { prefix: "image_", type: "IMAGE", excludes: ["images_", "image_path_"] },
+                        { prefix: "audio_", type: "AUDIO", excludes: [] },
+                        { prefix: "video_", type: "STRING", excludes: ["video_path", "video_folder"] },
+                        { prefix: "image_path_", type: "STRING", excludes: [] },
+                        { prefix: "text_", type: "STRING", excludes: [] },
+                    ];
+
                     if (info?.inputs) {
-                        const dynamicPrefixes = ["images_", "image_", "audio_", "video_", "image_path_", "text_"];
                         const existingNames = new Set(this.inputs.map(i => i.name));
+
+                        // Step 1: Pre-create any dynamic slots that were
+                        // explicitly saved in the workflow
                         for (const saved of info.inputs) {
                             if (!existingNames.has(saved.name)) {
-                                const isDynamic = dynamicPrefixes.some(p => {
-                                    if (!saved.name.startsWith(p)) return false;
-                                    // Exclude image_ slots that match images_ or image_path_
-                                    if (p === "image_" && (saved.name.startsWith("images_") || saved.name.startsWith("image_path_"))) return false;
+                                const isDynamic = dynamicPrefixes.some(({ prefix, excludes }) => {
+                                    if (!saved.name.startsWith(prefix)) return false;
+                                    if (excludes.some(ep => saved.name.startsWith(ep))) return false;
                                     return true;
                                 });
                                 if (isDynamic) {
                                     this.addInput(saved.name, saved.type);
+                                    existingNames.add(saved.name);
+                                }
+                            }
+                        }
+
+                        // Step 2: For each dynamic group, if any saved slot
+                        // had a link, ensure the next trailing slot exists.
+                        // Unconnected trailing slots (e.g. video_b when only
+                        // video_a is connected) are NOT saved in the workflow,
+                        // so we must recreate them from link data.
+                        for (const { prefix, type, excludes } of dynamicPrefixes) {
+                            // Find the highest-lettered slot in this group that had a link
+                            let maxLinkedIdx = -1;
+                            for (const saved of info.inputs) {
+                                if (!saved.name.startsWith(prefix)) continue;
+                                if (excludes.some(ep => saved.name.startsWith(ep))) continue;
+                                if (saved.link != null) {
+                                    const letter = saved.name.slice(prefix.length);
+                                    const idx = SLOT_LABELS.indexOf(letter);
+                                    if (idx > maxLinkedIdx) maxLinkedIdx = idx;
+                                }
+                            }
+                            // Create the next trailing slot if needed
+                            if (maxLinkedIdx >= 0) {
+                                const nextLetter = SLOT_LABELS[maxLinkedIdx + 1];
+                                if (nextLetter) {
+                                    const nextName = `${prefix}${nextLetter}`;
+                                    if (!existingNames.has(nextName)) {
+                                        this.addInput(nextName, type);
+                                        existingNames.add(nextName);
+                                    }
                                 }
                             }
                         }
@@ -745,18 +809,18 @@ app.registerExtension({
                         updateDynamicSlots(self, "images_", "IMAGE");
                         updateDynamicSlots(self, "image_", "IMAGE", ["images_", "image_path_"]);
                         updateDynamicSlots(self, "audio_", "AUDIO");
-                        updateDynamicSlots(self, "video_", "STRING");
+                        updateDynamicSlots(self, "video_", "STRING", ["video_path", "video_folder"]);
                         updateDynamicSlots(self, "image_path_", "STRING");
                         updateDynamicSlots(self, "text_", "STRING");
                         updateAdvancedVisibility();
                         fitHeight();
                     }
 
-                    // setTimeout(0) defers until after LiteGraph finishes
-                    // restoring links in the current event-loop task.
-                    // The 200ms retry catches late link restoration.
+                    // Deferred restore to catch any links restored after
+                    // this synchronous configure pass completes.
+                    restoreSlots();
                     setTimeout(restoreSlots, 0);
-                    setTimeout(restoreSlots, 200);
+                    setTimeout(restoreSlots, 300);
                 };
 
                 return result;
@@ -1086,6 +1150,434 @@ app.registerExtension({
             };
         }
 
+        // Style FrameExtract node + live video preview
+        if (nodeData.name === "FFMPEGAFrameExtract") {
+            const onNodeCreated = nodeType.prototype.onNodeCreated;
+
+            nodeType.prototype.onNodeCreated = function () {
+                const result = onNodeCreated?.apply(this, arguments);
+                const node = this;
+
+                this.color = "#2a4a5a";
+                this.bgcolor = "#1a3a4a";
+
+                // --- Video preview DOM widget ---
+                const previewContainer = document.createElement("div");
+                previewContainer.className = "ffmpega_preview";
+                previewContainer.style.cssText =
+                    "width:100%;background:#1a1a1a;border-radius:6px;" +
+                    "overflow:hidden;position:relative;";
+
+                const videoEl = document.createElement("video");
+                videoEl.controls = true;
+                videoEl.loop = true;
+                videoEl.muted = true;
+                videoEl.volume = 1.0;
+                videoEl.setAttribute("aria-label", "Frame extraction preview");
+                videoEl.style.cssText = "width:100%;display:block;";
+                // Remember user's mute preference across video loads
+                let userUnmuted = false;
+                videoEl.addEventListener("volumechange", () => {
+                    userUnmuted = !videoEl.muted;
+                });
+                videoEl.addEventListener("play", () => {
+                    if (userUnmuted) videoEl.muted = false;
+                });
+                videoEl.addEventListener("loadedmetadata", () => {
+                    previewWidget.aspectRatio =
+                        videoEl.videoWidth / videoEl.videoHeight;
+                    node.setSize([
+                        node.size[0],
+                        node.computeSize([node.size[0], node.size[1]])[1],
+                    ]);
+                    node?.graph?.setDirtyCanvas(true);
+                });
+                videoEl.addEventListener("error", () => {
+                    previewContainer.style.display = "none";
+                    infoEl.textContent = "No video loaded";
+                    node.setSize([
+                        node.size[0],
+                        node.computeSize([node.size[0], node.size[1]])[1],
+                    ]);
+                    node?.graph?.setDirtyCanvas(true);
+                });
+
+                // Info overlay
+                const infoEl = document.createElement("div");
+                infoEl.style.cssText =
+                    "padding:4px 8px;font-size:11px;color:#aaa;" +
+                    "font-family:monospace;background:#111;";
+                infoEl.textContent = "No video loaded";
+                infoEl.setAttribute("role", "status");
+
+                previewContainer.appendChild(videoEl);
+                previewContainer.appendChild(infoEl);
+
+                // Add download overlay
+                addDownloadOverlay(previewContainer, videoEl);
+
+                // Prevent canvas events from going through the preview
+                for (const evt of [
+                    "contextmenu", "pointerdown", "mousewheel",
+                    "pointermove", "pointerup",
+                ]) {
+                    previewContainer.addEventListener(evt, (e) => {
+                        e.stopPropagation();
+                    }, true);
+                }
+
+                const previewWidget = this.addDOMWidget(
+                    "videopreview", "preview", previewContainer,
+                    {
+                        serialize: false,
+                        hideOnZoom: false,
+                        getValue() { return previewContainer.value; },
+                        setValue(v) { previewContainer.value = v; },
+                    }
+                );
+                previewWidget.aspectRatio = null;
+                previewWidget.computeSize = function (width) {
+                    if (this.aspectRatio && previewContainer.style.display !== "none") {
+                        const h = (node.size[0] - 20) / this.aspectRatio + 10;
+                        return [width, Math.max(h, 0) + 30]; // +30 for info bar
+                    }
+                    return [width, 34]; // Just info bar
+                };
+
+                // --- Live preview: watch video_path, start_time, duration ---
+                let _previewDebounce = null;
+
+                const updateLivePreview = () => {
+                    const pathWidget = node.widgets?.find(w => w.name === "video_path");
+                    const startWidget = node.widgets?.find(w => w.name === "start_time");
+                    const durWidget = node.widgets?.find(w => w.name === "duration");
+
+                    const videoPath = pathWidget?.value?.trim();
+                    if (!videoPath) {
+                        previewContainer.style.display = "none";
+                        infoEl.textContent = "No video loaded";
+                        node.setSize([
+                            node.size[0],
+                            node.computeSize([node.size[0], node.size[1]])[1],
+                        ]);
+                        node?.graph?.setDirtyCanvas(true);
+                        return;
+                    }
+
+                    const startTime = startWidget?.value ?? 0;
+                    const duration = durWidget?.value ?? 0;
+
+                    // Build preview URL via our streaming endpoint
+                    const params = new URLSearchParams({
+                        path: videoPath,
+                        start_time: String(startTime),
+                        _t: String(Date.now()), // cache bust
+                    });
+                    // Only send duration if > 0 (0 = full video, server caps at 30s)
+                    if (duration > 0) {
+                        params.set("duration", String(duration));
+                    }
+                    const previewUrl = api.apiURL("/ffmpega/preview?" + params.toString());
+
+                    previewContainer.style.display = "";
+                    infoEl.textContent = "Loading preview...";
+                    videoEl.src = previewUrl;
+
+                    // Fetch video info for the info bar
+                    const infoParams = new URLSearchParams({ path: videoPath });
+                    fetch(api.apiURL("/ffmpega/video_info?" + infoParams.toString()))
+                        .then(r => r.json())
+                        .then(info => {
+                            if (!info?.width) return;
+                            const fpsW = node.widgets?.find(w => w.name === "fps");
+                            const extractFps = fpsW?.value ?? 1;
+                            const maxFramesW = node.widgets?.find(w => w.name === "max_frames");
+                            const maxFrames = maxFramesW?.value ?? 100;
+
+                            // Calculate expected frame count
+                            const actualDur = Math.min(duration, info.duration - startTime);
+                            const expectedFrames = Math.min(
+                                Math.max(0, Math.floor(actualDur * extractFps)),
+                                maxFrames,
+                            );
+
+                            const startFmt = formatTime(startTime);
+                            const endFmt = formatTime(startTime + actualDur);
+
+                            infoEl.textContent =
+                                `~${expectedFrames} frames • ${info.width}×${info.height}` +
+                                ` • ${startFmt}–${endFmt} @ ${extractFps}fps`;
+                        })
+                        .catch(() => {
+                            infoEl.textContent = "Preview loaded";
+                        });
+                };
+
+                // Small helper to format seconds as m:ss or ss.s
+                const formatTime = (sec) => {
+                    if (sec < 0) sec = 0;
+                    const m = Math.floor(sec / 60);
+                    const s = (sec % 60).toFixed(1);
+                    return m > 0 ? `${m}:${s.padStart(4, "0")}` : `${s}s`;
+                };
+
+                const debouncedPreview = () => {
+                    clearTimeout(_previewDebounce);
+                    _previewDebounce = setTimeout(updateLivePreview, 600);
+                };
+
+                // Hook into widget value changes for live updates
+                const watchWidgets = ["video_path", "start_time", "duration", "fps", "max_frames"];
+                // Use a polling approach since LiteGraph widgets don't have
+                // reliable change events for all widget types
+                const widgetValues = {};
+                const pollInterval = setInterval(() => {
+                    if (!node.graph) {
+                        clearInterval(pollInterval);
+                        return;
+                    }
+                    let changed = false;
+                    for (const name of watchWidgets) {
+                        const w = node.widgets?.find(ww => ww.name === name);
+                        if (w && widgetValues[name] !== w.value) {
+                            widgetValues[name] = w.value;
+                            changed = true;
+                        }
+                    }
+                    if (changed) debouncedPreview();
+                }, 500);
+
+                // Initial preview load
+                setTimeout(updateLivePreview, 300);
+
+                // Handle execution results — update info with actual frame stats
+                const origOnExecuted = this.onExecuted;
+                this.onExecuted = function (data) {
+                    origOnExecuted?.apply(this, arguments);
+
+                    // Show the temp preview clip if available
+                    if (data?.video?.[0]) {
+                        const v = data.video[0];
+                        const params = new URLSearchParams({
+                            filename: v.filename,
+                            subfolder: v.subfolder || "",
+                            type: v.type || "temp",
+                            timestamp: String(Date.now()),
+                        });
+                        previewContainer.style.display = "";
+                        videoEl.src = api.apiURL("/view?" + params.toString());
+                    }
+
+                    // Update info bar with actual extraction stats
+                    if (data?.frame_info?.[0]) {
+                        const fi = data.frame_info[0];
+                        const startFmt = formatTime(fi.start);
+                        const endFmt = formatTime(fi.end);
+                        const durFmt = formatTime(fi.duration);
+                        infoEl.textContent =
+                            `${fi.count} frames • ${fi.width}×${fi.height}` +
+                            ` • ${startFmt}–${endFmt} (${durFmt})` +
+                            ` • src ${fi.source_fps}fps → extract ${fi.fps}fps`;
+                    }
+                };
+
+                // Clean up interval on node removal
+                const origOnRemoved = this.onRemoved;
+                this.onRemoved = function () {
+                    clearInterval(pollInterval);
+                    fileInput?.remove();
+                    origOnRemoved?.apply(this, arguments);
+                };
+
+                // --- Upload button + drag-drop (same pattern as LoadVideoPath) ---
+                const showError = (msg) => {
+                    flashNode(node, "#7a4a4a");
+                    infoEl.textContent = msg;
+                    previewContainer.style.display = "";
+                    node.setSize([
+                        node.size[0],
+                        node.computeSize([node.size[0], node.size[1]])[1],
+                    ]);
+                    node?.graph?.setDirtyCanvas(true);
+                };
+
+                const videoAccept = [
+                    "video/webm", "video/mp4", "video/x-matroska",
+                    "video/quicktime", "video/x-msvideo", "video/x-flv",
+                    "video/x-ms-wmv", "video/mpeg", "video/3gpp",
+                    "image/gif",
+                ].join(",");
+
+                const fileInput = document.createElement("input");
+                Object.assign(fileInput, {
+                    type: "file",
+                    accept: videoAccept,
+                    style: "display: none",
+                });
+                document.body.append(fileInput);
+
+                const uploadBtn = document.createElement("button");
+                uploadBtn.textContent = "Upload Video...";
+                uploadBtn.style.cssText = `
+                    width: 100%;
+                    margin-top: 4px;
+                    background-color: #222;
+                    color: #ccc;
+                    border: 1px solid #333;
+                    border-radius: 4px;
+                    padding: 6px;
+                    cursor: pointer;
+                    font-family: monospace;
+                    font-size: 12px;
+                    transition: background-color 0.2s;
+                `;
+                let isHovered = false;
+                let isFocused = false;
+                const updateUploadBtn = () => {
+                    if (uploadBtn.disabled) return;
+                    const active = isHovered || isFocused;
+                    uploadBtn.style.backgroundColor = active ? "#333" : "#222";
+                    uploadBtn.style.outline = isFocused ? "2px solid #4a6a8a" : "none";
+                };
+                uploadBtn.onmouseenter = () => { isHovered = true; updateUploadBtn(); };
+                uploadBtn.onmouseleave = () => { isHovered = false; updateUploadBtn(); };
+                uploadBtn.onfocus = () => { isFocused = true; updateUploadBtn(); };
+                uploadBtn.onblur = () => { isFocused = false; updateUploadBtn(); };
+                uploadBtn.onclick = () => fileInput.click();
+                uploadBtn.onpointerdown = (e) => e.stopPropagation();
+
+                this.addDOMWidget("upload_button", "btn", uploadBtn, {
+                    serialize: false,
+                });
+
+                const setUploadState = (uploading, filename = "") => {
+                    if (uploading) {
+                        uploadBtn.textContent = "⏳ Uploading...";
+                        uploadBtn.disabled = true;
+                        uploadBtn.style.cursor = "wait";
+                        infoEl.textContent = `Uploading ${filename}...`;
+                        previewContainer.style.display = "";
+                        videoEl.style.display = "none";
+                    } else {
+                        uploadBtn.textContent = "Upload Video...";
+                        uploadBtn.disabled = false;
+                        uploadBtn.style.cursor = "pointer";
+                        videoEl.style.display = "block";
+                    }
+                    node.setDirtyCanvas(true, true);
+                    node.setSize([
+                        node.size[0],
+                        node.computeSize([node.size[0], node.size[1]])[1],
+                    ]);
+                };
+
+                const handleUpload = async (file) => {
+                    setUploadState(true, file.name);
+                    const body = new FormData();
+                    body.append("image", file);
+
+                    try {
+                        const resp = await fetch("/upload/image", {
+                            method: "POST",
+                            body: body,
+                        });
+                        if (resp.status !== 200) {
+                            showError("Upload failed: " + resp.statusText);
+                            return false;
+                        }
+                        const data = await resp.json();
+                        const filename = data.name;
+
+                        // Set the video_path STRING widget to the uploaded file
+                        // ComfyUI stores uploads in the input directory
+                        const pathWidget = node.widgets?.find(w => w.name === "video_path");
+                        if (pathWidget) {
+                            // Build path relative to ComfyUI input dir
+                            const subfolder = data.subfolder || "";
+                            const inputPath = subfolder
+                                ? `input/${subfolder}/${filename}`
+                                : `input/${filename}`;
+                            pathWidget.value = inputPath;
+                        }
+
+                        // Trigger preview update
+                        debouncedPreview();
+                        flashNode(node, "#4a7a4a");
+                        return true;
+                    } catch (err) {
+                        console.warn("FFMPEGA: Video upload failed", err);
+                        showError("Upload error: " + err);
+                        return false;
+                    } finally {
+                        setUploadState(false);
+                    }
+                };
+
+                fileInput.onchange = async () => {
+                    if (fileInput.files.length) {
+                        await handleUpload(fileInput.files[0]);
+                    }
+                };
+
+                // Drag-and-drop support
+                this.onDragOver = (e) => {
+                    if (e?.dataTransfer?.types?.includes?.("Files")) {
+                        if (!uploadBtn.disabled) {
+                            if (!Object.prototype.hasOwnProperty.call(uploadBtn, '_originalTextContent')) {
+                                uploadBtn._originalTextContent = uploadBtn.textContent;
+                            }
+                            if (!Object.prototype.hasOwnProperty.call(uploadBtn, '_originalBorder')) {
+                                uploadBtn._originalBorder = uploadBtn.style.border;
+                            }
+                            uploadBtn.textContent = "📂 Drop to Upload";
+                            uploadBtn.style.border = "1px dashed #4a6a8a";
+                            uploadBtn.style.backgroundColor = "#333";
+
+                            if (uploadBtn._dragTimeout) clearTimeout(uploadBtn._dragTimeout);
+                            uploadBtn._dragTimeout = setTimeout(() => {
+                                if (!uploadBtn.disabled) {
+                                    if (Object.prototype.hasOwnProperty.call(uploadBtn, '_originalTextContent')) {
+                                        uploadBtn.textContent = uploadBtn._originalTextContent;
+                                        delete uploadBtn._originalTextContent;
+                                    }
+                                    if (Object.prototype.hasOwnProperty.call(uploadBtn, '_originalBorder')) {
+                                        uploadBtn.style.border = uploadBtn._originalBorder;
+                                        delete uploadBtn._originalBorder;
+                                    }
+                                    updateUploadBtn();
+                                }
+                            }, 100);
+                        }
+                        return true;
+                    }
+                    return false;
+                };
+                this.onDragDrop = async (e) => {
+                    if (!e?.dataTransfer?.types?.includes?.("Files")) return false;
+                    const file = e.dataTransfer?.files?.[0];
+                    if (!file) return false;
+
+                    const ext = file.name.split(".").pop()?.toLowerCase();
+                    const videoExts = [
+                        "mp4", "avi", "mov", "mkv", "webm", "flv",
+                        "wmv", "m4v", "mpg", "mpeg", "ts", "mts", "gif",
+                    ];
+                    if (!videoExts.includes(ext)) {
+                        showError("Invalid file type: " + ext);
+                        return false;
+                    }
+
+                    return await handleUpload(file);
+                };
+
+                // --- Video preview context menu ---
+                const getVideoUrl = () => videoEl.src || null;
+                addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, getVideoUrl, infoEl);
+
+                return result;
+            };
+        }
+
         // Style LoadVideoPath node + video preview + custom upload widget
         if (nodeData.name === "FFMPEGALoadVideoPath") {
             const onNodeCreated = nodeType.prototype.onNodeCreated;
@@ -1110,23 +1602,48 @@ app.registerExtension({
                 videoEl.muted = true;
                 videoEl.setAttribute("aria-label", "Video preview");
                 videoEl.style.cssText = "width:100%;display:block;";
+
+                // Playback position tracking for live frame counter
+                let _srcMeta = null; // { width, height, fps, duration, frames }
+                let _effAvailFrames = 0;
+                let _effFps = 0;
+                let _effSkipFirst = 0;
+                let _effInfoText = ""; // base info text (without frame pos)
+
                 videoEl.addEventListener("loadedmetadata", () => {
                     previewWidget.aspectRatio =
                         videoEl.videoWidth / videoEl.videoHeight;
-                    // Populate info bar with client-side video metadata
-                    const w = videoEl.videoWidth;
-                    const h = videoEl.videoHeight;
-                    const d = videoEl.duration;
-                    const parts = [];
-                    if (w && h) parts.push(`${w}×${h}`);
-                    if (d && isFinite(d)) {
-                        const m = Math.floor(d / 60);
-                        const s = (d % 60).toFixed(1);
-                        parts.push(m > 0 ? `${m}m ${s}s` : `${s}s`);
+
+                    // Store basic metadata from the video element
+                    _srcMeta = {
+                        width: videoEl.videoWidth,
+                        height: videoEl.videoHeight,
+                        fps: 0, // will be filled by /ffmpega/video_info
+                        duration: videoEl.duration,
+                        frames: 0,
+                    };
+
+                    // Fetch accurate metadata via ffprobe for fps + frame count
+                    const vidWidget = node.widgets?.find(w => w.name === "video");
+                    if (vidWidget?.value) {
+                        const infoParams = new URLSearchParams({
+                            path: "input/" + vidWidget.value,
+                        });
+                        fetch(api.apiURL("/ffmpega/video_info?" + infoParams.toString()))
+                            .then(r => r.json())
+                            .then(info => {
+                                if (info?.fps) {
+                                    _srcMeta.fps = info.fps;
+                                    _srcMeta.frames = info.frames || Math.round(info.duration * info.fps);
+                                    _srcMeta.duration = info.duration || _srcMeta.duration;
+                                }
+                                updateDynamicInfo();
+                            })
+                            .catch(() => updateDynamicInfo());
+                    } else {
+                        updateDynamicInfo();
                     }
-                    if (parts.length) {
-                        infoEl.textContent = parts.join(" | ");
-                    }
+
                     node.setSize([
                         node.size[0],
                         node.computeSize([node.size[0], node.size[1]])[1],
@@ -1141,6 +1658,185 @@ app.registerExtension({
                     ]);
                     node?.graph?.setDirtyCanvas(true);
                 });
+
+                // --- Dynamic info bar calculation ---
+                const formatTimeLV = (sec) => {
+                    if (sec < 0) sec = 0;
+                    const m = Math.floor(sec / 60);
+                    const s = (sec % 60).toFixed(1);
+                    return m > 0 ? `${m}:${s.padStart(4, "0")}` : `${s}s`;
+                };
+
+                const updateDynamicInfo = () => {
+                    if (!_srcMeta) {
+                        infoEl.textContent = "No video selected";
+                        return;
+                    }
+
+                    const forceRate = node.widgets?.find(w => w.name === "force_rate")?.value ?? 0;
+                    const skipFirst = node.widgets?.find(w => w.name === "skip_first_frames")?.value ?? 0;
+                    const frameCap = node.widgets?.find(w => w.name === "frame_load_cap")?.value ?? 0;
+                    const everyNth = node.widgets?.find(w => w.name === "select_every_nth")?.value ?? 1;
+
+                    const srcFps = _srcMeta.fps || 24;
+                    const srcDuration = _srcMeta.duration || 0;
+                    const srcFrames = _srcMeta.frames || Math.round(srcDuration * srcFps);
+
+                    // Effective FPS
+                    const effFps = forceRate > 0 ? forceRate : srcFps;
+
+                    // Available frames after re-sampling
+                    let availFrames = forceRate > 0
+                        ? Math.ceil(srcDuration * forceRate)
+                        : srcFrames;
+
+                    // Skip
+                    availFrames = Math.max(0, availFrames - skipFirst);
+
+                    // Select every Nth
+                    if (everyNth > 1) {
+                        availFrames = Math.max(0, Math.floor(availFrames / everyNth));
+                    }
+
+                    // Cap
+                    if (frameCap > 0) {
+                        availFrames = Math.min(availFrames, frameCap);
+                    }
+
+                    // Effective duration
+                    const effDuration = effFps > 0 && availFrames > 0
+                        ? availFrames / effFps
+                        : srcDuration;
+
+                    // Start time from skip (use effFps since skip is in forced-rate frames)
+                    const startTime = effFps > 0 ? skipFirst / effFps : 0;
+
+                    // Build info text: source → effective
+                    const parts = [];
+                    if (_srcMeta.width && _srcMeta.height) {
+                        parts.push(`${_srcMeta.width}×${_srcMeta.height}`);
+                    }
+
+                    // FPS: show source → effective if different
+                    if (forceRate > 0 && forceRate !== srcFps) {
+                        parts.push(`${srcFps}fps → ${forceRate}fps`);
+                    } else {
+                        parts.push(`${srcFps}fps`);
+                    }
+
+                    // Frames: show effective (of source) if trimmed
+                    if (availFrames !== srcFrames) {
+                        parts.push(`${availFrames} frames (of ${srcFrames})`);
+                    } else {
+                        parts.push(`${availFrames} frames`);
+                    }
+
+                    // Duration
+                    if (Math.abs(effDuration - srcDuration) > 0.1) {
+                        parts.push(`${formatTimeLV(effDuration)} (of ${formatTimeLV(srcDuration)})`);
+                    } else {
+                        parts.push(formatTimeLV(srcDuration));
+                    }
+
+                    // Time range if skipping
+                    if (startTime > 0.05) {
+                        parts.push(`from ${formatTimeLV(startTime)}`);
+                    }
+
+                    infoEl.textContent = parts.join(" • ");
+                    _effInfoText = infoEl.textContent;
+                    _effAvailFrames = availFrames;
+                    _effFps = effFps;
+                    _effSkipFirst = skipFirst;
+                };
+
+                // --- Widget polling for live updates ---
+                let _lvDebounce = null;
+                const trimWidgets = ["force_rate", "skip_first_frames", "frame_load_cap", "select_every_nth"];
+                const lvWidgetValues = {};
+
+                // Playback range clamping
+                let _playStart = 0;
+                let _playEnd = Infinity;
+
+                // Clamp playback + show live frame counter
+                videoEl.addEventListener("timeupdate", () => {
+                    if (_playEnd < Infinity && videoEl.currentTime >= _playEnd) {
+                        videoEl.currentTime = _playStart;
+                    }
+                    // Update frame counter in info bar
+                    if (_srcMeta?.fps > 0 && _effAvailFrames > 0 && _effInfoText) {
+                        const elapsed = Math.max(0, videoEl.currentTime - _playStart);
+                        const curFrame = Math.min(
+                            Math.floor(elapsed * _effFps) + 1,
+                            _effAvailFrames,
+                        );
+                        const srcFrame = curFrame + _effSkipFirst;
+                        infoEl.textContent = `▶ ${curFrame}/${_effAvailFrames} (src frame ${srcFrame}) • ${_effInfoText}`;
+                    }
+                });
+
+                const updatePlaybackRange = () => {
+                    if (!_srcMeta || !_srcMeta.fps) return;
+
+                    const forceRate = node.widgets?.find(w => w.name === "force_rate")?.value ?? 0;
+                    const skipFirst = node.widgets?.find(w => w.name === "skip_first_frames")?.value ?? 0;
+                    const frameCap = node.widgets?.find(w => w.name === "frame_load_cap")?.value ?? 0;
+                    const everyNth = node.widgets?.find(w => w.name === "select_every_nth")?.value ?? 1;
+
+                    const srcFps = _srcMeta.fps;
+                    const effFps = forceRate > 0 ? forceRate : srcFps;
+
+                    // Start time from skipped frames (use effFps since skip is in forced-rate frames)
+                    _playStart = effFps > 0 ? skipFirst / effFps : 0;
+
+                    // Calculate available frames (same math as updateDynamicInfo)
+                    let availFrames = forceRate > 0
+                        ? Math.ceil(_srcMeta.duration * forceRate)
+                        : (_srcMeta.frames || Math.round(_srcMeta.duration * srcFps));
+                    availFrames = Math.max(0, availFrames - skipFirst);
+                    if (everyNth > 1) availFrames = Math.floor(availFrames / everyNth);
+                    if (frameCap > 0) availFrames = Math.min(availFrames, frameCap);
+
+                    // End time
+                    if (effFps > 0 && availFrames > 0) {
+                        _playEnd = _playStart + (availFrames / effFps);
+                    } else {
+                        _playEnd = Infinity;
+                    }
+
+                    // Clamp to video duration
+                    if (isFinite(_playEnd) && _playEnd > _srcMeta.duration) {
+                        _playEnd = _srcMeta.duration;
+                    }
+
+                    // Seek to start of effective range
+                    if (isFinite(_playStart) && _playStart < videoEl.duration) {
+                        videoEl.currentTime = _playStart;
+                    }
+                };
+
+                const lvPollInterval = setInterval(() => {
+                    if (!node.graph) {
+                        clearInterval(lvPollInterval);
+                        return;
+                    }
+                    let changed = false;
+                    for (const name of trimWidgets) {
+                        const w = node.widgets?.find(ww => ww.name === name);
+                        if (w && lvWidgetValues[name] !== w.value) {
+                            lvWidgetValues[name] = w.value;
+                            changed = true;
+                        }
+                    }
+                    if (changed) {
+                        clearTimeout(_lvDebounce);
+                        _lvDebounce = setTimeout(() => {
+                            updateDynamicInfo();
+                            updatePlaybackRange();
+                        }, 300);
+                    }
+                }, 500);
 
                 // Info overlay
                 const infoEl = document.createElement("div");
@@ -1189,6 +1885,7 @@ app.registerExtension({
                     if (!filename) {
                         previewContainer.style.display = "none";
                         infoEl.textContent = "No video selected";
+                        _srcMeta = null;
                         return;
                     }
                     previewContainer.style.display = "";
@@ -1231,9 +1928,10 @@ app.registerExtension({
                 });
                 document.body.append(fileInput);
 
-                // Cleanup file input when node is removed
+                // Cleanup file input and poll interval when node is removed
                 const origOnRemoved = this.onRemoved;
                 this.onRemoved = function () {
+                    clearInterval(lvPollInterval);
                     fileInput?.remove();
                     origOnRemoved?.apply(this, arguments);
                 };
@@ -1420,27 +2118,15 @@ app.registerExtension({
                     origOnExecuted?.apply(this, arguments);
                     if (data?.video_info?.[0]) {
                         const info = data.video_info[0];
-                        const parts = [];
-                        if (info.source_width && info.source_height) {
-                            parts.push(`${info.source_width}×${info.source_height}`);
-                        }
-                        if (info.effective_fps) {
-                            parts.push(`${info.effective_fps} fps`);
-                        }
-                        if (info.effective_frames) {
-                            parts.push(`${info.effective_frames} frames`);
-                        }
-                        if (info.effective_duration) {
-                            const d = info.effective_duration;
-                            const m = Math.floor(d / 60);
-                            const s = (d % 60).toFixed(1);
-                            parts.push(m > 0 ? `${m}m ${s}s` : `${s}s`);
-                        }
-                        infoEl.textContent = parts.join(" | ") || "No info";
-                        // Show source vs effective if trim is applied
-                        if (info.source_frames !== info.effective_frames) {
-                            infoEl.textContent += ` (of ${info.source_frames})`;
-                        }
+                        // Update cached metadata with accurate backend values
+                        _srcMeta = {
+                            width: info.source_width || _srcMeta?.width || 0,
+                            height: info.source_height || _srcMeta?.height || 0,
+                            fps: info.source_fps || _srcMeta?.fps || 24,
+                            duration: info.source_duration || _srcMeta?.duration || 0,
+                            frames: info.source_frames || _srcMeta?.frames || 0,
+                        };
+                        updateDynamicInfo();
                     }
                 };
 
@@ -1738,6 +2424,10 @@ app.registerExtension({
                     container.appendChild(colorInput);
                     container.appendChild(hexLabel);
 
+                    // Store refs for preset system
+                    node._ffmpegaColorInput = colorInput;
+                    node._ffmpegaHexLabel = hexLabel;
+
                     // Add as DOM widget
                     const domWidget = node.addDOMWidget("font_color", "custom", container, {
                         getValue: () => colorInput.value.toUpperCase(),
@@ -1770,6 +2460,269 @@ app.registerExtension({
                 }
 
                 return result;
+            };
+
+            // --- Text Preset Context Menu ---
+            const BUILTIN_PRESETS = [
+                {
+                    name: "📄 SRT Subtitle Example",
+                    auto_mode: false, mode: "subtitle",
+                    position: "bottom_center", font_size: 28, font_color: "#FFFFFF",
+                    text: "1\n00:00:01,000 --> 00:00:04,000\nThis is the first subtitle line.\n\n2\n00:00:05,000 --> 00:00:08,000\nAnd here is the second one.\n\n3\n00:00:09,000 --> 00:00:12,000\nEdit these timestamps to match your video!",
+                },
+                {
+                    name: "🎬 Cinematic Subtitles",
+                    auto_mode: false, mode: "subtitle",
+                    position: "bottom_center", font_size: 28, font_color: "#FFFFFF",
+                    text: "1\n00:00:01,000 --> 00:00:03,500\nThe world was never the same.\n\n2\n00:00:04,000 --> 00:00:07,000\nSomething had changed — forever.",
+                },
+                {
+                    name: "💧 Bold Watermark",
+                    auto_mode: false, mode: "watermark",
+                    position: "bottom_right", font_size: 18, font_color: "#CCCCCC",
+                    text: "© Your Name",
+                },
+                {
+                    name: "🎯 Title Card",
+                    auto_mode: false, mode: "title_card",
+                    position: "center", font_size: 72, font_color: "#FFFFFF",
+                    text: "YOUR TITLE HERE",
+                },
+                {
+                    name: "📱 Social Caption",
+                    auto_mode: false, mode: "subtitle",
+                    position: "bottom_center", font_size: 36, font_color: "#FFE800",
+                    text: "1\n00:00:00,500 --> 00:00:03,000\nWait for it... 👀\n\n2\n00:00:03,500 --> 00:00:06,000\nDid you see that?! 🔥",
+                },
+                {
+                    name: "😂 Meme Text",
+                    auto_mode: false, mode: "overlay",
+                    position: "top", font_size: 48, font_color: "#FFFFFF",
+                    text: "TOP TEXT GOES HERE",
+                },
+                {
+                    name: "📐 Minimal Lower Third",
+                    auto_mode: false, mode: "overlay",
+                    position: "bottom_left", font_size: 22, font_color: "#DDDDDD",
+                    text: "Speaker Name\nJob Title",
+                },
+                {
+                    name: "©️ Copyright Notice",
+                    auto_mode: false, mode: "watermark",
+                    position: "bottom_center", font_size: 16, font_color: "#AAAAAA",
+                    text: "© 2025 All Rights Reserved",
+                },
+                {
+                    name: "🎬 Credits Roll",
+                    auto_mode: false, mode: "subtitle",
+                    position: "center", font_size: 32, font_color: "#FFFFFF",
+                    text: "1\n00:00:01,000 --> 00:00:03,000\nDirected by\nYour Name\n\n2\n00:00:04,000 --> 00:00:06,000\nProduced by\nYour Name\n\n3\n00:00:07,000 --> 00:00:09,000\nMusic by\nArtist Name",
+                },
+                {
+                    name: "📌 Chapter Marker",
+                    auto_mode: false, mode: "overlay",
+                    position: "top_left", font_size: 24, font_color: "#FFFFFF",
+                    text: "Chapter 1: Introduction",
+                    start_time: 0.0, end_time: 5.0,
+                },
+            ];
+
+            const applyPreset = (node, preset) => {
+                // Apply in priority order: auto_mode first (it may affect visibility)
+                const order = ["auto_mode", "mode", "position", "font_size", "font_color", "text", "start_time", "end_time"];
+                const keys = order.filter(k => k in preset);
+                for (const k of Object.keys(preset)) {
+                    if (k !== "name" && !keys.includes(k)) keys.push(k);
+                }
+
+                for (const key of keys) {
+                    const w = node.widgets?.find(ww => ww.name === key);
+                    if (!w) continue;
+                    const val = preset[key];
+
+                    // Set the widget's internal value
+                    w.value = val;
+
+                    if (key === "font_color") {
+                        // Update color picker DOM elements directly
+                        // (w.setValue is wrapped by DOMWidgetImpl and crashes)
+                        try {
+                            const ci = node._ffmpegaColorInput;
+                            const hl = node._ffmpegaHexLabel;
+                            if (ci && val?.startsWith?.("#")) {
+                                ci.value = val;
+                                if (hl) {
+                                    hl.textContent = val.toUpperCase();
+                                    hl.style.color = "#ccc";
+                                }
+                            }
+                        } catch (e) { /* ignore */ }
+                    } else if (w.inputEl) {
+                        // ComfyUI stores textarea/input as w.inputEl
+                        w.inputEl.value = val;
+                        w.inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+                    } else if (w.element) {
+                        // DOM widget — element could BE the input or contain it
+                        const el = w.element;
+                        const tag = el.tagName?.toLowerCase();
+                        if (tag === "textarea" || tag === "input") {
+                            el.value = val;
+                            el.dispatchEvent(new Event("input", { bubbles: true }));
+                        } else {
+                            const input = el.querySelector?.("textarea, input");
+                            if (input) {
+                                input.value = val;
+                                input.dispatchEvent(new Event("input", { bubbles: true }));
+                            }
+                        }
+                    }
+                }
+
+                // Force visual refresh
+                node.setDirtyCanvas(true, true);
+                app.graph.setDirtyCanvas(true, true);
+                flashNode(node, "#4a7a4a");
+            };
+
+            let _customPresets = []; // cache
+
+            // Eagerly fetch custom presets on load
+            fetch(api.apiURL("/ffmpega/text_presets"))
+                .then(r => r.json())
+                .then(data => { _customPresets = Array.isArray(data) ? data : []; })
+                .catch(() => { _customPresets = []; });
+
+            const saveCustomPreset = async (node) => {
+                const name = prompt("Preset name:");
+                if (!name?.trim()) return;
+
+                const preset = { name: name.trim() };
+                for (const key of ["auto_mode", "mode", "position", "font_size", "font_color"]) {
+                    const w = node.widgets?.find(ww => ww.name === key);
+                    if (w) {
+                        preset[key] = typeof w.getValue === "function" ? w.getValue() : w.value;
+                    }
+                }
+
+                // Replace if same name exists
+                const idx = _customPresets.findIndex(p => p.name === preset.name);
+                if (idx >= 0) {
+                    _customPresets[idx] = preset;
+                } else {
+                    _customPresets.push(preset);
+                }
+
+                try {
+                    await fetch(api.apiURL("/ffmpega/text_presets"), {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(_customPresets),
+                    });
+                    flashNode(node, "#4a7a4a");
+                } catch (err) {
+                    console.warn("FFMPEGA: preset save failed", err);
+                    flashNode(node, "#7a4a4a");
+                }
+            };
+
+            const deleteCustomPreset = async (node, presetName) => {
+                const idx = _customPresets.findIndex(p => p.name === presetName);
+                if (idx < 0) return;
+                _customPresets.splice(idx, 1);
+                try {
+                    await fetch(api.apiURL("/ffmpega/text_presets"), {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(_customPresets),
+                    });
+                    flashNode(node, "#4a7a4a");
+                } catch {
+                    flashNode(node, "#7a4a4a");
+                }
+            };
+
+            const origGetMenuText = nodeType.prototype.getExtraMenuOptions;
+            nodeType.prototype.getExtraMenuOptions = function (_, options) {
+                origGetMenuText?.apply(this, arguments);
+                const self = this;
+
+                // Build submenu items synchronously from cache
+                const presetItems = [];
+
+                // Built-in presets
+                for (const p of BUILTIN_PRESETS) {
+                    presetItems.push({
+                        content: p.name,
+                        callback: () => applyPreset(self, p),
+                    });
+                }
+
+                // Custom presets
+                if (_customPresets.length > 0) {
+                    for (const p of _customPresets) {
+                        presetItems.push({
+                            content: `⭐ ${p.name}`,
+                            submenu: {
+                                options: [
+                                    {
+                                        content: "✅ Load",
+                                        callback: () => applyPreset(self, p),
+                                    },
+                                    {
+                                        content: "🗑️ Delete",
+                                        callback: () => deleteCustomPreset(self, p.name),
+                                    },
+                                ],
+                            },
+                        });
+                    }
+                }
+
+                options.unshift(
+                    {
+                        content: "💾 Save Current as Preset",
+                        callback: () => saveCustomPreset(self),
+                    },
+                    {
+                        content: "🎨 Load Preset",
+                        submenu: {
+                            options: presetItems,
+                        },
+                    },
+                    {
+                        content: "🧹 Clear Text",
+                        callback: () => {
+                            const defaults = {
+                                text: "", mode: "overlay", position: "bottom_center",
+                                font_size: 24, font_color: "#FFFFFF", auto_mode: true,
+                            };
+                            for (const [key, val] of Object.entries(defaults)) {
+                                const w = self.widgets?.find(ww => ww.name === key);
+                                if (!w) continue;
+                                w.value = val;
+                                if (key === "font_color") {
+                                    try {
+                                        const ci = self._ffmpegaColorInput;
+                                        const hl = self._ffmpegaHexLabel;
+                                        if (ci) { ci.value = val; }
+                                        if (hl) { hl.textContent = val; hl.style.color = "#ccc"; }
+                                    } catch { }
+                                } else if (w.inputEl) {
+                                    w.inputEl.value = val;
+                                } else if (w.element) {
+                                    const tag = w.element.tagName?.toLowerCase();
+                                    if (tag === "textarea" || tag === "input") {
+                                        w.element.value = val;
+                                    }
+                                }
+                            }
+                            self.setDirtyCanvas(true, true);
+                            app.graph.setDirtyCanvas(true, true);
+                            flashNode(self, "#4a7a4a");
+                        },
+                    },
+                    null, // separator
+                );
             };
         }
 
@@ -1994,6 +2947,14 @@ app.registerExtension({
                 redraw();
             });
 
+            // Click outside image/buttons to close (same as Cancel)
+            overlay.addEventListener("click", (e) => {
+                if (e.target === overlay) {
+                    document.removeEventListener("keydown", keyHandler);
+                    overlay.remove();
+                }
+            });
+
             // Prevent background interactions
             overlay.addEventListener("contextmenu", e => e.preventDefault());
 
@@ -2043,8 +3004,15 @@ app.registerExtension({
             document.addEventListener("keydown", keyHandler);
         }
 
-        // --- LoadImagePath: Add point selector context menu ---
+        // --- LoadImagePath: Color styling + point selector context menu ---
         if (nodeData.name === "FFMPEGALoadImagePath") {
+            const origOnCreatedImg = nodeType.prototype.onNodeCreated;
+            nodeType.prototype.onNodeCreated = function () {
+                const result = origOnCreatedImg?.apply(this, arguments);
+                this.color = "#3a5a5a";
+                this.bgcolor = "#2a4a4a";
+                return result;
+            };
             const origGetMenuImg = nodeType.prototype.getExtraMenuOptions;
             nodeType.prototype.getExtraMenuOptions = function (_, options) {
                 origGetMenuImg?.apply(this, arguments);
@@ -2116,6 +3084,59 @@ app.registerExtension({
                         }, { once: true });
                         // Timeout: if seeked never fires (audio-only, invalid file),
                         // clean up after 10 seconds so the UI doesn't hang.
+                        const seekTimeout = setTimeout(() => {
+                            flashNode(self, "#7a4a4a");
+                            tmpVideo.remove();
+                        }, 10000);
+                    },
+                }, null);
+            };
+        }
+
+        // --- FrameExtract: Add point selector context menu ---
+        if (nodeData.name === "FFMPEGAFrameExtract") {
+            const origGetMenuExtract = nodeType.prototype.getExtraMenuOptions;
+            nodeType.prototype.getExtraMenuOptions = function (_, options) {
+                origGetMenuExtract?.apply(this, arguments);
+                const self = this;
+                options.unshift({
+                    content: "🎯 Open Point Selector",
+                    callback: () => {
+                        // Get the current video path
+                        const pathWidget = self.widgets?.find(w => w.name === "video_path");
+                        const videoPath = pathWidget?.value?.trim();
+                        if (!videoPath) {
+                            flashNode(self, "#7a4a4a");
+                            return;
+                        }
+                        // Stream via /ffmpega/preview to get a playable video
+                        const params = new URLSearchParams({
+                            path: videoPath,
+                            duration: "1",  // Only need first second
+                        });
+                        const src = api.apiURL("/ffmpega/preview?" + params.toString());
+                        // Use video element to grab first frame
+                        const tmpVideo = document.createElement("video");
+                        tmpVideo.crossOrigin = "anonymous";
+                        tmpVideo.muted = true;
+                        tmpVideo.preload = "auto";
+                        tmpVideo.src = src;
+                        tmpVideo.currentTime = 0.01;
+                        tmpVideo.addEventListener("seeked", () => {
+                            clearTimeout(seekTimeout);
+                            const c = document.createElement("canvas");
+                            c.width = tmpVideo.videoWidth;
+                            c.height = tmpVideo.videoHeight;
+                            c.getContext("2d").drawImage(tmpVideo, 0, 0);
+                            const frameDataUrl = c.toDataURL("image/jpeg", 0.95);
+                            openPointSelector(self, frameDataUrl, src);
+                            tmpVideo.remove();
+                        }, { once: true });
+                        tmpVideo.addEventListener("error", () => {
+                            clearTimeout(seekTimeout);
+                            flashNode(self, "#7a4a4a");
+                            tmpVideo.remove();
+                        }, { once: true });
                         const seekTimeout = setTimeout(() => {
                             flashNode(self, "#7a4a4a");
                             tmpVideo.remove();

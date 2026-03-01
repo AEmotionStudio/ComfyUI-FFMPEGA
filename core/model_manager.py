@@ -107,3 +107,85 @@ def require_downloads_allowed(model_key: str) -> None:
         f"'allow_model_downloads' is disabled on the FFMPEG Agent node. "
         f"Enable it to auto-download, or download manually from: {info['url']}"
     )
+
+
+# ---------------------------------------------------------------------------
+#  Download progress helpers
+# ---------------------------------------------------------------------------
+
+def log_download_start(model_key: str, extra: str = "") -> None:
+    """Print a clear console banner when a model download starts.
+
+    Args:
+        model_key: Registry key (e.g. "sam3", "lama", "whisper").
+        extra: Optional extra info (e.g. model size variant).
+    """
+    info = _MODEL_INFO.get(model_key, {"name": model_key, "size": "unknown"})
+    name = info["name"]
+    size = info["size"]
+    suffix = f" ({extra})" if extra else ""
+    msg = (
+        f"\n"
+        f"[FFMPEGA] ⬇️  Downloading {name}{suffix} (~{size})...\n"
+        f"[FFMPEGA]    This is a one-time download. "
+        f"Progress may appear below.\n"
+    )
+    print(msg, flush=True)
+    log.info("Downloading %s%s (~%s)...", name, suffix, size)
+
+
+def log_download_complete(model_key: str, path: str = "") -> None:
+    """Print a console banner when a model download finishes.
+
+    Args:
+        model_key: Registry key.
+        path: Path where the model was saved (optional).
+    """
+    info = _MODEL_INFO.get(model_key, {"name": model_key})
+    name = info["name"]
+    path_str = f" → {path}" if path else ""
+    msg = f"[FFMPEGA] ✅ {name} downloaded successfully{path_str}\n"
+    print(msg, flush=True)
+    log.info("%s download complete%s", name, path_str)
+
+
+def download_with_progress(model_key: str, download_fn, extra: str = ""):
+    """Wrap a download callable with start/complete console logging.
+
+    Usage::
+
+        path = download_with_progress(
+            "sam3",
+            lambda: hf_hub_download(repo_id=..., filename=...),
+        )
+
+    Args:
+        model_key: Registry key for log messages.
+        download_fn: Callable that performs the download and returns a result.
+        extra: Optional extra label (e.g. "large-v3").
+
+    Returns:
+        Whatever download_fn returns.
+    """
+    import time
+    log_download_start(model_key, extra)
+    t0 = time.time()
+    try:
+        result = download_fn()
+    except Exception:
+        elapsed = time.time() - t0
+        info = _MODEL_INFO.get(model_key, {"name": model_key})
+        print(
+            f"[FFMPEGA] ❌ {info['name']} download failed after {elapsed:.1f}s\n",
+            flush=True,
+        )
+        raise
+    elapsed = time.time() - t0
+    path_str = str(result) if result else ""
+    info = _MODEL_INFO.get(model_key, {"name": model_key})
+    msg = f"[FFMPEGA] ✅ {info['name']} downloaded in {elapsed:.1f}s"
+    if path_str:
+        msg += f" → {path_str}"
+    print(msg + "\n", flush=True)
+    log.info("%s download complete in %.1fs", info["name"], elapsed)
+    return result

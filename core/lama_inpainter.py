@@ -87,7 +87,18 @@ def load_model():
             torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = False
 
     log.info("Loading LaMa inpainting model...")
-    _lama_model = SimpleLama()
+    if not model_cached:
+        # Model needs downloading — show progress
+        try:
+            from . import model_manager as _mm
+        except ImportError:
+            from core import model_manager as _mm  # type: ignore
+        _lama_model = _mm.download_with_progress(
+            "lama",
+            lambda: SimpleLama(),
+        )
+    else:
+        _lama_model = SimpleLama()
 
     # Force float32 on the JIT model parameters
     if hasattr(_lama_model, "model"):

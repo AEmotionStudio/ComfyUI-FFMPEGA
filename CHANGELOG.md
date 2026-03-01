@@ -5,6 +5,62 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.0] - 2026-02-28
+
+### Added
+- **FFMPEGA Effects Builder Node**: New companion node for manual effect composition — select up to 3 skills with params, combine with raw FFmpeg filters, and use presets. No LLM required. Purple-themed UI with dynamic widget visibility and auto-fill defaults.
+- **Effects Builder Context Menu Presets**: Right-click the Effects Builder for quick access to all 18 built-in presets, plus save/load/delete custom presets. Includes a "Clear All Effects" reset option.
+- **Text Node Presets**: Right-click the FFMPEGA Text node for 10 built-in presets (SRT Subtitle Example, Cinematic Subtitles, Bold Watermark, Title Card, Social Caption, Meme Text, Lower Third, Copyright Notice, Credits Roll, Chapter Marker) with example text content. Save/load/delete custom presets. "Clear Text" resets to defaults.
+- **No-LLM Text Support**: Connect a Text node to the Agent in no-LLM manual mode (without an Effects Builder) and it auto-generates a text overlay or subtitle pipeline from the Text node's settings.
+- **Manual No-LLM Mode**: New `manual` option in `no_llm_mode` dropdown (now the default) — set `llm_model` to `none` and use the Effects Builder to edit videos without any AI. Shows a clear error if no Effects Builder node is connected.
+- **SAM3-Only Mode**: New no-LLM mode that uses the prompt as a SAM3 text target for object masking/removal without an LLM.
+- **Whisper No-LLM Modes**: `transcribe` and `karaoke_subtitles` options in `no_llm_mode` — run Whisper speech-to-text and burn subtitles directly without an LLM. Also available as Effects Builder presets ("Auto Subtitles", "Karaoke Subtitles").
+- **Effects Builder Multi-Input Support**: The Effects Builder pipeline now calls `_inject_extra_inputs()` to populate `pipeline.extra_inputs`, enabling concat, grid, split screen, xfade, overlay, and all other multi-input skills to work correctly with `video_b`, `image_b`, etc.
+- **SAM3 Point Prompts**: Support for geometric point prompts passed as SAM3 boxes for precise segmentation guidance. Two-phase prompting: text VG detection + native point refinement.
+- **SAM3 Progress Streaming**: Real-time SAM3 subprocess progress display in the console.
+- **Save Video Overlay Button**: Accessible overlay button on video previews for quick save actions.
+- **Drag-and-Drop Feedback**: Visual feedback during file drag-and-drop uploads with proper state restoration.
+
+### Fixed
+- **SAM3 Subprocess Isolation**: SAM3 video masking now runs in a separate subprocess to prevent CUDA memory leaks and improve VRAM management. Fixes persistent OOM errors on long videos.
+- **SAM3 OOM Fixes**: Multiple fixes for out-of-memory errors during SAM3 processing — CPU offloading between propagation passes, frame 0 cache retention for point prompts, VG propagation scoping.
+- **SAM3 Point Prompt Fixes**: Cap `max_num_objects` to 2 for point prompt mode, validate coordinates with float/int coercion, forward `mask_points` to batch mode metadata, use source image dims for coordinate mapping.
+- **SAM3 Bad File Descriptor**: Fixed `Popen` bad file descriptor error in SAM3 subprocess communication.
+- **SAM3 `_postprocess_output` KeyError**: Fixed KeyError when `max_num_objects` is active and fewer objects are detected than expected.
+- **MCP Path Traversal** *(security)*: Fixed path traversal vulnerabilities in MCP tools — added input and output path validation.
+- **Template Placeholder Crash**: Fixed unsubstituted template placeholders (e.g. `{ratio}`) causing ffmpeg crashes when parameters are dropped by validation. Now falls back to skill defaults.
+- **Effects Builder Multi-Input**: Fixed concat, grid, split screen, xfade, and all multi-input skills not working in the Effects Builder. The Effects Builder path was missing the `_inject_extra_inputs()` call, so `_extra_input_count` was always 0.
+- **Concat/Xfade/Slideshow Resolution**: Fixed output resolution defaulting to 1920×1080 regardless of input. Handlers now use the input video's actual resolution.
+- **Dynamic Slot Root Cause**: Fixed `video_b` disappearing on page refresh — `video_path` and `video_folder` static widget inputs were polluting the `video_` dynamic slot group.
+- **Effects Builder Stale Params**: Switching effects now clears the params widget, preventing stale params from leaking between effects.
+- **Effects Builder Temp Cleanup**: Added cleanup for temp files created by `_inject_extra_inputs()` in the Effects Builder pipeline.
+- **Drag-and-Drop State Restoration**: Correctly restores original text and border states after drag-and-drop feedback.
+- **Vision Frames Cleanup**: Clear `_vision_frames` on startup and correct SAM3 import check.
+- **`text_overlay` Position**: Removed position default from `text_overlay` to preserve preset positioning.
+- **Tool Prompt Builder**: Filter `None` from `available_names` in tool prompt builder.
+- **SaveVideo Preview Mode**: Fixed `preview_only` mode causing 404 errors — preview segments now correctly copied to ComfyUI's temp directory.
+- **Frame Extractor Duration Default**: Changed default `duration` from 10s to 0 (full video), raised max to 3600s.
+
+### Security
+- **MCP Path Validation**: Input and output paths in MCP tools are now validated against path traversal attacks.
+- **SkillComposer Parameter Hardening**: Secure parameter handling and updated skill schemas to prevent injection.
+- **`validate_path` Directory Checks**: Enforced sensitive directory checks in `validate_path`.
+
+### Performance
+- **SAM3 VRAM Optimization**: CPU offloading, auto-stride selection, and object limits for SAM3 video masker. Suppressed noisy console output.
+- **FFMPEG Pipe Buffer**: Optimized pipe buffer size for video conversion.
+- **Ultrafast Temp Videos**: Temp video generation now uses `ultrafast` FFMPEG preset.
+- **Frame Tensor Allocation**: Optimized video frame tensor allocation.
+
+### Changed
+- **`no_llm_mode` Default → `manual`**: Default changed from `sam3_masking` to `manual`. Users who set `llm_model=none` now get the Effects Builder path by default.
+- **Empty Prompt Allowed for Manual Mode**: `manual` mode no longer requires a prompt.
+- **SAM3 Last-Frame Anchoring Removed**: Simplified point prompts by removing last-frame point anchoring from SAM masker and its UI.
+- **SAM3 `mask_output_type` Default**: Changed default mask output type from `colored_overlay` to `black_white`.
+- **UI Focus Tracking**: Refactored focus tracking to use explicit state; enhanced focus visibility for interactive elements.
+
+---
+
 ## [2.7.1] - 2026-02-24
 
 ### Added

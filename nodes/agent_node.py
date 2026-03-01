@@ -126,7 +126,15 @@ class FFMPEGAgentNode:
                 }),
                 "llm_model": (all_models, {
                     "default": all_models[0],
-                    "tooltip": "AI model used to interpret your prompt. Select 'none' for SAM3-only mode — your prompt text is used directly as the SAM3 text target (no LLM needed). Local Ollama models appear next, followed by cloud API models (require api_key).",
+                    "tooltip": "AI model used to interpret your prompt. Select 'none' for no-LLM mode — use 'no_llm_mode' to choose between SAM3 masking, Whisper transcription, or karaoke subtitles. Local Ollama models appear next, followed by cloud API models (require api_key).",
+                }),
+                "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles"], {
+                    "default": "manual",
+                    "tooltip": "What to do when llm_model is 'none'. "
+                               "'manual' runs the Effects Builder pipeline directly (no AI). "
+                               "'sam3_masking' uses the prompt as a SAM3 text target. "
+                               "'transcribe' runs Whisper speech-to-text and burns SRT subtitles. "
+                               "'karaoke_subtitles' runs Whisper and burns word-by-word karaoke subtitles.",
                 }),
                 "quality_preset": (cls.QUALITY_PRESETS, {
                     "default": "standard",
@@ -141,6 +149,7 @@ class FFMPEGAgentNode:
                 }),
             },
             "optional": {
+                # ── Connection inputs (always visible, forceInput) ────────
                 "images_a": ("IMAGE", {
                     "tooltip": "Video input as image frames (e.g. from Load Video Upload). Connect additional video inputs and more slots appear automatically (images_b, images_c, ...). Used for concat, split screen, and multi-video workflows.",
                 }),
@@ -166,24 +175,12 @@ class FFMPEGAgentNode:
                     "forceInput": True,
                     "tooltip": "Connect the output from the FFMPEGA Effects Builder node here. The agent will inject the selected effects as hints into your prompt.",
                 }),
-                "subtitle_path": ("STRING", {
-                    "default": "",
-                    "multiline": False,
-                    "placeholder": "Path to .srt or .ass subtitle file",
-                    "tooltip": "Direct path to a subtitle file (.srt or .ass). Alternative to using text_a with subtitle mode.",
+                "mask_points": ("STRING", {
+                    "forceInput": True,
+                    "tooltip": "JSON-encoded point selection data from the Load Image/Video Path node's Point Selector. Guides SAM3 masking with click-to-select points instead of relying on text prompts alone.",
                 }),
-                "advanced_options": ("BOOLEAN", {
-                    "default": False,
-                    "label_on": "Advanced",
-                    "label_off": "Simple",
-                    "tooltip": "Show advanced options: preview mode, CRF override, encoding preset, batch processing.",
-                }),
-                "preview_mode": ("BOOLEAN", {
-                    "default": False,
-                    "label_on": "Preview",
-                    "label_off": "Full Render",
-                    "tooltip": "When enabled, generates a quick low-res preview (480p, first 10 seconds) instead of a full render.",
-                }),
+
+                # ── Basic options (always visible) ────────────────────────
                 "save_output": ("BOOLEAN", {
                     "default": False,
                     "label_on": "Save to Output",
@@ -213,6 +210,28 @@ class FFMPEGAgentNode:
                     "placeholder": "Model name (e.g. gpt-5.2, claude-sonnet-4-6)",
                     "tooltip": "When 'custom' is selected in llm_model, type the exact model name here. Use provider prefixes: gpt-* for OpenAI, claude-* for Anthropic, gemini-* for Google, anything else for Ollama.",
                 }),
+
+                # ── Advanced toggle ───────────────────────────────────────
+                "advanced_options": ("BOOLEAN", {
+                    "default": False,
+                    "label_on": "Advanced",
+                    "label_off": "Simple",
+                    "tooltip": "Show advanced options: preview, encoding, vision, verification, SAM3/Whisper tuning, batch processing, and usage tracking.",
+                }),
+
+                # ── Advanced: Rendering ───────────────────────────────────
+                "preview_mode": ("BOOLEAN", {
+                    "default": False,
+                    "label_on": "Preview",
+                    "label_off": "Full Render",
+                    "tooltip": "When enabled, generates a quick low-res preview (480p, first 10 seconds) instead of a full render.",
+                }),
+                "subtitle_path": ("STRING", {
+                    "default": "",
+                    "multiline": False,
+                    "placeholder": "Path to .srt or .ass subtitle file",
+                    "tooltip": "Direct path to a subtitle file (.srt or .ass). Alternative to using text_a with subtitle mode.",
+                }),
                 "crf": ("INT", {
                     "default": -1,
                     "min": -1,
@@ -224,19 +243,22 @@ class FFMPEGAgentNode:
                     "default": "auto",
                     "tooltip": "Override x264/x265 encoding speed preset. Slower = better compression. 'auto' uses the quality_preset value.",
                 }),
+
+                # ── Advanced: LLM Behavior ────────────────────────────────
                 "use_vision": ("BOOLEAN", {
                     "default": True,
                     "label_on": "Vision On",
                     "label_off": "Vision Off",
                     "tooltip": "When On, embeds video frames as images for vision-capable models (uses more tokens). When Off, uses numeric color analysis instead (cheaper, works with all models).",
                 }),
-
                 "verify_output": ("BOOLEAN", {
                     "default": True,
                     "label_on": "Verify On",
                     "label_off": "Verify Off",
                     "tooltip": "When On, the agent inspects the output video after rendering and auto-corrects if it doesn't match intent. Adds one extra LLM call (more tokens/time). Best for complex edits like overlays, color grading, or animations.",
                 }),
+
+                # ── Advanced: Whisper ─────────────────────────────────────
                 "whisper_device": (["cpu", "gpu"], {
                     "default": "cpu",
                     "tooltip": "Device for Whisper transcription model. 'gpu' is faster but uses ~3 GB VRAM (frees ComfyUI models first). 'cpu' is slower but avoids VRAM pressure — best for low-VRAM GPUs or intensive workflows.",
@@ -245,6 +267,8 @@ class FFMPEGAgentNode:
                     "default": "large-v3",
                     "tooltip": "Whisper model size for transcription. 'large-v3' is most accurate (~3 GB VRAM). Smaller models use less memory: medium (~1.5 GB), small (~1 GB), base (~150 MB), tiny (~75 MB). Models auto-download on first use.",
                 }),
+
+                # ── Advanced: SAM3 ────────────────────────────────────────
                 "sam3_max_objects": ("INT", {
                     "default": 5,
                     "min": 1,
@@ -263,15 +287,8 @@ class FFMPEGAgentNode:
                     "default": "black_white",
                     "tooltip": "Mask preview output format. 'black_white' outputs a raw B&W mask video (white = detected object) for use in external compositing. 'colored_overlay' composites colored SAM3-style regions + contours onto the video.",
                 }),
-                "mask_points": ("STRING", {
-                    "forceInput": True,
-                    "tooltip": "JSON-encoded point selection data from the Load Image/Video Path node's Point Selector. Guides SAM3 masking with click-to-select points instead of relying on text prompts alone.",
-                }),
-                "pipeline_json": ("STRING", {
-                    "forceInput": True,
-                    "tooltip": "Pipeline JSON from the FFMPEGA Effects Builder node. When llm_model='none', this pipeline is executed directly. When an LLM is active, the selected skills are injected as hints into the prompt.",
-                }),
 
+                # ── Advanced: Batch processing ────────────────────────────
                 "batch_mode": ("BOOLEAN", {
                     "default": False,
                     "label_on": "Batch",
@@ -295,6 +312,8 @@ class FFMPEGAgentNode:
                     "step": 1,
                     "tooltip": "Maximum number of videos to process simultaneously in batch mode. Higher values use more CPU/GPU.",
                 }),
+
+                # ── Advanced: Usage tracking & downloads ──────────────────
                 "track_tokens": ("BOOLEAN", {
                     "default": True,
                     "label_on": "Track On",
@@ -1278,6 +1297,7 @@ class FFMPEGAgentNode:
         llm_model: str,
         quality_preset: str,
         seed: int = 0,
+        no_llm_mode: str = "sam3_masking",
         images_a: Optional[torch.Tensor] = None,
         image_a: Optional[torch.Tensor] = None,
         audio_a: Optional[dict] = None,
@@ -1304,7 +1324,6 @@ class FFMPEGAgentNode:
         sam3_max_objects: int = 5,
         sam3_det_threshold: float = 0.7,
         mask_points: str = "",
-        pipeline_json: str = "",
         batch_mode: bool = False,
         video_folder: str = "",
         file_pattern: str = "*.mp4",
@@ -1395,7 +1414,9 @@ class FFMPEGAgentNode:
         images_a = None
 
         if not prompt.strip():
-            raise ValueError("Prompt cannot be empty")
+            # manual + whisper modes don't need a prompt
+            if llm_model != "none" or no_llm_mode not in ("manual", "transcribe", "karaoke_subtitles"):
+                raise ValueError("Prompt cannot be empty")
 
         # --- Analyze input video ---
         video_metadata = self.analyzer.analyze(effective_video_path)
@@ -1418,6 +1439,51 @@ class FFMPEGAgentNode:
                     quality_preset=quality_preset,
                     crf=crf,
                     encoding_preset=encoding_preset,
+                    whisper_device=whisper_device,
+                    whisper_model=whisper_model,
+                    sam3_device=sam3_device,
+                    sam3_max_objects=sam3_max_objects,
+                    sam3_det_threshold=sam3_det_threshold,
+                    mask_points=mask_points,
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    image_a=image_a,
+                    audio_a=audio_a,
+                    _all_video_paths=_all_video_paths,
+                    _all_image_paths=_all_image_paths,
+                    _all_text_inputs=_all_text_inputs,
+                    **kwargs,
+                )
+            # Whisper-only mode (transcribe or karaoke)
+            if no_llm_mode in ("transcribe", "karaoke_subtitles"):
+                return await self._process_whisper_only(
+                    mode=no_llm_mode,
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
+                    whisper_device=whisper_device,
+                    whisper_model=whisper_model,
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    **kwargs,
+                )
+            # SAM3-only mode (prompt = text target)
+            if no_llm_mode == "sam3_masking":
+                return await self._process_sam3_only(
+                    prompt=prompt,
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
                     sam3_device=sam3_device,
                     sam3_max_objects=sam3_max_objects,
                     sam3_det_threshold=sam3_det_threshold,
@@ -1426,26 +1492,69 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
-            # No Effects Builder → SAM3-only mode (prompt = text target)
-            return await self._process_sam3_only(
-                prompt=prompt,
-                effective_video_path=effective_video_path,
-                video_metadata=video_metadata,
-                save_output=save_output,
-                output_path=output_path,
-                preview_mode=preview_mode,
-                quality_preset=quality_preset,
-                crf=crf,
-                encoding_preset=encoding_preset,
-                sam3_device=sam3_device,
-                sam3_max_objects=sam3_max_objects,
-                sam3_det_threshold=sam3_det_threshold,
-                mask_points=mask_points,
-                temp_video_from_images=temp_video_from_images,
-                temp_video_with_audio=temp_video_with_audio,
-                **kwargs,
-            )
+            # Text inputs connected → build a text overlay pipeline
+            if _all_text_inputs:
+                # Auto-generate a pipeline from text inputs
+                text_steps = []
+                for raw in _all_text_inputs:
+                    try:
+                        meta = json.loads(raw)
+                    except (json.JSONDecodeError, TypeError):
+                        meta = {"text": raw, "mode": "overlay"}
+                    mode = meta.get("mode", "overlay")
+                    if mode in ("subtitle",):
+                        text_steps.append({
+                            "skill": "burn_subtitles",
+                            "params": {"path": "text_a"},
+                        })
+                    else:
+                        text_steps.append({
+                            "skill": "text_overlay",
+                            "params": {
+                                "text": meta.get("text", raw if isinstance(raw, str) else ""),
+                                "position": meta.get("position", "center"),
+                                "font_size": meta.get("font_size", 48),
+                                "font_color": meta.get("font_color", "white"),
+                            },
+                        })
+                if not text_steps:
+                    text_steps = [{"skill": "text_overlay", "params": {"text": _all_text_inputs[0]}}]
 
+                synth_pipeline = json.dumps({"steps": text_steps})
+                logger.info("No-LLM: auto-generated text pipeline from %d text input(s)", len(_all_text_inputs))
+                return await self._process_effects_pipeline(
+                    pipeline_json=synth_pipeline,
+                    prompt=prompt,
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
+                    whisper_device=whisper_device,
+                    whisper_model=whisper_model,
+                    sam3_device=sam3_device,
+                    sam3_max_objects=sam3_max_objects,
+                    sam3_det_threshold=sam3_det_threshold,
+                    mask_points=mask_points,
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    image_a=image_a,
+                    audio_a=audio_a,
+                    _all_video_paths=_all_video_paths,
+                    _all_image_paths=_all_image_paths,
+                    _all_text_inputs=_all_text_inputs,
+                    **kwargs,
+                )
+            # manual mode without Effects Builder or text
+            raise RuntimeError(
+                "No-LLM 'manual' mode requires an Effects Builder node or "
+                "FFMPEGA Text node. Connect one to the pipeline_json or "
+                "text_a input, or switch no_llm_mode to 'sam3_masking', "
+                "'transcribe', or 'karaoke_subtitles'."
+            )
         # --- Build connected-inputs context string ---
         connected_inputs_str = self._build_connected_inputs_summary(
             images_a=images_a,
@@ -1845,12 +1954,19 @@ Token Usage{est_tag}:
         quality_preset: str,
         crf: int,
         encoding_preset: str,
-        sam3_device: str,
-        sam3_max_objects: int,
-        sam3_det_threshold: float,
-        mask_points: str,
-        temp_video_from_images: Optional[str],
-        temp_video_with_audio: Optional[str],
+        whisper_device: str = "cpu",
+        whisper_model: str = "large-v3",
+        sam3_device: str = "gpu",
+        sam3_max_objects: int = 5,
+        sam3_det_threshold: float = 0.7,
+        mask_points: str = "",
+        temp_video_from_images: Optional[str] = None,
+        temp_video_with_audio: Optional[str] = None,
+        image_a=None,
+        audio_a=None,
+        _all_video_paths: Optional[list] = None,
+        _all_image_paths: Optional[list] = None,
+        _all_text_inputs: Optional[list] = None,
         **kwargs,
     ) -> tuple[torch.Tensor, dict, str, str, str, str]:
         """Execute an Effects Builder pipeline directly (no LLM).
@@ -1912,12 +2028,35 @@ Token Usage{est_tag}:
         if mask_points and mask_points.strip():
             pipeline.metadata["_mask_points"] = mask_points.strip()
 
+        # Whisper preferences (for transcription steps)
+        pipeline.metadata["_whisper_device"] = whisper_device
+        pipeline.metadata["_whisper_model"] = whisper_model
+
         # Add skill steps from the effects builder
         for step in steps:
             skill_name = step.get("skill", "")
             params = step.get("params", {})
             if skill_name:
                 pipeline.add_step(skill_name, params)
+
+        # --- Inject extra inputs (multi-input for concat/grid/etc.) ---
+        (
+            effective_video_path,
+            temp_multi_videos,
+            temp_audio_files,
+            temp_frames_dirs,
+            temp_audio_input,
+        ) = self._inject_extra_inputs(
+            pipeline=pipeline,
+            effective_video_path=effective_video_path,
+            image_a=image_a,
+            _all_image_paths=_all_image_paths or [],
+            _all_video_paths=_all_video_paths or [],
+            _all_text_inputs=_all_text_inputs or [],
+            audio_a=audio_a,
+            **kwargs,
+        )
+        pipeline.input_path = effective_video_path
 
         # Quality preset (unless overridden by skills)
         _NO_QUALITY_PRESET_SKILLS = {"gif", "webm"}
@@ -2004,12 +2143,21 @@ Token Usage{est_tag}:
         )
 
         # --- Cleanup temp files ---
-        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+        for tmp_path in [temp_video_from_images, temp_video_with_audio, temp_audio_input]:
             if tmp_path and os.path.exists(tmp_path):
                 try:
                     os.remove(tmp_path)
                 except OSError:
                     pass
+        for tmp_path in temp_multi_videos + temp_audio_files:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        for tmp_dir in temp_frames_dirs:
+            if tmp_dir and os.path.isdir(tmp_dir):
+                shutil.rmtree(tmp_dir, ignore_errors=True)
         if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
             if not os.listdir(temp_render_dir):
                 shutil.rmtree(temp_render_dir, ignore_errors=True)
@@ -2194,6 +2342,188 @@ Token Usage{est_tag}:
                 shutil.rmtree(temp_render_dir, ignore_errors=True)
 
         return (images_tensor, audio_out, output_path, cmd_log, analysis, mask_overlay_path)
+
+    # ------------------------------------------------------------------ #
+    #  Whisper-only mode (no LLM)                                         #
+    # ------------------------------------------------------------------ #
+
+    async def _process_whisper_only(
+        self,
+        mode: str,
+        effective_video_path: str,
+        video_metadata,
+        save_output: bool,
+        output_path: str,
+        preview_mode: bool,
+        quality_preset: str,
+        crf: int,
+        encoding_preset: str,
+        whisper_device: str = "cpu",
+        whisper_model: str = "large-v3",
+        temp_video_from_images: Optional[str] = None,
+        temp_video_with_audio: Optional[str] = None,
+        **kwargs,
+    ) -> tuple[torch.Tensor, dict, str, str, str, str]:
+        """Run Whisper transcription directly without any LLM involvement.
+
+        Transcribes the video audio using Whisper and burns subtitles
+        (SRT or karaoke ASS) into the output video.  The full transcription
+        text is included in the ``analysis`` return field.
+
+        Args:
+            mode: "transcribe" for SRT subtitles, "karaoke_subtitles" for
+                  word-by-word karaoke ASS subtitles.
+
+        Returns the standard 6-tuple:
+            (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
+        """
+        import atexit
+        import subprocess as _sp
+        import tempfile
+
+        try:
+            from ..core.whisper_transcriber import (
+                transcribe_audio,
+                segments_to_srt,
+                words_to_karaoke_ass,
+            )
+        except ImportError:
+            from core.whisper_transcriber import (
+                transcribe_audio,
+                segments_to_srt,
+                words_to_karaoke_ass,
+            )
+
+        logger.info(
+            "Whisper-only mode (%s): device=%s, model=%s",
+            mode, whisper_device, whisper_model,
+        )
+
+        # --- Build output path ---
+        output_path, temp_render_dir = self._build_output_path(
+            effective_video_path=effective_video_path,
+            save_output=save_output,
+            output_path=output_path,
+            preview_mode=preview_mode,
+        )
+
+        # --- Transcribe ---
+        result = transcribe_audio(
+            effective_video_path,
+            model_size=whisper_model,
+            device=whisper_device,
+        )
+
+        # --- Generate subtitle file ---
+        if mode == "karaoke_subtitles":
+            if not result.words:
+                logger.warning("Whisper found no words — producing clean passthrough")
+                sub_filter = None
+            else:
+                ass_content = words_to_karaoke_ass(result.words)
+                tmp = tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".ass", delete=False, encoding="utf-8",
+                )
+                tmp.write(ass_content)
+                tmp.close()
+                atexit.register(os.unlink, tmp.name)
+
+                from ..core.sanitize import ffmpeg_escape_path
+                escaped_path = ffmpeg_escape_path(tmp.name)
+                sub_filter = f"ass={escaped_path}"
+        else:
+            # mode == "transcribe"
+            if not result.segments:
+                logger.warning("Whisper found no speech — producing clean passthrough")
+                sub_filter = None
+            else:
+                srt_content = segments_to_srt(result.segments)
+                tmp = tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".srt", delete=False, encoding="utf-8",
+                )
+                tmp.write(srt_content)
+                tmp.close()
+                atexit.register(os.unlink, tmp.name)
+
+                from ..core.sanitize import ffmpeg_escape_path
+                escaped_path = ffmpeg_escape_path(tmp.name)
+                sub_filter = f"subtitles={escaped_path}"
+
+        # --- Build ffmpeg command ---
+        crf_map = {"draft": 28, "standard": 23, "high": 18, "lossless": 0}
+        preset_map = {"draft": "ultrafast", "standard": "medium", "high": "slow", "lossless": "veryslow"}
+        effective_crf = crf if crf >= 0 else crf_map.get(quality_preset, 23)
+        effective_preset = encoding_preset if encoding_preset != "auto" else preset_map.get(quality_preset, "medium")
+
+        ffmpeg_cmd = ["ffmpeg", "-y", "-i", effective_video_path]
+
+        if sub_filter:
+            ffmpeg_cmd.extend(["-vf", sub_filter])
+
+        ffmpeg_cmd.extend([
+            "-c:v", "libx264",
+            "-crf", str(effective_crf),
+            "-preset", effective_preset,
+            "-pix_fmt", "yuv420p",
+            "-c:a", "copy",
+        ])
+
+        if preview_mode:
+            # Insert scale + duration limit
+            if sub_filter:
+                # Append scale to existing vf
+                vf_idx = ffmpeg_cmd.index("-vf")
+                ffmpeg_cmd[vf_idx + 1] += ",scale=480:trunc(ow/a/2)*2"
+            else:
+                ffmpeg_cmd.extend(["-vf", "scale=480:trunc(ow/a/2)*2"])
+            ffmpeg_cmd.extend(["-t", "10"])
+
+        ffmpeg_cmd.append(output_path)
+
+        logger.debug("Whisper-only command: %s", " ".join(ffmpeg_cmd))
+        proc = _sp.run(ffmpeg_cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"Whisper-only mode: ffmpeg failed:\n{proc.stderr[-500:]}"
+            )
+
+        # --- Collect frame/audio output ---
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = self._collect_frame_output(
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=False,
+        )
+
+        # --- Build analysis string (includes full transcription) ---
+        cmd_log = " ".join(ffmpeg_cmd)
+        mode_label = "Karaoke Subtitles" if mode == "karaoke_subtitles" else "SRT Subtitles"
+        analysis = (
+            f"Whisper-Only Mode (no LLM)\n"
+            f"Mode: {mode_label}\n"
+            f"Model: {whisper_model}\n"
+            f"Device: {whisper_device}\n"
+            f"Language: {result.language or 'auto-detected'}\n"
+            f"Segments: {len(result.segments)}\n"
+            f"Words: {len(result.words)}\n\n"
+            f"--- Transcription ---\n"
+            f"{result.full_text or '(no speech detected)'}"
+        )
+
+        # --- Cleanup temp files ---
+        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+            if not os.listdir(temp_render_dir):
+                shutil.rmtree(temp_render_dir, ignore_errors=True)
+
+        return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
 
     async def _verify_output(
         self,

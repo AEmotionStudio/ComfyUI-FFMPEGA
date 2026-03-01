@@ -109,8 +109,12 @@ def _load_model(model_size: str = "large-v3", device: str = "gpu"):
         "tiny": "tiny.pt",
     }
     model_file = os.path.join(download_dir, _WHISPER_FILENAMES.get(model_size, f"{model_size}.pt"))
-    if not os.path.isfile(model_file):
-        # Model not cached — guard before download
+    # Check if model is already cached — if not, we'll wrap the load
+    # with progress logging since whisper.load_model downloads internally
+    needs_download = not os.path.isfile(model_file)
+
+    if needs_download:
+        # Guard: raise if downloads are disabled
         try:
             from . import model_manager
         except ImportError:
@@ -124,9 +128,18 @@ def _load_model(model_size: str = "large-v3", device: str = "gpu"):
             "Loading Whisper model '%s' on CPU (download dir: %s)",
             model_size, download_dir,
         )
-        _model = whisper.load_model(
-            model_size, device="cpu", download_root=download_dir,
-        )
+        if needs_download:
+            _model = model_manager.download_with_progress(
+                "whisper",
+                lambda: whisper.load_model(
+                    model_size, device="cpu", download_root=download_dir,
+                ),
+                extra=model_size,
+            )
+        else:
+            _model = whisper.load_model(
+                model_size, device="cpu", download_root=download_dir,
+            )
     else:
         # GPU mode — free ComfyUI VRAM first
         _free_comfyui_vram()
@@ -135,9 +148,18 @@ def _load_model(model_size: str = "large-v3", device: str = "gpu"):
             "Loading Whisper model '%s' on GPU (download dir: %s)",
             model_size, download_dir,
         )
-        _model = whisper.load_model(
-            model_size, download_root=download_dir,
-        )
+        if needs_download:
+            _model = model_manager.download_with_progress(
+                "whisper",
+                lambda: whisper.load_model(
+                    model_size, download_root=download_dir,
+                ),
+                extra=model_size,
+            )
+        else:
+            _model = whisper.load_model(
+                model_size, download_root=download_dir,
+            )
 
     _model_name = cache_key
     logger.info("Whisper model '%s' loaded successfully on %s", model_size, "CPU" if use_cpu else "GPU")

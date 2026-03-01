@@ -1388,6 +1388,40 @@ Use two-pass encoding for best quality
 
 ---
 
+## 🤖 AI-Powered
+
+### auto_mask
+```
+Blur all faces for privacy
+```
+
+```
+Keep the person in color and make everything else grayscale
+```
+
+```
+Pixelate the license plate with high strength
+```
+
+```
+Remove the watermark using AI masking
+```
+
+```
+Isolate the subject on a green screen background
+```
+
+### mix_audio
+```
+Mix audio from both video inputs equally
+```
+
+```
+Blend the two audio tracks but keep the main one louder
+```
+
+---
+
 ## 🎙️ Transcription & Subtitles (Whisper AI)
 
 ### auto_transcribe

@@ -60,6 +60,17 @@ class SaveVideoNode:
                 }),
             },
             "optional": {
+                "save_output": ("BOOLEAN", {
+                    "default": True,
+                    "label_on": "Save to Output",
+                    "label_off": "Preview Only",
+                    "tooltip": (
+                        "When On, copies the video to ComfyUI's output "
+                        "directory. When Off, shows the inline preview "
+                        "and outputs frames/audio/path without saving "
+                        "a copy — useful for previewing before committing."
+                    ),
+                }),
                 "overwrite": ("BOOLEAN", {
                     "default": False,
                     "tooltip": (
@@ -93,6 +104,7 @@ class SaveVideoNode:
         self,
         video_path: str = "",
         filename_prefix: str = "FFMPEGA",
+        save_output: bool = True,
         overwrite: bool = False,
         prompt=None,
         extra_pnginfo=None,
@@ -155,19 +167,41 @@ class SaveVideoNode:
         src = os.path.abspath(video_path)
         dst = os.path.abspath(output_path)
 
-        if src != dst:
-            shutil.copy2(video_path, output_path)
-            logger.info(
-                "SaveVideo: copied %s → %s",
-                video_path, output_path,
+        # --- Copy to output directory (if save_output is on) ---
+        if save_output:
+            if src != dst:
+                shutil.copy2(video_path, output_path)
+                logger.info(
+                    "SaveVideo: copied %s → %s",
+                    video_path, output_path,
+                )
+            else:
+                logger.info(
+                    "SaveVideo: file already in output: %s", output_path,
+                )
+
+            # --- Generate workflow PNG thumbnail ---
+            png_filename = self._save_workflow_png(
+                output_path, full_output_folder, output_filename,
+                prompt, extra_pnginfo,
             )
         else:
+            # Preview-only mode: copy to temp directory so /view can serve it
+            temp_dir = folder_paths.get_temp_directory()
+            os.makedirs(temp_dir, exist_ok=True)
+            preview_name = f"ffmpega_preview_{os.getpid()}{ext}"
+            preview_path = os.path.join(temp_dir, preview_name)
+            try:
+                shutil.copy2(video_path, preview_path)
+            except Exception as e:
+                logger.warning("SaveVideo: preview copy failed: %s", e)
+            output_path = preview_path if os.path.isfile(preview_path) else video_path
             logger.info(
-                "SaveVideo: file already in output: %s", output_path,
+                "SaveVideo: preview-only mode — copied to temp for preview",
             )
 
-        # Get file size for display
-        file_size = os.path.getsize(output_path)
+        # --- Get file size for display ---
+        file_size = os.path.getsize(video_path)  # always show source size
         if file_size >= 1_073_741_824:
             size_str = f"{file_size / 1_073_741_824:.1f} GB"
         elif file_size >= 1_048_576:
@@ -178,13 +212,7 @@ class SaveVideoNode:
             size_str = f"{file_size} B"
 
         logger.info(
-            "SaveVideo: %s (%s)", output_filename, size_str,
-        )
-
-        # --- Generate workflow PNG thumbnail ---
-        png_filename = self._save_workflow_png(
-            output_path, full_output_folder, output_filename,
-            prompt, extra_pnginfo,
+            "SaveVideo: %s (%s)", os.path.basename(output_path), size_str,
         )
 
         # --- Extract frames as IMAGE tensor ---
@@ -193,13 +221,24 @@ class SaveVideoNode:
         # --- Extract audio ---
         audio_out = self._extract_audio(output_path)
 
+        # Build UI data
+        if save_output:
+            video_ui = [{
+                "filename": output_filename,
+                "subfolder": subfolder,
+                "type": self.type,
+            }]
+        else:
+            # For preview-only, reference the temp copy
+            video_ui = [{
+                "filename": preview_name,
+                "subfolder": "",
+                "type": "temp",
+            }]
+
         return {
             "ui": {
-                "video": [{
-                    "filename": output_filename,
-                    "subfolder": subfolder,
-                    "type": self.type,
-                }],
+                "video": video_ui,
                 "file_size": [size_str],
             },
             "result": (images_tensor, audio_out, output_path),
@@ -292,7 +331,14 @@ class SaveVideoNode:
                  "-f", "f32le", "-"],
                 capture_output=True, check=True,
             )
-            audio = torch.frombuffer(bytearray(res.stdout), dtype=torch.float32)
+
+            # Ensure buffer size is a multiple of element size (4 bytes for float32)
+            stdout_bytes = bytearray(res.stdout)
+            rem = len(stdout_bytes) % 4
+            if rem != 0:
+                stdout_bytes = stdout_bytes[:-rem]
+
+            audio = torch.frombuffer(stdout_bytes, dtype=torch.float32)
             match = re.search(
                 r", (\d+) Hz, (\w+), ",
                 res.stderr.decode("utf-8", "backslashreplace"),

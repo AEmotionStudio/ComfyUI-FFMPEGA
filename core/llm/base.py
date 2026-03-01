@@ -29,7 +29,7 @@ class LLMConfig:
     api_key: Optional[str] = None
     temperature: float = 0.3
     max_tokens: int = 4096
-    timeout: float = 300.0
+    timeout: float = 240.0
     extra_options: dict = field(default_factory=dict)
 
     def __repr__(self) -> str:

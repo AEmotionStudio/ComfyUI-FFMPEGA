@@ -42,7 +42,7 @@ class TestLLMConfig:
         assert cfg.model == "llama3.1:8b"
         assert cfg.temperature == 0.3
         assert cfg.max_tokens == 4096
-        assert cfg.timeout == 300.0
+        assert cfg.timeout == 240.0
         assert cfg.api_key is None
         assert cfg.extra_options == {}
 

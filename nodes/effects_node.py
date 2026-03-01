@@ -85,6 +85,56 @@ _PRESETS = {
         "effect_2": "saturation",
         "effect_2_params": {"amount": 1.4},
     },
+    "🎙️ Auto Subtitles": {
+        "effect_1": "auto_transcribe",
+        "effect_1_params": {},
+    },
+    "🎤 Karaoke Subtitles": {
+        "effect_1": "karaoke_subtitles",
+        "effect_1_params": {},
+    },
+    "🔗 Concat Videos": {
+        "effect_1": "concat",
+        "effect_1_params": {},
+    },
+    "🔗 Concat + Crossfade": {
+        "effect_1": "xfade",
+        "effect_1_params": {"transition": "fade", "duration": 1.0},
+    },
+    "📺 Split Screen": {
+        "effect_1": "split_screen",
+        "effect_1_params": {"layout": "side_by_side"},
+    },
+    "🖼️ Grid Layout": {
+        "effect_1": "grid",
+        "effect_1_params": {},
+    },
+    "🎞️ Slideshow": {
+        "effect_1": "slideshow",
+        "effect_1_params": {},
+    },
+    "🐢 Slow Motion (0.5x)": {
+        "effect_1": "slowmo",
+        "effect_1_params": {"factor": 0.5},
+    },
+    "✂️ Trim (first 10s)": {
+        "effect_1": "trim",
+        "effect_1_params": {"start": 0, "end": 10},
+    },
+    "🌑 Fade In + Out": {
+        "effect_1": "fade",
+        "effect_1_params": {"type": "in", "duration": 1.0},
+        "effect_2": "fade",
+        "effect_2_params": {"type": "out", "duration": 1.0},
+    },
+    "🪞 Mirror Horizontal": {
+        "effect_1": "mirror",
+        "effect_1_params": {"mode": "horizontal"},
+    },
+    "🎬 Ken Burns Zoom": {
+        "effect_1": "ken_burns",
+        "effect_1_params": {"direction": "in", "amount": 1.3},
+    },
 }
 
 _PRESET_NAMES = list(_PRESETS.keys())
