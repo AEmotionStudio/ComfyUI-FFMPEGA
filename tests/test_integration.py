@@ -39,7 +39,7 @@ def _generated_video() -> str:
     assert _ffmpeg, "ffmpeg required"
     tmpdir = tempfile.mkdtemp(prefix="ffmpega_test_")
     path = os.path.join(tmpdir, "test_video.mp4")
-    subprocess.run(
+    result = subprocess.run(
         [
             _ffmpeg, "-y",
             "-f", "lavfi", "-i", "testsrc=duration=0.2:size=160x120:rate=25",
@@ -50,6 +50,7 @@ def _generated_video() -> str:
         capture_output=True,
         timeout=30,
     )
+    assert result.returncode == 0, f"Test video generation failed: {result.stderr.decode()}"
     yield path
     shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -190,7 +191,7 @@ class TestSingleSkill:
         probe = _probe(output_path)
         duration = float(probe["format"]["duration"])
         # 2x speed on 0.2s → ~0.1s (allow tolerance for container overhead)
-        assert duration <= 0.2, f"Expected ≤0.1s but got {duration}s"
+        assert duration <= 0.15, f"Expected ≤0.15s but got {duration}s"
 
 
 # ---------------------------------------------------------------------------
