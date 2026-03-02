@@ -425,7 +425,7 @@ class FFMPEGAgentNode:
     # ------------------------------------------------------------------ #
 
     @staticmethod
-    def _inject_effects_hints(prompt: str, pipeline_json: str) -> str:  # type: ignore[override]
+    def _inject_effects_hints(prompt: str, pipeline_json: str) -> str:
         """Inject FFMPEGAEffectsBuilder parameters into the prompt.
 
         This converts the pipeline_json from the effects builder node
