@@ -953,7 +953,7 @@ class SkillComposer:
                             value = float(cleaned)
                         except ValueError:
                             pass
-            normalized[resolved_key] = value
+            normalized[resolved_key or key] = value
         return normalized
 
     def _skill_to_filters(

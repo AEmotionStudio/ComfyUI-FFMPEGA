@@ -9,7 +9,10 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from .llm.base import LLMResponse
 
 logger = logging.getLogger("ffmpega")
 
