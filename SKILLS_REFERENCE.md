@@ -2341,21 +2341,51 @@ Generate a sprite sheet of evenly-spaced frames.
 ## 🤖 AI-Powered Skills
 
 ### auto_mask
-Apply an effect only to specific objects using SAM3 AI segmentation. Describe the target with a text prompt and SAM3 generates pixel-level masks.
+Apply an effect only to specific objects using SAM3 AI segmentation. Describe the target with a text prompt and SAM3 generates pixel-level masks. The `remove` and `edit` effects use FLUX Klein 4B AI for high-quality inpainting and text-guided editing.
 | Parameter | Type | Default | Choices/Range |
 |-----------|------|---------|---------------|
 | `target` | string | *(required)* | text describing what to segment (e.g. "the dog", "face", "background") |
-| `effect` | choice | blur | blur, pixelate, remove, grayscale, highlight, greenscreen, transparent |
+| `effect` | choice | blur | blur, pixelate, remove, edit, grayscale, highlight, greenscreen, transparent |
 | `strength` | int | 50 | 1 to 100 |
 | `invert` | bool | false | apply effect to everything EXCEPT the target |
+| `edit_prompt` | string | *(empty)* | text prompt describing the desired edit (required when effect=edit) |
 
 **Example prompts:**
 - "Blur all faces for privacy using auto_mask"
 - "Keep the subject in color and grayscale everything else"
 - "Pixelate the license plates"
-- "Remove the watermark"
+- "Remove the watermark" *(uses FLUX Klein AI)*
 - "Isolate the person on a green screen"
 - "Make the background transparent (WebM output)"
+- "Change the hair to red" *(uses effect=edit with edit_prompt)*
+- "Replace the background with a beach scene" *(uses effect=edit with edit_prompt)*
+
+> [!NOTE]
+> **`remove` and `edit` effects** use FLUX Klein 4B (Apache 2.0). First run downloads the model (~8 GB fp16) to `ComfyUI/models/flux_klein/`.
+> **VRAM:** ~8–13 GB for FLUX Klein (fp16/bf16, with CPU offload).
+
+---
+
+### lip_sync
+AI lip sync: synchronize a face's lip movements to match provided audio using MuseTalk. Works with both video and image inputs. Supports multiple faces.
+| Parameter | Type | Default | Range/Choices |
+|-----------|------|---------|---------------|
+| `audio_path` | string | *(required)* | path to audio file for lip sync (speech/voice) |
+| `face_index` | int | -1 | -1 (all faces), 0+ (specific face) |
+| `batch_size` | int | 8 | 1 to 32 (lower = less VRAM) |
+
+**Example prompts:**
+- "Lip sync this video to the provided audio"
+- "Make the person's lips match the speech audio"
+- "Dub this video with the new voiceover"
+- "Make a talking head video from this portrait"
+
+**Aliases:** `lipsync`, `dub`, `dubbing`, `sync_lips`, `talking_head`, `lip_dub`, `voice_sync`
+
+> [!NOTE]
+> **First run** downloads MuseTalk UNet (~3.2 GB) to `ComfyUI/models/musetalk/`, plus SD-VAE and Whisper-tiny from HuggingFace (~335 MB combined).
+> **VRAM:** ~4 GB minimum. Uses subprocess isolation to prevent CUDA memory leaks.
+> **License:** MIT (code), CreativeML Open RAIL-M (SD-VAE).
 
 ---
 
