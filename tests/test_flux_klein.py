@@ -147,3 +147,23 @@ class TestFluxKleinSkillRegistration:
         """auto_mask should have 'flux' in its tags."""
         skill = registry.get("auto_mask")
         assert "flux" in skill.tags
+
+
+# --- Path Validation Tests -----------------------------------------------------
+
+class TestFluxKleinPathValidation:
+    """Test that path inputs are validated against traversal attacks."""
+
+    def test_edit_video_rejects_traversal(self):
+        """edit_video should reject path traversal in video_path."""
+        from core.flux_klein_editor import edit_video
+        from core.errors import ValidationError
+        with pytest.raises(ValidationError):
+            edit_video("../../../../etc/passwd", "/tmp/mask.mp4", "test")
+
+    def test_edit_video_subprocess_rejects_traversal(self):
+        """edit_video_subprocess should reject path traversal in video_path."""
+        from core.flux_klein_editor import edit_video_subprocess
+        from core.errors import ValidationError
+        with pytest.raises(ValidationError):
+            edit_video_subprocess("../../../../etc/passwd", "/tmp/mask.mp4", "test")
