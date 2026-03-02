@@ -71,18 +71,12 @@ def _get_model_dir() -> str:
     if env_dir and os.path.isdir(env_dir):
         return env_dir
 
-    # ComfyUI standard path
-    ext_dir = Path(__file__).resolve().parent.parent
-    comfy_root = ext_dir.parent.parent
-    comfy_models = comfy_root / "models" / "musetalk"
-    if comfy_models.exists() or not ext_dir.name.startswith("ComfyUI"):
-        comfy_models.mkdir(parents=True, exist_ok=True)
-        return str(comfy_models)
+    try:
+        from .platform import get_models_dir
+    except ImportError:
+        from core.platform import get_models_dir
 
-    # Fallback to extension's own models/
-    local = ext_dir / "models" / "musetalk"
-    local.mkdir(parents=True, exist_ok=True)
-    return str(local)
+    return get_models_dir("musetalk")
 
 
 def _find_or_download_model(model_key: str, *, use_float16: bool = True) -> str:
@@ -180,14 +174,18 @@ def _get_vae_path() -> str:
         return vae_dir
 
     # Check ComfyUI's standard vae directory
-    ext_dir = Path(__file__).resolve().parent.parent
-    comfy_root = ext_dir.parent.parent
-    comfy_vae = comfy_root / "models" / "vae" / _VAE_TYPE
+    try:
+        from .platform import get_models_dir
+        from .model_manager import require_downloads_allowed, download_with_progress
+    except ImportError:
+        from core.platform import get_models_dir
+        from core.model_manager import require_downloads_allowed, download_with_progress
+
+    comfy_vae = Path(get_models_dir(f"vae/{_VAE_TYPE}"))
     if comfy_vae.is_dir() and (comfy_vae / "config.json").is_file():
         return str(comfy_vae)
 
     # Download from HuggingFace
-    from ..model_manager import require_downloads_allowed, download_with_progress
 
     require_downloads_allowed("musetalk")
 
@@ -225,7 +223,10 @@ def _get_whisper_path() -> str:
         pass
 
     # Download explicitly
-    from ..model_manager import require_downloads_allowed, download_with_progress
+    try:
+        from .model_manager import require_downloads_allowed, download_with_progress
+    except ImportError:
+        from core.model_manager import require_downloads_allowed, download_with_progress
 
     require_downloads_allowed("musetalk")
 

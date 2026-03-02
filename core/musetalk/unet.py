@@ -58,22 +58,12 @@ class UNet:
             "cuda" if torch.cuda.is_available() else "cpu"
         )
 
-        # Load weights — prefer comfy loader, fallback to torch
         try:
-            import comfy.utils
+            from ..platform import load_torch_file
+        except ImportError:
+            from core.platform import load_torch_file
 
-            weights = comfy.utils.load_torch_file(model_path, safe_load=True)
-        except (ImportError, Exception):
-            from safetensors.torch import load_file
-
-            if model_path.endswith(".safetensors"):
-                weights = load_file(model_path, device="cpu")
-            else:
-                weights = torch.load(
-                    model_path,
-                    map_location="cpu",
-                    weights_only=True,
-                )
+        weights = load_torch_file(model_path, device="cpu", safe_load=True)
 
         self.model.load_state_dict(weights)
 
