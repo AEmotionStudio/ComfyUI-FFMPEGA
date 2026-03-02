@@ -473,7 +473,7 @@ def _composite_frame(
     original,
     edited,
     mask,
-) -> np.ndarray:
+):
     """Composite edited pixels onto original using the mask.
 
     Args:
@@ -675,7 +675,6 @@ def edit_video_subprocess(
     the child process via stdin, and the video path is returned via stdout.
     Falls back to in-process edit_video() if the subprocess fails.
     """
-    import atexit
     import json
     import sys
     import threading

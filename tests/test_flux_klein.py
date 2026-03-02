@@ -10,6 +10,8 @@ Tests cover:
 
 import pytest
 
+import os
+
 # PyTorch import can fail on Python 3.14 — guard torch-dependent tests
 try:
     import torch  # noqa: F401
@@ -59,9 +61,11 @@ class TestFluxKleinModelDir:
 
     def test_model_dir_contains_flux_klein(self):
         """_get_model_dir should return a path ending in flux_klein."""
+        from unittest.mock import patch
         from core.flux_klein_editor import _get_model_dir
-        d = _get_model_dir()
-        assert str(d).endswith("flux_klein")
+        with patch.object(os, "environ", {"FFMPEGA_FLUX_KLEIN_MODEL_DIR": "/tmp/flux_klein"}):
+            d = _get_model_dir()
+            assert str(d).endswith("flux_klein")
 
 
 # --- Cleanup Tests -------------------------------------------------------------
