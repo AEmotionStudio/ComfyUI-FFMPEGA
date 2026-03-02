@@ -281,7 +281,7 @@ def _load_state_dict(path: str, device: str = "cpu") -> dict:
     """
     from .platform import load_torch_file
 
-    return load_torch_file(path, device=device)
+    return load_torch_file(path, device=device, safe_load=False)
 
 
 def _load_efficient(model, ckpt: dict, device: str = "cpu") -> None:
