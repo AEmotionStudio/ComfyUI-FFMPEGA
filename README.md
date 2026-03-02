@@ -26,12 +26,15 @@
 
 ## 🚀 What's New in v2.9.0 (March 1, 2026)
 
-**AI Audio Generation (MMAudio), Model Mirroring & Mask Points Chaining**
+**AI Audio Generation (MMAudio), AI Lip Sync (MuseTalk), FLUX Klein Editing, Model Mirroring & Mask Points Chaining**
+
+*   **✨ AI Object Removal & Editing (FLUX Klein 4B)**: New `auto_mask:effect=remove` and `auto_mask:effect=edit` powered by [FLUX Klein 4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) (Apache 2.0). AI-powered per-frame object removal replaces LaMa with higher-quality results. New `edit` effect enables text-guided video changes (e.g. "change hair to red", "replace background with beach"). Reference-image conditioning, 4-step inference, temporal smoothing, ~8–13 GB VRAM.
 
 *   **🔊 AI Audio Generation (`generate_audio`)**: New skill powered by [MMAudio](https://github.com/hkchengrex/MMAudio) — synthesizes synchronized audio/foley from video and/or text descriptions. Supports video-to-audio, text-to-audio, and automatic long video chunking with crossfade. 11 natural language aliases (`foley`, `sound_effects`, `v2a`, etc.).
+*   **👄 AI Lip Sync (`lip_sync`)**: New skill powered by [MuseTalk](https://github.com/TMElyralab/MuseTalk) V15 — synchronizes lip movements to match provided audio. Video+audio and image+audio inputs, multi-face support, batch inference. Zero new pip dependencies. 7 aliases (`lipsync`, `dub`, `dubbing`, `sync_lips`, `talking_head`, `lip_dub`, `voice_sync`). Subprocess isolation for CUDA memory safety.
 *   **🧠 Subprocess Isolation**: Audio generation runs in a subprocess to prevent CUDA memory leaks — same proven pattern as SAM3. Falls back to in-process with VRAM offloading.
 *   **⚡ Native Safetensors & Memory-Efficient Loading**: Uses `comfy.utils.load_torch_file` for direct `.safetensors` loading, plus `accelerate`'s zero-copy model init — no 3× memory spike during model loading.
-*   **🪞 Model Mirror Repository**: All 5 MMAudio components hosted on `AEmotionStudio/mmaudio-models` as fp16 `.safetensors` (~5.5 GB, 50% smaller than fp32). Mirror-first download with upstream HuggingFace fallback.
+*   **🪞 Model Mirror Repositories**: MMAudio on `AEmotionStudio/mmaudio-models` (fp16, ~5.5 GB). MuseTalk UNet on `AEmotionStudio/musetalk-models` (fp16 1.6 GB / fp32 3.2 GB). Mirror-first download with upstream HuggingFace fallback.
 *   **🔗 Mask Points Chaining**: `SaveVideoNode` and `LoadVideoPathNode` now pass `mask_points` data through the node chain — upstream segmentation points propagate to downstream processing.
 *   **🎨 LoadImagePath Styling**: Consistent FFMPEGA color styling applied to the `LoadImagePath` node.
 *   **🔧 LaMa Cache Fix**: Fixed false "not found" when LaMa model existed in `torch.hub` cache.
@@ -173,7 +176,7 @@ Works with **Ollama** (local, free), **OpenAI**, **Anthropic**, **Google Gemini*
 <td width="50%">
 
 ### 🎨 200+ Skills
-200+ video editing skills across visual effects, audio processing, spatial transforms, temporal edits, encoding, cinematic presets, vintage looks, social media, creative effects, text animations, editing & composition, audio visualization, multi-input operations, transitions, concat, split screen, and AI-powered skills (Whisper transcription, SAM3 masking).
+200+ video editing skills across visual effects, audio processing, spatial transforms, temporal edits, encoding, cinematic presets, vintage looks, social media, creative effects, text animations, editing & composition, audio visualization, multi-input operations, transitions, concat, split screen, and AI-powered skills (Whisper transcription, SAM3 masking, MMAudio generation, MuseTalk lip sync).
 
 </td>
 </tr>
@@ -585,7 +588,10 @@ All models are mirrored to first-party [AEmotionStudio](https://huggingface.co/A
 | **Whisper** small | ~500 MB | `ComfyUI/models/whisper/` | Same as above (set `whisper_model` to `small`) | Same as above |
 | **Whisper** base | ~150 MB | `ComfyUI/models/whisper/` | Same as above (set `whisper_model` to `base`) | Same as above |
 | **Whisper** tiny | ~75 MB | `ComfyUI/models/whisper/` | Same as above (set `whisper_model` to `tiny`) | Same as above |
-| **LaMa** (Large Mask Inpainting) | ~200 MB | `~/.cache/torch/hub/checkpoints/` | `auto_mask:effect=remove` (object removal) | [AEmotionStudio/lama-inpainting](https://huggingface.co/AEmotionStudio/lama-inpainting) — download `big-lama.pt` |
+| **LaMa** (Large Mask Inpainting) | ~200 MB | `~/.cache/torch/hub/checkpoints/` | `auto_mask:effect=remove` (legacy fallback) | [AEmotionStudio/lama-inpainting](https://huggingface.co/AEmotionStudio/lama-inpainting) — download `big-lama.pt` |
+| **FLUX Klein 4B** (Editing/Removal) | ~15 GB (bf16) | `ComfyUI/models/flux_klein/` | `auto_mask:effect=remove`, `auto_mask:effect=edit` | [AEmotionStudio/flux-klein](https://huggingface.co/AEmotionStudio/flux-klein) |
+| **MMAudio** (Video-to-Audio) | ~5.5 GB | `ComfyUI/models/mmaudio/` | `generate_audio` skill | [AEmotionStudio/mmaudio-models](https://huggingface.co/AEmotionStudio/mmaudio-models) |
+| **MuseTalk** (Lip Sync) | ~1.6 GB (fp16) | `ComfyUI/models/musetalk/` | `lip_sync` skill | [AEmotionStudio/musetalk-models](https://huggingface.co/AEmotionStudio/musetalk-models) |
 | **U²-Net** (rembg) | ~170 MB | `~/.u2net/` | `remove_background` skill | Install with `pip install 'comfyui-ffmpega[masking]'` — model auto-fetched by rembg |
 
 > [!NOTE]
@@ -701,7 +707,7 @@ Select up to 3 skills with parameters, add raw FFmpeg filters, and use presets. 
 | `effect_3_params` | STRING | JSON parameters for effect 3. |
 | `raw_ffmpeg` | STRING | Raw FFmpeg `-vf` filter string applied after skill effects. |
 | `sam3_target` | STRING | SAM3 text target — apply effects only to the masked region. Leave empty for full-frame. |
-| `sam3_effect` | DROPDOWN | Effect for SAM3-detected region: `blur`, `pixelate`, `remove`, `grayscale`, `highlight`, `greenscreen`, `transparent`. |
+| `sam3_effect` | DROPDOWN | Effect for SAM3-detected region: `blur`, `pixelate`, `remove`, `edit`, `grayscale`, `highlight`, `greenscreen`, `transparent`. |
 
 | Output | Description |
 | :--- | :--- |

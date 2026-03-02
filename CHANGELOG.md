@@ -8,13 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.9.0] - 2026-03-01
 
 ### Added
+- **AI Object Removal & Editing (`auto_mask:effect=remove|edit`)**: New FLUX Klein 4B integration for AI-powered per-frame object removal and text-guided video editing. Replaces LaMa for the `remove` effect with higher-quality FLUX Klein inpainting. New `edit` effect enables text-guided changes (e.g. "change hair to red", "replace background with beach"). Uses reference-image conditioning with 4-step inference, temporal smoothing, and fixed seeding for cross-frame consistency. ~8–13 GB VRAM (fp16/bf16 with CPU offload).
+- **`edit_prompt` Parameter**: New `edit_prompt` parameter on `auto_mask` skill for describing desired text-guided edits when `effect=edit`.
+- **FLUX Klein Model Mirror**: fp16 `.safetensors` weights hosted on `AEmotionStudio/flux-klein`. Mirror-first download with upstream BFL fallback.
+- **FLUX Klein Tests**: New `tests/test_flux_klein.py` with 16 tests covering constants, model directory, cleanup, model manager integration, and skill registration.
 - **AI Audio Generation (`generate_audio`)**: New skill powered by MMAudio (CVPR 2025) — synthesizes synchronized audio/foley from video content and/or text descriptions. Supports video-to-audio, text-to-audio, and long video handling with automatic chunking and crossfade. 11 natural language aliases (`foley`, `sound_effects`, `mmaudio`, `v2a`, etc.).
+- **AI Lip Sync (`lip_sync`)**: New skill powered by MuseTalk V15 — synchronizes lip movements in video with provided audio. Supports both video+audio and image+audio inputs, multi-face detection, and batch inference. Zero new pip dependencies — uses existing diffusers, transformers, and mediapipe packages. 7 aliases (`lipsync`, `dub`, `dubbing`, `sync_lips`, `talking_head`, `lip_dub`, `voice_sync`). Subprocess isolation for CUDA memory safety.
 - **MMAudio Subprocess Isolation**: Audio generation runs in a subprocess to prevent CUDA memory leaks — same pattern as SAM3. Falls back to in-process generation with proper VRAM offloading if subprocess fails.
 - **Native Safetensors Loading**: MMAudio synthesizer uses `comfy.utils.load_torch_file` for direct `.safetensors` loading — no more `.pth` conversion round-trip. Falls back to `safetensors.torch.load_file` or `torch.load` if ComfyUI API unavailable.
 - **Memory-Efficient Model Init**: Uses `accelerate`'s `init_empty_weights()` and `set_module_tensor_to_device()` to load MMAudio, Synchformer, and CLIP models with zero-copy initialization — avoids the 3× memory spike of standard `model.load_state_dict()`.
 - **Model Auto-Detection**: Detects MMAudio model variant (small/large, v1/v2) from state dict tensor shapes instead of hardcoding, enabling seamless support for multiple model versions.
 - **CLIP & BigVGAN Component Loading**: Loads CLIP vision encoder (DFN5B-ViT-H-14-384) and BigVGAN v2 vocoder as separate components with controlled download paths, instead of relying on MMAudio's internal download.
 - **Model Mirror Repository**: All 5 MMAudio model components hosted on `AEmotionStudio/mmaudio-models` as fp16 `.safetensors` (~5.5 GB total, 50% smaller than original fp32). Mirror-first download with upstream HuggingFace fallback.
+- **MuseTalk Model Mirror**: MuseTalk UNet weights hosted on `AEmotionStudio/musetalk-models` as `.safetensors` in both fp32 (3.2 GB) and fp16 (1.6 GB). Lip sync auto-downloads the fp16 variant by default — 50% smaller. Falls back to fp32 safetensors, then upstream `.pth`.
 - **Mask Points Chaining**: `SaveVideoNode` now has optional `mask_points` input/output for passing segmentation point data through the node chain. `LoadVideoPathNode` accepts upstream `mask_points` to override locally generated points.
 - **LoadImagePath Node Styling**: Consistent color styling applied to `LoadImagePath` to match other FFMPEGA nodes.
 - **Node Chaining Tests**: New `tests/test_node_chaining.py` with comprehensive tests for mask_points pass-through, save/load node wiring, and metadata propagation.
@@ -32,8 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Model Registry Updated**: `mmaudio` entry updated with accurate size (~5.5 GB), `license` field, mirror URL, and ⚠️ warning in manual instructions.
-- **Safetensors Model Conversion**: Whisper models on HuggingFace mirror converted from `.pt` to `.safetensors` to avoid being flagged. LaMa kept as `.pt` (TorchScript JIT). `try_mirror_download` updated to handle per-model conversion strategy.
-- **AI-Powered Skills Count**: Updated from 3 to 4 in README (added `generate_audio`).
+- **Safetensors Model Conversion**: Whisper models on HuggingFace mirror converted from `.pt` to `.safetensors` to avoid being flagged. LaMa kept as `.pt` (TorchScript JIT). MuseTalk UNet converted from `.pth` to `.safetensors` (fp32 + fp16). `try_mirror_download` updated to handle per-model conversion strategy.
+- **AI-Powered Skills Count**: Updated from 3 to 5 in README (added `generate_audio`, `lip_sync`).
 
 ---
 

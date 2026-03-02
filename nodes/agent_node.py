@@ -2845,6 +2845,8 @@ Token Usage{est_tag}:
         if not ffprobe_bin:
             return 0.0
         try:
+            from ..core.sanitize import validate_video_path
+            video_path = validate_video_path(str(video_path))
             result = subprocess.run(
                 [ffprobe_bin, "-v", "error", "-show_entries",
                  "format=duration", "-of", "default=noprint_wrappers=1:nokey=1",

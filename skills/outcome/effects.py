@@ -2950,8 +2950,11 @@ def register_skills(registry: SkillRegistry) -> None:
             "Apply an effect only to specific objects in the video using "
             "SAM3 AI segmentation. Describe what to target with a text prompt "
             "(e.g. 'the person', 'license plate') and SAM3 generates a "
-            "precise pixel-level mask. Supports blur, pixelate, remove, "
-            "grayscale, highlight, greenscreen, and transparent effects."
+            "precise pixel-level mask. Supports blur, pixelate, remove, edit, "
+            "grayscale, highlight, greenscreen, and transparent effects. "
+            "The 'remove' effect uses FLUX Klein AI to cleanly erase objects. "
+            "The 'edit' effect uses FLUX Klein AI for text-guided changes "
+            "(e.g. change hair color, replace background)."
         ),
         parameters=[
             SkillParameter(
@@ -2966,8 +2969,8 @@ def register_skills(registry: SkillRegistry) -> None:
                 description="Effect to apply to the masked region",
                 required=False,
                 default="blur",
-                choices=["blur", "pixelate", "remove", "grayscale", "highlight",
-                         "greenscreen", "transparent"],
+                choices=["blur", "pixelate", "remove", "edit", "grayscale",
+                         "highlight", "greenscreen", "transparent"],
             ),
             SkillParameter(
                 name="strength",
@@ -2985,20 +2988,34 @@ def register_skills(registry: SkillRegistry) -> None:
                 required=False,
                 default=False,
             ),
+            SkillParameter(
+                name="edit_prompt",
+                type=ParameterType.STRING,
+                description=(
+                    "Text prompt describing the desired edit (required when effect='edit'). "
+                    "Use narrative prose, e.g. 'change hair to blonde', 'replace with a beach scene'"
+                ),
+                required=False,
+                default="",
+            ),
         ],
         examples=[
             "auto_mask:target=face:effect=blur - Blur all faces",
             "auto_mask:target=the person:effect=grayscale:invert=true - Keep subject in color, grayscale background",
             "auto_mask:target=license plate:effect=pixelate:strength=80 - Pixelate license plates",
-            "auto_mask:target=watermark:effect=remove - Black out a watermark",
+            "auto_mask:target=watermark:effect=remove - AI-remove a watermark using FLUX Klein",
             "auto_mask:target=the car:effect=highlight - Brighten and saturate the car",
             "auto_mask:target=the person:effect=greenscreen:invert=true - Isolate person on green screen",
             "auto_mask:target=the car:effect=greenscreen - Replace car with green for compositing",
             "auto_mask:target=the person:effect=transparent:invert=true - Isolate person with transparent background (WebM)",
+            "auto_mask:target=the hair:effect=edit:edit_prompt=change hair to vibrant red - AI-edit hair color",
+            "auto_mask:target=background:effect=edit:edit_prompt=replace with a sunny beach scene - AI-edit background",
         ],
         tags=[
             "mask", "segment", "sam3", "auto", "blur", "pixelate", "censor",
             "privacy", "face", "detect", "ai", "smart", "object", "region",
             "remove", "highlight", "grayscale", "invert", "text", "prompt",
+            "edit", "flux", "inpaint", "replace", "change",
         ],
     ))
+
