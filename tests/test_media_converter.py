@@ -1,5 +1,6 @@
 
-import torch
+import pytest
+torch = pytest.importorskip("torch")
 import numpy as np
 import sys
 import os

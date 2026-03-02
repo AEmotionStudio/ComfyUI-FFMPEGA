@@ -9,6 +9,9 @@ import os
 import sys
 import types
 
+import pytest
+torch = pytest.importorskip("torch")
+
 
 # Ensure conftest.py has run for mocking, then add additional mocks
 # that these specific node imports need.
@@ -60,7 +63,6 @@ if not hasattr(fp, "get_input_directory"):
 if not hasattr(fp, "get_temp_directory"):
     fp.get_temp_directory = lambda: "/tmp/comfyui_temp"
 
-import torch
 
 # Set up full package hierarchy so relative imports work in node modules
 _proj_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
