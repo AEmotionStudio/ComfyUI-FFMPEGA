@@ -806,3 +806,51 @@ def register_skills(registry: SkillRegistry) -> None:
             "non_commercial", "cc_by_nc",
         ],
     ))
+
+    # Lip sync — AI-powered lip synchronization (MuseTalk)
+    registry.register(Skill(
+        name="lip_sync",
+        category=SkillCategory.AUDIO,
+        description=(
+            "AI lip sync: synchronize a face's lip movements to match "
+            "provided audio using MuseTalk. Works with both video and image "
+            "inputs. Supports multiple faces. Requires an audio_path "
+            "pointing to the speech/voice audio file."
+        ),
+        parameters=[
+            SkillParameter(
+                name="audio_path",
+                type=ParameterType.STRING,
+                description="Path to audio file for lip sync (speech/voice)",
+                required=True,
+            ),
+            SkillParameter(
+                name="face_index",
+                type=ParameterType.INT,
+                description="Which face to sync: -1 = all faces, 0 = first face, 1 = second, etc.",
+                required=False,
+                default=-1,
+                min_value=-1,
+                max_value=9,
+            ),
+            SkillParameter(
+                name="batch_size",
+                type=ParameterType.INT,
+                description="Frames per inference batch (lower = less VRAM)",
+                required=False,
+                default=8,
+                min_value=1,
+                max_value=32,
+            ),
+        ],
+        examples=[
+            "lip_sync:audio_path=/path/to/speech.wav - Sync lips to speech audio",
+            "lip_sync:audio_path=/path/to/voice.mp3,face_index=0 - Sync first face only",
+            "lip_sync:audio_path=/path/to/audio.wav,batch_size=4 - Lower VRAM usage",
+        ],
+        tags=[
+            "lip", "sync", "lipsync", "dub", "dubbing", "talking", "head",
+            "face", "voice", "speech", "musetalk", "ai",
+        ],
+    ))
+

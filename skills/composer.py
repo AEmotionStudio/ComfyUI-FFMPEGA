@@ -152,6 +152,14 @@ class SkillComposer:
         "synthesize_audio": "generate_audio",
         "generate_sound": "generate_audio",
         "add_sound": "generate_audio",
+        # MuseTalk — Lip Sync
+        "lipsync": "lip_sync",
+        "dub": "lip_sync",
+        "dubbing": "lip_sync",
+        "sync_lips": "lip_sync",
+        "talking_head": "lip_sync",
+        "lip_dub": "lip_sync",
+        "voice_sync": "lip_sync",
     }
 
     def __init__(self, registry: Optional[SkillRegistry] = None):
@@ -1217,6 +1225,8 @@ def _get_dispatch() -> dict:
         _f_auto_mask,
         # generate audio (MMAudio)
         _f_generate_audio,
+        # lip sync (MuseTalk)
+        _f_lip_sync,
         # presets
         _f_fade_to_black, _f_fade_to_white, _f_flash,
         _f_spin, _f_shake, _f_pulse, _f_bounce, _f_drift,
@@ -1396,6 +1406,15 @@ def _get_dispatch() -> dict:
         "synthesize_audio": _f_generate_audio,
         "generate_sound": _f_generate_audio,
         "add_sound": _f_generate_audio,
+        # MuseTalk — Lip Sync
+        "lip_sync": _f_lip_sync,
+        "lipsync": _f_lip_sync,
+        "dub": _f_lip_sync,
+        "dubbing": _f_lip_sync,
+        "sync_lips": _f_lip_sync,
+        "talking_head": _f_lip_sync,
+        "lip_dub": _f_lip_sync,
+        "voice_sync": _f_lip_sync,
         # Presets / Transitions
         "fade_to_black": _f_fade_to_black,
         "fade_to_white": _f_fade_to_white,
