@@ -88,14 +88,22 @@ class MediaConverter:
 
                 # Handle frame count mismatch (common with VFR or corrupt metadata)
                 if count < num_frames:
-                    return tensor[:count].float().div_(255.0)
+                    return (
+                        tensor[:count].to(torch.float32, copy=False).mul_(1.0 / 255.0)
+                    )
                 elif overflow:
-                    overflow_tensor = torch.stack(overflow).float().div_(255.0)
+                    overflow_tensor = (
+                        torch.stack(overflow)
+                        .to(torch.float32, copy=False)
+                        .mul_(1.0 / 255.0)
+                    )
                     # Convert main tensor to float and normalize before concat
-                    tensor_float = tensor.float().div_(255.0)
+                    tensor_float = tensor.to(torch.float32, copy=False).mul_(
+                        1.0 / 255.0
+                    )
                     return torch.cat([tensor_float, overflow_tensor], dim=0)
                 else:
-                    return tensor.float().div_(255.0)
+                    return tensor.to(torch.float32, copy=False).mul_(1.0 / 255.0)
 
             # Fallback for unknown frame count: accumulate in list
             frames = []
@@ -109,7 +117,11 @@ class MediaConverter:
 
             # Optimization: avoid intermediate float32 copy in numpy
             stacked = np.stack(frames)
-            return torch.from_numpy(stacked).float().div_(255.0)
+            return (
+                torch.from_numpy(stacked)
+                .to(torch.float32, copy=False)
+                .mul_(1.0 / 255.0)
+            )
 
         except Exception:
             return torch.zeros(1, 64, 64, 3, dtype=torch.float32)
@@ -130,9 +142,20 @@ class MediaConverter:
         # Check whether the video actually contains an audio stream
         try:
             probe = subprocess.run(
-                [ffprobe_bin, "-v", "error", "-select_streams", "a",
-                 "-show_entries", "stream=codec_type", "-of", "csv=p=0", video_path],
-                capture_output=True, check=True,
+                [
+                    ffprobe_bin,
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "a",
+                    "-show_entries",
+                    "stream=codec_type",
+                    "-of",
+                    "csv=p=0",
+                    video_path,
+                ],
+                capture_output=True,
+                check=True,
             )
             if not probe.stdout.decode("utf-8", "backslashreplace").strip():
                 return self._silence()
@@ -143,10 +166,13 @@ class MediaConverter:
         try:
             res = subprocess.run(
                 [ffmpeg_bin, "-i", video_path, "-f", "f32le", "-"],
-                capture_output=True, check=True,
+                capture_output=True,
+                check=True,
             )
             audio = torch.frombuffer(bytearray(res.stdout), dtype=torch.float32)
-            match = re.search(r", (\d+) Hz, (\w+), ", res.stderr.decode("utf-8", "backslashreplace"))
+            match = re.search(
+                r", (\d+) Hz, (\w+), ", res.stderr.decode("utf-8", "backslashreplace")
+            )
             if match:
                 ar = int(match.group(1))
                 ac = {"mono": 1, "stereo": 2}.get(match.group(2), 2)
@@ -158,9 +184,7 @@ class MediaConverter:
         except Exception:
             return self._silence()
 
-    def images_to_video(
-        self, images: torch.Tensor, fps: int = 24
-    ) -> str:
+    def images_to_video(self, images: torch.Tensor, fps: int = 24) -> str:
         """Convert an IMAGE tensor (B, H, W, 3) to a temporary video file.
 
         Args:
@@ -181,18 +205,29 @@ class MediaConverter:
 
         proc = subprocess.Popen(
             [
-                ffmpeg_bin, "-y",
-                "-f", "rawvideo",
-                "-vcodec", "rawvideo",
-                "-s", f"{w}x{h}",
-                "-pix_fmt", "rgb24",
-                "-r", str(fps),
-                "-i", "-",
-                "-c:v", "libx264",
-                "-pix_fmt", "yuv420p",
+                ffmpeg_bin,
+                "-y",
+                "-f",
+                "rawvideo",
+                "-vcodec",
+                "rawvideo",
+                "-s",
+                f"{w}x{h}",
+                "-pix_fmt",
+                "rgb24",
+                "-r",
+                str(fps),
+                "-i",
+                "-",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
                 # Optimization: ultrafast provides ~6.5x speedup for temp files
-                "-preset", "ultrafast",
-                "-crf", "18",
+                "-preset",
+                "ultrafast",
+                "-crf",
+                "18",
                 tmp.name,
             ],
             stdin=subprocess.PIPE,
@@ -209,7 +244,14 @@ class MediaConverter:
             end = min(start + CHUNK, n_frames)
             # Optimization: Use in-place operations (mul, clamp_) to avoid intermediate
             # float tensor allocation for the chunk scaling step.
-            chunk = images[start:end].mul(255.0).clamp_(0, 255).to(torch.uint8).cpu().numpy()
+            chunk = (
+                images[start:end]
+                .mul(255.0)
+                .clamp_(0, 255)
+                .to(torch.uint8)
+                .cpu()
+                .numpy()
+            )
             proc.stdin.write(chunk)
             del chunk
         proc.stdin.close()
@@ -277,17 +319,29 @@ class MediaConverter:
             return 0.0
         try:
             result = subprocess.run(
-                [ffprobe_bin, "-v", "error", "-show_entries",
-                 "format=duration", "-of",
-                 "default=noprint_wrappers=1:nokey=1", path],
-                capture_output=True, text=True, check=True,
+                [
+                    ffprobe_bin,
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    path,
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
             )
             return float(result.stdout.strip())
         except Exception:
             return 0.0
 
     def mux_audio(
-        self, video_path: str, audio: dict, audio_mode: str = "loop",
+        self,
+        video_path: str,
+        audio: dict,
+        audio_mode: str = "loop",
     ) -> None:
         """Mux a ComfyUI AUDIO dict into an existing video file.
 
@@ -310,18 +364,27 @@ class MediaConverter:
             return
 
         try:
-            waveform = audio["waveform"]       # (1, channels, samples)
+            waveform = audio["waveform"]  # (1, channels, samples)
             sample_rate = audio["sample_rate"]
         except Exception as e:
             import logging
+
             logging.getLogger("ffmpega").warning(
                 f"Skipping audio mux — could not extract audio: {e}"
             )
             return
         channels = waveform.size(1)
 
-        audio_data = waveform.squeeze(0).transpose(0, 1).contiguous()  # (samples, channels)
-        audio_bytes = (audio_data * 32767.0).clamp(-32768, 32767).to(torch.int16).numpy().tobytes()
+        audio_data = (
+            waveform.squeeze(0).transpose(0, 1).contiguous()
+        )  # (samples, channels)
+        audio_bytes = (
+            (audio_data * 32767.0)
+            .clamp(-32768, 32767)
+            .to(torch.int16)
+            .numpy()
+            .tobytes()
+        )
 
         tmp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         tmp_wav.close()
@@ -331,11 +394,16 @@ class MediaConverter:
         try:
             subprocess.run(
                 [
-                    ffmpeg_bin, "-y",
-                    "-f", "s16le",
-                    "-ar", str(sample_rate),
-                    "-ac", str(channels),
-                    "-i", "-",
+                    ffmpeg_bin,
+                    "-y",
+                    "-f",
+                    "s16le",
+                    "-ar",
+                    str(sample_rate),
+                    "-ac",
+                    str(channels),
+                    "-i",
+                    "-",
                     tmp_wav.name,
                 ],
                 input=audio_bytes,
@@ -354,13 +422,18 @@ class MediaConverter:
                 if aud_dur > 0 and vid_dur > 0 and aud_dur < vid_dur:
                     # Loop the audio enough times and add crossfade
                     import math
+
                     loops_needed = math.ceil(vid_dur / aud_dur)
                     # -stream_loop N repeats N *additional* times
                     cmd.extend(["-i", video_path])
-                    cmd.extend([
-                        "-stream_loop", str(loops_needed - 1),
-                        "-i", tmp_wav.name,
-                    ])
+                    cmd.extend(
+                        [
+                            "-stream_loop",
+                            str(loops_needed - 1),
+                            "-i",
+                            tmp_wav.name,
+                        ]
+                    )
                     # Crossfade at each loop boundary for smooth transitions
                     xfade_dur = min(2.0, aud_dur * 0.25)  # 2s or 25% of clip
                     af_filters.append(
@@ -406,7 +479,9 @@ class MediaConverter:
                         pass
 
     def mux_audio_mix(
-        self, video_path: str, audio_dicts: list[dict],
+        self,
+        video_path: str,
+        audio_dicts: list[dict],
         audio_mode: str = "loop",
     ) -> None:
         """Mix multiple audio dicts together and mux into a video file.
@@ -451,11 +526,16 @@ class MediaConverter:
                 tmp_wav.close()
                 subprocess.run(
                     [
-                        ffmpeg_bin, "-y",
-                        "-f", "s16le",
-                        "-ar", str(sample_rate),
-                        "-ac", str(channels),
-                        "-i", "-",
+                        ffmpeg_bin,
+                        "-y",
+                        "-f",
+                        "s16le",
+                        "-ar",
+                        str(sample_rate),
+                        "-ac",
+                        str(channels),
+                        "-i",
+                        "-",
                         tmp_wav.name,
                     ],
                     input=audio_bytes,
@@ -470,23 +550,32 @@ class MediaConverter:
 
             n = len(tmp_wavs)
             # Build filter: mix all audio inputs together
-            filter_inputs = "".join(f"[{i+1}:a]" for i in range(n))
+            filter_inputs = "".join(f"[{i + 1}:a]" for i in range(n))
 
             # Duration strategy for amix depends on audio_mode
             if audio_mode == "pad":
-                amix_filter = f"{filter_inputs}amix=inputs={n}:duration=longest,apad[aout]"
+                amix_filter = (
+                    f"{filter_inputs}amix=inputs={n}:duration=longest,apad[aout]"
+                )
             else:
                 amix_filter = f"{filter_inputs}amix=inputs={n}:duration=longest[aout]"
 
-            cmd.extend([
-                "-filter_complex", amix_filter,
-                "-map", "0:v",
-                "-map", "[aout]",
-                "-c:v", "copy",
-                "-c:a", "aac",
-                "-shortest",
-                tmp_out.name,
-            ])
+            cmd.extend(
+                [
+                    "-filter_complex",
+                    amix_filter,
+                    "-map",
+                    "0:v",
+                    "-map",
+                    "[aout]",
+                    "-c:v",
+                    "copy",
+                    "-c:a",
+                    "aac",
+                    "-shortest",
+                    tmp_out.name,
+                ]
+            )
 
             subprocess.run(cmd, capture_output=True, check=True)
             shutil.move(tmp_out.name, video_path)
@@ -507,9 +596,20 @@ class MediaConverter:
             return False
         try:
             probe = subprocess.run(
-                [ffprobe_bin, "-v", "error", "-select_streams", "a",
-                 "-show_entries", "stream=codec_type", "-of", "csv=p=0", video_path],
-                capture_output=True, check=True,
+                [
+                    ffprobe_bin,
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "a",
+                    "-show_entries",
+                    "stream=codec_type",
+                    "-of",
+                    "csv=p=0",
+                    video_path,
+                ],
+                capture_output=True,
+                check=True,
             )
             return bool(probe.stdout.decode("utf-8", "backslashreplace").strip())
         except subprocess.CalledProcessError:
@@ -532,17 +632,27 @@ class MediaConverter:
         try:
             subprocess.run(
                 [
-                    ffmpeg_bin, "-y",
-                    "-i", video_path,
-                    "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
-                    "-map", "0:v",
-                    "-map", "1:a",
-                    "-c:v", "copy",
-                    "-c:a", "aac",
+                    ffmpeg_bin,
+                    "-y",
+                    "-i",
+                    video_path,
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "anullsrc=r=44100:cl=stereo",
+                    "-map",
+                    "0:v",
+                    "-map",
+                    "1:a",
+                    "-c:v",
+                    "copy",
+                    "-c:a",
+                    "aac",
                     "-shortest",
                     tmp_out.name,
                 ],
-                capture_output=True, check=True,
+                capture_output=True,
+                check=True,
             )
             shutil.move(tmp_out.name, video_path)
         except Exception:
@@ -557,4 +667,7 @@ class MediaConverter:
     @staticmethod
     def _silence() -> dict:
         """Return a silent audio buffer."""
-        return {"waveform": torch.zeros(1, 1, 1, dtype=torch.float32), "sample_rate": 44100}
+        return {
+            "waveform": torch.zeros(1, 1, 1, dtype=torch.float32),
+            "sample_rate": 44100,
+        }

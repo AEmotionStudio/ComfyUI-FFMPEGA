@@ -1,4 +1,3 @@
-
 import torch
 import numpy as np
 import sys
@@ -7,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 # Import MediaConverter
 from core.media_converter import MediaConverter
+
 
 class TestMediaConverter:
     def setup_method(self):
@@ -44,7 +44,7 @@ class TestMediaConverter:
         # Check that written_data is a numpy array (optimization) not bytes
         assert isinstance(written_data, np.ndarray)
         assert written_data.dtype == np.uint8
-        assert written_data.flags['C_CONTIGUOUS']
+        assert written_data.flags["C_CONTIGUOUS"]
 
     def test_frames_to_tensor_logic(self):
         """Test logic of frames_to_tensor optimization."""
@@ -53,7 +53,9 @@ class TestMediaConverter:
 
         # Manually run the optimized logic
         stacked = np.stack(frames)
-        tensor = torch.from_numpy(stacked).float().div_(255.0)
+        tensor = (
+            torch.from_numpy(stacked).to(torch.float32, copy=False).mul_(1.0 / 255.0)
+        )
 
         assert tensor.shape == (5, 10, 10, 3)
         assert tensor.dtype == torch.float32
@@ -102,7 +104,7 @@ class TestMediaConverter:
         mock_av = MagicMock()
         mock_container = MagicMock()
         mock_stream = MagicMock()
-        mock_stream.frames = 10 # Expect 10
+        mock_stream.frames = 10  # Expect 10
         mock_container.streams.video = [mock_stream]
 
         # Only provide 5 frames
@@ -127,7 +129,7 @@ class TestMediaConverter:
         mock_av = MagicMock()
         mock_container = MagicMock()
         mock_stream = MagicMock()
-        mock_stream.frames = 3 # Expect 3
+        mock_stream.frames = 3  # Expect 3
         mock_container.streams.video = [mock_stream]
 
         # Provide 5 frames
@@ -152,7 +154,7 @@ class TestMediaConverter:
         mock_av = MagicMock()
         mock_container = MagicMock()
         mock_stream = MagicMock()
-        mock_stream.frames = 0 # Unknown frames
+        mock_stream.frames = 0  # Unknown frames
         mock_container.streams.video = [mock_stream]
 
         # Provide 5 frames
@@ -243,7 +245,12 @@ class TestMuxAudioMode:
     @patch("core.media_converter.subprocess.run")
     @patch.object(MediaConverter, "_probe_media_duration")
     def test_mux_audio_loop_mode_audio_shorter(
-        self, mock_probe, mock_run, mock_move, mock_ffprobe, mock_ffmpeg,
+        self,
+        mock_probe,
+        mock_run,
+        mock_move,
+        mock_ffprobe,
+        mock_ffmpeg,
     ):
         """Loop mode with audio shorter than video should use -stream_loop and afade."""
         # Video = 30s, Audio = 10s -> needs looping
@@ -271,7 +278,12 @@ class TestMuxAudioMode:
     @patch("core.media_converter.subprocess.run")
     @patch.object(MediaConverter, "_probe_media_duration")
     def test_mux_audio_loop_mode_audio_longer(
-        self, mock_probe, mock_run, mock_move, mock_ffprobe, mock_ffmpeg,
+        self,
+        mock_probe,
+        mock_run,
+        mock_move,
+        mock_ffprobe,
+        mock_ffmpeg,
     ):
         """Loop mode with audio longer than video should NOT loop."""
         # Video = 10s, Audio = 30s -> no looping needed
@@ -320,14 +332,20 @@ class TestMuxAudioMode:
     @patch("core.media_converter._get_ffmpeg_bin", return_value="/usr/bin/ffmpeg")
     @patch("core.media_converter._get_ffprobe_bin", return_value="/usr/bin/ffprobe")
     @patch("core.media_converter.subprocess.run")
-    def test_mux_audio_mix_forwards_audio_mode(self, mock_run, mock_ffprobe, mock_ffmpeg):
+    def test_mux_audio_mix_forwards_audio_mode(
+        self, mock_run, mock_ffprobe, mock_ffmpeg
+    ):
         """mux_audio_mix with single audio should forward audio_mode."""
         mock_run.return_value = MagicMock(returncode=0)
 
         with patch.object(self.converter, "mux_audio") as mock_mux:
             self.converter.mux_audio_mix(
-                "/tmp/video.mp4", [self.audio], audio_mode="pad",
+                "/tmp/video.mp4",
+                [self.audio],
+                audio_mode="pad",
             )
             mock_mux.assert_called_once_with(
-                "/tmp/video.mp4", self.audio, audio_mode="pad",
+                "/tmp/video.mp4",
+                self.audio,
+                audio_mode="pad",
             )

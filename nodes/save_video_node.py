@@ -40,53 +40,68 @@ class SaveVideoNode:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "video_path": ("STRING", {
-                    "forceInput": True,
-                    "tooltip": (
-                        "Path to a video file (typically from the "
-                        "FFMPEGA Agent's video_path output). The file "
-                        "already contains audio if the source had it. "
-                        "It will be copied as-is to ComfyUI's output "
-                        "directory."
-                    ),
-                }),
-                "filename_prefix": ("STRING", {
-                    "default": "FFMPEGA",
-                    "tooltip": (
-                        "Prefix for the saved video filename. "
-                        "Supports ComfyUI formatting like "
-                        "%date:yyyy-MM-dd%."
-                    ),
-                }),
+                "video_path": (
+                    "STRING",
+                    {
+                        "forceInput": True,
+                        "tooltip": (
+                            "Path to a video file (typically from the "
+                            "FFMPEGA Agent's video_path output). The file "
+                            "already contains audio if the source had it. "
+                            "It will be copied as-is to ComfyUI's output "
+                            "directory."
+                        ),
+                    },
+                ),
+                "filename_prefix": (
+                    "STRING",
+                    {
+                        "default": "FFMPEGA",
+                        "tooltip": (
+                            "Prefix for the saved video filename. "
+                            "Supports ComfyUI formatting like "
+                            "%date:yyyy-MM-dd%."
+                        ),
+                    },
+                ),
             },
             "optional": {
-                "save_output": ("BOOLEAN", {
-                    "default": True,
-                    "label_on": "Save to Output",
-                    "label_off": "Preview Only",
-                    "tooltip": (
-                        "When On, copies the video to ComfyUI's output "
-                        "directory. When Off, shows the inline preview "
-                        "and outputs frames/audio/path without saving "
-                        "a copy — useful for previewing before committing."
-                    ),
-                }),
-                "overwrite": ("BOOLEAN", {
-                    "default": False,
-                    "tooltip": (
-                        "If true, overwrite the output file if it "
-                        "already exists. Otherwise, auto-increment "
-                        "the filename counter."
-                    ),
-                }),
-                "mask_points": ("STRING", {
-                    "forceInput": True,
-                    "tooltip": (
-                        "Optional upstream mask_points pass-through. "
-                        "Forwarded as-is to the mask_points output "
-                        "for downstream nodes."
-                    ),
-                }),
+                "save_output": (
+                    "BOOLEAN",
+                    {
+                        "default": True,
+                        "label_on": "Save to Output",
+                        "label_off": "Preview Only",
+                        "tooltip": (
+                            "When On, copies the video to ComfyUI's output "
+                            "directory. When Off, shows the inline preview "
+                            "and outputs frames/audio/path without saving "
+                            "a copy — useful for previewing before committing."
+                        ),
+                    },
+                ),
+                "overwrite": (
+                    "BOOLEAN",
+                    {
+                        "default": False,
+                        "tooltip": (
+                            "If true, overwrite the output file if it "
+                            "already exists. Otherwise, auto-increment "
+                            "the filename counter."
+                        ),
+                    },
+                ),
+                "mask_points": (
+                    "STRING",
+                    {
+                        "forceInput": True,
+                        "tooltip": (
+                            "Optional upstream mask_points pass-through. "
+                            "Forwarded as-is to the mask_points output "
+                            "for downstream nodes."
+                        ),
+                    },
+                ),
             },
             "hidden": {
                 "prompt": "PROMPT",
@@ -145,9 +160,7 @@ class SaveVideoNode:
 
         # Use ComfyUI's standard path resolution for output directory
         full_output_folder, filename, _counter, subfolder, _ = (
-            folder_paths.get_save_image_path(
-                filename_prefix, self.output_dir
-            )
+            folder_paths.get_save_image_path(filename_prefix, self.output_dir)
         )
         os.makedirs(full_output_folder, exist_ok=True)
 
@@ -158,6 +171,7 @@ class SaveVideoNode:
             # ComfyUI's counter only tracks images, so we must compute
             # the correct next number for video files ourselves.
             import glob
+
             pattern = os.path.join(full_output_folder, f"{filename}_*")
             existing = glob.glob(pattern)
             max_counter = 0
@@ -182,17 +196,22 @@ class SaveVideoNode:
                 shutil.copy2(video_path, output_path)
                 logger.info(
                     "SaveVideo: copied %s → %s",
-                    video_path, output_path,
+                    video_path,
+                    output_path,
                 )
             else:
                 logger.info(
-                    "SaveVideo: file already in output: %s", output_path,
+                    "SaveVideo: file already in output: %s",
+                    output_path,
                 )
 
             # --- Generate workflow PNG thumbnail ---
             png_filename = self._save_workflow_png(
-                output_path, full_output_folder, output_filename,
-                prompt, extra_pnginfo,
+                output_path,
+                full_output_folder,
+                output_filename,
+                prompt,
+                extra_pnginfo,
             )
         else:
             # Preview-only mode: copy to temp directory so /view can serve it
@@ -221,7 +240,9 @@ class SaveVideoNode:
             size_str = f"{file_size} B"
 
         logger.info(
-            "SaveVideo: %s (%s)", os.path.basename(output_path), size_str,
+            "SaveVideo: %s (%s)",
+            os.path.basename(output_path),
+            size_str,
         )
 
         # --- Extract frames as IMAGE tensor ---
@@ -232,18 +253,22 @@ class SaveVideoNode:
 
         # Build UI data
         if save_output:
-            video_ui = [{
-                "filename": output_filename,
-                "subfolder": subfolder,
-                "type": self.type,
-            }]
+            video_ui = [
+                {
+                    "filename": output_filename,
+                    "subfolder": subfolder,
+                    "type": self.type,
+                }
+            ]
         else:
             # For preview-only, reference the temp copy
-            video_ui = [{
-                "filename": preview_name,
-                "subfolder": "",
-                "type": "temp",
-            }]
+            video_ui = [
+                {
+                    "filename": preview_name,
+                    "subfolder": "",
+                    "type": "temp",
+                }
+            ]
 
         return {
             "ui": {
@@ -283,7 +308,11 @@ class SaveVideoNode:
                 if total <= MAX_PREVIEW_FRAMES:
                     keep = set(range(total))
                 else:
-                    keep = set(np.linspace(0, total - 1, MAX_PREVIEW_FRAMES, dtype=int).tolist())
+                    keep = set(
+                        np.linspace(
+                            0, total - 1, MAX_PREVIEW_FRAMES, dtype=int
+                        ).tolist()
+                    )
 
                 sampled = []
                 try:
@@ -300,7 +329,11 @@ class SaveVideoNode:
                 return torch.zeros(1, 64, 64, 3, dtype=torch.float32)
 
             stacked = np.stack(sampled)
-            return torch.from_numpy(stacked).float().div_(255.0)
+            return (
+                torch.from_numpy(stacked)
+                .to(torch.float32, copy=False)
+                .mul_(1.0 / 255.0)
+            )
 
         except Exception as e:
             logger.warning("SaveVideo: frame extraction failed: %s", e)
@@ -322,10 +355,20 @@ class SaveVideoNode:
         # Check for audio stream
         try:
             probe = subprocess.run(
-                [ffprobe_bin, "-v", "error", "-select_streams", "a",
-                 "-show_entries", "stream=codec_type", "-of", "csv=p=0",
-                 video_path],
-                capture_output=True, check=True,
+                [
+                    ffprobe_bin,
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "a",
+                    "-show_entries",
+                    "stream=codec_type",
+                    "-of",
+                    "csv=p=0",
+                    video_path,
+                ],
+                capture_output=True,
+                check=True,
             )
             if not probe.stdout.decode("utf-8", "backslashreplace").strip():
                 return silence
@@ -335,10 +378,19 @@ class SaveVideoNode:
         # Extract raw PCM
         try:
             res = subprocess.run(
-                [ffmpeg_bin, "-i", video_path, "-vn",
-                 "-t", "120",  # cap at 2 min to avoid OOM on long videos
-                 "-f", "f32le", "-"],
-                capture_output=True, check=True,
+                [
+                    ffmpeg_bin,
+                    "-i",
+                    video_path,
+                    "-vn",
+                    "-t",
+                    "120",  # cap at 2 min to avoid OOM on long videos
+                    "-f",
+                    "f32le",
+                    "-",
+                ],
+                capture_output=True,
+                check=True,
             )
 
             # Ensure buffer size is a multiple of element size (4 bytes for float32)
@@ -387,26 +439,30 @@ class SaveVideoNode:
             from PIL import Image
             from PIL.PngImagePlugin import PngInfo
         except ImportError:
-            logger.warning(
-                "SaveVideo: PIL not available — skipping workflow PNG"
-            )
+            logger.warning("SaveVideo: PIL not available — skipping workflow PNG")
             return None
 
         # Extract a frame at 1 second (past any fade-in)
         tmp_frame = None
         try:
             tmp_frame = tempfile.NamedTemporaryFile(
-                suffix=".png", delete=False,
+                suffix=".png",
+                delete=False,
             )
             tmp_frame.close()
 
             result = subprocess.run(
                 [
-                    "ffmpeg", "-y",
-                    "-i", video_path,
-                    "-ss", "1",
-                    "-frames:v", "1",
-                    "-q:v", "2",
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    video_path,
+                    "-ss",
+                    "1",
+                    "-frames:v",
+                    "1",
+                    "-q:v",
+                    "2",
                     tmp_frame.name,
                 ],
                 capture_output=True,
@@ -414,9 +470,7 @@ class SaveVideoNode:
             )
 
             if result.returncode != 0 or not os.path.isfile(tmp_frame.name):
-                logger.warning(
-                    "SaveVideo: failed to extract thumbnail frame"
-                )
+                logger.warning("SaveVideo: failed to extract thumbnail frame")
                 return None
 
             # Open the extracted frame
@@ -438,13 +492,15 @@ class SaveVideoNode:
 
             img.save(png_path, pnginfo=metadata, compress_level=4)
             logger.info(
-                "SaveVideo: workflow PNG saved → %s", png_filename,
+                "SaveVideo: workflow PNG saved → %s",
+                png_filename,
             )
             return png_filename
 
         except Exception as e:
             logger.warning(
-                "SaveVideo: workflow PNG generation failed: %s", e,
+                "SaveVideo: workflow PNG generation failed: %s",
+                e,
             )
             return None
         finally:

@@ -36,18 +36,27 @@ class FFMPEGAgentNode:
         """Read API model names from config/models.yaml (cached after first load)."""
         try:
             from ..core.model_config import load_api_models  # type: ignore[import-not-found]
+
             return load_api_models()
         except Exception as exc:
             import logging
+
             logging.getLogger("ffmpega").warning(
                 "Failed to load model list from config/models.yaml: %s — "
-                "using built-in fallback list", exc
+                "using built-in fallback list",
+                exc,
             )
             return [
-                "gpt-5.2", "gpt-5-mini", "gpt-4.1",
-                "claude-sonnet-4-6", "claude-haiku-4-5",
-                "gemini-3-flash", "gemini-2.5-flash",
-                "qwen-max", "qwen-plus", "qwen-turbo",
+                "gpt-5.2",
+                "gpt-5-mini",
+                "gpt-4.1",
+                "claude-sonnet-4-6",
+                "claude-haiku-4-5",
+                "gemini-3-flash",
+                "gemini-2.5-flash",
+                "qwen-max",
+                "qwen-plus",
+                "qwen-turbo",
             ]
 
     QUALITY_PRESETS = ["draft", "standard", "high", "lossless"]
@@ -58,7 +67,9 @@ class FFMPEGAgentNode:
     _OLLAMA_CACHE_TTL: float = 30.0  # seconds
 
     @classmethod
-    def _fetch_ollama_models(cls, base_url: str = "http://localhost:11434") -> list[str]:
+    def _fetch_ollama_models(
+        cls, base_url: str = "http://localhost:11434"
+    ) -> list[str]:
         """Fetch available models from a running Ollama instance.
 
         Returns locally installed model names, or the fallback list
@@ -66,11 +77,15 @@ class FFMPEGAgentNode:
         to avoid redundant API calls.
         """
         now = time.monotonic()
-        if cls._ollama_cache is not None and (now - cls._ollama_cache_time) < cls._OLLAMA_CACHE_TTL:
+        if (
+            cls._ollama_cache is not None
+            and (now - cls._ollama_cache_time) < cls._OLLAMA_CACHE_TTL
+        ):
             return cls._ollama_cache
 
         try:
             import httpx  # type: ignore[import-not-found]
+
             with httpx.Client(timeout=3.0) as client:
                 resp = client.get(f"{base_url}/api/tags")
                 resp.raise_for_status()
@@ -112,226 +127,351 @@ class FFMPEGAgentNode:
 
         return {
             "required": {
-                "prompt": ("STRING", {
-                    "default": "",
-                    "multiline": True,
-                    "placeholder": "Describe how you want to edit the video...",
-                    "tooltip": "Natural language instruction describing the desired edit. Examples: 'Add a cinematic letterbox', 'Speed up 2x', 'Apply a vintage VHS look'.",
-                }),
-                "video_path": ("STRING", {
-                    "default": "",
-                    "multiline": False,
-                    "placeholder": "Path to input video file",
-                    "tooltip": "Absolute path to the source video file. Used as the ffmpeg input unless images are connected.",
-                }),
-                "llm_model": (all_models, {
-                    "default": all_models[0],
-                    "tooltip": "AI model used to interpret your prompt. Select 'none' for no-LLM mode — use 'no_llm_mode' to choose between SAM3 masking, Whisper transcription, or karaoke subtitles. Local Ollama models appear next, followed by cloud API models (require api_key).",
-                }),
-                "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles"], {
-                    "default": "manual",
-                    "tooltip": "What to do when llm_model is 'none'. "
-                               "'manual' runs the Effects Builder pipeline directly (no AI). "
-                               "'sam3_masking' uses the prompt as a SAM3 text target. "
-                               "'transcribe' runs Whisper speech-to-text and burns SRT subtitles. "
-                               "'karaoke_subtitles' runs Whisper and burns word-by-word karaoke subtitles.",
-                }),
-                "quality_preset": (cls.QUALITY_PRESETS, {
-                    "default": "standard",
-                    "tooltip": "Output quality level. 'draft' is fast/low quality, 'standard' is balanced, 'high' is slow/best quality, 'lossless' preserves full quality.",
-                }),
-                "seed": ("INT", {
-                    "default": 0,
-                    "min": 0,
-                    "max": 0xffffffffffffffff,
-                    "tooltip": "Change this value to force re-execution with the same prompt. Use the randomize control to auto-increment between runs.",
-                    "control_after_generate": True,
-                }),
+                "prompt": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": True,
+                        "placeholder": "Describe how you want to edit the video...",
+                        "tooltip": "Natural language instruction describing the desired edit. Examples: 'Add a cinematic letterbox', 'Speed up 2x', 'Apply a vintage VHS look'.",
+                    },
+                ),
+                "video_path": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": False,
+                        "placeholder": "Path to input video file",
+                        "tooltip": "Absolute path to the source video file. Used as the ffmpeg input unless images are connected.",
+                    },
+                ),
+                "llm_model": (
+                    all_models,
+                    {
+                        "default": all_models[0],
+                        "tooltip": "AI model used to interpret your prompt. Select 'none' for no-LLM mode — use 'no_llm_mode' to choose between SAM3 masking, Whisper transcription, or karaoke subtitles. Local Ollama models appear next, followed by cloud API models (require api_key).",
+                    },
+                ),
+                "no_llm_mode": (
+                    ["manual", "sam3_masking", "transcribe", "karaoke_subtitles"],
+                    {
+                        "default": "manual",
+                        "tooltip": "What to do when llm_model is 'none'. "
+                        "'manual' runs the Effects Builder pipeline directly (no AI). "
+                        "'sam3_masking' uses the prompt as a SAM3 text target. "
+                        "'transcribe' runs Whisper speech-to-text and burns SRT subtitles. "
+                        "'karaoke_subtitles' runs Whisper and burns word-by-word karaoke subtitles.",
+                    },
+                ),
+                "quality_preset": (
+                    cls.QUALITY_PRESETS,
+                    {
+                        "default": "standard",
+                        "tooltip": "Output quality level. 'draft' is fast/low quality, 'standard' is balanced, 'high' is slow/best quality, 'lossless' preserves full quality.",
+                    },
+                ),
+                "seed": (
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": 0xFFFFFFFFFFFFFFFF,
+                        "tooltip": "Change this value to force re-execution with the same prompt. Use the randomize control to auto-increment between runs.",
+                        "control_after_generate": True,
+                    },
+                ),
             },
             "optional": {
                 # ── Connection inputs (always visible, forceInput) ────────
-                "images_a": ("IMAGE", {
-                    "tooltip": "Video input as image frames (e.g. from Load Video Upload). Connect additional video inputs and more slots appear automatically (images_b, images_c, ...). Used for concat, split screen, and multi-video workflows.",
-                }),
-                "image_a": ("IMAGE", {
-                    "tooltip": "Extra image/video input. Connect additional inputs and more slots appear automatically (image_b, image_c, ...). Used for multi-input skills like grid, slideshow, overlay, concat, and split screen.",
-                }),
-                "audio_a": ("AUDIO", {
-                    "tooltip": "Audio input. Connect additional audio and more slots appear automatically (audio_b, audio_c, ...). Used for muxing audio into video, or for multi-audio skills like concat.",
-                }),
-                "video_a": ("STRING", {
-                    "forceInput": True,
-                    "tooltip": "File path to an extra video for concat, split screen, grid, or xfade. Uses zero extra memory vs tensor inputs. Connect and more slots appear (video_b, video_c, ...). Connect a primitive STRING node or any node that outputs a file path.",
-                }),
-                "image_path_a": ("STRING", {
-                    "forceInput": True,
-                    "tooltip": "File path to an image for overlay, grid, slideshow, or multi-image skills. Uses zero memory vs IMAGE tensor. Connect and more slots appear (image_path_b, image_path_c, ...). Use Load Image Path (FFMPEGA).",
-                }),
-                "text_a": ("STRING", {
-                    "forceInput": True,
-                    "tooltip": "Text input for subtitles, overlays, watermarks, or title cards. Connect an FFMPEGA Text node or any STRING source. More slots appear automatically (text_b, text_c, ...).",
-                }),
-                "pipeline_json": ("STRING", {
-                    "forceInput": True,
-                    "tooltip": "Connect the output from the FFMPEGA Effects Builder node here. The agent will inject the selected effects as hints into your prompt.",
-                }),
-                "mask_points": ("STRING", {
-                    "forceInput": True,
-                    "tooltip": "JSON-encoded point selection data from the Load Image/Video Path node's Point Selector. Guides SAM3 masking with click-to-select points instead of relying on text prompts alone.",
-                }),
-
+                "images_a": (
+                    "IMAGE",
+                    {
+                        "tooltip": "Video input as image frames (e.g. from Load Video Upload). Connect additional video inputs and more slots appear automatically (images_b, images_c, ...). Used for concat, split screen, and multi-video workflows.",
+                    },
+                ),
+                "image_a": (
+                    "IMAGE",
+                    {
+                        "tooltip": "Extra image/video input. Connect additional inputs and more slots appear automatically (image_b, image_c, ...). Used for multi-input skills like grid, slideshow, overlay, concat, and split screen.",
+                    },
+                ),
+                "audio_a": (
+                    "AUDIO",
+                    {
+                        "tooltip": "Audio input. Connect additional audio and more slots appear automatically (audio_b, audio_c, ...). Used for muxing audio into video, or for multi-audio skills like concat.",
+                    },
+                ),
+                "video_a": (
+                    "STRING",
+                    {
+                        "forceInput": True,
+                        "tooltip": "File path to an extra video for concat, split screen, grid, or xfade. Uses zero extra memory vs tensor inputs. Connect and more slots appear (video_b, video_c, ...). Connect a primitive STRING node or any node that outputs a file path.",
+                    },
+                ),
+                "image_path_a": (
+                    "STRING",
+                    {
+                        "forceInput": True,
+                        "tooltip": "File path to an image for overlay, grid, slideshow, or multi-image skills. Uses zero memory vs IMAGE tensor. Connect and more slots appear (image_path_b, image_path_c, ...). Use Load Image Path (FFMPEGA).",
+                    },
+                ),
+                "text_a": (
+                    "STRING",
+                    {
+                        "forceInput": True,
+                        "tooltip": "Text input for subtitles, overlays, watermarks, or title cards. Connect an FFMPEGA Text node or any STRING source. More slots appear automatically (text_b, text_c, ...).",
+                    },
+                ),
+                "pipeline_json": (
+                    "STRING",
+                    {
+                        "forceInput": True,
+                        "tooltip": "Connect the output from the FFMPEGA Effects Builder node here. The agent will inject the selected effects as hints into your prompt.",
+                    },
+                ),
+                "mask_points": (
+                    "STRING",
+                    {
+                        "forceInput": True,
+                        "tooltip": "JSON-encoded point selection data from the Load Image/Video Path node's Point Selector. Guides SAM3 masking with click-to-select points instead of relying on text prompts alone.",
+                    },
+                ),
                 # ── Basic options (always visible) ────────────────────────
-                "save_output": ("BOOLEAN", {
-                    "default": False,
-                    "label_on": "Save to Output",
-                    "label_off": "Pass Through",
-                    "tooltip": "When On, saves video and a workflow PNG to the output folder. Turn Off when a downstream Save node handles output to avoid double saves. Note: downstream nodes may re-encode with their own settings (format, quality, resolution), so the final saved file may differ from FFMPEGA's output.",
-                }),
-                "output_path": ("STRING", {
-                    "default": "",
-                    "multiline": False,
-                    "placeholder": "Output path (optional)",
-                    "tooltip": "Custom output file or folder path. Leave empty to save to ComfyUI's default output directory.",
-                }),
-                "ollama_url": ("STRING", {
-                    "default": "http://localhost:11434",
-                    "multiline": False,
-                    "tooltip": "URL of the Ollama server for local LLM inference. Default: http://localhost:11434.",
-                }),
-                "api_key": ("STRING", {
-                    "default": "",
-                    "multiline": False,
-                    "placeholder": "API key for OpenAI/Anthropic",
-                    "tooltip": "API key required when using cloud models (GPT, Claude, Gemini). Not needed for local Ollama models.",
-                }),
-                "custom_model": ("STRING", {
-                    "default": "",
-                    "multiline": False,
-                    "placeholder": "Model name (e.g. gpt-5.2, claude-sonnet-4-6)",
-                    "tooltip": "When 'custom' is selected in llm_model, type the exact model name here. Use provider prefixes: gpt-* for OpenAI, claude-* for Anthropic, gemini-* for Google, anything else for Ollama.",
-                }),
-
+                "save_output": (
+                    "BOOLEAN",
+                    {
+                        "default": False,
+                        "label_on": "Save to Output",
+                        "label_off": "Pass Through",
+                        "tooltip": "When On, saves video and a workflow PNG to the output folder. Turn Off when a downstream Save node handles output to avoid double saves. Note: downstream nodes may re-encode with their own settings (format, quality, resolution), so the final saved file may differ from FFMPEGA's output.",
+                    },
+                ),
+                "output_path": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": False,
+                        "placeholder": "Output path (optional)",
+                        "tooltip": "Custom output file or folder path. Leave empty to save to ComfyUI's default output directory.",
+                    },
+                ),
+                "ollama_url": (
+                    "STRING",
+                    {
+                        "default": "http://localhost:11434",
+                        "multiline": False,
+                        "tooltip": "URL of the Ollama server for local LLM inference. Default: http://localhost:11434.",
+                    },
+                ),
+                "api_key": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": False,
+                        "placeholder": "API key for OpenAI/Anthropic",
+                        "tooltip": "API key required when using cloud models (GPT, Claude, Gemini). Not needed for local Ollama models.",
+                    },
+                ),
+                "custom_model": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": False,
+                        "placeholder": "Model name (e.g. gpt-5.2, claude-sonnet-4-6)",
+                        "tooltip": "When 'custom' is selected in llm_model, type the exact model name here. Use provider prefixes: gpt-* for OpenAI, claude-* for Anthropic, gemini-* for Google, anything else for Ollama.",
+                    },
+                ),
                 # ── Advanced toggle ───────────────────────────────────────
-                "advanced_options": ("BOOLEAN", {
-                    "default": False,
-                    "label_on": "Advanced",
-                    "label_off": "Simple",
-                    "tooltip": "Show advanced options: preview, encoding, vision, verification, SAM3/Whisper tuning, batch processing, and usage tracking.",
-                }),
-
+                "advanced_options": (
+                    "BOOLEAN",
+                    {
+                        "default": False,
+                        "label_on": "Advanced",
+                        "label_off": "Simple",
+                        "tooltip": "Show advanced options: preview, encoding, vision, verification, SAM3/Whisper tuning, batch processing, and usage tracking.",
+                    },
+                ),
                 # ── Advanced: Rendering ───────────────────────────────────
-                "preview_mode": ("BOOLEAN", {
-                    "default": False,
-                    "label_on": "Preview",
-                    "label_off": "Full Render",
-                    "tooltip": "When enabled, generates a quick low-res preview (480p, first 10 seconds) instead of a full render.",
-                }),
-                "subtitle_path": ("STRING", {
-                    "default": "",
-                    "multiline": False,
-                    "placeholder": "Path to .srt or .ass subtitle file",
-                    "tooltip": "Direct path to a subtitle file (.srt or .ass). Alternative to using text_a with subtitle mode.",
-                }),
-                "crf": ("INT", {
-                    "default": -1,
-                    "min": -1,
-                    "max": 51,
-                    "step": 1,
-                    "tooltip": "Override CRF (Constant Rate Factor) for output quality. 0 = lossless, 23 = default, 51 = worst. Set to -1 to use quality_preset value.",
-                }),
-                "encoding_preset": (["auto", "ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"], {
-                    "default": "auto",
-                    "tooltip": "Override x264/x265 encoding speed preset. Slower = better compression. 'auto' uses the quality_preset value.",
-                }),
-
+                "preview_mode": (
+                    "BOOLEAN",
+                    {
+                        "default": False,
+                        "label_on": "Preview",
+                        "label_off": "Full Render",
+                        "tooltip": "When enabled, generates a quick low-res preview (480p, first 10 seconds) instead of a full render.",
+                    },
+                ),
+                "subtitle_path": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": False,
+                        "placeholder": "Path to .srt or .ass subtitle file",
+                        "tooltip": "Direct path to a subtitle file (.srt or .ass). Alternative to using text_a with subtitle mode.",
+                    },
+                ),
+                "crf": (
+                    "INT",
+                    {
+                        "default": -1,
+                        "min": -1,
+                        "max": 51,
+                        "step": 1,
+                        "tooltip": "Override CRF (Constant Rate Factor) for output quality. 0 = lossless, 23 = default, 51 = worst. Set to -1 to use quality_preset value.",
+                    },
+                ),
+                "encoding_preset": (
+                    [
+                        "auto",
+                        "ultrafast",
+                        "superfast",
+                        "veryfast",
+                        "faster",
+                        "fast",
+                        "medium",
+                        "slow",
+                        "slower",
+                        "veryslow",
+                    ],
+                    {
+                        "default": "auto",
+                        "tooltip": "Override x264/x265 encoding speed preset. Slower = better compression. 'auto' uses the quality_preset value.",
+                    },
+                ),
                 # ── Advanced: LLM Behavior ────────────────────────────────
-                "use_vision": ("BOOLEAN", {
-                    "default": True,
-                    "label_on": "Vision On",
-                    "label_off": "Vision Off",
-                    "tooltip": "When On, embeds video frames as images for vision-capable models (uses more tokens). When Off, uses numeric color analysis instead (cheaper, works with all models).",
-                }),
-                "verify_output": ("BOOLEAN", {
-                    "default": True,
-                    "label_on": "Verify On",
-                    "label_off": "Verify Off",
-                    "tooltip": "When On, the agent inspects the output video after rendering and auto-corrects if it doesn't match intent. Adds one extra LLM call (more tokens/time). Best for complex edits like overlays, color grading, or animations.",
-                }),
-
+                "use_vision": (
+                    "BOOLEAN",
+                    {
+                        "default": True,
+                        "label_on": "Vision On",
+                        "label_off": "Vision Off",
+                        "tooltip": "When On, embeds video frames as images for vision-capable models (uses more tokens). When Off, uses numeric color analysis instead (cheaper, works with all models).",
+                    },
+                ),
+                "verify_output": (
+                    "BOOLEAN",
+                    {
+                        "default": True,
+                        "label_on": "Verify On",
+                        "label_off": "Verify Off",
+                        "tooltip": "When On, the agent inspects the output video after rendering and auto-corrects if it doesn't match intent. Adds one extra LLM call (more tokens/time). Best for complex edits like overlays, color grading, or animations.",
+                    },
+                ),
                 # ── Advanced: Whisper ─────────────────────────────────────
-                "whisper_device": (["cpu", "gpu"], {
-                    "default": "cpu",
-                    "tooltip": "Device for Whisper transcription model. 'gpu' is faster but uses ~3 GB VRAM (frees ComfyUI models first). 'cpu' is slower but avoids VRAM pressure — best for low-VRAM GPUs or intensive workflows.",
-                }),
-                "whisper_model": (["large-v3", "medium", "small", "base", "tiny"], {
-                    "default": "large-v3",
-                    "tooltip": "Whisper model size for transcription. 'large-v3' is most accurate (~3 GB VRAM). Smaller models use less memory: medium (~1.5 GB), small (~1 GB), base (~150 MB), tiny (~75 MB). Models auto-download on first use.",
-                }),
-
+                "whisper_device": (
+                    ["cpu", "gpu"],
+                    {
+                        "default": "cpu",
+                        "tooltip": "Device for Whisper transcription model. 'gpu' is faster but uses ~3 GB VRAM (frees ComfyUI models first). 'cpu' is slower but avoids VRAM pressure — best for low-VRAM GPUs or intensive workflows.",
+                    },
+                ),
+                "whisper_model": (
+                    ["large-v3", "medium", "small", "base", "tiny"],
+                    {
+                        "default": "large-v3",
+                        "tooltip": "Whisper model size for transcription. 'large-v3' is most accurate (~3 GB VRAM). Smaller models use less memory: medium (~1.5 GB), small (~1 GB), base (~150 MB), tiny (~75 MB). Models auto-download on first use.",
+                    },
+                ),
                 # ── Advanced: SAM3 ────────────────────────────────────────
-                "sam3_max_objects": ("INT", {
-                    "default": 5,
-                    "min": 1,
-                    "max": 20,
-                    "step": 1,
-                    "tooltip": "Maximum number of objects SAM3 will track per frame. Lower values reduce VRAM usage. Objects are ranked by detection confidence — lowest-confidence detections are dropped first.",
-                }),
-                "sam3_det_threshold": ("FLOAT", {
-                    "default": 0.70,
-                    "min": 0.0,
-                    "max": 1.0,
-                    "step": 0.05,
-                    "tooltip": "Minimum detection confidence for SAM3 to track a new object (0.0–1.0). Higher values = fewer objects tracked = less VRAM. Default 0.7 filters out low-confidence detections.",
-                }),
-                "mask_output_type": (["black_white", "colored_overlay"], {
-                    "default": "black_white",
-                    "tooltip": "Mask preview output format. 'black_white' outputs a raw B&W mask video (white = detected object) for use in external compositing. 'colored_overlay' composites colored SAM3-style regions + contours onto the video.",
-                }),
-
+                "sam3_max_objects": (
+                    "INT",
+                    {
+                        "default": 5,
+                        "min": 1,
+                        "max": 20,
+                        "step": 1,
+                        "tooltip": "Maximum number of objects SAM3 will track per frame. Lower values reduce VRAM usage. Objects are ranked by detection confidence — lowest-confidence detections are dropped first.",
+                    },
+                ),
+                "sam3_det_threshold": (
+                    "FLOAT",
+                    {
+                        "default": 0.70,
+                        "min": 0.0,
+                        "max": 1.0,
+                        "step": 0.05,
+                        "tooltip": "Minimum detection confidence for SAM3 to track a new object (0.0–1.0). Higher values = fewer objects tracked = less VRAM. Default 0.7 filters out low-confidence detections.",
+                    },
+                ),
+                "mask_output_type": (
+                    ["black_white", "colored_overlay"],
+                    {
+                        "default": "black_white",
+                        "tooltip": "Mask preview output format. 'black_white' outputs a raw B&W mask video (white = detected object) for use in external compositing. 'colored_overlay' composites colored SAM3-style regions + contours onto the video.",
+                    },
+                ),
                 # ── Advanced: Batch processing ────────────────────────────
-                "batch_mode": ("BOOLEAN", {
-                    "default": False,
-                    "label_on": "Batch",
-                    "label_off": "Single",
-                    "tooltip": "When enabled, processes all matching videos in video_folder with the same prompt. Uses a single LLM call and applies the pipeline to every file.",
-                }),
-                "video_folder": ("STRING", {
-                    "default": "",
-                    "multiline": False,
-                    "placeholder": "Folder of videos to batch process",
-                    "tooltip": "Path to a folder containing videos to batch process. Only used when batch_mode is on.",
-                }),
-                "file_pattern": (["*.mp4", "*.avi", "*.mov", "*.mkv", "*.webm", "*.mp4 *.mov *.avi", "*.*"], {
-                    "default": "*.mp4",
-                    "tooltip": "File pattern to match videos in the folder. '*.mp4 *.mov *.avi' matches multiple formats. '*.*' matches all files. Only used when batch_mode is on.",
-                }),
-                "max_concurrent": ("INT", {
-                    "default": 4,
-                    "min": 1,
-                    "max": 16,
-                    "step": 1,
-                    "tooltip": "Maximum number of videos to process simultaneously in batch mode. Higher values use more CPU/GPU.",
-                }),
-
+                "batch_mode": (
+                    "BOOLEAN",
+                    {
+                        "default": False,
+                        "label_on": "Batch",
+                        "label_off": "Single",
+                        "tooltip": "When enabled, processes all matching videos in video_folder with the same prompt. Uses a single LLM call and applies the pipeline to every file.",
+                    },
+                ),
+                "video_folder": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": False,
+                        "placeholder": "Folder of videos to batch process",
+                        "tooltip": "Path to a folder containing videos to batch process. Only used when batch_mode is on.",
+                    },
+                ),
+                "file_pattern": (
+                    [
+                        "*.mp4",
+                        "*.avi",
+                        "*.mov",
+                        "*.mkv",
+                        "*.webm",
+                        "*.mp4 *.mov *.avi",
+                        "*.*",
+                    ],
+                    {
+                        "default": "*.mp4",
+                        "tooltip": "File pattern to match videos in the folder. '*.mp4 *.mov *.avi' matches multiple formats. '*.*' matches all files. Only used when batch_mode is on.",
+                    },
+                ),
+                "max_concurrent": (
+                    "INT",
+                    {
+                        "default": 4,
+                        "min": 1,
+                        "max": 16,
+                        "step": 1,
+                        "tooltip": "Maximum number of videos to process simultaneously in batch mode. Higher values use more CPU/GPU.",
+                    },
+                ),
                 # ── Advanced: Usage tracking & downloads ──────────────────
-                "track_tokens": ("BOOLEAN", {
-                    "default": True,
-                    "label_on": "Track On",
-                    "label_off": "Track Off",
-                    "tooltip": "When On, prints token usage summary (prompt tokens, completion tokens, LLM calls) to the console after each run. Useful for monitoring costs with paid APIs.",
-                }),
-                "log_usage": ("BOOLEAN", {
-                    "default": False,
-                    "label_on": "Log On",
-                    "label_off": "Log Off",
-                    "tooltip": "When On, appends a JSON entry to usage_log.jsonl for each run. Useful for tracking cumulative token spend over time.",
-                }),
-                "allow_model_downloads": ("BOOLEAN", {
-                    "default": True,
-                    "label_on": "Downloads On",
-                    "label_off": "Downloads Off",
-                    "tooltip": "When On (default), AI models (SAM3, LaMa, Whisper) auto-download on first use. Turn Off to prevent any automatic downloads — runs requiring a missing model will fail with a clear message and a link to download manually.",
-                }),
+                "track_tokens": (
+                    "BOOLEAN",
+                    {
+                        "default": True,
+                        "label_on": "Track On",
+                        "label_off": "Track Off",
+                        "tooltip": "When On, prints token usage summary (prompt tokens, completion tokens, LLM calls) to the console after each run. Useful for monitoring costs with paid APIs.",
+                    },
+                ),
+                "log_usage": (
+                    "BOOLEAN",
+                    {
+                        "default": False,
+                        "label_on": "Log On",
+                        "label_off": "Log Off",
+                        "tooltip": "When On, appends a JSON entry to usage_log.jsonl for each run. Useful for tracking cumulative token spend over time.",
+                    },
+                ),
+                "allow_model_downloads": (
+                    "BOOLEAN",
+                    {
+                        "default": True,
+                        "label_on": "Downloads On",
+                        "label_off": "Downloads Off",
+                        "tooltip": "When On (default), AI models (SAM3, LaMa, Whisper) auto-download on first use. Turn Off to prevent any automatic downloads — runs requiring a missing model will fail with a clear message and a link to download manually.",
+                    },
+                ),
             },
             "hidden": {
                 "hidden_prompt": "PROMPT",
@@ -341,7 +481,14 @@ class FFMPEGAgentNode:
         }
 
     RETURN_TYPES = ("IMAGE", "AUDIO", "STRING", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("images", "audio", "video_path", "command_log", "analysis", "mask_overlay_path")
+    RETURN_NAMES = (
+        "images",
+        "audio",
+        "video_path",
+        "command_log",
+        "analysis",
+        "mask_overlay_path",
+    )
     OUTPUT_TOOLTIPS = (
         "Image frames from the output video. Returns ALL frames automatically when connected to a downstream node (e.g. VHS Video Combine). Returns only a thumbnail when unconnected (zero-memory preview).",
         "Audio extracted from the output video (or passed through from audio_a) in ComfyUI AUDIO format.",
@@ -369,6 +516,7 @@ class FFMPEGAgentNode:
     def analyzer(self):
         if self._analyzer is None:
             from ..core.video.analyzer import VideoAnalyzer  # type: ignore[import-not-found]
+
             self._analyzer = VideoAnalyzer()
         return self._analyzer
 
@@ -376,6 +524,7 @@ class FFMPEGAgentNode:
     def process_manager(self):
         if self._process_manager is None:
             from ..core.executor.process_manager import ProcessManager  # type: ignore[import-not-found]
+
             self._process_manager = ProcessManager()
         return self._process_manager
 
@@ -383,6 +532,7 @@ class FFMPEGAgentNode:
     def registry(self):
         if self._registry is None:
             from ..skills.registry import get_registry  # type: ignore[import-not-found]
+
             self._registry = get_registry()
         return self._registry
 
@@ -390,6 +540,7 @@ class FFMPEGAgentNode:
     def composer(self):
         if self._composer is None:
             from ..skills.composer import SkillComposer  # type: ignore[import-not-found]
+
             self._composer = SkillComposer(self.registry)
         return self._composer
 
@@ -397,6 +548,7 @@ class FFMPEGAgentNode:
     def preview_generator(self):
         if self._preview_generator is None:
             from ..core.executor.preview import PreviewGenerator  # type: ignore[import-not-found]
+
             self._preview_generator = PreviewGenerator()
         return self._preview_generator
 
@@ -404,6 +556,7 @@ class FFMPEGAgentNode:
     def media_converter(self):
         if self._media_converter is None:
             from ..core.media_converter import MediaConverter  # type: ignore[import-not-found]
+
             self._media_converter = MediaConverter()
         return self._media_converter
 
@@ -411,6 +564,7 @@ class FFMPEGAgentNode:
     def pipeline_generator(self):
         if self._pipeline_generator is None:
             from ..core.pipeline_generator import PipelineGenerator  # type: ignore[import-not-found]
+
             self._pipeline_generator = PipelineGenerator(self.registry)
         return self._pipeline_generator
 
@@ -426,6 +580,7 @@ class FFMPEGAgentNode:
         into explicit instructions for the LLM to follow.
         """
         import json as _json
+
         try:
             data = _json.loads(pipeline_json)
         except (ValueError, TypeError):
@@ -447,7 +602,11 @@ class FFMPEGAgentNode:
             skill = step.get("skill", "")
             params = step.get("params", {})
             if skill:
-                params_str = ", ".join(f"{k}={v}" for k, v in params.items()) if params else "defaults"
+                params_str = (
+                    ", ".join(f"{k}={v}" for k, v in params.items())
+                    if params
+                    else "defaults"
+                )
                 hint_lines.append(f"  - {skill} ({params_str})")
 
         if raw:
@@ -491,14 +650,22 @@ class FFMPEGAgentNode:
         if video_a and video_a.strip() and os.path.isfile(video_a.strip()):
             _all_video_paths.append(video_a.strip())
         for k in sorted(kwargs):
-            if k.startswith("video_") and k not in ("video_folder", "video_path") and kwargs[k]:
+            if (
+                k.startswith("video_")
+                and k not in ("video_folder", "video_path")
+                and kwargs[k]
+            ):
                 vp = str(kwargs[k]).strip()
                 if vp and os.path.isfile(vp):
                     _all_video_paths.append(vp)
 
         # Collect all image_path_* inputs
         _all_image_paths = []
-        if image_path_a and image_path_a.strip() and os.path.isfile(image_path_a.strip()):
+        if (
+            image_path_a
+            and image_path_a.strip()
+            and os.path.isfile(image_path_a.strip())
+        ):
             _all_image_paths.append(image_path_a.strip())
         for k in sorted(kwargs):
             if k.startswith("image_path_") and kwargs[k]:
@@ -518,21 +685,31 @@ class FFMPEGAgentNode:
         if subtitle_path and subtitle_path.strip():
             sp = subtitle_path.strip()
             if os.path.isfile(sp):
-                _all_text_inputs.insert(0, json.dumps({
-                    "text": "",
-                    "mode": "subtitle",
-                    "path": sp,
-                    "position": "bottom_center",
-                    "font_size": 24,
-                    "font_color": "white",
-                    "start_time": 0.0,
-                    "end_time": -1.0,
-                    "auto_mode": True,
-                }))
+                _all_text_inputs.insert(
+                    0,
+                    json.dumps(
+                        {
+                            "text": "",
+                            "mode": "subtitle",
+                            "path": sp,
+                            "position": "bottom_center",
+                            "font_size": 24,
+                            "font_color": "white",
+                            "start_time": 0.0,
+                            "end_time": -1.0,
+                            "auto_mode": True,
+                        }
+                    ),
+                )
 
         has_extra_images = (
             image_a is not None
-            or any(k.startswith("image_") and not k.startswith("image_path_") and kwargs.get(k) is not None for k in kwargs)
+            or any(
+                k.startswith("image_")
+                and not k.startswith("image_path_")
+                and kwargs.get(k) is not None
+                for k in kwargs
+            )
             or len(_all_video_paths) > 0
             or len(_all_image_paths) > 0
         )
@@ -543,9 +720,11 @@ class FFMPEGAgentNode:
             effective_video_path = temp_video_from_images
             del images_a
             import gc
+
             gc.collect()
             try:
                 import torch as _torch
+
                 if _torch.cuda.is_available():
                     _torch.cuda.empty_cache()
             except Exception:
@@ -558,10 +737,21 @@ class FFMPEGAgentNode:
             dummy = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
             dummy.close()
             import subprocess
+
             subprocess.run(
-                ["ffmpeg", "-y", "-f", "lavfi", "-i",
-                 "color=c=black:s=1920x1080:d=1:r=25",
-                 "-c:v", "libx264", "-t", "1", dummy.name],
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=c=black:s=1920x1080:d=1:r=25",
+                    "-c:v",
+                    "libx264",
+                    "-t",
+                    "1",
+                    dummy.name,
+                ],
                 capture_output=True,
             )
             temp_video_from_images = dummy.name
@@ -570,13 +760,17 @@ class FFMPEGAgentNode:
             effective_video_path = video_path
 
         from ..core.sanitize import validate_video_path  # type: ignore[import-not-found]
+
         effective_video_path = validate_video_path(effective_video_path)
 
         # Pre-mux audio into the video if it has no audio stream
-        if audio_a is not None and not self.media_converter.has_audio_stream(effective_video_path):
+        if audio_a is not None and not self.media_converter.has_audio_stream(
+            effective_video_path
+        ):
             tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
             tmp.close()
             import shutil as _shmod
+
             _shmod.copy2(effective_video_path, tmp.name)
             self.media_converter.mux_audio(tmp.name, audio_a)
             temp_video_with_audio = tmp.name
@@ -609,19 +803,35 @@ class FFMPEGAgentNode:
         input_lines = []
 
         if images_a is not None:
-            dur = (video_metadata.primary_video.duration
-                   if video_metadata.primary_video and video_metadata.primary_video.duration else "unknown")
-            fps = (video_metadata.primary_video.frame_rate
-                   if video_metadata.primary_video and video_metadata.primary_video.frame_rate else "unknown")
+            dur = (
+                video_metadata.primary_video.duration
+                if video_metadata.primary_video
+                and video_metadata.primary_video.duration
+                else "unknown"
+            )
+            fps = (
+                video_metadata.primary_video.frame_rate
+                if video_metadata.primary_video
+                and video_metadata.primary_video.frame_rate
+                else "unknown"
+            )
             input_lines.append(
                 f"- images_a (video): connected — primary video input, "
                 f"{images_a.shape[0]} frames, {dur}s, {fps}fps"
             )
         elif _images_a_shape is not None:
-            dur = (video_metadata.primary_video.duration
-                   if video_metadata.primary_video and video_metadata.primary_video.duration else "unknown")
-            fps = (video_metadata.primary_video.frame_rate
-                   if video_metadata.primary_video and video_metadata.primary_video.frame_rate else "unknown")
+            dur = (
+                video_metadata.primary_video.duration
+                if video_metadata.primary_video
+                and video_metadata.primary_video.duration
+                else "unknown"
+            )
+            fps = (
+                video_metadata.primary_video.frame_rate
+                if video_metadata.primary_video
+                and video_metadata.primary_video.frame_rate
+                else "unknown"
+            )
             input_lines.append(
                 f"- images_a (video): connected — primary video input, "
                 f"{_images_a_shape[0]} frames, {dur}s, {fps}fps"
@@ -632,10 +842,12 @@ class FFMPEGAgentNode:
         for k in sorted(kwargs):
             if k.startswith("images_") and k != "images_a" and kwargs[k] is not None:
                 tensor = kwargs[k]
-                input_lines.append(f"- {k} (video): connected — {tensor.shape[0]} frames")
+                input_lines.append(
+                    f"- {k} (video): connected — {tensor.shape[0]} frames"
+                )
 
         for vi, vp in enumerate(_all_video_paths):
-            letter = chr(ord('a') + vi)
+            letter = chr(ord("a") + vi)
             input_lines.append(f"- video_{letter} (video file): connected — {vp}")
 
         if audio_a is not None:
@@ -661,21 +873,24 @@ class FFMPEGAgentNode:
                 f"{image_a.shape[2]}x{image_a.shape[1]}"
             )
         for k in sorted(kwargs):
-            if (k.startswith("image_") and k != "image_a"
-                    and not k.startswith("images_")
-                    and not k.startswith("image_path_")
-                    and kwargs[k] is not None):
+            if (
+                k.startswith("image_")
+                and k != "image_a"
+                and not k.startswith("images_")
+                and not k.startswith("image_path_")
+                and kwargs[k] is not None
+            ):
                 img = kwargs[k]
                 input_lines.append(
                     f"- {k}: connected — single image {img.shape[2]}x{img.shape[1]}"
                 )
 
         for ii, ip in enumerate(_all_image_paths):
-            letter = chr(ord('a') + ii)
+            letter = chr(ord("a") + ii)
             input_lines.append(f"- image_path_{letter} (image file): connected — {ip}")
 
         for ti, raw_text in enumerate(_all_text_inputs):
-            letter = chr(ord('a') + ti)
+            letter = chr(ord("a") + ti)
             try:
                 meta = json.loads(raw_text)
                 if isinstance(meta, dict) and "mode" in meta:
@@ -689,7 +904,7 @@ class FFMPEGAgentNode:
                     else:
                         input_lines.append(
                             f"- text_{letter} ({mode}): connected — "
-                            f"\"{text_preview}{'...' if len(meta.get('text', '')) > 60 else ''}\" "
+                            f'"{text_preview}{"..." if len(meta.get("text", "")) > 60 else ""}" '
                             f"({len(meta.get('text', ''))} chars)"
                         )
                     continue
@@ -698,7 +913,7 @@ class FFMPEGAgentNode:
             preview = raw_text[:60]
             input_lines.append(
                 f"- text_{letter} (raw text): connected — "
-                f"\"{preview}{'...' if len(raw_text) > 60 else ''}\" "
+                f'"{preview}{"..." if len(raw_text) > 60 else ""}" '
                 f"({len(raw_text)} chars)"
             )
 
@@ -721,6 +936,7 @@ class FFMPEGAgentNode:
             validate_output_file_path,
             validate_output_path as _validate_output_path,
         )
+
         stem = Path(effective_video_path).stem
         suffix = "_preview" if preview_mode else "_edited"
         temp_render_dir = None
@@ -785,40 +1001,83 @@ class FFMPEGAgentNode:
                 sample_rate = audio_a["sample_rate"]
                 channels = waveform.size(1)
                 audio_data = waveform.squeeze(0).transpose(0, 1).contiguous()
-                audio_bytes = (audio_data * 32767.0).clamp(-32768, 32767).to(torch.int16).numpy().tobytes()
+                audio_bytes = (
+                    (audio_data * 32767.0)
+                    .clamp(-32768, 32767)
+                    .to(torch.int16)
+                    .numpy()
+                    .tobytes()
+                )
                 import subprocess
+
                 _tmp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
                 _tmp_wav.close()
                 subprocess.run(
-                    ["ffmpeg", "-y", "-f", "s16le", "-ar", str(sample_rate),
-                     "-ac", str(channels), "-i", "-", _tmp_wav.name],
-                    input=audio_bytes, capture_output=True,
+                    [
+                        "ffmpeg",
+                        "-y",
+                        "-f",
+                        "s16le",
+                        "-ar",
+                        str(sample_rate),
+                        "-ac",
+                        str(channels),
+                        "-i",
+                        "-",
+                        _tmp_wav.name,
+                    ],
+                    input=audio_bytes,
+                    capture_output=True,
                 )
                 pipeline.extra_inputs.insert(0, _tmp_wav.name)
                 temp_audio_input = _tmp_wav.name
-                logger.debug("Saved audio_a as temp WAV for replace_audio: %s", _tmp_wav.name)
+                logger.debug(
+                    "Saved audio_a as temp WAV for replace_audio: %s", _tmp_wav.name
+                )
             except Exception as e:
                 logger.warning("Could not save audio_a for replace_audio: %s", e)
 
         # --- Multi-input frame extraction ---
         MULTI_INPUT_SKILLS = {
-            "grid", "slideshow", "overlay_image", "overlay",
-            "concat", "split_screen", "watermark", "chromakey",
-            "xfade", "transition", "animated_overlay", "moving_overlay",
-            "picture_in_picture", "pip", "blend",
-            "picture-in-picture", "pictureinpicture",
+            "grid",
+            "slideshow",
+            "overlay_image",
+            "overlay",
+            "concat",
+            "split_screen",
+            "watermark",
+            "chromakey",
+            "xfade",
+            "transition",
+            "animated_overlay",
+            "moving_overlay",
+            "picture_in_picture",
+            "pip",
+            "blend",
+            "picture-in-picture",
+            "pictureinpicture",
         }
-        needs_multi_input = any(s.skill_name in MULTI_INPUT_SKILLS for s in pipeline.steps)
+        needs_multi_input = any(
+            s.skill_name in MULTI_INPUT_SKILLS for s in pipeline.steps
+        )
 
         if needs_multi_input:
             all_frame_paths = []
 
             if _all_video_paths:
                 all_frame_paths.extend(_all_video_paths)
-                logger.debug("File-path video inputs (zero memory): %s", _all_video_paths)
+                logger.debug(
+                    "File-path video inputs (zero memory): %s", _all_video_paths
+                )
 
             _SEGMENT_SKILLS = {"xfade", "slideshow", "concat"}
-            _OVERLAY_SKILLS = {"overlay_image", "overlay", "watermark", "animated_overlay", "moving_overlay"}
+            _OVERLAY_SKILLS = {
+                "overlay_image",
+                "overlay",
+                "watermark",
+                "animated_overlay",
+                "moving_overlay",
+            }
             _pipeline_skill_names = {
                 self.composer.SKILL_ALIASES.get(s.skill_name, s.skill_name)
                 for s in pipeline.steps
@@ -838,30 +1097,50 @@ class FFMPEGAgentNode:
             # Collect image/video tensors
             all_image_keys = []
             if image_a is not None:
-                all_image_keys.append(('__image_a__', image_a))
+                all_image_keys.append(("__image_a__", image_a))
             for k in sorted(kwargs):
-                if (k.startswith("image_") and not k.startswith("images_")
-                        and not k.startswith("image_path_") and kwargs[k] is not None):
+                if (
+                    k.startswith("image_")
+                    and not k.startswith("images_")
+                    and not k.startswith("image_path_")
+                    and kwargs[k] is not None
+                ):
                     all_image_keys.append((k, kwargs[k]))
             for k in sorted(kwargs):
                 if k.startswith("images_") and kwargs[k] is not None:
                     all_image_keys.append((k, kwargs[k]))
 
             for ti, (tkey, tensor) in enumerate(all_image_keys):
-                logger.debug("Multi-input tensor %d (%s): shape=%s", ti, tkey, tensor.shape)
+                logger.debug(
+                    "Multi-input tensor %d (%s): shape=%s", ti, tkey, tensor.shape
+                )
                 if tensor.shape[0] > 10:
                     tmp_vid = self.media_converter.images_to_video(tensor)
                     all_frame_paths.append(tmp_vid)
                     temp_multi_videos.append(tmp_vid)
                     try:
                         import subprocess as _sp
+
                         _dur = _sp.run(
-                            ["ffprobe", "-v", "error", "-show_entries",
-                             "format=duration", "-of", "default=noprint_wrappers=1", tmp_vid],
-                            capture_output=True, text=True,
+                            [
+                                "ffprobe",
+                                "-v",
+                                "error",
+                                "-show_entries",
+                                "format=duration",
+                                "-of",
+                                "default=noprint_wrappers=1",
+                                tmp_vid,
+                            ],
+                            capture_output=True,
+                            text=True,
                         )
-                        logger.debug("Temp video %s: %s, size=%d",
-                                     tmp_vid, _dur.stdout.strip(), os.path.getsize(tmp_vid))
+                        logger.debug(
+                            "Temp video %s: %s, size=%d",
+                            tmp_vid,
+                            _dur.stdout.strip(),
+                            os.path.getsize(tmp_vid),
+                        )
                     except Exception:
                         pass
                 else:
@@ -871,7 +1150,7 @@ class FFMPEGAgentNode:
                         temp_frames_dirs.add(os.path.dirname(paths[0]))
                 all_image_keys[ti] = (tkey, None)
                 del tensor
-                if tkey == '__image_a__':
+                if tkey == "__image_a__":
                     image_a = None
                 elif tkey in kwargs:
                     kwargs[tkey] = None
@@ -879,6 +1158,7 @@ class FFMPEGAgentNode:
             del all_image_keys
             try:
                 import torch as _torch
+
                 if _torch.cuda.is_available():
                     _torch.cuda.empty_cache()
             except Exception:
@@ -899,13 +1179,13 @@ class FFMPEGAgentNode:
         # enough frames to constitute a video).
         _tensor_has_many_frames = (
             image_a is not None
-            and hasattr(image_a, 'shape')
+            and hasattr(image_a, "shape")
             and len(image_a.shape) >= 1
             and image_a.shape[0] > 10
         )
         _extra_images_have_many_frames = any(
             v is not None
-            and hasattr(v, 'shape')
+            and hasattr(v, "shape")
             and len(v.shape) >= 1
             and v.shape[0] > 10
             for k, v in kwargs.items()
@@ -940,14 +1220,19 @@ class FFMPEGAgentNode:
                 tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
                 tmp.close()
                 import shutil as _shutil
+
                 _shutil.copy2(filepath, tmp.name)
                 return tmp.name
 
-            if all_audio_dicts or any(s.skill_name in ("concat", "xfade") for s in pipeline.steps):
+            if all_audio_dicts or any(
+                s.skill_name in ("concat", "xfade") for s in pipeline.steps
+            ):
                 new_evp = _ensure_temp_copy(effective_video_path)
                 if new_evp != effective_video_path:
                     effective_video_path = new_evp
-                pipeline.extra_inputs = [_ensure_temp_copy(ep) for ep in pipeline.extra_inputs]
+                pipeline.extra_inputs = [
+                    _ensure_temp_copy(ep) for ep in pipeline.extra_inputs
+                ]
                 pipeline.input_path = effective_video_path
 
             if all_audio_dicts:
@@ -963,15 +1248,30 @@ class FFMPEGAgentNode:
                     try:
                         self.media_converter.mux_audio(vid_path, audio_dict)
                     except Exception as e:
-                        logger.warning("Could not mux audio %d into %s: %s", ai, vid_path, e)
+                        logger.warning(
+                            "Could not mux audio %d into %s: %s", ai, vid_path, e
+                        )
 
-            _vid_exts = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".ts", ".m4v"}
+            _vid_exts = {
+                ".mp4",
+                ".mkv",
+                ".avi",
+                ".mov",
+                ".webm",
+                ".flv",
+                ".wmv",
+                ".ts",
+                ".m4v",
+            }
             video_segments = [
-                p for p in [effective_video_path] + list(pipeline.extra_inputs)
+                p
+                for p in [effective_video_path] + list(pipeline.extra_inputs)
                 if p and os.path.splitext(p)[1].lower() in _vid_exts
             ]
 
-            is_audio_filter_skill = any(s.skill_name in ("concat", "xfade") for s in pipeline.steps)
+            is_audio_filter_skill = any(
+                s.skill_name in ("concat", "xfade") for s in pipeline.steps
+            )
             if is_audio_filter_skill:
                 for vid_path in video_segments:
                     if not os.path.isfile(vid_path):
@@ -980,9 +1280,12 @@ class FFMPEGAgentNode:
                         try:
                             self.media_converter.add_silent_audio(vid_path)
                         except Exception as e:
-                            logger.warning("Could not add silent audio to %s: %s", vid_path, e)
+                            logger.warning(
+                                "Could not add silent audio to %s: %s", vid_path, e
+                            )
                 audio_segment_count = sum(
-                    1 for vp in video_segments
+                    1
+                    for vp in video_segments
                     if os.path.isfile(vp) and self.media_converter.has_audio_stream(vp)
                 )
                 if audio_segment_count >= 2:
@@ -990,16 +1293,25 @@ class FFMPEGAgentNode:
 
         # --- Transcription audio input path ---
         _TRANSCRIBE_SKILLS = {
-            "auto_transcribe", "transcribe", "speech_to_text",
-            "karaoke_subtitles", "whisper", "auto_subtitle", "auto_caption",
+            "auto_transcribe",
+            "transcribe",
+            "speech_to_text",
+            "karaoke_subtitles",
+            "whisper",
+            "auto_subtitle",
+            "auto_caption",
         }
-        has_transcribe_skill = any(s.skill_name in _TRANSCRIBE_SKILLS for s in pipeline.steps)
+        has_transcribe_skill = any(
+            s.skill_name in _TRANSCRIBE_SKILLS for s in pipeline.steps
+        )
         if has_transcribe_skill and audio_a is not None:
             audio_wav_path = self._audio_dict_to_wav(audio_a)
             if audio_wav_path:
                 pipeline.metadata["_audio_input_path"] = audio_wav_path
                 temp_audio_files.append(audio_wav_path)
-                logger.info("Transcription will use connected audio_a input: %s", audio_wav_path)
+                logger.info(
+                    "Transcription will use connected audio_a input: %s", audio_wav_path
+                )
 
         return (
             effective_video_path,
@@ -1042,7 +1354,8 @@ class FFMPEGAgentNode:
         if "setpts=" in vf_str and not command.complex_filter:
             input_fps = (
                 video_metadata.primary_video.frame_rate
-                if video_metadata.primary_video and video_metadata.primary_video.frame_rate
+                if video_metadata.primary_video
+                and video_metadata.primary_video.frame_rate
                 else 30
             )
             command.video_filters.add_filter("fps", {"fps": int(round(input_fps))})
@@ -1052,12 +1365,17 @@ class FFMPEGAgentNode:
         logger.debug("Video filters: '%s'", command.video_filters.to_string())
         if command.complex_filter:
             logger.debug("Complex filter: '%s'", command.complex_filter)
-        logger.debug("Pipeline steps: %s", [(s.skill_name, s.params) for s in pipeline.steps])
+        logger.debug(
+            "Pipeline steps: %s", [(s.skill_name, s.params) for s in pipeline.steps]
+        )
 
         # Dry-run validation
         dry_result = self.process_manager.dry_run(command, timeout=30)
         if not dry_result.success:
-            logger.warning("Dry-run failed: %s (will attempt execution anyway)", dry_result.error_message)
+            logger.warning(
+                "Dry-run failed: %s (will attempt execution anyway)",
+                dry_result.error_message,
+            )
 
         # Preview downscale
         if preview_mode:
@@ -1077,7 +1395,8 @@ class FFMPEGAgentNode:
             if attempt < max_attempts - 1:
                 logger.warning(
                     "FFMPEG failed (attempt %d), feeding error back to LLM: %s",
-                    attempt + 1, result.error_message,
+                    attempt + 1,
+                    result.error_message,
                 )
                 error_prompt = (
                     f"The previous FFMPEG command failed.\n"
@@ -1090,7 +1409,9 @@ class FFMPEGAgentNode:
                 )
                 try:
                     retry_spec = await self.pipeline_generator.generate(
-                        connector, error_prompt, metadata_str,
+                        connector,
+                        error_prompt,
+                        metadata_str,
                         connected_inputs=connected_inputs_str,
                         video_path=effective_video_path,
                         use_vision=use_vision,
@@ -1111,34 +1432,56 @@ class FFMPEGAgentNode:
                     if quality_preset and not any(
                         s.skill_name in ["quality", "compress"] for s in pipeline.steps
                     ):
-                        _crf_map = {"draft": 28, "standard": 23, "high": 18, "lossless": 0}
-                        _preset_map = {"draft": "ultrafast", "standard": "medium", "high": "slow", "lossless": "veryslow"}
-                        pipeline.add_step("quality", {
-                            "crf": crf if crf >= 0 else _crf_map.get(quality_preset, 23),
-                            "preset": encoding_preset if encoding_preset != "auto" else _preset_map.get(quality_preset, "medium"),
-                        })
+                        _crf_map = {
+                            "draft": 28,
+                            "standard": 23,
+                            "high": 18,
+                            "lossless": 0,
+                        }
+                        _preset_map = {
+                            "draft": "ultrafast",
+                            "standard": "medium",
+                            "high": "slow",
+                            "lossless": "veryslow",
+                        }
+                        pipeline.add_step(
+                            "quality",
+                            {
+                                "crf": crf
+                                if crf >= 0
+                                else _crf_map.get(quality_preset, 23),
+                                "preset": encoding_preset
+                                if encoding_preset != "auto"
+                                else _preset_map.get(quality_preset, "medium"),
+                            },
+                        )
                     command = self.composer.compose(pipeline)
                     retry_vf = command.video_filters.to_string()
                     if "setpts=" in retry_vf and not command.complex_filter:
                         _input_fps = (
                             video_metadata.primary_video.frame_rate
-                            if video_metadata.primary_video and video_metadata.primary_video.frame_rate
+                            if video_metadata.primary_video
+                            and video_metadata.primary_video.frame_rate
                             else 30
                         )
-                        command.video_filters.add_filter("fps", {"fps": int(round(_input_fps))})
+                        command.video_filters.add_filter(
+                            "fps", {"fps": int(round(_input_fps))}
+                        )
                     logger.debug("Retry command: %s", command.to_string())
                     if preview_mode:
                         if command.complex_filter:
                             command.output_options.extend(["-s", "480x270"])
                         else:
-                            command.video_filters.add_filter("scale", {"w": 480, "h": -1})
+                            command.video_filters.add_filter(
+                                "scale", {"w": 480, "h": -1}
+                            )
                         command.output_options.extend(["-t", "10"])
                 except Exception as retry_err:
                     logger.warning("Error feedback retry failed: %s", retry_err)
                     break
 
         if not result.success:
-            if hasattr(connector, 'close'):
+            if hasattr(connector, "close"):
                 await connector.close()
             raise RuntimeError(
                 f"FFMPEG execution failed: {result.error_message}\n"
@@ -1150,7 +1493,9 @@ class FFMPEGAgentNode:
         _MAX_CORRECTION_ATTEMPTS = 2
         _skill_degraded = pipeline.metadata.get("_skill_degraded", False)
         if _skill_degraded:
-            logger.info("Skipping output verification — skill handler reported degraded output (e.g. SAM3 OOM fallback)")
+            logger.info(
+                "Skipping output verification — skill handler reported degraded output (e.g. SAM3 OOM fallback)"
+            )
         elif verify_output and result.success:
             logger.info("Output verification enabled — inspecting result...")
             for attempt in range(_MAX_CORRECTION_ATTEMPTS):
@@ -1168,7 +1513,10 @@ class FFMPEGAgentNode:
                     )
                     if verification_result is not None:
                         result, pipeline, command = verification_result
-                        logger.info("Correction attempt %d applied — re-verifying...", attempt + 1)
+                        logger.info(
+                            "Correction attempt %d applied — re-verifying...",
+                            attempt + 1,
+                        )
                         continue
                     else:
                         logger.info("Verification PASS (attempt %d)", attempt + 1)
@@ -1217,29 +1565,54 @@ class FFMPEGAgentNode:
         logger.debug(
             "Audio decision: removes=%s, has_processing=%s, "
             "already_embedded=%s, audio_source=%s, available=%s",
-            removes_audio, has_audio_processing,
-            audio_already_embedded, audio_source, list(audio_inputs.keys()),
+            removes_audio,
+            has_audio_processing,
+            audio_already_embedded,
+            audio_source,
+            list(audio_inputs.keys()),
         )
 
-        if audio_inputs and not removes_audio and not has_audio_processing and not audio_already_embedded:
+        if (
+            audio_inputs
+            and not removes_audio
+            and not has_audio_processing
+            and not audio_already_embedded
+        ):
             if audio_source and audio_source != "mix" and audio_source in audio_inputs:
                 logger.debug("Using specific audio: %s", audio_source)
-                self.media_converter.mux_audio(output_path, audio_inputs[audio_source], audio_mode=audio_mode)
+                self.media_converter.mux_audio(
+                    output_path, audio_inputs[audio_source], audio_mode=audio_mode
+                )
             elif len(audio_inputs) == 1:
                 name = list(audio_inputs.keys())[0]
                 logger.debug("Using only available audio: %s", name)
-                self.media_converter.mux_audio(output_path, audio_inputs[name], audio_mode=audio_mode)
+                self.media_converter.mux_audio(
+                    output_path, audio_inputs[name], audio_mode=audio_mode
+                )
             else:
-                logger.debug("Mixing %d audio tracks: %s", len(audio_inputs), list(audio_inputs.keys()))
-                self.media_converter.mux_audio_mix(output_path, list(audio_inputs.values()), audio_mode=audio_mode)
+                logger.debug(
+                    "Mixing %d audio tracks: %s",
+                    len(audio_inputs),
+                    list(audio_inputs.keys()),
+                )
+                self.media_converter.mux_audio_mix(
+                    output_path, list(audio_inputs.values()), audio_mode=audio_mode
+                )
         elif audio_inputs and audio_already_embedded and not removes_audio:
             if audio_source and audio_source != "mix" and audio_source in audio_inputs:
-                logger.info("Replacing concat audio with explicit audio source: %s", audio_source)
-                self.media_converter.mux_audio(output_path, audio_inputs[audio_source], audio_mode="replace")
+                logger.info(
+                    "Replacing concat audio with explicit audio source: %s",
+                    audio_source,
+                )
+                self.media_converter.mux_audio(
+                    output_path, audio_inputs[audio_source], audio_mode="replace"
+                )
             elif len(audio_inputs) == 1:
                 name = list(audio_inputs.keys())[0]
                 logger.info("Replacing concat audio with connected %s", name)
-                self.media_converter.mux_audio(output_path, audio_inputs[name], audio_mode="replace")
+                self.media_converter.mux_audio(
+                    output_path, audio_inputs[name], audio_mode="replace"
+                )
             else:
                 logger.debug(
                     "Multiple audio inputs with embedded audio — skipping "
@@ -1272,7 +1645,9 @@ class FFMPEGAgentNode:
                     break
 
         if images_connected:
-            logger.info("images output is connected — loading all frames from output video")
+            logger.info(
+                "images output is connected — loading all frames from output video"
+            )
             images_tensor = self.media_converter.frames_to_tensor(output_path)
             logger.debug("Output full frames shape: %s", images_tensor.shape)
         else:
@@ -1280,7 +1655,10 @@ class FFMPEGAgentNode:
             logger.debug("Output thumbnail shape: %s", images_tensor.shape)
 
         if removes_audio:
-            audio_out = {"waveform": torch.zeros(1, 1, 1, dtype=torch.float32), "sample_rate": 44100}
+            audio_out = {
+                "waveform": torch.zeros(1, 1, 1, dtype=torch.float32),
+                "sample_rate": 44100,
+            }
         else:
             audio_out = self.media_converter.extract_audio(output_path)
 
@@ -1415,7 +1793,11 @@ class FFMPEGAgentNode:
 
         if not prompt.strip():
             # manual + whisper modes don't need a prompt
-            if llm_model != "none" or no_llm_mode not in ("manual", "transcribe", "karaoke_subtitles"):
+            if llm_model != "none" or no_llm_mode not in (
+                "manual",
+                "transcribe",
+                "karaoke_subtitles",
+            ):
                 raise ValueError("Prompt cannot be empty")
 
         # --- Analyze input video ---
@@ -1503,25 +1885,39 @@ class FFMPEGAgentNode:
                         meta = {"text": raw, "mode": "overlay"}
                     mode = meta.get("mode", "overlay")
                     if mode in ("subtitle",):
-                        text_steps.append({
-                            "skill": "burn_subtitles",
-                            "params": {"path": "text_a"},
-                        })
+                        text_steps.append(
+                            {
+                                "skill": "burn_subtitles",
+                                "params": {"path": "text_a"},
+                            }
+                        )
                     else:
-                        text_steps.append({
-                            "skill": "text_overlay",
-                            "params": {
-                                "text": meta.get("text", raw if isinstance(raw, str) else ""),
-                                "position": meta.get("position", "center"),
-                                "font_size": meta.get("font_size", 48),
-                                "font_color": meta.get("font_color", "white"),
-                            },
-                        })
+                        text_steps.append(
+                            {
+                                "skill": "text_overlay",
+                                "params": {
+                                    "text": meta.get(
+                                        "text", raw if isinstance(raw, str) else ""
+                                    ),
+                                    "position": meta.get("position", "center"),
+                                    "font_size": meta.get("font_size", 48),
+                                    "font_color": meta.get("font_color", "white"),
+                                },
+                            }
+                        )
                 if not text_steps:
-                    text_steps = [{"skill": "text_overlay", "params": {"text": _all_text_inputs[0]}}]
+                    text_steps = [
+                        {
+                            "skill": "text_overlay",
+                            "params": {"text": _all_text_inputs[0]},
+                        }
+                    ]
 
                 synth_pipeline = json.dumps({"steps": text_steps})
-                logger.info("No-LLM: auto-generated text pipeline from %d text input(s)", len(_all_text_inputs))
+                logger.info(
+                    "No-LLM: auto-generated text pipeline from %d text input(s)",
+                    len(_all_text_inputs),
+                )
                 return await self._process_effects_pipeline(
                     pipeline_json=synth_pipeline,
                     prompt=prompt,
@@ -1580,7 +1976,9 @@ class FFMPEGAgentNode:
                     "when using 'custom' mode."
                 )
             effective_model = custom_model.strip()
-        connector = self.pipeline_generator.create_connector(effective_model, ollama_url, api_key)
+        connector = self.pipeline_generator.create_connector(
+            effective_model, ollama_url, api_key
+        )
 
         # --- LLM Hint Mode: inject Effects Builder selections into prompt ---
         effective_prompt = prompt
@@ -1589,17 +1987,20 @@ class FFMPEGAgentNode:
 
         try:
             spec = await self.pipeline_generator.generate(
-                connector, effective_prompt, metadata_str,
+                connector,
+                effective_prompt,
+                metadata_str,
                 connected_inputs=connected_inputs_str,
                 video_path=effective_video_path,
                 use_vision=use_vision,
                 ptc_mode=ptc_mode,
             )
         except Exception as e:
-            if hasattr(connector, 'close'):
+            if hasattr(connector, "close"):
                 await connector.close()
             if api_key and api_key in str(e):
                 from core.sanitize import sanitize_api_key
+
                 raise RuntimeError(sanitize_api_key(str(e), api_key)) from None
             raise
 
@@ -1611,7 +2012,9 @@ class FFMPEGAgentNode:
         audio_mode = spec.get("audio_mode", "loop")
         if audio_mode not in ("loop", "pad", "trim"):
             audio_mode = "loop"
-        logger.debug("audio_source from LLM: %s, audio_mode: %s", audio_source, audio_mode)
+        logger.debug(
+            "audio_source from LLM: %s, audio_mode: %s", audio_source, audio_mode
+        )
 
         # --- Build output path ---
         output_path, temp_render_dir = self._build_output_path(
@@ -1666,15 +2069,27 @@ class FFMPEGAgentNode:
         has_incompatible_format = any(
             s.skill_name in _NO_QUALITY_PRESET_SKILLS for s in pipeline.steps
         ) or (new_ext and new_ext in {".gif", ".webm"})
-        if quality_preset and not has_incompatible_format and not any(
-            s.skill_name in ["quality", "compress"] for s in pipeline.steps
+        if (
+            quality_preset
+            and not has_incompatible_format
+            and not any(s.skill_name in ["quality", "compress"] for s in pipeline.steps)
         ):
             crf_map = {"draft": 28, "standard": 23, "high": 18, "lossless": 0}
-            preset_map = {"draft": "ultrafast", "standard": "medium", "high": "slow", "lossless": "veryslow"}
-            pipeline.add_step("quality", {
-                "crf": crf if crf >= 0 else crf_map.get(quality_preset, 23),
-                "preset": encoding_preset if encoding_preset != "auto" else preset_map.get(quality_preset, "medium"),
-            })
+            preset_map = {
+                "draft": "ultrafast",
+                "standard": "medium",
+                "high": "slow",
+                "lossless": "veryslow",
+            }
+            pipeline.add_step(
+                "quality",
+                {
+                    "crf": crf if crf >= 0 else crf_map.get(quality_preset, 23),
+                    "preset": encoding_preset
+                    if encoding_preset != "auto"
+                    else preset_map.get(quality_preset, "medium"),
+                },
+            )
 
         # Validate pipeline
         is_valid, errors = self.composer.validate_pipeline(pipeline)
@@ -1684,8 +2099,16 @@ class FFMPEGAgentNode:
 
         # Pass whisper/SAM3 preferences
         has_transcribe_skill = any(
-            s.skill_name in {"auto_transcribe", "transcribe", "speech_to_text",
-                             "karaoke_subtitles", "whisper", "auto_subtitle", "auto_caption"}
+            s.skill_name
+            in {
+                "auto_transcribe",
+                "transcribe",
+                "speech_to_text",
+                "karaoke_subtitles",
+                "whisper",
+                "auto_subtitle",
+                "auto_caption",
+            }
             for s in pipeline.steps
         )
         if has_transcribe_skill:
@@ -1741,16 +2164,26 @@ class FFMPEGAgentNode:
         )
 
         # Close LLM connector
-        if hasattr(connector, 'close'):
+        if hasattr(connector, "close"):
             await connector.close()
 
         # Debug probe output duration
         try:
             import subprocess as _sp
+
             _probe = _sp.run(
-                ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                 "-of", "default=noprint_wrappers=1", output_path],
-                capture_output=True, text=True
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1",
+                    output_path,
+                ],
+                capture_output=True,
+                text=True,
             )
             logger.debug("Output duration BEFORE audio mux: %s", _probe.stdout.strip())
         except Exception:
@@ -1764,37 +2197,57 @@ Estimated Changes: {estimated_changes}
 Pipeline Steps:
 {self.composer.explain_pipeline(pipeline)}
 
-Warnings: {', '.join(warnings) if warnings else 'None'}"""
+Warnings: {", ".join(warnings) if warnings else "None"}"""
 
         # --- Token usage tracking ---
-        token_usage = getattr(self.pipeline_generator, 'last_token_usage', None)
+        token_usage = getattr(self.pipeline_generator, "last_token_usage", None)
         if token_usage and (track_tokens or log_usage):
             est_tag = " (estimated)" if token_usage.get("estimated") else ""
             analysis += f"""
 
 Token Usage{est_tag}:
-  Prompt tokens:     {token_usage.get('total_prompt_tokens', 0):,}
-  Completion tokens: {token_usage.get('total_completion_tokens', 0):,}
-  Total tokens:      {token_usage.get('total_tokens', 0):,}
-  LLM calls:         {token_usage.get('llm_calls', 0)}
-  Tool calls:        {token_usage.get('tool_calls', 0)}
-  Elapsed:           {token_usage.get('elapsed_sec', 0)}s"""
+  Prompt tokens:     {token_usage.get("total_prompt_tokens", 0):,}
+  Completion tokens: {token_usage.get("total_completion_tokens", 0):,}
+  Total tokens:      {token_usage.get("total_tokens", 0):,}
+  LLM calls:         {token_usage.get("llm_calls", 0)}
+  Tool calls:        {token_usage.get("tool_calls", 0)}
+  Elapsed:           {token_usage.get("elapsed_sec", 0)}s"""
 
             if track_tokens:
                 est_label = " (estimated)" if token_usage.get("estimated") else ""
                 logger.info("┌─ Token Usage%s ────────────────────────────┐", est_label)
-                logger.info("│ Model:       %-30s │", token_usage.get("model", "unknown"))
-                logger.info("│ Provider:    %-30s │", token_usage.get("provider", "unknown"))
-                logger.info("│ Prompt:      %-30s │", f"{token_usage.get('total_prompt_tokens', 0):,} tokens")
-                logger.info("│ Completion:  %-30s │", f"{token_usage.get('total_completion_tokens', 0):,} tokens")
-                logger.info("│ Total:       %-30s │", f"{token_usage.get('total_tokens', 0):,} tokens")
-                logger.info("│ LLM calls:   %-30s │", str(token_usage.get("llm_calls", 0)))
-                logger.info("│ Tool calls:  %-30s │", str(token_usage.get("tool_calls", 0)))
-                logger.info("│ Elapsed:     %-30s │", f"{token_usage.get('elapsed_sec', 0)}s")
+                logger.info(
+                    "│ Model:       %-30s │", token_usage.get("model", "unknown")
+                )
+                logger.info(
+                    "│ Provider:    %-30s │", token_usage.get("provider", "unknown")
+                )
+                logger.info(
+                    "│ Prompt:      %-30s │",
+                    f"{token_usage.get('total_prompt_tokens', 0):,} tokens",
+                )
+                logger.info(
+                    "│ Completion:  %-30s │",
+                    f"{token_usage.get('total_completion_tokens', 0):,} tokens",
+                )
+                logger.info(
+                    "│ Total:       %-30s │",
+                    f"{token_usage.get('total_tokens', 0):,} tokens",
+                )
+                logger.info(
+                    "│ LLM calls:   %-30s │", str(token_usage.get("llm_calls", 0))
+                )
+                logger.info(
+                    "│ Tool calls:  %-30s │", str(token_usage.get("tool_calls", 0))
+                )
+                logger.info(
+                    "│ Elapsed:     %-30s │", f"{token_usage.get('elapsed_sec', 0)}s"
+                )
                 logger.info("└────────────────────────────────────────────┘")
 
             if log_usage:
                 from ..core.token_tracker import TokenTracker as _TT  # type: ignore[import-not-found]
+
                 entry = {
                     "timestamp": __import__("time").strftime("%Y-%m-%dT%H:%M:%S"),
                     "model": token_usage.get("model", "unknown"),
@@ -1835,7 +2288,9 @@ Token Usage{est_tag}:
         # --- Sanitize API key from workflow metadata ---
         hidden_extra_pnginfo = kwargs.get("extra_pnginfo")
         if api_key:
-            self._strip_api_key_from_metadata(api_key, hidden_prompt, hidden_extra_pnginfo)
+            self._strip_api_key_from_metadata(
+                api_key, hidden_prompt, hidden_extra_pnginfo
+            )
 
         # --- Save first-frame workflow PNG ---
         if save_output and images_tensor is not None and images_tensor.shape[0] > 0:
@@ -1853,8 +2308,16 @@ Token Usage{est_tag}:
         # inputs or audio muxing) that gets deleted in the cleanup block.
         mask_overlay_path = ""
         has_auto_mask = any(
-            s.skill_name in {"auto_mask", "auto_segment", "segment",
-                             "smart_mask", "sam_mask", "ai_mask", "object_mask"}
+            s.skill_name
+            in {
+                "auto_mask",
+                "auto_segment",
+                "segment",
+                "smart_mask",
+                "sam_mask",
+                "ai_mask",
+                "object_mask",
+            }
             for s in pipeline.steps
         )
         if has_auto_mask:
@@ -1869,6 +2332,7 @@ Token Usage{est_tag}:
                 else:
                     try:
                         from ..core.sam3_masker import generate_mask_overlay
+
                         mask_overlay_path = generate_mask_overlay(
                             video_path=effective_video_path,
                             mask_video_path=mask_video_path,
@@ -1895,7 +2359,14 @@ Token Usage{est_tag}:
             if not os.listdir(temp_render_dir):
                 shutil.rmtree(temp_render_dir, ignore_errors=True)
 
-        return (images_tensor, audio_out, output_path, command.to_string(), analysis, mask_overlay_path)
+        return (
+            images_tensor,
+            audio_out,
+            output_path,
+            command.to_string(),
+            analysis,
+            mask_overlay_path,
+        )
 
     # ------------------------------------------------------------------ #
     #  Effects Builder support                                             #
@@ -1911,6 +2382,7 @@ Token Usage{est_tag}:
         models.
         """
         import json as _json
+
         try:
             data = _json.loads(pipeline_json)
         except (ValueError, TypeError):
@@ -1932,7 +2404,11 @@ Token Usage{est_tag}:
             skill = step.get("skill", "")
             params = step.get("params", {})
             if skill:
-                params_str = ", ".join(f"{k}={v}" for k, v in params.items()) if params else "defaults"
+                params_str = (
+                    ", ".join(f"{k}={v}" for k, v in params.items())
+                    if params
+                    else "defaults"
+                )
                 hint_lines.append(f"  - {skill} ({params_str})")
 
         if raw:
@@ -1982,7 +2458,9 @@ Token Usage{est_tag}:
         try:
             data = _json.loads(pipeline_json)
         except (ValueError, TypeError) as exc:
-            raise RuntimeError(f"Effects Builder: invalid pipeline JSON: {exc}") from exc
+            raise RuntimeError(
+                f"Effects Builder: invalid pipeline JSON: {exc}"
+            ) from exc
 
         steps = data.get("pipeline", [])
         raw_ffmpeg = data.get("raw_ffmpeg", "")
@@ -1996,7 +2474,9 @@ Token Usage{est_tag}:
 
         logger.info(
             "Effects Builder mode: %s — %d skills, raw=%s",
-            effects_mode, len(steps), bool(raw_ffmpeg),
+            effects_mode,
+            len(steps),
+            bool(raw_ffmpeg),
         )
 
         # --- Build output path ---
@@ -2064,11 +2544,21 @@ Token Usage{est_tag}:
             s.skill_name in _NO_QUALITY_PRESET_SKILLS for s in pipeline.steps
         ):
             crf_map = {"draft": 28, "standard": 23, "high": 18, "lossless": 0}
-            preset_map = {"draft": "ultrafast", "standard": "medium", "high": "slow", "lossless": "veryslow"}
-            pipeline.add_step("quality", {
-                "crf": crf if crf >= 0 else crf_map.get(quality_preset, 23),
-                "preset": encoding_preset if encoding_preset != "auto" else preset_map.get(quality_preset, "medium"),
-            })
+            preset_map = {
+                "draft": "ultrafast",
+                "standard": "medium",
+                "high": "slow",
+                "lossless": "veryslow",
+            }
+            pipeline.add_step(
+                "quality",
+                {
+                    "crf": crf if crf >= 0 else crf_map.get(quality_preset, 23),
+                    "preset": encoding_preset
+                    if encoding_preset != "auto"
+                    else preset_map.get(quality_preset, "medium"),
+                },
+            )
 
         # --- Compose & execute ---
         command = self.composer.compose(pipeline)
@@ -2122,6 +2612,7 @@ Token Usage{est_tag}:
             else:
                 try:
                     from ..core.sam3_masker import generate_mask_overlay
+
                     mask_overlay_path = generate_mask_overlay(
                         video_path=effective_video_path,
                         mask_video_path=mask_video_path,
@@ -2131,7 +2622,7 @@ Token Usage{est_tag}:
 
         # --- Build analysis string ---
         step_summary = "\n".join(
-            f"  {i+1}. {s.get('skill', '?')} {s.get('params', {})}"
+            f"  {i + 1}. {s.get('skill', '?')} {s.get('params', {})}"
             for i, s in enumerate(steps)
         )
         analysis = (
@@ -2143,7 +2634,11 @@ Token Usage{est_tag}:
         )
 
         # --- Cleanup temp files ---
-        for tmp_path in [temp_video_from_images, temp_video_with_audio, temp_audio_input]:
+        for tmp_path in [
+            temp_video_from_images,
+            temp_video_with_audio,
+            temp_audio_input,
+        ]:
             if tmp_path and os.path.exists(tmp_path):
                 try:
                     os.remove(tmp_path)
@@ -2162,7 +2657,14 @@ Token Usage{est_tag}:
             if not os.listdir(temp_render_dir):
                 shutil.rmtree(temp_render_dir, ignore_errors=True)
 
-        return (images_tensor, audio_out, output_path, command.to_string(), analysis, mask_overlay_path)
+        return (
+            images_tensor,
+            audio_out,
+            output_path,
+            command.to_string(),
+            analysis,
+            mask_overlay_path,
+        )
 
     # ------------------------------------------------------------------ #
     #  SAM3-only mode (no LLM)                                            #
@@ -2215,6 +2717,7 @@ Token Usage{est_tag}:
         point_src_h = 0
         if mask_points and mask_points.strip():
             import json as _json
+
             try:
                 pt_data = _json.loads(mask_points)
                 if isinstance(pt_data, dict):
@@ -2223,8 +2726,12 @@ Token Usage{est_tag}:
                     point_src_w = int(pt_data.get("image_width", 0))
                     point_src_h = int(pt_data.get("image_height", 0))
                     if point_coords and point_labels:
-                        logger.info("SAM3-only: using %d point prompt(s) (src %dx%d)",
-                                    len(point_coords), point_src_w, point_src_h)
+                        logger.info(
+                            "SAM3-only: using %d point prompt(s) (src %dx%d)",
+                            len(point_coords),
+                            point_src_w,
+                            point_src_h,
+                        )
             except (ValueError, TypeError) as exc:
                 logger.warning("SAM3-only: failed to parse mask_points JSON: %s", exc)
 
@@ -2252,33 +2759,58 @@ Token Usage{est_tag}:
 
         # --- Copy source video through as the main output (no effects) ---
         crf_map = {"draft": 28, "standard": 23, "high": 18, "lossless": 0}
-        preset_map = {"draft": "ultrafast", "standard": "medium", "high": "slow", "lossless": "veryslow"}
+        preset_map = {
+            "draft": "ultrafast",
+            "standard": "medium",
+            "high": "slow",
+            "lossless": "veryslow",
+        }
         effective_crf = crf if crf >= 0 else crf_map.get(quality_preset, 23)
-        effective_preset = encoding_preset if encoding_preset != "auto" else preset_map.get(quality_preset, "medium")
+        effective_preset = (
+            encoding_preset
+            if encoding_preset != "auto"
+            else preset_map.get(quality_preset, "medium")
+        )
 
         ffmpeg_cmd = [
-            "ffmpeg", "-y",
-            "-i", effective_video_path,
-            "-c:v", "libx264",
-            "-crf", str(effective_crf),
-            "-preset", effective_preset,
-            "-pix_fmt", "yuv420p",
-            "-c:a", "copy",
+            "ffmpeg",
+            "-y",
+            "-i",
+            effective_video_path,
+            "-c:v",
+            "libx264",
+            "-crf",
+            str(effective_crf),
+            "-preset",
+            effective_preset,
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "copy",
             output_path,
         ]
 
         if preview_mode:
             # Insert scale + duration limit before output path
             ffmpeg_cmd = [
-                "ffmpeg", "-y",
-                "-i", effective_video_path,
-                "-vf", "scale=480:trunc(ow/a/2)*2",
-                "-t", "10",
-                "-c:v", "libx264",
-                "-crf", str(effective_crf),
-                "-preset", effective_preset,
-                "-pix_fmt", "yuv420p",
-                "-c:a", "copy",
+                "ffmpeg",
+                "-y",
+                "-i",
+                effective_video_path,
+                "-vf",
+                "scale=480:trunc(ow/a/2)*2",
+                "-t",
+                "10",
+                "-c:v",
+                "libx264",
+                "-crf",
+                str(effective_crf),
+                "-preset",
+                effective_preset,
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "copy",
                 output_path,
             ]
 
@@ -2309,6 +2841,7 @@ Token Usage{est_tag}:
             else:
                 try:
                     from ..core.sam3_masker import generate_mask_overlay
+
                     mask_overlay_path = generate_mask_overlay(
                         video_path=effective_video_path,
                         mask_video_path=mask_video_path,
@@ -2341,7 +2874,14 @@ Token Usage{est_tag}:
             if not os.listdir(temp_render_dir):
                 shutil.rmtree(temp_render_dir, ignore_errors=True)
 
-        return (images_tensor, audio_out, output_path, cmd_log, analysis, mask_overlay_path)
+        return (
+            images_tensor,
+            audio_out,
+            output_path,
+            cmd_log,
+            analysis,
+            mask_overlay_path,
+        )
 
     # ------------------------------------------------------------------ #
     #  Whisper-only mode (no LLM)                                         #
@@ -2396,7 +2936,9 @@ Token Usage{est_tag}:
 
         logger.info(
             "Whisper-only mode (%s): device=%s, model=%s",
-            mode, whisper_device, whisper_model,
+            mode,
+            whisper_device,
+            whisper_model,
         )
 
         # --- Build output path ---
@@ -2422,13 +2964,17 @@ Token Usage{est_tag}:
             else:
                 ass_content = words_to_karaoke_ass(result.words)
                 tmp = tempfile.NamedTemporaryFile(
-                    mode="w", suffix=".ass", delete=False, encoding="utf-8",
+                    mode="w",
+                    suffix=".ass",
+                    delete=False,
+                    encoding="utf-8",
                 )
                 tmp.write(ass_content)
                 tmp.close()
                 atexit.register(os.unlink, tmp.name)
 
                 from ..core.sanitize import ffmpeg_escape_path
+
                 escaped_path = ffmpeg_escape_path(tmp.name)
                 sub_filter = f"ass={escaped_path}"
         else:
@@ -2439,34 +2985,54 @@ Token Usage{est_tag}:
             else:
                 srt_content = segments_to_srt(result.segments)
                 tmp = tempfile.NamedTemporaryFile(
-                    mode="w", suffix=".srt", delete=False, encoding="utf-8",
+                    mode="w",
+                    suffix=".srt",
+                    delete=False,
+                    encoding="utf-8",
                 )
                 tmp.write(srt_content)
                 tmp.close()
                 atexit.register(os.unlink, tmp.name)
 
                 from ..core.sanitize import ffmpeg_escape_path
+
                 escaped_path = ffmpeg_escape_path(tmp.name)
                 sub_filter = f"subtitles={escaped_path}"
 
         # --- Build ffmpeg command ---
         crf_map = {"draft": 28, "standard": 23, "high": 18, "lossless": 0}
-        preset_map = {"draft": "ultrafast", "standard": "medium", "high": "slow", "lossless": "veryslow"}
+        preset_map = {
+            "draft": "ultrafast",
+            "standard": "medium",
+            "high": "slow",
+            "lossless": "veryslow",
+        }
         effective_crf = crf if crf >= 0 else crf_map.get(quality_preset, 23)
-        effective_preset = encoding_preset if encoding_preset != "auto" else preset_map.get(quality_preset, "medium")
+        effective_preset = (
+            encoding_preset
+            if encoding_preset != "auto"
+            else preset_map.get(quality_preset, "medium")
+        )
 
         ffmpeg_cmd = ["ffmpeg", "-y", "-i", effective_video_path]
 
         if sub_filter:
             ffmpeg_cmd.extend(["-vf", sub_filter])
 
-        ffmpeg_cmd.extend([
-            "-c:v", "libx264",
-            "-crf", str(effective_crf),
-            "-preset", effective_preset,
-            "-pix_fmt", "yuv420p",
-            "-c:a", "copy",
-        ])
+        ffmpeg_cmd.extend(
+            [
+                "-c:v",
+                "libx264",
+                "-crf",
+                str(effective_crf),
+                "-preset",
+                effective_preset,
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "copy",
+            ]
+        )
 
         if preview_mode:
             # Insert scale + duration limit
@@ -2499,7 +3065,9 @@ Token Usage{est_tag}:
 
         # --- Build analysis string (includes full transcription) ---
         cmd_log = " ".join(ffmpeg_cmd)
-        mode_label = "Karaoke Subtitles" if mode == "karaoke_subtitles" else "SRT Subtitles"
+        mode_label = (
+            "Karaoke Subtitles" if mode == "karaoke_subtitles" else "SRT Subtitles"
+        )
         analysis = (
             f"Whisper-Only Mode (no LLM)\n"
             f"Mode: {mode_label}\n"
@@ -2562,14 +3130,24 @@ Token Usage{est_tag}:
 
         # --- Audio visualization (only for pipelines with audio skills) ---
         _AUDIO_SKILLS = {
-            "normalize", "fade_audio", "replace_audio", "bass", "treble",
-            "echo", "noise_reduction", "volume", "audio_bitrate",
-            "compress_audio", "lowpass", "highpass", "remove_audio",
-            "loudnorm", "audio_speed", "reverb",
+            "normalize",
+            "fade_audio",
+            "replace_audio",
+            "bass",
+            "treble",
+            "echo",
+            "noise_reduction",
+            "volume",
+            "audio_bitrate",
+            "compress_audio",
+            "lowpass",
+            "highpass",
+            "remove_audio",
+            "loudnorm",
+            "audio_speed",
+            "reverb",
         }
-        has_audio_skills = any(
-            s.skill_name in _AUDIO_SKILLS for s in pipeline.steps
-        )
+        has_audio_skills = any(s.skill_name in _AUDIO_SKILLS for s in pipeline.steps)
         audio_viz = None
         audio_viz_folder = None
         if has_audio_skills:
@@ -2603,6 +3181,7 @@ Token Usage{est_tag}:
                     metrics = audio_viz.get("audio_metrics", {})
                     if metrics.get("has_audio"):
                         import json as _json
+
                         output_data += (
                             f"\n\n## Audio Analysis\n"
                             f"[Waveform and spectrogram images are embedded — "
@@ -2613,15 +3192,14 @@ Token Usage{est_tag}:
                         )
                     elif not metrics.get("has_audio"):
                         output_data += (
-                            "\n\n## Audio Analysis\n"
-                            "No audio stream found in output."
+                            "\n\n## Audio Analysis\nNo audio stream found in output."
                         )
             else:
                 color_data = _analyze_colors(video_path=output_path)
                 import json as _json
+
                 output_data = (
-                    f"Color analysis of output:\n"
-                    f"{_json.dumps(color_data, indent=2)}"
+                    f"Color analysis of output:\n{_json.dumps(color_data, indent=2)}"
                 )
                 b64_data = None
 
@@ -2630,8 +3208,7 @@ Token Usage{est_tag}:
                     metrics = audio_viz.get("audio_metrics", {})
                     if metrics:
                         output_data += (
-                            f"\n\nAudio analysis:\n"
-                            f"{_json.dumps(metrics, indent=2)}"
+                            f"\n\nAudio analysis:\n{_json.dumps(metrics, indent=2)}"
                         )
 
             # Build pipeline summary
@@ -2651,9 +3228,7 @@ Token Usage{est_tag}:
                 if _is_ollama:
                     # Ollama requires raw base64 strings in an 'images'
                     # field — NOT OpenAI-style multimodal content blocks.
-                    raw_b64 = _frames_to_b64_raw(
-                        verify_frames["paths"], max_size=256
-                    )
+                    raw_b64 = _frames_to_b64_raw(verify_frames["paths"], max_size=256)
                     # Add audio viz frames if available
                     if audio_viz:
                         audio_paths = []
@@ -2662,9 +3237,9 @@ Token Usage{est_tag}:
                         if audio_viz.get("spectrogram_path"):
                             audio_paths.append(audio_viz["spectrogram_path"])
                         if audio_paths:
-                            raw_b64.extend(_frames_to_b64_raw(
-                                audio_paths, max_size=256
-                            ))
+                            raw_b64.extend(
+                                _frames_to_b64_raw(audio_paths, max_size=256)
+                            )
                     verify_msg = {
                         "role": "user",
                         "content": verify_prompt,
@@ -2672,18 +3247,17 @@ Token Usage{est_tag}:
                     }
                     verify_messages = [verify_msg]
                     logger.info(
-                        "Verification: sending %d images via Ollama "
-                        "native format", len(raw_b64),
+                        "Verification: sending %d images via Ollama native format",
+                        len(raw_b64),
                     )
                 else:
                     content_parts = [{"type": "text", "text": verify_prompt}]
                     for img_block in b64_data:
                         content_parts.append(img_block)
-                    verify_messages = [
-                        {"role": "user", "content": content_parts}
-                    ]
+                    verify_messages = [{"role": "user", "content": content_parts}]
                 verify_response = await connector.chat_with_tools(
-                    verify_messages, tools=[],
+                    verify_messages,
+                    tools=[],
                 )
             else:
                 verify_response = await connector.generate(
@@ -2702,8 +3276,9 @@ Token Usage{est_tag}:
             cleaned = verify_text
             # Remove ```json ... ``` or ``` ... ``` fencing
             import re as _re
+
             fence_match = _re.search(
-                r'```(?:json)?\s*(\{.*\})\s*```', cleaned, _re.DOTALL
+                r"```(?:json)?\s*(\{.*\})\s*```", cleaned, _re.DOTALL
             )
             if fence_match:
                 cleaned = fence_match.group(1).strip()
@@ -2733,16 +3308,10 @@ Token Usage{est_tag}:
                     if skill_name:
                         fix_pipeline.add_step(skill_name, params)
                 fix_command = self.composer.compose(fix_pipeline)
-                fix_result = self.process_manager.execute(
-                    fix_command, timeout=600
-                )
+                fix_result = self.process_manager.execute(fix_command, timeout=600)
                 if fix_result.success:
-                    logger.info(
-                        "Verification fix succeeded — using corrected output"
-                    )
-                    logger.info(
-                        "Corrected command: %s", fix_command.to_string()
-                    )
+                    logger.info("Verification fix succeeded — using corrected output")
+                    logger.info("Corrected command: %s", fix_command.to_string())
                     logger.info(
                         "Corrected pipeline:\n%s",
                         self.composer.explain_pipeline(fix_pipeline),
@@ -2761,13 +3330,11 @@ Token Usage{est_tag}:
                 )
                 if corrected:
                     logger.debug(
-                        f"Parsed verification response (no pipeline key): "
-                        f"{corrected}"
+                        f"Parsed verification response (no pipeline key): {corrected}"
                     )
                 else:
                     logger.debug(
-                        f"Could not parse verification response: "
-                        f"{verify_text[:500]}"
+                        f"Could not parse verification response: {verify_text[:500]}"
                     )
                 return None
         finally:
@@ -2781,6 +3348,7 @@ Token Usage{est_tag}:
             if audio_viz_folder:
                 try:
                     import shutil
+
                     shutil.rmtree(audio_viz_folder, ignore_errors=True)
                 except Exception:
                     pass
@@ -2798,14 +3366,22 @@ Token Usage{est_tag}:
         import subprocess
 
         try:
-            waveform = audio["waveform"]       # (1, channels, samples)
+            waveform = audio["waveform"]  # (1, channels, samples)
             sample_rate = audio["sample_rate"]
         except (KeyError, TypeError):
             return None
 
         channels = waveform.size(1)
-        audio_data = waveform.squeeze(0).transpose(0, 1).contiguous()  # (samples, channels)
-        audio_bytes = (audio_data * 32767.0).clamp(-32768, 32767).to(torch.int16).numpy().tobytes()
+        audio_data = (
+            waveform.squeeze(0).transpose(0, 1).contiguous()
+        )  # (samples, channels)
+        audio_bytes = (
+            (audio_data * 32767.0)
+            .clamp(-32768, 32767)
+            .to(torch.int16)
+            .numpy()
+            .tobytes()
+        )
 
         tmp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         tmp_wav.close()
@@ -2816,11 +3392,16 @@ Token Usage{est_tag}:
 
         result = subprocess.run(
             [
-                ffmpeg_bin, "-y",
-                "-f", "s16le",
-                "-ar", str(sample_rate),
-                "-ac", str(channels),
-                "-i", "-",
+                ffmpeg_bin,
+                "-y",
+                "-f",
+                "s16le",
+                "-ar",
+                str(sample_rate),
+                "-ac",
+                str(channels),
+                "-i",
+                "-",
                 tmp_wav.name,
             ],
             input=audio_bytes,
@@ -2841,17 +3422,28 @@ Token Usage{est_tag}:
             Duration in seconds, or 0.0 if probing fails.
         """
         import subprocess
+
         ffprobe_bin = shutil.which("ffprobe")
         if not ffprobe_bin:
             return 0.0
         try:
             from ..core.sanitize import validate_video_path
+
             video_path = validate_video_path(str(video_path))
             result = subprocess.run(
-                [ffprobe_bin, "-v", "error", "-show_entries",
-                 "format=duration", "-of", "default=noprint_wrappers=1:nokey=1",
-                 video_path],
-                capture_output=True, text=True, check=True,
+                [
+                    ffprobe_bin,
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    video_path,
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
             )
             return float(result.stdout.strip())
         except Exception:
@@ -2868,14 +3460,15 @@ Token Usage{est_tag}:
         """
         try:
             import av  # type: ignore[import-not-found]
+
             container = av.open(video_path)
             for frame in container.decode(video=0):
                 arr = frame.to_ndarray(format="rgb24")
                 container.close()
                 return (
                     torch.from_numpy(arr)
-                    .float()
-                    .div_(255.0)
+                    .to(torch.float32, copy=False)
+                    .mul_(1.0 / 255.0)
                     .unsqueeze(0)  # (H,W,3) → (1,H,W,3)
                 )
             container.close()
@@ -2912,7 +3505,9 @@ Token Usage{est_tag}:
                 metadata.add_text(key, json.dumps(extra_pnginfo[key]))
         if extra_info is not None:
             for key, value in extra_info.items():
-                metadata.add_text(key, value if isinstance(value, str) else json.dumps(value))
+                metadata.add_text(
+                    key, value if isinstance(value, str) else json.dumps(value)
+                )
 
         img.save(png_path, pnginfo=metadata, compress_level=4)
 
@@ -2977,12 +3572,17 @@ Token Usage{est_tag}:
         import glob
         from concurrent.futures import ThreadPoolExecutor, as_completed
         from ..skills.composer import Pipeline
-        from ..core.sanitize import validate_video_path as _validate, validate_output_path as _validate_out
+        from ..core.sanitize import (
+            validate_video_path as _validate,
+            validate_output_path as _validate_out,
+        )
 
         # --- Validate folder ---
         folder = Path(video_folder)
         if not folder.exists() or not folder.is_dir():
-            raise ValueError(f"Batch mode: video_folder not found or not a directory: {video_folder}")
+            raise ValueError(
+                f"Batch mode: video_folder not found or not a directory: {video_folder}"
+            )
 
         if not prompt.strip():
             raise ValueError("Prompt cannot be empty")
@@ -3032,18 +3632,24 @@ Token Usage{est_tag}:
                 )
             effective_model = custom_model.strip()
 
-        connected_inputs_str = f"Batch mode: {len(valid_files)} videos in {video_folder}"
-        connector = self.pipeline_generator.create_connector(effective_model, ollama_url, api_key)
+        connected_inputs_str = (
+            f"Batch mode: {len(valid_files)} videos in {video_folder}"
+        )
+        connector = self.pipeline_generator.create_connector(
+            effective_model, ollama_url, api_key
+        )
         try:
             spec = await self.pipeline_generator.generate(
-                connector, prompt, metadata_str,
+                connector,
+                prompt,
+                metadata_str,
                 connected_inputs=connected_inputs_str,
                 video_path=valid_files[0] if valid_files else "",
                 use_vision=use_vision,
                 ptc_mode=ptc_mode,
             )
         finally:
-            if hasattr(connector, 'close'):
+            if hasattr(connector, "close"):
                 await connector.close()
 
         pipeline_steps = spec.get("pipeline", [])
@@ -3051,9 +3657,18 @@ Token Usage{est_tag}:
 
         # --- Quality preset ---
         crf_map = {"draft": 28, "standard": 23, "high": 18, "lossless": 0}
-        preset_map = {"draft": "ultrafast", "standard": "medium", "high": "slow", "lossless": "veryslow"}
+        preset_map = {
+            "draft": "ultrafast",
+            "standard": "medium",
+            "high": "slow",
+            "lossless": "veryslow",
+        }
         effective_crf = crf if crf >= 0 else crf_map.get(quality_preset, 23)
-        effective_preset = encoding_preset if encoding_preset != "auto" else preset_map.get(quality_preset, "medium")
+        effective_preset = (
+            encoding_preset
+            if encoding_preset != "auto"
+            else preset_map.get(quality_preset, "medium")
+        )
 
         # --- Process each video ---
         output_paths = []
@@ -3077,10 +3692,13 @@ Token Usage{est_tag}:
                     if skill_name:
                         pipeline.add_step(skill_name, params)
 
-                pipeline.add_step("quality", {
-                    "crf": effective_crf,
-                    "preset": effective_preset,
-                })
+                pipeline.add_step(
+                    "quality",
+                    {
+                        "crf": effective_crf,
+                        "preset": effective_preset,
+                    },
+                )
 
                 command = self.composer.compose(pipeline)
                 result = self.process_manager.execute(command, timeout=600)
@@ -3093,10 +3711,7 @@ Token Usage{est_tag}:
                 return (vpath, str(e), "")
 
         with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
-            futures = {
-                executor.submit(process_single, vf): vf
-                for vf in valid_files
-            }
+            futures = {executor.submit(process_single, vf): vf for vf in valid_files}
             for future in as_completed(futures):
                 vf = futures[future]
                 try:
@@ -3121,6 +3736,7 @@ Token Usage{est_tag}:
         audio_dict = self.media_converter.extract_audio(last_path)
 
         import json
+
         paths_json = json.dumps(output_paths, indent=2)
 
         # Per-file status table
@@ -3131,8 +3747,9 @@ Token Usage{est_tag}:
             "File results:",
         ]
         # Map each source filename stem -> actual output path for reporting
-        _stem_to_out: dict[str, str] = {Path(p).stem.replace("_edited", ""): p
-                                         for p in output_paths}
+        _stem_to_out: dict[str, str] = {
+            Path(p).stem.replace("_edited", ""): p for p in output_paths
+        }
         for vf in valid_files:
             stem = Path(vf).stem
             actual_out = _stem_to_out.get(stem)
@@ -3140,25 +3757,30 @@ Token Usage{est_tag}:
                 # Successful — show output size if available
                 try:
                     size_kb = Path(actual_out).stat().st_size // 1024
-                    status_lines.append(f"  ✓ {Path(vf).name} → {Path(actual_out).name} ({size_kb:,} KB)")
+                    status_lines.append(
+                        f"  ✓ {Path(vf).name} → {Path(actual_out).name} ({size_kb:,} KB)"
+                    )
                 except OSError:
-                    status_lines.append(f"  ✓ {Path(vf).name} → {Path(actual_out).name}")
+                    status_lines.append(
+                        f"  ✓ {Path(vf).name} → {Path(actual_out).name}"
+                    )
             else:
                 # Find the error message for this file (default if no match)
                 err_msg = next(
-                    ((e.split(": ", 1)[1] if ": " in e else e)
-                     for e in errors
-                     if e.startswith(Path(vf).name)),
+                    (
+                        (e.split(": ", 1)[1] if ": " in e else e)
+                        for e in errors
+                        if e.startswith(Path(vf).name)
+                    ),
                     "unknown error",
                 )
                 status_lines.append(f"  ✗ {Path(vf).name}: {err_msg}")
 
-        analysis = (
-            f"Batch Mode — {interpretation}\n\n"
-            + "\n".join(status_lines)
-        )
+        analysis = f"Batch Mode — {interpretation}\n\n" + "\n".join(status_lines)
 
-        command_log = "\n\n".join(command_logs) if command_logs else "No commands executed"
+        command_log = (
+            "\n\n".join(command_logs) if command_logs else "No commands executed"
+        )
 
         # --- Cleanup batch temp directory ---
         if not save_output and out_dir and out_dir.exists():
