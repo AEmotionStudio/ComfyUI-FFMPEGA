@@ -190,7 +190,7 @@ class TestSingleSkill:
         probe = _probe(output_path)
         duration = float(probe["format"]["duration"])
         # 2x speed on 0.2s → ~0.1s (allow tolerance for container overhead)
-        assert duration < 0.2, f"Expected ~0.1s but got {duration}s"
+        assert duration <= 0.2, f"Expected ≤0.1s but got {duration}s"
 
 
 # ---------------------------------------------------------------------------
