@@ -11,7 +11,10 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
-from ..core.sanitize import validate_video_path
+try:
+    from ..core.sanitize import validate_video_path
+except ImportError:
+    from core.sanitize import validate_video_path  # type: ignore[no-redef]
 
 logger = logging.getLogger("ffmpega")
 

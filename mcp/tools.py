@@ -3,11 +3,18 @@
 from pathlib import Path
 from typing import Optional
 
-from ..core.video.analyzer import VideoAnalyzer
-from ..core.executor.process_manager import ProcessManager
-from ..skills.registry import get_registry, SkillCategory
-from ..skills.composer import SkillComposer, Pipeline
-from ..core.sanitize import validate_video_path, validate_output_file_path
+try:
+    from ..core.video.analyzer import VideoAnalyzer
+    from ..core.executor.process_manager import ProcessManager
+    from ..skills.registry import get_registry, SkillCategory
+    from ..skills.composer import SkillComposer, Pipeline
+    from ..core.sanitize import validate_video_path, validate_output_file_path
+except ImportError:
+    from core.video.analyzer import VideoAnalyzer  # type: ignore[no-redef]
+    from core.executor.process_manager import ProcessManager  # type: ignore[no-redef]
+    from skills.registry import get_registry, SkillCategory  # type: ignore[no-redef]
+    from skills.composer import SkillComposer, Pipeline  # type: ignore[no-redef]
+    from core.sanitize import validate_video_path, validate_output_file_path  # type: ignore[no-redef]
 
 
 def analyze_video(video_path: str) -> dict:
@@ -288,7 +295,10 @@ def extract_frames(
     Returns:
         Dictionary with frame_count, paths, and folder.
     """
-    from ..core.executor.preview import PreviewGenerator
+    try:
+        from ..core.executor.preview import PreviewGenerator
+    except ImportError:
+        from core.executor.preview import PreviewGenerator  # type: ignore[no-redef]
 
     try:
         video_path = validate_video_path(video_path)
