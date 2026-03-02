@@ -16,6 +16,12 @@ import torch  # type: ignore[import-not-found]
 
 import folder_paths  # type: ignore[import-not-found]
 
+from . import input_resolver as _ir
+from . import output_handler as _oh
+from . import execution_engine as _ee
+from . import nollm_modes as _nollm
+from . import batch_processor as _bp
+
 
 class FFMPEGAgentNode:
     """Main FFMPEG Agent node that transforms natural language prompts into video edits."""
@@ -419,7 +425,7 @@ class FFMPEGAgentNode:
     # ------------------------------------------------------------------ #
 
     @staticmethod
-    def _inject_effects_hints(prompt: str, pipeline_json: str) -> str:
+    def _inject_effects_hints(prompt: str, pipeline_json: str) -> str:  # type: ignore[override]
         """Inject FFMPEGAEffectsBuilder parameters into the prompt.
 
         This converts the pipeline_json from the effects builder node
@@ -456,294 +462,17 @@ class FFMPEGAgentNode:
         hint_lines.append("--- END EFFECTS BUILDER ---")
         return prompt + "\n".join(hint_lines)
 
-    def _resolve_inputs(
-        self,
-        video_path: str,
-        images_a,
-        image_a,
-        image_path_a: str,
-        video_a: str,
-        text_a: str,
-        subtitle_path: str,
-        audio_a,
-        **kwargs,
-    ):
-        """Resolve all input types and return effective_video_path plus
-        collected extras.
+    def _resolve_inputs(self, video_path, images_a, image_a, image_path_a, video_a, text_a, subtitle_path, audio_a, **kwargs):
+        """Delegate to input_resolver module."""
+        return _ir.resolve_inputs(self.media_converter, video_path, images_a, image_a, image_path_a, video_a, text_a, subtitle_path, audio_a, **kwargs)
 
-        Returns
-        -------
-        tuple of:
-            effective_video_path (str),
-            temp_video_from_images (str | None),
-            temp_video_with_audio (str | None),
-            _all_video_paths (list[str]),
-            _all_image_paths (list[str]),
-            _all_text_inputs (list[str]),
-            _images_a_shape (tuple | None),  -- shape before tensor was freed
-        """
-        temp_video_from_images = None
-        temp_video_with_audio = None
-        _images_a_shape = None
+    def _build_connected_inputs_summary(self, images_a, _images_a_shape, video_path, audio_a, image_a, _all_video_paths, _all_image_paths, _all_text_inputs, video_metadata, **kwargs):
+        """Delegate to input_resolver module."""
+        return _ir.build_connected_inputs_summary(images_a, _images_a_shape, video_path, audio_a, image_a, _all_video_paths, _all_image_paths, _all_text_inputs, video_metadata, **kwargs)
 
-        # Collect all video_* path inputs
-        _all_video_paths = []
-        if video_a and video_a.strip() and os.path.isfile(video_a.strip()):
-            _all_video_paths.append(video_a.strip())
-        for k in sorted(kwargs):
-            if k.startswith("video_") and k not in ("video_folder", "video_path") and kwargs[k]:
-                vp = str(kwargs[k]).strip()
-                if vp and os.path.isfile(vp):
-                    _all_video_paths.append(vp)
-
-        # Collect all image_path_* inputs
-        _all_image_paths = []
-        if image_path_a and image_path_a.strip() and os.path.isfile(image_path_a.strip()):
-            _all_image_paths.append(image_path_a.strip())
-        for k in sorted(kwargs):
-            if k.startswith("image_path_") and kwargs[k]:
-                ip = str(kwargs[k]).strip()
-                if ip and os.path.isfile(ip):
-                    _all_image_paths.append(ip)
-
-        # Collect all text_* inputs
-        _all_text_inputs = []
-        if text_a and text_a.strip():
-            _all_text_inputs.append(text_a.strip())
-        for k in sorted(kwargs):
-            if k.startswith("text_") and kwargs[k]:
-                tv = str(kwargs[k]).strip()
-                if tv:
-                    _all_text_inputs.append(tv)
-        if subtitle_path and subtitle_path.strip():
-            sp = subtitle_path.strip()
-            if os.path.isfile(sp):
-                _all_text_inputs.insert(0, json.dumps({
-                    "text": "",
-                    "mode": "subtitle",
-                    "path": sp,
-                    "position": "bottom_center",
-                    "font_size": 24,
-                    "font_color": "white",
-                    "start_time": 0.0,
-                    "end_time": -1.0,
-                    "auto_mode": True,
-                }))
-
-        has_extra_images = (
-            image_a is not None
-            or any(k.startswith("image_") and not k.startswith("image_path_") and kwargs.get(k) is not None for k in kwargs)
-            or len(_all_video_paths) > 0
-            or len(_all_image_paths) > 0
-        )
-
-        if images_a is not None:
-            _images_a_shape = images_a.shape
-            temp_video_from_images = self.media_converter.images_to_video(images_a)
-            effective_video_path = temp_video_from_images
-            del images_a
-            import gc
-            gc.collect()
-            try:
-                import torch as _torch
-                if _torch.cuda.is_available():
-                    _torch.cuda.empty_cache()
-            except Exception:
-                pass
-        elif video_path and video_path.strip():
-            effective_video_path = video_path
-        elif _all_video_paths:
-            effective_video_path = _all_video_paths.pop(0)
-        elif has_extra_images:
-            dummy = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
-            dummy.close()
-            import subprocess
-            subprocess.run(
-                ["ffmpeg", "-y", "-f", "lavfi", "-i",
-                 "color=c=black:s=1920x1080:d=1:r=25",
-                 "-c:v", "libx264", "-t", "1", dummy.name],
-                capture_output=True,
-            )
-            temp_video_from_images = dummy.name
-            effective_video_path = dummy.name
-        else:
-            effective_video_path = video_path
-
-        from ..core.sanitize import validate_video_path  # type: ignore[import-not-found]
-        effective_video_path = validate_video_path(effective_video_path)
-
-        # Pre-mux audio into the video if it has no audio stream
-        if audio_a is not None and not self.media_converter.has_audio_stream(effective_video_path):
-            tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
-            tmp.close()
-            import shutil as _shmod
-            _shmod.copy2(effective_video_path, tmp.name)
-            self.media_converter.mux_audio(tmp.name, audio_a)
-            temp_video_with_audio = tmp.name
-            effective_video_path = tmp.name
-
-        return (
-            effective_video_path,
-            temp_video_from_images,
-            temp_video_with_audio,
-            _all_video_paths,
-            _all_image_paths,
-            _all_text_inputs,
-            _images_a_shape,
-        )
-
-    def _build_connected_inputs_summary(
-        self,
-        images_a,
-        _images_a_shape,
-        video_path: str,
-        audio_a,
-        image_a,
-        _all_video_paths: list,
-        _all_image_paths: list,
-        _all_text_inputs: list,
-        video_metadata,
-        **kwargs,
-    ) -> str:
-        """Build the connected-inputs context string sent to the LLM."""
-        input_lines = []
-
-        if images_a is not None:
-            dur = (video_metadata.primary_video.duration
-                   if video_metadata.primary_video and video_metadata.primary_video.duration else "unknown")
-            fps = (video_metadata.primary_video.frame_rate
-                   if video_metadata.primary_video and video_metadata.primary_video.frame_rate else "unknown")
-            input_lines.append(
-                f"- images_a (video): connected — primary video input, "
-                f"{images_a.shape[0]} frames, {dur}s, {fps}fps"
-            )
-        elif _images_a_shape is not None:
-            dur = (video_metadata.primary_video.duration
-                   if video_metadata.primary_video and video_metadata.primary_video.duration else "unknown")
-            fps = (video_metadata.primary_video.frame_rate
-                   if video_metadata.primary_video and video_metadata.primary_video.frame_rate else "unknown")
-            input_lines.append(
-                f"- images_a (video): connected — primary video input, "
-                f"{_images_a_shape[0]} frames, {dur}s, {fps}fps"
-            )
-        elif video_path and video_path.strip():
-            input_lines.append("- video_path: connected — file input")
-
-        for k in sorted(kwargs):
-            if k.startswith("images_") and k != "images_a" and kwargs[k] is not None:
-                tensor = kwargs[k]
-                input_lines.append(f"- {k} (video): connected — {tensor.shape[0]} frames")
-
-        for vi, vp in enumerate(_all_video_paths):
-            letter = chr(ord('a') + vi)
-            input_lines.append(f"- video_{letter} (video file): connected — {vp}")
-
-        if audio_a is not None:
-            sr = audio_a.get("sample_rate", "unknown")
-            wf = audio_a.get("waveform")
-            dur_str = "unknown"
-            if wf is not None and sr and sr != "unknown":
-                dur_str = f"{wf.shape[-1] / sr:.1f}s"
-            input_lines.append(f"- audio_a: connected — {dur_str}, {sr}Hz")
-        for k in sorted(kwargs):
-            if k.startswith("audio_") and k != "audio_a" and kwargs[k] is not None:
-                ad = kwargs[k]
-                sr = ad.get("sample_rate", "unknown")
-                wf = ad.get("waveform")
-                dur_str = "unknown"
-                if wf is not None and sr and sr != "unknown":
-                    dur_str = f"{wf.shape[-1] / sr:.1f}s"
-                input_lines.append(f"- {k}: connected — {dur_str}, {sr}Hz")
-
-        if image_a is not None:
-            input_lines.append(
-                f"- image_a: connected — single image "
-                f"{image_a.shape[2]}x{image_a.shape[1]}"
-            )
-        for k in sorted(kwargs):
-            if (k.startswith("image_") and k != "image_a"
-                    and not k.startswith("images_")
-                    and not k.startswith("image_path_")
-                    and kwargs[k] is not None):
-                img = kwargs[k]
-                input_lines.append(
-                    f"- {k}: connected — single image {img.shape[2]}x{img.shape[1]}"
-                )
-
-        for ii, ip in enumerate(_all_image_paths):
-            letter = chr(ord('a') + ii)
-            input_lines.append(f"- image_path_{letter} (image file): connected — {ip}")
-
-        for ti, raw_text in enumerate(_all_text_inputs):
-            letter = chr(ord('a') + ti)
-            try:
-                meta = json.loads(raw_text)
-                if isinstance(meta, dict) and "mode" in meta:
-                    mode = meta.get("mode", "raw")
-                    text_preview = meta.get("text", "")[:60]
-                    path = meta.get("path", "")
-                    if path:
-                        input_lines.append(
-                            f"- text_{letter} ({mode}): connected — subtitle file: {path}"
-                        )
-                    else:
-                        input_lines.append(
-                            f"- text_{letter} ({mode}): connected — "
-                            f"\"{text_preview}{'...' if len(meta.get('text', '')) > 60 else ''}\" "
-                            f"({len(meta.get('text', ''))} chars)"
-                        )
-                    continue
-            except (json.JSONDecodeError, TypeError):
-                pass
-            preview = raw_text[:60]
-            input_lines.append(
-                f"- text_{letter} (raw text): connected — "
-                f"\"{preview}{'...' if len(raw_text) > 60 else ''}\" "
-                f"({len(raw_text)} chars)"
-            )
-
-        return "\n".join(input_lines) if input_lines else "No extra inputs connected"
-
-    def _build_output_path(
-        self,
-        effective_video_path: str,
-        save_output: bool,
-        output_path: str,
-        preview_mode: bool,
-    ):
-        """Determine output path and optional temp render directory.
-
-        Returns
-        -------
-        (output_path: str, temp_render_dir: str | None)
-        """
-        from ..core.sanitize import (  # type: ignore[import-not-found]
-            validate_output_file_path,
-            validate_output_path as _validate_output_path,
-        )
-        stem = Path(effective_video_path).stem
-        suffix = "_preview" if preview_mode else "_edited"
-        temp_render_dir = None
-
-        if save_output:
-            if not output_path:
-                output_dir = folder_paths.get_output_directory()
-                output_path = str(Path(output_dir) / f"{stem}{suffix}.mp4")
-            elif Path(output_path).is_dir() or output_path.endswith(os.sep):
-                output_dir = _validate_output_path(output_path.rstrip(os.sep))
-                output_path = str(Path(output_dir) / f"{stem}{suffix}.mp4")
-            elif not Path(output_path).suffix:
-                output_dir = _validate_output_path(output_path)
-                os.makedirs(output_dir, exist_ok=True)
-                output_path = str(Path(output_dir) / f"{stem}{suffix}.mp4")
-            else:
-                output_path = validate_output_file_path(output_path)
-        else:
-            temp_render_dir = tempfile.mkdtemp(prefix="ffmpega_")
-            output_path = str(Path(temp_render_dir) / f"{stem}{suffix}.mp4")
-
-        os.makedirs(Path(output_path).parent, exist_ok=True)
-        return output_path, temp_render_dir
+    def _build_output_path(self, effective_video_path, save_output, output_path, preview_mode):
+        """Delegate to output_handler module."""
+        return _oh.build_output_path(effective_video_path, save_output, output_path, preview_mode)
 
     def _inject_extra_inputs(
         self,
@@ -1009,282 +738,29 @@ class FFMPEGAgentNode:
             temp_audio_input,
         )
 
-    async def _execute_pipeline(
-        self,
-        pipeline,
-        command,
-        connector,
-        prompt: str,
-        metadata_str: str,
-        connected_inputs_str: str,
-        effective_video_path: str,
-        output_path: str,
-        quality_preset: str,
-        crf: int,
-        encoding_preset: str,
-        preview_mode: bool,
-        verify_output: bool,
-        use_vision: bool,
-        ptc_mode: str,
-        video_metadata,
-        _all_text_inputs: list,
-    ):
-        """Dry-run validate, execute, retry on error, and optionally verify output.
-
-        Returns
-        -------
-        (result, pipeline, command)
-        """
-        from ..skills.composer import Pipeline  # type: ignore[import-not-found]
-
-        # FPS normalization for speed changes
-        vf_str = command.video_filters.to_string()
-        if "setpts=" in vf_str and not command.complex_filter:
-            input_fps = (
-                video_metadata.primary_video.frame_rate
-                if video_metadata.primary_video and video_metadata.primary_video.frame_rate
-                else 30
-            )
-            command.video_filters.add_filter("fps", {"fps": int(round(input_fps))})
-
-        logger.debug("Command: %s", command.to_string())
-        logger.debug("Audio filters: '%s'", command.audio_filters.to_string())
-        logger.debug("Video filters: '%s'", command.video_filters.to_string())
-        if command.complex_filter:
-            logger.debug("Complex filter: '%s'", command.complex_filter)
-        logger.debug("Pipeline steps: %s", [(s.skill_name, s.params) for s in pipeline.steps])
-
-        # Dry-run validation
-        dry_result = self.process_manager.dry_run(command, timeout=30)
-        if not dry_result.success:
-            logger.warning("Dry-run failed: %s (will attempt execution anyway)", dry_result.error_message)
-
-        # Preview downscale
-        if preview_mode:
-            if command.complex_filter:
-                command.output_options.extend(["-s", "480x270"])
-            else:
-                command.video_filters.add_filter("scale", {"w": 480, "h": -1})
-            command.output_options.extend(["-t", "10"])
-
-        # Execute with error-feedback retry
-        max_attempts = 2
-        result = None
-        for attempt in range(max_attempts):
-            result = self.process_manager.execute(command, timeout=600)
-            if result.success:
-                break
-            if attempt < max_attempts - 1:
-                logger.warning(
-                    "FFMPEG failed (attempt %d), feeding error back to LLM: %s",
-                    attempt + 1, result.error_message,
-                )
-                error_prompt = (
-                    f"The previous FFMPEG command failed.\n"
-                    f"Original request: {prompt}\n"
-                    f"Failed command: {command.to_string()}\n"
-                    f"Error: {result.error_message}\n"
-                    f"Stderr: {result.stderr[-500:] if result.stderr else 'N/A'}\n\n"
-                    f"Please fix the pipeline to avoid this error. "
-                    f"Return only the corrected pipeline JSON."
-                )
-                try:
-                    retry_spec = await self.pipeline_generator.generate(
-                        connector, error_prompt, metadata_str,
-                        connected_inputs=connected_inputs_str,
-                        video_path=effective_video_path,
-                        use_vision=use_vision,
-                        ptc_mode=ptc_mode,
-                    )
-                    pipeline = Pipeline(
-                        input_path=effective_video_path,
-                        output_path=output_path,
-                        extra_inputs=pipeline.extra_inputs,
-                        metadata=pipeline.metadata,
-                    )
-                    pipeline.text_inputs = _all_text_inputs
-                    for step in retry_spec.get("pipeline", []):
-                        skill_name = step.get("skill")
-                        params = step.get("params", {})
-                        if skill_name:
-                            pipeline.add_step(skill_name, params)
-                    if quality_preset and not any(
-                        s.skill_name in ["quality", "compress"] for s in pipeline.steps
-                    ):
-                        _crf_map = {"draft": 28, "standard": 23, "high": 18, "lossless": 0}
-                        _preset_map = {"draft": "ultrafast", "standard": "medium", "high": "slow", "lossless": "veryslow"}
-                        pipeline.add_step("quality", {
-                            "crf": crf if crf >= 0 else _crf_map.get(quality_preset, 23),
-                            "preset": encoding_preset if encoding_preset != "auto" else _preset_map.get(quality_preset, "medium"),
-                        })
-                    command = self.composer.compose(pipeline)
-                    retry_vf = command.video_filters.to_string()
-                    if "setpts=" in retry_vf and not command.complex_filter:
-                        _input_fps = (
-                            video_metadata.primary_video.frame_rate
-                            if video_metadata.primary_video and video_metadata.primary_video.frame_rate
-                            else 30
-                        )
-                        command.video_filters.add_filter("fps", {"fps": int(round(_input_fps))})
-                    logger.debug("Retry command: %s", command.to_string())
-                    if preview_mode:
-                        if command.complex_filter:
-                            command.output_options.extend(["-s", "480x270"])
-                        else:
-                            command.video_filters.add_filter("scale", {"w": 480, "h": -1})
-                        command.output_options.extend(["-t", "10"])
-                except Exception as retry_err:
-                    logger.warning("Error feedback retry failed: %s", retry_err)
-                    break
-
-        if not result.success:
-            if hasattr(connector, 'close'):
-                await connector.close()
-            raise RuntimeError(
-                f"FFMPEG execution failed: {result.error_message}\n"
-                f"Command: {command.to_string()}"
-            )
-
-        # Output verification
-        _VERIFICATION_TIMEOUT = 90.0
-        _MAX_CORRECTION_ATTEMPTS = 2
-        _skill_degraded = pipeline.metadata.get("_skill_degraded", False)
-        if _skill_degraded:
-            logger.info("Skipping output verification — skill handler reported degraded output (e.g. SAM3 OOM fallback)")
-        elif verify_output and result.success:
-            logger.info("Output verification enabled — inspecting result...")
-            for attempt in range(_MAX_CORRECTION_ATTEMPTS):
-                try:
-                    verification_result = await asyncio.wait_for(
-                        self._verify_output(
-                            connector=connector,
-                            output_path=output_path,
-                            prompt=prompt,
-                            pipeline=pipeline,
-                            effective_video_path=effective_video_path,
-                            use_vision=use_vision,
-                        ),
-                        timeout=_VERIFICATION_TIMEOUT,
-                    )
-                    if verification_result is not None:
-                        result, pipeline, command = verification_result
-                        logger.info("Correction attempt %d applied — re-verifying...", attempt + 1)
-                        continue
-                    else:
-                        logger.info("Verification PASS (attempt %d)", attempt + 1)
-                        break
-                except asyncio.TimeoutError:
-                    logger.warning(
-                        "Output verification timed out after %.0fs — keeping current output",
-                        _VERIFICATION_TIMEOUT,
-                    )
-                    break
-                except Exception as verify_err:
-                    logger.warning("Output verification failed: %s", verify_err)
-                    break
-
-        return result, pipeline, command
-
-    def _handle_audio_output(
-        self,
-        command,
-        pipeline,
-        audio_a,
-        audio_source: str,
-        audio_mode: str,
-        output_path: str,
-        **kwargs,
-    ) -> None:
-        """Mux or replace audio in the output file as directed by the LLM spec."""
-        removes_audio = "-an" in command.output_options
-        has_audio_processing = removes_audio or bool(command.audio_filters.to_string())
-        audio_already_embedded = pipeline.metadata.get("_has_embedded_audio", False)
-
-        audio_inputs = {}
-        if audio_a is not None:
-            audio_inputs["audio_a"] = audio_a
-        for k in sorted(kwargs):
-            if k.startswith("audio_") and k != "audio_a" and kwargs[k] is not None:
-                audio_inputs[k] = kwargs[k]
-
-        if audio_source == "mix":
-            for step in pipeline.steps:
-                step_audio = step.params.get("audio_source")
-                if step_audio and step_audio != "mix":
-                    audio_source = step_audio
-                    break
-
-        logger.debug(
-            "Audio decision: removes=%s, has_processing=%s, "
-            "already_embedded=%s, audio_source=%s, available=%s",
-            removes_audio, has_audio_processing,
-            audio_already_embedded, audio_source, list(audio_inputs.keys()),
+    async def _execute_pipeline(self, pipeline, command, connector, prompt, metadata_str, connected_inputs_str, effective_video_path, output_path, quality_preset, crf, encoding_preset, preview_mode, verify_output, use_vision, ptc_mode, video_metadata, _all_text_inputs):
+        """Delegate to execution_engine module."""
+        return await _ee.execute_pipeline(
+            pipeline=pipeline, command=command, connector=connector,
+            composer=self.composer, process_manager=self.process_manager,
+            pipeline_generator=self.pipeline_generator,
+            prompt=prompt, metadata_str=metadata_str,
+            connected_inputs_str=connected_inputs_str,
+            effective_video_path=effective_video_path, output_path=output_path,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset, preview_mode=preview_mode,
+            verify_output=verify_output, use_vision=use_vision,
+            ptc_mode=ptc_mode, video_metadata=video_metadata,
+            _all_text_inputs=_all_text_inputs,
         )
 
-        if audio_inputs and not removes_audio and not has_audio_processing and not audio_already_embedded:
-            if audio_source and audio_source != "mix" and audio_source in audio_inputs:
-                logger.debug("Using specific audio: %s", audio_source)
-                self.media_converter.mux_audio(output_path, audio_inputs[audio_source], audio_mode=audio_mode)
-            elif len(audio_inputs) == 1:
-                name = list(audio_inputs.keys())[0]
-                logger.debug("Using only available audio: %s", name)
-                self.media_converter.mux_audio(output_path, audio_inputs[name], audio_mode=audio_mode)
-            else:
-                logger.debug("Mixing %d audio tracks: %s", len(audio_inputs), list(audio_inputs.keys()))
-                self.media_converter.mux_audio_mix(output_path, list(audio_inputs.values()), audio_mode=audio_mode)
-        elif audio_inputs and audio_already_embedded and not removes_audio:
-            if audio_source and audio_source != "mix" and audio_source in audio_inputs:
-                logger.info("Replacing concat audio with explicit audio source: %s", audio_source)
-                self.media_converter.mux_audio(output_path, audio_inputs[audio_source], audio_mode="replace")
-            elif len(audio_inputs) == 1:
-                name = list(audio_inputs.keys())[0]
-                logger.info("Replacing concat audio with connected %s", name)
-                self.media_converter.mux_audio(output_path, audio_inputs[name], audio_mode="replace")
-            else:
-                logger.debug(
-                    "Multiple audio inputs with embedded audio — skipping "
-                    "replacement (ambiguous intent)"
-                )
+    def _handle_audio_output(self, command, pipeline, audio_a, audio_source, audio_mode, output_path, **kwargs):
+        """Delegate to output_handler module."""
+        return _oh.handle_audio_output(command, pipeline, self.media_converter, audio_a, audio_source, audio_mode, output_path, **kwargs)
 
-    def _collect_frame_output(
-        self,
-        output_path: str,
-        unique_id: str,
-        hidden_prompt: dict,
-        removes_audio: bool,
-    ):
-        """Extract output frames and audio. Returns (images_tensor, audio_out)."""
-        images_connected = False
-        if unique_id and hidden_prompt:
-            for node_id, node_data in hidden_prompt.items():
-                if str(node_id) == unique_id:
-                    continue
-                for inp_val in (node_data.get("inputs") or {}).values():
-                    if (
-                        isinstance(inp_val, list)
-                        and len(inp_val) == 2
-                        and str(inp_val[0]) == unique_id
-                        and inp_val[1] == 0
-                    ):
-                        images_connected = True
-                        break
-                if images_connected:
-                    break
-
-        if images_connected:
-            logger.info("images output is connected — loading all frames from output video")
-            images_tensor = self.media_converter.frames_to_tensor(output_path)
-            logger.debug("Output full frames shape: %s", images_tensor.shape)
-        else:
-            images_tensor = self._extract_thumbnail_frame(output_path)
-            logger.debug("Output thumbnail shape: %s", images_tensor.shape)
-
-        if removes_audio:
-            audio_out = {"waveform": torch.zeros(1, 1, 1, dtype=torch.float32), "sample_rate": 44100}
-        else:
-            audio_out = self.media_converter.extract_audio(output_path)
-
-        return images_tensor, audio_out
+    def _collect_frame_output(self, output_path, unique_id, hidden_prompt, removes_audio):
+        """Delegate to output_handler module."""
+        return _oh.collect_frame_output(self.media_converter, output_path, unique_id, hidden_prompt, removes_audio)
 
     # ------------------------------------------------------------------ #
     #  Main entry point                                                   #
@@ -1597,7 +1073,7 @@ class FFMPEGAgentNode:
             )
         except Exception as e:
             if hasattr(connector, 'close'):
-                await connector.close()
+                await connector.close()  # type: ignore[union-attr]
             if api_key and api_key in str(e):
                 from core.sanitize import sanitize_api_key
                 raise RuntimeError(sanitize_api_key(str(e), api_key)) from None
@@ -1742,7 +1218,7 @@ class FFMPEGAgentNode:
 
         # Close LLM connector
         if hasattr(connector, 'close'):
-            await connector.close()
+            await connector.close()  # type: ignore[union-attr]
 
         # Debug probe output duration
         try:
@@ -1942,1233 +1418,122 @@ Token Usage{est_tag}:
 
         return prompt + "\n".join(hint_lines)
 
-    async def _process_effects_pipeline(
-        self,
-        pipeline_json: str,
-        prompt: str,
-        effective_video_path: str,
-        video_metadata,
-        save_output: bool,
-        output_path: str,
-        preview_mode: bool,
-        quality_preset: str,
-        crf: int,
-        encoding_preset: str,
-        whisper_device: str = "cpu",
-        whisper_model: str = "large-v3",
-        sam3_device: str = "gpu",
-        sam3_max_objects: int = 5,
-        sam3_det_threshold: float = 0.7,
-        mask_points: str = "",
-        temp_video_from_images: Optional[str] = None,
-        temp_video_with_audio: Optional[str] = None,
-        image_a=None,
-        audio_a=None,
-        _all_video_paths: Optional[list] = None,
-        _all_image_paths: Optional[list] = None,
-        _all_text_inputs: Optional[list] = None,
-        **kwargs,
-    ) -> tuple[torch.Tensor, dict, str, str, str, str]:
-        """Execute an Effects Builder pipeline directly (no LLM).
-
-        Parses the JSON from the Effects Builder node and constructs a
-        Pipeline from the skill steps + optional raw FFmpeg filters.
-
-        Returns the standard 6-tuple.
-        """
-        import json as _json
-        from ..skills.composer import Pipeline  # type: ignore[import-not-found]
-
-        try:
-            data = _json.loads(pipeline_json)
-        except (ValueError, TypeError) as exc:
-            raise RuntimeError(f"Effects Builder: invalid pipeline JSON: {exc}") from exc
-
-        steps = data.get("pipeline", [])
-        raw_ffmpeg = data.get("raw_ffmpeg", "")
-        effects_mode = data.get("effects_mode", "empty")
-
-        if effects_mode == "empty" and not raw_ffmpeg:
-            raise RuntimeError(
-                "Effects Builder: no effects selected and no raw FFmpeg filters. "
-                "Please select at least one effect or provide raw filters."
-            )
-
-        logger.info(
-            "Effects Builder mode: %s — %d skills, raw=%s",
-            effects_mode, len(steps), bool(raw_ffmpeg),
-        )
-
-        # --- Build output path ---
-        output_path, temp_render_dir = self._build_output_path(
+    async def _process_effects_pipeline(self, pipeline_json, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, whisper_device="cpu", whisper_model="large-v3", sam3_device="gpu", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", temp_video_from_images=None, temp_video_with_audio=None, image_a=None, audio_a=None, _all_video_paths=None, _all_image_paths=None, _all_text_inputs=None, **kwargs):
+        """Delegate to nollm_modes module."""
+        return await _nollm.process_effects_pipeline(
+            composer=self.composer, process_manager=self.process_manager,
+            media_converter=self.media_converter,
+            pipeline_json=pipeline_json, prompt=prompt,
             effective_video_path=effective_video_path,
-            save_output=save_output,
-            output_path=output_path,
-            preview_mode=preview_mode,
-        )
-
-        # --- Construct Pipeline from effects JSON ---
-        pipeline = Pipeline(input_path=effective_video_path, output_path=output_path)
-
-        # Set metadata
-        input_fps = (
-            video_metadata.primary_video.frame_rate
-            if video_metadata.primary_video and video_metadata.primary_video.frame_rate
-            else 24
-        )
-        pipeline.metadata["_input_fps"] = int(round(input_fps))
-        if video_metadata.primary_video:
-            pipeline.metadata["_input_width"] = video_metadata.primary_video.width
-            pipeline.metadata["_input_height"] = video_metadata.primary_video.height
-
-        # SAM3 preferences (for auto_mask steps)
-        pipeline.metadata["_sam3_device"] = sam3_device
-        pipeline.metadata["_sam3_max_objects"] = sam3_max_objects
-        pipeline.metadata["_sam3_det_threshold"] = sam3_det_threshold
-        if mask_points and mask_points.strip():
-            pipeline.metadata["_mask_points"] = mask_points.strip()
-
-        # Whisper preferences (for transcription steps)
-        pipeline.metadata["_whisper_device"] = whisper_device
-        pipeline.metadata["_whisper_model"] = whisper_model
-
-        # Add skill steps from the effects builder
-        for step in steps:
-            skill_name = step.get("skill", "")
-            params = step.get("params", {})
-            if skill_name:
-                pipeline.add_step(skill_name, params)
-
-        # --- Inject extra inputs (multi-input for concat/grid/etc.) ---
-        (
-            effective_video_path,
-            temp_multi_videos,
-            temp_audio_files,
-            temp_frames_dirs,
-            temp_audio_input,
-        ) = self._inject_extra_inputs(
-            pipeline=pipeline,
-            effective_video_path=effective_video_path,
-            image_a=image_a,
-            _all_image_paths=_all_image_paths or [],
-            _all_video_paths=_all_video_paths or [],
-            _all_text_inputs=_all_text_inputs or [],
-            audio_a=audio_a,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            whisper_device=whisper_device, whisper_model=whisper_model,
+            sam3_device=sam3_device, sam3_max_objects=sam3_max_objects,
+            sam3_det_threshold=sam3_det_threshold, mask_points=mask_points,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            image_a=image_a, audio_a=audio_a,
+            _all_video_paths=_all_video_paths,
+            _all_image_paths=_all_image_paths,
+            _all_text_inputs=_all_text_inputs,
+            _inject_extra_inputs_fn=self._inject_extra_inputs,
             **kwargs,
         )
-        pipeline.input_path = effective_video_path
-
-        # Quality preset (unless overridden by skills)
-        _NO_QUALITY_PRESET_SKILLS = {"gif", "webm"}
-        if quality_preset and not any(
-            s.skill_name in _NO_QUALITY_PRESET_SKILLS for s in pipeline.steps
-        ):
-            crf_map = {"draft": 28, "standard": 23, "high": 18, "lossless": 0}
-            preset_map = {"draft": "ultrafast", "standard": "medium", "high": "slow", "lossless": "veryslow"}
-            pipeline.add_step("quality", {
-                "crf": crf if crf >= 0 else crf_map.get(quality_preset, 23),
-                "preset": encoding_preset if encoding_preset != "auto" else preset_map.get(quality_preset, "medium"),
-            })
-
-        # --- Compose & execute ---
-        command = self.composer.compose(pipeline)
-
-        # Inject raw FFmpeg filters (appended to video filter chain)
-        if raw_ffmpeg and raw_ffmpeg.strip():
-            for raw_filter in raw_ffmpeg.strip().split(","):
-                raw_filter = raw_filter.strip()
-                if raw_filter:
-                    # Parse "name=params" into a Filter object
-                    if "=" in raw_filter:
-                        name, _, param_str = raw_filter.partition("=")
-                        command.video_filters.add_filter(name.strip(), {"": param_str})
-                    else:
-                        command.video_filters.add_filter(raw_filter)
-            logger.info("Effects Builder: appended raw filters: %s", raw_ffmpeg.strip())
-
-        logger.debug("Effects Builder command: %s", command.to_string())
-
-        if preview_mode:
-            if command.complex_filter:
-                command.output_options.extend(["-s", "480x270"])
-            else:
-                command.video_filters.add_filter("scale", {"w": 480, "h": -1})
-            command.output_options.extend(["-t", "10"])
-
-        result = self.process_manager.execute(command, timeout=600)
-        if not result.success:
-            raise RuntimeError(
-                f"Effects Builder: FFMPEG execution failed: {result.error_message}\n"
-                f"Command: {command.to_string()}"
-            )
-
-        # --- Collect frame/audio output ---
-        unique_id = str(kwargs.get("unique_id", ""))
-        hidden_prompt = kwargs.get("hidden_prompt") or {}
-        images_tensor, audio_out = self._collect_frame_output(
-            output_path=output_path,
-            unique_id=unique_id,
-            hidden_prompt=hidden_prompt,
-            removes_audio="-an" in command.output_options,
-        )
-
-        # --- Mask overlay (if auto_mask was used) ---
-        mask_overlay_path = ""
-        mask_video_path = pipeline.metadata.get("_mask_video_path", "")
-        if mask_video_path and os.path.isfile(mask_video_path):
-            mask_type = kwargs.get("mask_output_type", "colored_overlay")
-            if mask_type == "black_white":
-                mask_overlay_path = mask_video_path
-            else:
-                try:
-                    from ..core.sam3_masker import generate_mask_overlay
-                    mask_overlay_path = generate_mask_overlay(
-                        video_path=effective_video_path,
-                        mask_video_path=mask_video_path,
-                    )
-                except Exception as e:
-                    logger.warning("Effects Builder: mask overlay failed: %s", e)
-
-        # --- Build analysis string ---
-        step_summary = "\n".join(
-            f"  {i+1}. {s.get('skill', '?')} {s.get('params', {})}"
-            for i, s in enumerate(steps)
-        )
-        analysis = (
-            f"Effects Builder Mode (no LLM)\n"
-            f"Mode: {effects_mode}\n"
-            f"Steps:\n{step_summary}\n"
-            f"{'Raw filters: ' + raw_ffmpeg if raw_ffmpeg else ''}\n\n"
-            f"Pipeline:\n{self.composer.explain_pipeline(pipeline)}"
-        )
-
-        # --- Cleanup temp files ---
-        for tmp_path in [temp_video_from_images, temp_video_with_audio, temp_audio_input]:
-            if tmp_path and os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
-        for tmp_path in temp_multi_videos + temp_audio_files:
-            if tmp_path and os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
-        for tmp_dir in temp_frames_dirs:
-            if tmp_dir and os.path.isdir(tmp_dir):
-                shutil.rmtree(tmp_dir, ignore_errors=True)
-        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
-            if not os.listdir(temp_render_dir):
-                shutil.rmtree(temp_render_dir, ignore_errors=True)
-
-        return (images_tensor, audio_out, output_path, command.to_string(), analysis, mask_overlay_path)
-
     # ------------------------------------------------------------------ #
     #  SAM3-only mode (no LLM)                                            #
     # ------------------------------------------------------------------ #
 
-    async def _process_sam3_only(
-        self,
-        prompt: str,
-        effective_video_path: str,
-        video_metadata,
-        save_output: bool,
-        output_path: str,
-        preview_mode: bool,
-        quality_preset: str,
-        crf: int,
-        encoding_preset: str,
-        sam3_device: str,
-        sam3_max_objects: int,
-        sam3_det_threshold: float,
-        mask_points: str,
-        temp_video_from_images: Optional[str],
-        temp_video_with_audio: Optional[str],
-        **kwargs,
-    ) -> tuple[torch.Tensor, dict, str, str, str, str]:
-        """Run SAM3 masking directly without any LLM involvement.
-
-        Calls ``mask_video_subprocess`` directly — the main video output is
-        a clean copy of the source (no effects applied).  The SAM3 mask is
-        output via the ``mask_overlay_path`` (colored overlay or raw B&W).
-
-        Returns the standard 6-tuple:
-            (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
-        """
-        import subprocess as _sp
-
-        logger.info("SAM3-only mode: using prompt as text target → '%s'", prompt)
-
-        # --- Build output path ---
-        output_path, temp_render_dir = self._build_output_path(
-            effective_video_path=effective_video_path,
-            save_output=save_output,
-            output_path=output_path,
-            preview_mode=preview_mode,
+    async def _process_sam3_only(self, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, sam3_device, sam3_max_objects, sam3_det_threshold, mask_points, temp_video_from_images, temp_video_with_audio, **kwargs):
+        """Delegate to nollm_modes module."""
+        return await _nollm.process_sam3_only(
+            media_converter=self.media_converter,
+            prompt=prompt, effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset, sam3_device=sam3_device,
+            sam3_max_objects=sam3_max_objects,
+            sam3_det_threshold=sam3_det_threshold,
+            mask_points=mask_points,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
         )
-
-        # --- Parse point prompts (from the JS point selector) ---
-        point_coords = None
-        point_labels = None
-        point_src_w = 0
-        point_src_h = 0
-        if mask_points and mask_points.strip():
-            import json as _json
-            try:
-                pt_data = _json.loads(mask_points)
-                if isinstance(pt_data, dict):
-                    point_coords = pt_data.get("points")
-                    point_labels = pt_data.get("labels")
-                    point_src_w = int(pt_data.get("image_width", 0))
-                    point_src_h = int(pt_data.get("image_height", 0))
-                    if point_coords and point_labels:
-                        logger.info("SAM3-only: using %d point prompt(s) (src %dx%d)",
-                                    len(point_coords), point_src_w, point_src_h)
-            except (ValueError, TypeError) as exc:
-                logger.warning("SAM3-only: failed to parse mask_points JSON: %s", exc)
-
-        # --- Run SAM3 directly (no auto_mask handler, no effects) ---
-        try:
-            from ..core.sam3_masker import mask_video_subprocess as sam3_mask_video
-        except ImportError:
-            from core.sam3_masker import mask_video_subprocess as sam3_mask_video
-
-        try:
-            mask_video_path = sam3_mask_video(
-                video_path=effective_video_path,
-                prompt=prompt,
-                device=sam3_device,
-                max_objects=sam3_max_objects,
-                det_threshold=sam3_det_threshold,
-                points=point_coords,
-                labels=point_labels,
-                point_src_width=point_src_w,
-                point_src_height=point_src_h,
-            )
-        except Exception as e:
-            logger.error("SAM3-only: mask generation failed: %s", e)
-            raise RuntimeError(f"SAM3 mask generation failed: {e}") from e
-
-        # --- Copy source video through as the main output (no effects) ---
-        crf_map = {"draft": 28, "standard": 23, "high": 18, "lossless": 0}
-        preset_map = {"draft": "ultrafast", "standard": "medium", "high": "slow", "lossless": "veryslow"}
-        effective_crf = crf if crf >= 0 else crf_map.get(quality_preset, 23)
-        effective_preset = encoding_preset if encoding_preset != "auto" else preset_map.get(quality_preset, "medium")
-
-        ffmpeg_cmd = [
-            "ffmpeg", "-y",
-            "-i", effective_video_path,
-            "-c:v", "libx264",
-            "-crf", str(effective_crf),
-            "-preset", effective_preset,
-            "-pix_fmt", "yuv420p",
-            "-c:a", "copy",
-            output_path,
-        ]
-
-        if preview_mode:
-            # Insert scale + duration limit before output path
-            ffmpeg_cmd = [
-                "ffmpeg", "-y",
-                "-i", effective_video_path,
-                "-vf", "scale=480:trunc(ow/a/2)*2",
-                "-t", "10",
-                "-c:v", "libx264",
-                "-crf", str(effective_crf),
-                "-preset", effective_preset,
-                "-pix_fmt", "yuv420p",
-                "-c:a", "copy",
-                output_path,
-            ]
-
-        logger.debug("SAM3-only passthrough command: %s", " ".join(ffmpeg_cmd))
-        proc = _sp.run(ffmpeg_cmd, capture_output=True, text=True)
-        if proc.returncode != 0:
-            raise RuntimeError(
-                f"SAM3-only mode: video passthrough failed:\n{proc.stderr[-500:]}"
-            )
-
-        # --- Collect frame/audio output ---
-        unique_id = str(kwargs.get("unique_id", ""))
-        hidden_prompt = kwargs.get("hidden_prompt") or {}
-        images_tensor, audio_out = self._collect_frame_output(
-            output_path=output_path,
-            unique_id=unique_id,
-            hidden_prompt=hidden_prompt,
-            removes_audio=False,
-        )
-
-        # --- Generate mask overlay ---
-        mask_overlay_path = ""
-        if mask_video_path and os.path.isfile(mask_video_path):
-            mask_type = kwargs.get("mask_output_type", "colored_overlay")
-            if mask_type == "black_white":
-                mask_overlay_path = mask_video_path
-                logger.info("SAM3-only: B&W mask video → %s", mask_overlay_path)
-            else:
-                try:
-                    from ..core.sam3_masker import generate_mask_overlay
-                    mask_overlay_path = generate_mask_overlay(
-                        video_path=effective_video_path,
-                        mask_video_path=mask_video_path,
-                    )
-                    logger.info("SAM3-only: colored overlay → %s", mask_overlay_path)
-                except Exception as e:
-                    logger.warning("SAM3-only: mask overlay generation failed: %s", e)
-
-        # --- Build analysis string ---
-        cmd_log = " ".join(ffmpeg_cmd)
-        analysis = (
-            f"SAM3-Only Mode (no LLM)\n"
-            f"Text target: {prompt}\n"
-            f"Device: {sam3_device}\n"
-            f"Max objects: {sam3_max_objects}\n"
-            f"Detection threshold: {sam3_det_threshold}\n"
-            f"Point prompts: {'yes' if mask_points else 'no'}\n\n"
-            f"Main output: clean passthrough (no effects)\n"
-            f"Mask output: {mask_overlay_path or mask_video_path or 'none'}"
-        )
-
-        # --- Cleanup temp files ---
-        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
-            if tmp_path and os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
-        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
-            if not os.listdir(temp_render_dir):
-                shutil.rmtree(temp_render_dir, ignore_errors=True)
-
-        return (images_tensor, audio_out, output_path, cmd_log, analysis, mask_overlay_path)
-
     # ------------------------------------------------------------------ #
     #  Whisper-only mode (no LLM)                                         #
     # ------------------------------------------------------------------ #
 
-    async def _process_whisper_only(
-        self,
-        mode: str,
-        effective_video_path: str,
-        video_metadata,
-        save_output: bool,
-        output_path: str,
-        preview_mode: bool,
-        quality_preset: str,
-        crf: int,
-        encoding_preset: str,
-        whisper_device: str = "cpu",
-        whisper_model: str = "large-v3",
-        temp_video_from_images: Optional[str] = None,
-        temp_video_with_audio: Optional[str] = None,
-        **kwargs,
-    ) -> tuple[torch.Tensor, dict, str, str, str, str]:
-        """Run Whisper transcription directly without any LLM involvement.
-
-        Transcribes the video audio using Whisper and burns subtitles
-        (SRT or karaoke ASS) into the output video.  The full transcription
-        text is included in the ``analysis`` return field.
-
-        Args:
-            mode: "transcribe" for SRT subtitles, "karaoke_subtitles" for
-                  word-by-word karaoke ASS subtitles.
-
-        Returns the standard 6-tuple:
-            (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
-        """
-        import atexit
-        import subprocess as _sp
-        import tempfile
-
-        try:
-            from ..core.whisper_transcriber import (
-                transcribe_audio,
-                segments_to_srt,
-                words_to_karaoke_ass,
-            )
-        except ImportError:
-            from core.whisper_transcriber import (
-                transcribe_audio,
-                segments_to_srt,
-                words_to_karaoke_ass,
-            )
-
-        logger.info(
-            "Whisper-only mode (%s): device=%s, model=%s",
-            mode, whisper_device, whisper_model,
+    async def _process_whisper_only(self, mode, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, whisper_device="cpu", whisper_model="large-v3", temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+        """Delegate to nollm_modes module."""
+        return await _nollm.process_whisper_only(
+            media_converter=self.media_converter,
+            mode=mode, effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            whisper_device=whisper_device, whisper_model=whisper_model,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
         )
-
-        # --- Build output path ---
-        output_path, temp_render_dir = self._build_output_path(
+    async def _verify_output(self, connector, output_path, prompt, pipeline, effective_video_path, use_vision):
+        """Delegate to execution_engine module."""
+        return await _ee._verify_output(
+            connector=connector, output_path=output_path,
+            prompt=prompt, pipeline=pipeline,
             effective_video_path=effective_video_path,
-            save_output=save_output,
-            output_path=output_path,
-            preview_mode=preview_mode,
+            use_vision=use_vision,
+            composer=self.composer,
+            process_manager=self.process_manager,
+            pipeline_generator=self.pipeline_generator,
         )
-
-        # --- Transcribe ---
-        result = transcribe_audio(
-            effective_video_path,
-            model_size=whisper_model,
-            device=whisper_device,
-        )
-
-        # --- Generate subtitle file ---
-        if mode == "karaoke_subtitles":
-            if not result.words:
-                logger.warning("Whisper found no words — producing clean passthrough")
-                sub_filter = None
-            else:
-                ass_content = words_to_karaoke_ass(result.words)
-                tmp = tempfile.NamedTemporaryFile(
-                    mode="w", suffix=".ass", delete=False, encoding="utf-8",
-                )
-                tmp.write(ass_content)
-                tmp.close()
-                atexit.register(os.unlink, tmp.name)
-
-                from ..core.sanitize import ffmpeg_escape_path
-                escaped_path = ffmpeg_escape_path(tmp.name)
-                sub_filter = f"ass={escaped_path}"
-        else:
-            # mode == "transcribe"
-            if not result.segments:
-                logger.warning("Whisper found no speech — producing clean passthrough")
-                sub_filter = None
-            else:
-                srt_content = segments_to_srt(result.segments)
-                tmp = tempfile.NamedTemporaryFile(
-                    mode="w", suffix=".srt", delete=False, encoding="utf-8",
-                )
-                tmp.write(srt_content)
-                tmp.close()
-                atexit.register(os.unlink, tmp.name)
-
-                from ..core.sanitize import ffmpeg_escape_path
-                escaped_path = ffmpeg_escape_path(tmp.name)
-                sub_filter = f"subtitles={escaped_path}"
-
-        # --- Build ffmpeg command ---
-        crf_map = {"draft": 28, "standard": 23, "high": 18, "lossless": 0}
-        preset_map = {"draft": "ultrafast", "standard": "medium", "high": "slow", "lossless": "veryslow"}
-        effective_crf = crf if crf >= 0 else crf_map.get(quality_preset, 23)
-        effective_preset = encoding_preset if encoding_preset != "auto" else preset_map.get(quality_preset, "medium")
-
-        ffmpeg_cmd = ["ffmpeg", "-y", "-i", effective_video_path]
-
-        if sub_filter:
-            ffmpeg_cmd.extend(["-vf", sub_filter])
-
-        ffmpeg_cmd.extend([
-            "-c:v", "libx264",
-            "-crf", str(effective_crf),
-            "-preset", effective_preset,
-            "-pix_fmt", "yuv420p",
-            "-c:a", "copy",
-        ])
-
-        if preview_mode:
-            # Insert scale + duration limit
-            if sub_filter:
-                # Append scale to existing vf
-                vf_idx = ffmpeg_cmd.index("-vf")
-                ffmpeg_cmd[vf_idx + 1] += ",scale=480:trunc(ow/a/2)*2"
-            else:
-                ffmpeg_cmd.extend(["-vf", "scale=480:trunc(ow/a/2)*2"])
-            ffmpeg_cmd.extend(["-t", "10"])
-
-        ffmpeg_cmd.append(output_path)
-
-        logger.debug("Whisper-only command: %s", " ".join(ffmpeg_cmd))
-        proc = _sp.run(ffmpeg_cmd, capture_output=True, text=True)
-        if proc.returncode != 0:
-            raise RuntimeError(
-                f"Whisper-only mode: ffmpeg failed:\n{proc.stderr[-500:]}"
-            )
-
-        # --- Collect frame/audio output ---
-        unique_id = str(kwargs.get("unique_id", ""))
-        hidden_prompt = kwargs.get("hidden_prompt") or {}
-        images_tensor, audio_out = self._collect_frame_output(
-            output_path=output_path,
-            unique_id=unique_id,
-            hidden_prompt=hidden_prompt,
-            removes_audio=False,
-        )
-
-        # --- Build analysis string (includes full transcription) ---
-        cmd_log = " ".join(ffmpeg_cmd)
-        mode_label = "Karaoke Subtitles" if mode == "karaoke_subtitles" else "SRT Subtitles"
-        analysis = (
-            f"Whisper-Only Mode (no LLM)\n"
-            f"Mode: {mode_label}\n"
-            f"Model: {whisper_model}\n"
-            f"Device: {whisper_device}\n"
-            f"Language: {result.language or 'auto-detected'}\n"
-            f"Segments: {len(result.segments)}\n"
-            f"Words: {len(result.words)}\n\n"
-            f"--- Transcription ---\n"
-            f"{result.full_text or '(no speech detected)'}"
-        )
-
-        # --- Cleanup temp files ---
-        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
-            if tmp_path and os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
-        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
-            if not os.listdir(temp_render_dir):
-                shutil.rmtree(temp_render_dir, ignore_errors=True)
-
-        return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
-
-    async def _verify_output(
-        self,
-        connector,
-        output_path: str,
-        prompt: str,
-        pipeline,
-        effective_video_path: str,
-        use_vision: bool,
-    ) -> Optional[tuple]:
-        """Run output verification via LLM and optionally correct the pipeline.
-
-        Returns:
-            A tuple of (result, pipeline, command) if a correction was applied,
-            or None if the original output is fine (PASS or unparseable).
-        """
-        from ..mcp.tools import extract_frames as _extract_frames
-        from ..mcp.tools import analyze_colors as _analyze_colors
-        from ..mcp.tools import cleanup_vision_frames as _cleanup_frames
-        from ..mcp.vision import frames_to_base64 as _frames_to_b64
-        from ..mcp.vision import frames_to_base64_raw_strings as _frames_to_b64_raw
-        from ..mcp.vision import generate_audio_visualization as _gen_audio_viz
-        from ..prompts.system import get_verification_prompt
-        from ..skills.composer import Pipeline
-        from ..core.llm.ollama import OllamaConnector as _OllamaConnector
-
-        # Extract 3 frames from output — fewer to save tokens for audio viz
-        verify_frames = _extract_frames(
-            video_path=output_path,
-            start=2.0,
-            duration=9999,  # full video
-            fps=0.5,
-            max_frames=3,
-        )
-        verify_run_id = verify_frames.get("run_id")
-
-        # --- Audio visualization (only for pipelines with audio skills) ---
-        _AUDIO_SKILLS = {
-            "normalize", "fade_audio", "replace_audio", "bass", "treble",
-            "echo", "noise_reduction", "volume", "audio_bitrate",
-            "compress_audio", "lowpass", "highpass", "remove_audio",
-            "loudnorm", "audio_speed", "reverb",
-        }
-        has_audio_skills = any(
-            s.skill_name in _AUDIO_SKILLS for s in pipeline.steps
-        )
-        audio_viz = None
-        audio_viz_folder = None
-        if has_audio_skills:
-            try:
-                audio_viz = _gen_audio_viz(output_path)
-                audio_viz_folder = audio_viz.get("folder")
-            except Exception as e:
-                logger.warning(f"Audio visualization failed: {e}")
-
-        try:
-            # Build output analysis data
-            if use_vision and verify_frames.get("paths"):
-                b64_data = _frames_to_b64(verify_frames["paths"], max_size=256)
-                output_data = (
-                    f"Extracted {len(verify_frames['paths'])} frames from output.\n"
-                    f"[Vision frames are embedded in this message]"
-                )
-
-                # Add audio visualization images if available
-                if audio_viz:
-                    audio_image_paths = []
-                    if audio_viz.get("waveform_path"):
-                        audio_image_paths.append(audio_viz["waveform_path"])
-                    if audio_viz.get("spectrogram_path"):
-                        audio_image_paths.append(audio_viz["spectrogram_path"])
-                    if audio_image_paths:
-                        audio_b64 = _frames_to_b64(audio_image_paths, max_size=256)
-                        b64_data.extend(audio_b64)
-
-                    # Add audio metrics as text
-                    metrics = audio_viz.get("audio_metrics", {})
-                    if metrics.get("has_audio"):
-                        import json as _json
-                        output_data += (
-                            f"\n\n## Audio Analysis\n"
-                            f"[Waveform and spectrogram images are embedded — "
-                            f"the waveform shows amplitude over time (fades visible "
-                            f"as tapered ends, silence as flat lines), the spectrogram "
-                            f"shows frequency content (bass=bottom, treble=top)]\n"
-                            f"{_json.dumps(metrics, indent=2)}"
-                        )
-                    elif not metrics.get("has_audio"):
-                        output_data += (
-                            "\n\n## Audio Analysis\n"
-                            "No audio stream found in output."
-                        )
-            else:
-                color_data = _analyze_colors(video_path=output_path)
-                import json as _json
-                output_data = (
-                    f"Color analysis of output:\n"
-                    f"{_json.dumps(color_data, indent=2)}"
-                )
-                b64_data = None
-
-                # Add audio metrics as text even without vision
-                if audio_viz:
-                    metrics = audio_viz.get("audio_metrics", {})
-                    if metrics:
-                        output_data += (
-                            f"\n\nAudio analysis:\n"
-                            f"{_json.dumps(metrics, indent=2)}"
-                        )
-
-            # Build pipeline summary
-            pipeline_summary = self.composer.explain_pipeline(pipeline)
-
-            # Build verification prompt
-            verify_prompt = get_verification_prompt(
-                prompt=prompt,
-                pipeline_summary=pipeline_summary,
-                output_data=output_data,
-            )
-
-            # Send to LLM — use chat_with_tools for vision (multimodal),
-            # or generate() for text-only
-            if b64_data:
-                _is_ollama = isinstance(connector, _OllamaConnector)
-                if _is_ollama:
-                    # Ollama requires raw base64 strings in an 'images'
-                    # field — NOT OpenAI-style multimodal content blocks.
-                    raw_b64 = _frames_to_b64_raw(
-                        verify_frames["paths"], max_size=256
-                    )
-                    # Add audio viz frames if available
-                    if audio_viz:
-                        audio_paths = []
-                        if audio_viz.get("waveform_path"):
-                            audio_paths.append(audio_viz["waveform_path"])
-                        if audio_viz.get("spectrogram_path"):
-                            audio_paths.append(audio_viz["spectrogram_path"])
-                        if audio_paths:
-                            raw_b64.extend(_frames_to_b64_raw(
-                                audio_paths, max_size=256
-                            ))
-                    verify_msg = {
-                        "role": "user",
-                        "content": verify_prompt,
-                        "images": raw_b64,
-                    }
-                    verify_messages = [verify_msg]
-                    logger.info(
-                        "Verification: sending %d images via Ollama "
-                        "native format", len(raw_b64),
-                    )
-                else:
-                    content_parts = [{"type": "text", "text": verify_prompt}]
-                    for img_block in b64_data:
-                        content_parts.append(img_block)
-                    verify_messages = [
-                        {"role": "user", "content": content_parts}
-                    ]
-                verify_response = await connector.chat_with_tools(
-                    verify_messages, tools=[],
-                )
-            else:
-                verify_response = await connector.generate(
-                    verify_prompt,
-                    system_prompt="You are a video and audio quality reviewer.",
-                )
-
-            verify_text = (verify_response.content or "").strip()
-            logger.info(f"Verification result: {verify_text}")
-
-            if verify_text.upper() == "PASS":
-                logger.info("Output verification: PASS — output looks good")
-                return None
-
-            # Try to parse corrected pipeline — strip markdown fences first
-            cleaned = verify_text
-            # Remove ```json ... ``` or ``` ... ``` fencing
-            import re as _re
-            fence_match = _re.search(
-                r'```(?:json)?\s*(\{.*\})\s*```', cleaned, _re.DOTALL
-            )
-            if fence_match:
-                cleaned = fence_match.group(1).strip()
-
-            corrected = None
-            try:
-                corrected = json.loads(cleaned)
-            except (json.JSONDecodeError, ValueError):
-                # Fall back to the general extractor
-                corrected = self.pipeline_generator.parse_response(verify_text)
-
-            if corrected and corrected.get("pipeline"):
-                logger.warning(
-                    "Output verification: NEEDS CORRECTION — "
-                    "re-executing with corrected pipeline"
-                )
-                # Rebuild and re-execute
-                fix_pipeline = Pipeline(
-                    input_path=effective_video_path,
-                    output_path=output_path,
-                    extra_inputs=pipeline.extra_inputs,
-                    metadata=pipeline.metadata,
-                )
-                for step in corrected.get("pipeline", []):
-                    skill_name = step.get("skill")
-                    params = step.get("params", {})
-                    if skill_name:
-                        fix_pipeline.add_step(skill_name, params)
-                fix_command = self.composer.compose(fix_pipeline)
-                fix_result = self.process_manager.execute(
-                    fix_command, timeout=600
-                )
-                if fix_result.success:
-                    logger.info(
-                        "Verification fix succeeded — using corrected output"
-                    )
-                    logger.info(
-                        "Corrected command: %s", fix_command.to_string()
-                    )
-                    logger.info(
-                        "Corrected pipeline:\n%s",
-                        self.composer.explain_pipeline(fix_pipeline),
-                    )
-                    return (fix_result, fix_pipeline, fix_command)
-                else:
-                    logger.warning(
-                        f"Verification fix failed: {fix_result.error_message} "
-                        "— keeping original output"
-                    )
-                    return None
-            else:
-                logger.info(
-                    "Verification response was not PASS or valid JSON "
-                    "— keeping original output"
-                )
-                if corrected:
-                    logger.debug(
-                        f"Parsed verification response (no pipeline key): "
-                        f"{corrected}"
-                    )
-                else:
-                    logger.debug(
-                        f"Could not parse verification response: "
-                        f"{verify_text[:500]}"
-                    )
-                return None
-        finally:
-            # Cleanup verification frames
-            if verify_run_id:
-                try:
-                    _cleanup_frames(verify_run_id)
-                except Exception:
-                    pass
-            # Cleanup audio visualization files
-            if audio_viz_folder:
-                try:
-                    import shutil
-                    shutil.rmtree(audio_viz_folder, ignore_errors=True)
-                except Exception:
-                    pass
-
     @staticmethod
     def _audio_dict_to_wav(audio: dict) -> Optional[str]:
-        """Convert a ComfyUI AUDIO dict to a temporary WAV file.
-
-        Args:
-            audio: ComfyUI AUDIO dict with 'waveform' and 'sample_rate'.
-
-        Returns:
-            Path to the created temporary WAV file, or None on failure.
-        """
-        import subprocess
-
-        try:
-            waveform = audio["waveform"]       # (1, channels, samples)
-            sample_rate = audio["sample_rate"]
-        except (KeyError, TypeError):
-            return None
-
-        channels = waveform.size(1)
-        audio_data = waveform.squeeze(0).transpose(0, 1).contiguous()  # (samples, channels)
-        audio_bytes = (audio_data * 32767.0).clamp(-32768, 32767).to(torch.int16).numpy().tobytes()
-
-        tmp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-        tmp_wav.close()
-
-        ffmpeg_bin = shutil.which("ffmpeg")
-        if not ffmpeg_bin:
-            return None
-
-        result = subprocess.run(
-            [
-                ffmpeg_bin, "-y",
-                "-f", "s16le",
-                "-ar", str(sample_rate),
-                "-ac", str(channels),
-                "-i", "-",
-                tmp_wav.name,
-            ],
-            input=audio_bytes,
-            capture_output=True,
-        )
-        if result.returncode != 0:
-            if os.path.exists(tmp_wav.name):
-                os.remove(tmp_wav.name)
-            return None
-
-        return tmp_wav.name
+        """Delegate to output_handler module."""
+        return _oh.audio_dict_to_wav(audio)
 
     @staticmethod
     def _probe_duration(video_path: str) -> float:
-        """Probe the duration of a video file using ffprobe.
-
-        Returns:
-            Duration in seconds, or 0.0 if probing fails.
-        """
-        import subprocess
-        ffprobe_bin = shutil.which("ffprobe")
-        if not ffprobe_bin:
-            return 0.0
-        try:
-            from ..core.sanitize import validate_video_path
-            video_path = validate_video_path(str(video_path))
-            result = subprocess.run(
-                [ffprobe_bin, "-v", "error", "-show_entries",
-                 "format=duration", "-of", "default=noprint_wrappers=1:nokey=1",
-                 video_path],
-                capture_output=True, text=True, check=True,
-            )
-            return float(result.stdout.strip())
-        except Exception:
-            return 0.0
+        """Delegate to output_handler module."""
+        return _oh.probe_duration(video_path)
 
     @staticmethod
     def _extract_thumbnail_frame(video_path: str) -> torch.Tensor:
-        """Extract only the first frame from a video as a (1, H, W, 3) tensor.
-
-        This is vastly cheaper than loading all frames (~6 MB vs ~13 GB for
-        a typical 74s 1080p video).  The single frame is used for:
-         - The IMAGE output (thumbnail preview)
-         - The workflow PNG embed
-        """
-        try:
-            import av  # type: ignore[import-not-found]
-            container = av.open(video_path)
-            for frame in container.decode(video=0):
-                arr = frame.to_ndarray(format="rgb24")
-                container.close()
-                return (
-                    torch.from_numpy(arr)
-                    .float()
-                    .div_(255.0)
-                    .unsqueeze(0)  # (H,W,3) → (1,H,W,3)
-                )
-            container.close()
-        except Exception:
-            pass
-        return torch.zeros(1, 64, 64, 3, dtype=torch.float32)
+        """Delegate to output_handler module."""
+        return _oh.extract_thumbnail_frame(video_path)
 
     @staticmethod
-    def _save_workflow_png(
-        first_frame: torch.Tensor,
-        png_path: str,
-        prompt: Optional[dict],
-        extra_pnginfo: Optional[dict],
-        extra_info: Optional[dict] = None,
-    ) -> None:
-        """Save a first-frame PNG with embedded ComfyUI workflow metadata.
-
-        This allows the PNG to be dragged into ComfyUI to reload the
-        workflow, matching the behavior of ComfyUI's SaveImage node.
-        """
-        from PIL import Image  # type: ignore[import-untyped]
-        from PIL.PngImagePlugin import PngInfo
-        import numpy as np
-
-        # Convert tensor (H, W, C) float [0,1] -> uint8 PIL Image
-        frame_np = (255.0 * first_frame.cpu().numpy()).clip(0, 255).astype(np.uint8)
-        img = Image.fromarray(frame_np)
-
-        metadata = PngInfo()
-        if prompt is not None:
-            metadata.add_text("prompt", json.dumps(prompt))
-        if extra_pnginfo is not None:
-            for key in extra_pnginfo:
-                metadata.add_text(key, json.dumps(extra_pnginfo[key]))
-        if extra_info is not None:
-            for key, value in extra_info.items():
-                metadata.add_text(key, value if isinstance(value, str) else json.dumps(value))
-
-        img.save(png_path, pnginfo=metadata, compress_level=4)
+    def _save_workflow_png(first_frame, png_path, prompt, extra_pnginfo, extra_info=None):
+        """Delegate to output_handler module."""
+        return _oh.save_workflow_png(first_frame, png_path, prompt, extra_pnginfo, extra_info)
 
     @staticmethod
-    def _strip_api_key_from_metadata(
-        api_key: str,
-        prompt: Optional[dict],
-        extra_pnginfo: Optional[dict],
-    ) -> None:
-        """Remove api_key values from workflow metadata in-place.
+    def _strip_api_key_from_metadata(api_key, prompt, extra_pnginfo):
+        """Delegate to output_handler module."""
+        return _oh.strip_api_key_from_metadata(api_key, prompt, extra_pnginfo)
 
-        This prevents API keys from being embedded in output files
-        when downstream Save Image/Video nodes serialize the workflow.
-        """
-        # Strip from the prompt graph (api format — keyed by node id)
-        if prompt:
-            for node_id, node_data in prompt.items():
-                inputs = node_data.get("inputs", {})
-                if "api_key" in inputs:
-                    inputs["api_key"] = ""
-
-        # Strip from the workflow JSON (drag-drop format)
-        if extra_pnginfo and "workflow" in extra_pnginfo:
-            workflow = extra_pnginfo["workflow"]
-            for node in workflow.get("nodes", []):
-                # widgets_values is a positional array — scan for the
-                # actual key value and replace it
-                widgets = node.get("widgets_values", [])
-                if isinstance(widgets, list):
-                    for i, val in enumerate(widgets):
-                        if val == api_key:
-                            widgets[i] = ""
-
-    async def _process_batch(
-        self,
-        video_folder: str,
-        file_pattern: str,
-        prompt: str,
-        llm_model: str,
-        quality_preset: str,
-        ollama_url: str,
-        api_key: str,
-        custom_model: str,
-        crf: int,
-        encoding_preset: str,
-        max_concurrent: int,
-        save_output: bool,
-        output_path: str,
-        use_vision: bool = True,
-        verify_output: bool = False,
-        ptc_mode: str = "off",
-        sam3_max_objects: int = 5,
-        sam3_det_threshold: float = 0.7,
-        mask_points: str = "",
-        pipeline_json: str = "",
-    ) -> tuple[torch.Tensor, dict, str, str, str, str]:
-        """Process all matching videos in a folder with the same pipeline.
-
-        Uses one LLM call to generate the pipeline, then applies it to
-        every video concurrently via ThreadPoolExecutor.
-        """
-        import glob
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        from ..skills.composer import Pipeline
-        from ..core.sanitize import validate_video_path as _validate, validate_output_path as _validate_out
-
-        # --- Validate folder ---
-        folder = Path(video_folder)
-        if not folder.exists() or not folder.is_dir():
-            raise ValueError(f"Batch mode: video_folder not found or not a directory: {video_folder}")
-
-        if not prompt.strip():
-            raise ValueError("Prompt cannot be empty")
-
-        # --- Discover videos ---
-        patterns = file_pattern.split()
-        video_files = []
-        for pat in patterns:
-            video_files.extend(glob.glob(str(folder / pat)))
-        video_files = sorted(set(video_files))
-
-        valid_files = []
-        for vf in video_files:
-            try:
-                _validate(vf)
-                valid_files.append(vf)
-            except ValueError:
-                pass
-
-        if not valid_files:
-            raise ValueError(
-                f"Batch mode: no valid video files matching '{file_pattern}' in {video_folder}"
-            )
-
-        # --- Output folder ---
-        if save_output and output_path:
-            out_dir = Path(_validate_out(output_path))
-        elif save_output:
-            out_dir = Path(folder_paths.get_output_directory()) / "ffmpega_batch"
-        else:
-            out_dir = Path(tempfile.mkdtemp(prefix="ffmpega_batch_"))
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-        # --- Generate pipeline via LLM (once from sample) ---
-        sample_video = valid_files[0]
-        video_metadata = self.analyzer.analyze(sample_video)
-        metadata_str = video_metadata.to_analysis_string()
-
-        if not ollama_url or not ollama_url.startswith(("http://", "https://")):
-            ollama_url = "http://localhost:11434"
-        effective_model = llm_model
-        if llm_model == "custom":
-            if not custom_model or not custom_model.strip():
-                raise ValueError(
-                    "Please enter a model name in the 'custom_model' field "
-                    "when using 'custom' mode."
-                )
-            effective_model = custom_model.strip()
-
-        connected_inputs_str = f"Batch mode: {len(valid_files)} videos in {video_folder}"
-        connector = self.pipeline_generator.create_connector(effective_model, ollama_url, api_key)
-        try:
-            spec = await self.pipeline_generator.generate(
-                connector, prompt, metadata_str,
-                connected_inputs=connected_inputs_str,
-                video_path=valid_files[0] if valid_files else "",
-                use_vision=use_vision,
-                ptc_mode=ptc_mode,
-            )
-        finally:
-            if hasattr(connector, 'close'):
-                await connector.close()
-
-        pipeline_steps = spec.get("pipeline", [])
-        interpretation = spec.get("interpretation", "")
-
-        # --- Quality preset ---
-        crf_map = {"draft": 28, "standard": 23, "high": 18, "lossless": 0}
-        preset_map = {"draft": "ultrafast", "standard": "medium", "high": "slow", "lossless": "veryslow"}
-        effective_crf = crf if crf >= 0 else crf_map.get(quality_preset, 23)
-        effective_preset = encoding_preset if encoding_preset != "auto" else preset_map.get(quality_preset, "medium")
-
-        # --- Process each video ---
-        output_paths = []
-        errors = []
-        command_logs = []
-
-        def process_single(vpath: str) -> tuple[str, str | None, str]:
-            """Process one video file."""
-            try:
-                stem = Path(vpath).stem
-                out_file = str(out_dir / f"{stem}_edited.mp4")
-
-                pipeline = Pipeline(input_path=vpath, output_path=out_file)
-                pipeline.metadata["_sam3_max_objects"] = sam3_max_objects
-                pipeline.metadata["_sam3_det_threshold"] = sam3_det_threshold
-                if mask_points and mask_points.strip():
-                    pipeline.metadata["_mask_points"] = mask_points.strip()
-                for step in pipeline_steps:
-                    skill_name = step.get("skill")
-                    params = step.get("params", {})
-                    if skill_name:
-                        pipeline.add_step(skill_name, params)
-
-                pipeline.add_step("quality", {
-                    "crf": effective_crf,
-                    "preset": effective_preset,
-                })
-
-                command = self.composer.compose(pipeline)
-                result = self.process_manager.execute(command, timeout=600)
-
-                if result.success:
-                    return (out_file, None, command.to_string())
-                else:
-                    return (out_file, result.error_message, command.to_string())
-            except Exception as e:
-                return (vpath, str(e), "")
-
-        with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
-            futures = {
-                executor.submit(process_single, vf): vf
-                for vf in valid_files
-            }
-            for future in as_completed(futures):
-                vf = futures[future]
-                try:
-                    out_file, error, cmd_log = future.result()
-                    if error:
-                        errors.append(f"{Path(vf).name}: {error}")
-                    else:
-                        output_paths.append(out_file)
-                    if cmd_log:
-                        command_logs.append(f"[{Path(vf).name}] {cmd_log}")
-                except Exception as e:
-                    errors.append(f"{Path(vf).name}: {str(e)}")
-
-        # --- Build results ---
-        processed = len(output_paths)
-        failed = len(errors)
-        total = len(valid_files)
-
-        # Return the last successful video as frames, or a placeholder
-        last_path = output_paths[-1] if output_paths else valid_files[0]
-        frames_tensor = self.media_converter.frames_to_tensor(last_path)
-        audio_dict = self.media_converter.extract_audio(last_path)
-
-        import json
-        paths_json = json.dumps(output_paths, indent=2)
-
-        # Per-file status table
-        status_lines = [
-            f"Batch complete: {processed}/{total} succeeded, {failed} failed.",
-            f"Output folder: {out_dir}",
-            "",
-            "File results:",
-        ]
-        # Map each source filename stem -> actual output path for reporting
-        _stem_to_out: dict[str, str] = {Path(p).stem.replace("_edited", ""): p
-                                         for p in output_paths}
-        for vf in valid_files:
-            stem = Path(vf).stem
-            actual_out = _stem_to_out.get(stem)
-            if actual_out is not None:
-                # Successful — show output size if available
-                try:
-                    size_kb = Path(actual_out).stat().st_size // 1024
-                    status_lines.append(f"  ✓ {Path(vf).name} → {Path(actual_out).name} ({size_kb:,} KB)")
-                except OSError:
-                    status_lines.append(f"  ✓ {Path(vf).name} → {Path(actual_out).name}")
-            else:
-                # Find the error message for this file (default if no match)
-                err_msg = next(
-                    ((e.split(": ", 1)[1] if ": " in e else e)
-                     for e in errors
-                     if e.startswith(Path(vf).name)),
-                    "unknown error",
-                )
-                status_lines.append(f"  ✗ {Path(vf).name}: {err_msg}")
-
-        analysis = (
-            f"Batch Mode — {interpretation}\n\n"
-            + "\n".join(status_lines)
+    async def _process_batch(self, video_folder, file_pattern, prompt, llm_model, quality_preset, ollama_url, api_key, custom_model, crf, encoding_preset, max_concurrent, save_output, output_path, use_vision=True, verify_output=False, ptc_mode="off", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", pipeline_json=""):
+        """Delegate to batch_processor module."""
+        return await _bp.process_batch(
+            analyzer=self.analyzer, composer=self.composer,
+            process_manager=self.process_manager,
+            pipeline_generator=self.pipeline_generator,
+            media_converter=self.media_converter,
+            video_folder=video_folder, file_pattern=file_pattern,
+            prompt=prompt, llm_model=llm_model,
+            quality_preset=quality_preset, ollama_url=ollama_url,
+            api_key=api_key, custom_model=custom_model,
+            crf=crf, encoding_preset=encoding_preset,
+            max_concurrent=max_concurrent, save_output=save_output,
+            output_path=output_path, use_vision=use_vision,
+            verify_output=verify_output, ptc_mode=ptc_mode,
+            sam3_max_objects=sam3_max_objects,
+            sam3_det_threshold=sam3_det_threshold,
+            mask_points=mask_points, pipeline_json=pipeline_json,
         )
-
-        command_log = "\n\n".join(command_logs) if command_logs else "No commands executed"
-
-        # --- Cleanup batch temp directory ---
-        if not save_output and out_dir and out_dir.exists():
-            try:
-                shutil.rmtree(str(out_dir), ignore_errors=True)
-            except OSError:
-                pass
-
-        return (frames_tensor, audio_dict, paths_json, command_log, analysis, "")
-
     @classmethod
     def IS_CHANGED(cls, video_path, prompt, seed=0, **kwargs):
         """Determine if the node needs to re-execute."""
