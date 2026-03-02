@@ -249,21 +249,13 @@ def _log_license_notice():
 def _load_state_dict(path: str, device: str = "cpu"):
     """Load a state dict from .safetensors or .pth using best available loader.
 
-    Tries comfy.utils.load_torch_file first (supports both formats natively),
-    falls back to torch.load / safetensors.torch.load_file.
+    Delegates to ``platform.load_torch_file`` which tries
+    ``comfy.utils.load_torch_file`` first, then falls back to
+    ``safetensors.torch.load_file`` / ``torch.load``.
     """
-    try:
-        from .platform import load_torch_file
-        return load_torch_file(path)  # type: ignore[call-arg]
-    except ImportError:
-        pass
+    from .platform import load_torch_file
 
-    if path.endswith(".safetensors"):
-        from safetensors.torch import load_file
-        return load_file(path, device=device)
-    else:
-        import torch
-        return torch.load(path, map_location=device, weights_only=True)
+    return load_torch_file(path, device=device)
 
 
 def _detect_model_variant(sd: dict) -> tuple[str, bool]:

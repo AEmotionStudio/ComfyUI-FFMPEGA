@@ -80,15 +80,17 @@ def free_comfyui_vram() -> None:
 # ------------------------------------------------------------------ #
 
 
-def load_torch_file(path: str, safe_load: bool = True):
+def load_torch_file(path: str, device: str = "cpu", safe_load: bool = True):
     """Load a model checkpoint, preferring comfy.utils when available.
 
     Comfy's ``load_torch_file`` handles ``.safetensors`` natively and
     is the safest option inside ComfyUI.  Falls back to
-    ``torch.load`` for standalone / testing usage.
+    ``safetensors.torch.load_file`` / ``torch.load`` for standalone usage.
 
     Args:
         path: Absolute path to ``.pt`` / ``.safetensors`` file.
+        device: Target device for the loaded tensors (e.g. ``"cpu"``,
+            ``"cuda:0"``).  Forwarded to the underlying loader.
         safe_load: If ``True``, use ``weights_only=True`` in the
             ``torch.load`` fallback for security.
 
@@ -100,6 +102,13 @@ def load_torch_file(path: str, safe_load: bool = True):
 
         return _comfy_load(path, safe_load=safe_load)  # type: ignore[call-arg]
     except ImportError:
-        import torch
+        pass
 
-        return torch.load(path, map_location="cpu", weights_only=safe_load)
+    if path.endswith(".safetensors"):
+        from safetensors.torch import load_file
+
+        return load_file(path, device=device)
+
+    import torch
+
+    return torch.load(path, map_location=device, weights_only=safe_load)

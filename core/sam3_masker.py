@@ -275,21 +275,13 @@ except ImportError:
 def _load_state_dict(path: str, device: str = "cpu") -> dict:
     """Load a state dict from .safetensors or .pt using best available loader.
 
-    Tries comfy.utils.load_torch_file first (supports both formats natively),
-    falls back to safetensors.torch.load_file / torch.load.
+    Delegates to ``platform.load_torch_file`` which tries
+    ``comfy.utils.load_torch_file`` first, then falls back to
+    ``safetensors.torch.load_file`` / ``torch.load``.
     """
-    try:
-        from .platform import load_torch_file
-        return load_torch_file(path)  # type: ignore[call-arg]
-    except ImportError:
-        pass
+    from .platform import load_torch_file
 
-    if path.endswith(".safetensors"):
-        from safetensors.torch import load_file
-        return load_file(path, device=device)
-    else:
-        import torch
-        return torch.load(path, map_location=device, weights_only=False)
+    return load_torch_file(path, device=device)
 
 
 def _load_efficient(model, ckpt: dict, device: str = "cpu") -> None:
