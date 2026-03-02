@@ -144,12 +144,8 @@ def cleanup() -> None:
 
 def _free_vram():
     """Free ComfyUI and SAM3 VRAM before loading LaMa."""
-    try:
-        import comfy.model_management
-        comfy.model_management.unload_all_models()
-        comfy.model_management.soft_empty_cache()
-    except Exception:
-        pass
+    from .platform import free_comfyui_vram
+    free_comfyui_vram()
 
     # Also free SAM3 if loaded
     try:
@@ -166,7 +162,7 @@ def _free_vram():
 #  Frame I/O helpers
 # ---------------------------------------------------------------------------
 
-def _load_video_frames(video_path: str) -> Tuple[list, float]:
+def _load_video_frames(video_path: str) -> Tuple[list, float, str]:
     """Load video frames as PIL Images.
 
     Returns:
@@ -203,7 +199,7 @@ def _load_video_frames(video_path: str) -> Tuple[list, float]:
     return frames, fps, tmpdir
 
 
-def _load_mask_frames(mask_video_path: str, num_frames: int) -> list:
+def _load_mask_frames(mask_video_path: str, num_frames: int) -> Tuple[list, str]:
     """Load mask frames as PIL Images (mode 'L').
 
     Returns:
@@ -425,7 +421,7 @@ def remove_object(
 
             # Resize mask to match frame dimensions if needed
             if mask_pil.size != frames[i].size:
-                mask_pil = mask_pil.resize(frames[i].size, Image.NEAREST)
+                mask_pil = mask_pil.resize(frames[i].size, Image.NEAREST)  # type: ignore[attr-defined]
 
             mask_arr = np.array(mask_pil).astype(np.float32) / 255.0
 

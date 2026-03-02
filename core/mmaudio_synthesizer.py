@@ -68,21 +68,8 @@ def _get_model_dir() -> str:
     if env_dir and os.path.isdir(env_dir):
         return env_dir
 
-    # Try ComfyUI standard path
-    try:
-        import folder_paths  # type: ignore[import-not-found]
-        comfy_models = folder_paths.models_dir
-        model_dir = os.path.join(comfy_models, "mmaudio")
-        os.makedirs(model_dir, exist_ok=True)
-        return model_dir
-    except ImportError:
-        pass
-
-    # Fallback for testing / subprocess
-    ext_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    model_dir = os.path.join(ext_dir, "models", "mmaudio")
-    os.makedirs(model_dir, exist_ok=True)
-    return model_dir
+    from .platform import get_models_dir
+    return get_models_dir("mmaudio")
 
 
 def _find_or_download_model(model_key: str) -> str:
@@ -266,8 +253,8 @@ def _load_state_dict(path: str, device: str = "cpu"):
     falls back to torch.load / safetensors.torch.load_file.
     """
     try:
-        from comfy.utils import load_torch_file
-        return load_torch_file(path, device=device)
+        from .platform import load_torch_file
+        return load_torch_file(path)  # type: ignore[call-arg]
     except ImportError:
         pass
 
@@ -309,13 +296,8 @@ def _detect_model_variant(sd: dict) -> tuple[str, bool]:
 
 def _free_vram():
     """Free ComfyUI VRAM before loading MMAudio."""
-    try:
-        import comfy.model_management  # type: ignore[import-not-found]
-        comfy.model_management.unload_all_models()
-        comfy.model_management.soft_empty_cache()
-        log.info("MMAudio: freed ComfyUI VRAM")
-    except ImportError:
-        pass
+    from .platform import free_comfyui_vram
+    free_comfyui_vram()
 
     try:
         import torch
@@ -506,7 +488,7 @@ def generate_audio(
         if not os.path.isfile(clip_config_path):
             # Try from mmaudio package
             import mmaudio
-            pkg_dir = os.path.dirname(os.path.abspath(mmaudio.__file__))
+            pkg_dir = os.path.dirname(os.path.abspath(mmaudio.__file__ or ""))
             clip_config_path = os.path.join(pkg_dir, "..", "configs", "DFN5B-CLIP-ViT-H-14-384.json")
 
         if os.path.isfile(clip_config_path):
@@ -586,7 +568,10 @@ def generate_audio(
             import av
             with av.open(video_path) as container:
                 stream = container.streams.video[0]
-                total_duration = float(stream.duration * stream.time_base)
+                if stream.duration is not None and stream.time_base is not None:
+                    total_duration = float(stream.duration * stream.time_base)
+                else:
+                    total_duration = duration or _CHUNK_DURATION
         except Exception:
             total_duration = duration or _CHUNK_DURATION
         if duration is not None:
@@ -867,6 +852,7 @@ print("RESULT:" + result, flush=True)
         )
 
         # Send args via stdin
+        assert proc.stdin is not None
         proc.stdin.write(json.dumps(args_dict))
         proc.stdin.close()
 
@@ -875,6 +861,7 @@ print("RESULT:" + result, flush=True)
 
         def _stream_stderr():
             try:
+                assert proc.stderr is not None
                 for line in proc.stderr:
                     line = line.rstrip()
                     if not line:
@@ -886,7 +873,8 @@ print("RESULT:" + result, flush=True)
                 pass
             finally:
                 try:
-                    proc.stderr.close()
+                    if proc.stderr is not None:
+                        proc.stderr.close()
                 except OSError:
                     pass
 
@@ -902,9 +890,11 @@ print("RESULT:" + result, flush=True)
             raise RuntimeError("MMAudio subprocess timed out after 30 minutes")
 
         try:
+            assert proc.stdout is not None
             stdout_data = proc.stdout.read()
         finally:
-            proc.stdout.close()
+            if proc.stdout is not None:
+                proc.stdout.close()
 
         stderr_thread.join(timeout=5)
 

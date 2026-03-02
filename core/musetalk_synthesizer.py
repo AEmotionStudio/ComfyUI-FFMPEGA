@@ -248,14 +248,8 @@ def _get_whisper_path() -> str:
 
 def _free_vram():
     """Free ComfyUI VRAM before loading MuseTalk models."""
-    try:
-        import comfy.model_management
-
-        comfy.model_management.unload_all_models()
-        comfy.model_management.soft_empty_cache()
-        log.info("[MuseTalk] Freed ComfyUI VRAM for lip sync")
-    except ImportError:
-        pass
+    from .platform import free_comfyui_vram
+    free_comfyui_vram()
     torch.cuda.empty_cache() if torch.cuda.is_available() else None
 
 
@@ -395,7 +389,7 @@ def lip_sync(
     whisper = whisper.to(device=device, dtype=weight_dtype).eval()
     whisper.requires_grad_(False)
 
-    audio_processor = AudioProcessor(feature_extractor_path=whisper_path)
+    audio_processor = AudioProcessor(feature_extractor_path=whisper_path)  # pyright: ignore[reportCallIssue]
 
     timesteps = torch.tensor([0], device=device)
 
@@ -490,7 +484,7 @@ def lip_sync(
             whisper_chunks=whisper_chunks,
             vae_latents=face_latents_cycle,
             batch_size=batch_size,
-            device=device,
+            device=str(device),
         )
 
         gen_faces = []
@@ -532,7 +526,7 @@ def lip_sync(
     temp_video = os.path.join(output_dir, "_temp_lipsync.mp4")
 
     h, w = result_frames[0].shape[:2]
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
     writer = cv2.VideoWriter(temp_video, fourcc, vid_fps, (w, h))
 
     for frame in result_frames:

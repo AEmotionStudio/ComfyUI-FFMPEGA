@@ -38,17 +38,8 @@ class TranscriptionResult:
 
 def _get_whisper_model_dir() -> str:
     """Get the ComfyUI models/whisper directory, creating it if needed."""
-    try:
-        import folder_paths  # type: ignore[import-not-found]
-        model_dir = os.path.join(folder_paths.models_dir, "whisper")
-    except ImportError:
-        # Fallback for testing outside ComfyUI
-        model_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "models", "whisper",
-        )
-    os.makedirs(model_dir, exist_ok=True)
-    return model_dir
+    from .platform import get_models_dir
+    return get_models_dir("whisper")
 
 
 def _load_model(model_size: str = "large-v3", device: str = "gpu"):
@@ -200,13 +191,8 @@ def _free_comfyui_vram():
     This frees space for Whisper's large-v3 model (~3 GB).
     ComfyUI will automatically reload its models when needed later.
     """
-    try:
-        import comfy.model_management as mm  # type: ignore[import-not-found]
-        mm.unload_all_models()
-        mm.soft_empty_cache()
-        logger.info("Freed ComfyUI GPU VRAM for Whisper model loading")
-    except (ImportError, AttributeError, Exception) as e:
-        logger.debug("Could not free ComfyUI VRAM (non-fatal): %s", e)
+    from .platform import free_comfyui_vram
+    free_comfyui_vram()
 
 
 def _extract_audio_wav(video_path: str) -> str:
@@ -278,31 +264,32 @@ def transcribe_audio(
     try:
         logger.info("Transcribing audio from: %s", video_path)
 
-        options = {"word_timestamps": True}
+        options: dict = {"word_timestamps": True}
         if language:
             options["language"] = language
 
-        result = model.transcribe(wav_path, **options)
+        result = model.transcribe(wav_path, **options)  # type: ignore[arg-type]
 
         # Extract segments
         segments = []
         words = []
-        for seg in result.get("segments", []):
+        for seg in result.get("segments", []):  # type: ignore[union-attr]
+            seg_dict: dict = seg  # type: ignore[assignment]
             segments.append({
-                "start": seg["start"],
-                "end": seg["end"],
-                "text": seg["text"].strip(),
+                "start": seg_dict["start"],
+                "end": seg_dict["end"],
+                "text": seg_dict["text"].strip(),
             })
             # Extract word-level timestamps
-            for word_info in seg.get("words", []):
+            for word_info in seg_dict.get("words", []):
                 words.append({
                     "start": word_info["start"],
                     "end": word_info["end"],
                     "word": word_info["word"].strip(),
                 })
 
-        detected_lang = result.get("language", "en")
-        full_text = result.get("text", "").strip()
+        detected_lang = str(result.get("language", "en"))  # type: ignore[union-attr]
+        full_text = str(result.get("text", "")).strip()  # type: ignore[union-attr]
 
         logger.info(
             "Transcription complete: %d segments, %d words, language=%s",
