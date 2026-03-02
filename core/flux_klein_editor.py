@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import logging
 import os
+
+from .sanitize import validate_video_path, validate_output_file_path
 import subprocess
 import tempfile
 from pathlib import Path
@@ -555,6 +557,11 @@ def edit_video(
     Returns:
         Path to the edited video.
     """
+    video_path = validate_video_path(video_path)
+    mask_video_path = validate_video_path(mask_video_path)
+    if output_path is not None:
+        output_path = validate_output_file_path(output_path)
+
     import numpy as np
     from PIL import Image
 
@@ -675,6 +682,11 @@ def edit_video_subprocess(
     the child process via stdin, and the video path is returned via stdout.
     Falls back to in-process edit_video() if the subprocess fails.
     """
+    video_path = validate_video_path(video_path)
+    mask_video_path = validate_video_path(mask_video_path)
+    if output_path is not None:
+        output_path = validate_output_file_path(output_path)
+
     import atexit
     import json
     import sys
