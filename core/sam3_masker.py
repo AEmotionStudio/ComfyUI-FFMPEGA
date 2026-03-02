@@ -174,12 +174,8 @@ def _get_model_dir() -> Path:
     if env_dir:
         sam3_dir = Path(env_dir)
     else:
-        try:
-            import folder_paths
-            sam3_dir = Path(folder_paths.models_dir) / "SAM3"
-        except (ImportError, AttributeError):
-            # Running outside ComfyUI (tests, standalone)
-            sam3_dir = Path(__file__).parent.parent / "models" / "SAM3"
+        from .platform import get_models_dir
+        sam3_dir = Path(get_models_dir("SAM3"))
 
     sam3_dir.mkdir(parents=True, exist_ok=True)
     return sam3_dir
@@ -279,21 +275,13 @@ except ImportError:
 def _load_state_dict(path: str, device: str = "cpu") -> dict:
     """Load a state dict from .safetensors or .pt using best available loader.
 
-    Tries comfy.utils.load_torch_file first (supports both formats natively),
-    falls back to safetensors.torch.load_file / torch.load.
+    Delegates to ``platform.load_torch_file`` which tries
+    ``comfy.utils.load_torch_file`` first, then falls back to
+    ``safetensors.torch.load_file`` / ``torch.load``.
     """
-    try:
-        from comfy.utils import load_torch_file
-        return load_torch_file(path, device=device)
-    except ImportError:
-        pass
+    from .platform import load_torch_file
 
-    if path.endswith(".safetensors"):
-        from safetensors.torch import load_file
-        return load_file(path, device=device)
-    else:
-        import torch
-        return torch.load(path, map_location=device, weights_only=False)
+    return load_torch_file(path, device=device, safe_load=False)
 
 
 def _load_efficient(model, ckpt: dict, device: str = "cpu") -> None:
@@ -380,13 +368,8 @@ def _warn_if_bad_checkpoint(ckpt: dict, model, model_type: str = "image") -> Non
 
 def _free_vram() -> None:
     """Free ComfyUI VRAM before loading SAM3."""
-    try:
-        import comfy.model_management
-        comfy.model_management.unload_all_models()
-        comfy.model_management.soft_empty_cache()
-        log.info("Freed ComfyUI VRAM for SAM3 loading")
-    except ImportError:
-        pass
+    from .platform import free_comfyui_vram
+    free_comfyui_vram()
 
     import torch
     if torch.cuda.is_available():
@@ -814,7 +797,7 @@ def _suppress_tqdm():
             _orig = getattr(_mod, "tqdm", None)
             if _orig is not None:
                 _patches.append((_mod, _orig))
-                _mod.tqdm = _make_silent_tqdm(_orig)
+                _mod.tqdm = _make_silent_tqdm(_orig)  # type: ignore[attr-defined]
         except (ImportError, AttributeError):
             pass
     try:
@@ -1110,7 +1093,7 @@ def mask_video(
 
             # ── Set text prompt (always needed) ──────────────────────
             text_prompt = prompt or "object"
-            _frame0_idx, _frame0_out = video_model.add_prompt(
+            _frame0_idx, _frame0_out = video_model.add_prompt(  # type: ignore[misc]
                 inference_state,
                 frame_idx=0,
                 text_str=text_prompt,
@@ -1210,7 +1193,7 @@ def mask_video(
                 norm_h = point_src_height if point_src_height > 0 else h
                 pos_pts = []
                 neg_pts = []
-                for pt, lbl in zip(points, labels):
+                for pt, lbl in zip(points or [], labels or []):
                     if not isinstance(pt, (list, tuple)) or len(pt) < 2:
                         continue
                     try:
@@ -1321,7 +1304,7 @@ def mask_video(
 
                     mask_img = Image.fromarray(mask, mode="L")
                     if mask_img.size != (w, h):
-                        mask_img = mask_img.resize((w, h), Image.NEAREST)
+                        mask_img = mask_img.resize((w, h), Image.NEAREST)  # type: ignore[attr-defined]
                     mask_img.save(os.path.join(masks_dir, f"{frame_idx:06d}.png"))
                     mask_frames_saved.add(frame_idx)
 
@@ -1413,11 +1396,11 @@ def mask_video(
                 # Restore original detection threshold so subsequent runs
                 # with different settings aren't affected.
                 if orig_det_thresh is not _UNSET:
-                    video_model.new_det_thresh = orig_det_thresh
+                    video_model.new_det_thresh = orig_det_thresh  # type: ignore[attr-defined]
                 if orig_max_num_objects is not _UNSET:
-                    video_model.max_num_objects = orig_max_num_objects
+                    video_model.max_num_objects = orig_max_num_objects  # type: ignore[attr-defined]
                 if orig_hotstart is not _UNSET:
-                    video_model.hotstart_delay = orig_hotstart
+                    video_model.hotstart_delay = orig_hotstart  # type: ignore[attr-defined]
 
                 # ── Cleanup ──────────────────────────────────────────
                 # When running via subprocess, this process will exit right
@@ -1830,6 +1813,7 @@ print("RESULT:" + result, flush=True)
         )
 
         # Send args via stdin then close it
+        assert proc.stdin is not None
         proc.stdin.write(json.dumps(args_dict))
         proc.stdin.close()
 
@@ -1838,6 +1822,7 @@ print("RESULT:" + result, flush=True)
 
         def _stream_stderr():
             try:
+                assert proc.stderr is not None
                 for line in proc.stderr:
                     line = line.rstrip()
                     if not line:
@@ -1850,7 +1835,8 @@ print("RESULT:" + result, flush=True)
                 pass  # stderr closed
             finally:
                 try:
-                    proc.stderr.close()
+                    if proc.stderr is not None:
+                        proc.stderr.close()
                 except OSError:
                     pass
 
@@ -1869,9 +1855,11 @@ print("RESULT:" + result, flush=True)
         # Read stdout (contains RESULT: line) — don't use communicate()
         # because we already closed stdin and are reading stderr in a thread.
         try:
+            assert proc.stdout is not None
             stdout_data = proc.stdout.read()
         finally:
-            proc.stdout.close()
+            if proc.stdout is not None:
+                proc.stdout.close()
 
         stderr_thread.join(timeout=5)
 

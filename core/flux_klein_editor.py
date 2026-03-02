@@ -144,13 +144,8 @@ def _free_vram() -> None:
     """Free ComfyUI and SAM3 VRAM before loading FLUX Klein."""
     import torch
 
-    try:
-        import comfy.model_management
-        comfy.model_management.unload_all_models()
-        comfy.model_management.soft_empty_cache()
-        log.info("Freed ComfyUI VRAM for FLUX Klein loading")
-    except Exception:
-        pass
+    from .platform import free_comfyui_vram
+    free_comfyui_vram()
 
     # Also free SAM3 if loaded
     try:
@@ -183,7 +178,7 @@ def load_pipeline():
         return _pipeline
 
     try:
-        from diffusers import Flux2KleinPipeline
+        from diffusers import Flux2KleinPipeline  # type: ignore[attr-defined]
     except ImportError:
         raise ImportError(
             "diffusers with FLUX.2 Klein support is required. "
@@ -390,7 +385,7 @@ def _edit_frame(
     orig_w, orig_h = image.size
 
     # Resize to model's expected resolution
-    ref_image = image.resize((_OUTPUT_SIZE, _OUTPUT_SIZE), Image.LANCZOS)
+    ref_image = image.resize((_OUTPUT_SIZE, _OUTPUT_SIZE), Image.LANCZOS)  # type: ignore[attr-defined]
 
     device = pipe._execution_device if hasattr(pipe, '_execution_device') else "cuda"
     generator = torch.Generator(device=device).manual_seed(seed)
@@ -407,7 +402,7 @@ def _edit_frame(
 
     # Resize back to original resolution
     if result.size != (orig_w, orig_h):
-        result = result.resize((orig_w, orig_h), Image.LANCZOS)
+        result = result.resize((orig_w, orig_h), Image.LANCZOS)  # type: ignore[attr-defined]
 
     return result
 
@@ -440,12 +435,12 @@ def _remove_frame(
 
     # Create masked image: black out the region to remove
     img_arr = np.array(image).copy()
-    mask_arr = np.array(mask.resize(image.size, Image.NEAREST))
+    mask_arr = np.array(mask.resize(image.size, Image.NEAREST))  # type: ignore[attr-defined]
     img_arr[mask_arr > 128] = 0
     masked_image = Image.fromarray(img_arr)
 
     # Resize to model resolution
-    ref_image = masked_image.resize((_OUTPUT_SIZE, _OUTPUT_SIZE), Image.LANCZOS)
+    ref_image = masked_image.resize((_OUTPUT_SIZE, _OUTPUT_SIZE), Image.LANCZOS)  # type: ignore[attr-defined]
 
     device = pipe._execution_device if hasattr(pipe, '_execution_device') else "cuda"
     generator = torch.Generator(device=device).manual_seed(seed)
@@ -462,7 +457,7 @@ def _remove_frame(
 
     # Resize back to original resolution
     if result.size != (orig_w, orig_h):
-        result = result.resize((orig_w, orig_h), Image.LANCZOS)
+        result = result.resize((orig_w, orig_h), Image.LANCZOS)  # type: ignore[attr-defined]
 
     return result
 
@@ -475,7 +470,7 @@ def _composite_frame(
     original,
     edited,
     mask,
-) -> np.ndarray:
+) -> "np.ndarray":  # type: ignore[name-defined]
     """Composite edited pixels onto original using the mask.
 
     Args:
@@ -491,7 +486,7 @@ def _composite_frame(
 
     orig_arr = np.array(original).astype(np.float32)
     edit_arr = np.array(edited).astype(np.float32)
-    mask_pil = mask.resize(original.size, Image.NEAREST) if mask.size != original.size else mask
+    mask_pil = mask.resize(original.size, Image.NEAREST) if mask.size != original.size else mask  # type: ignore[attr-defined]
     mask_arr = np.array(mask_pil).astype(np.float32) / 255.0
     mask_3ch = mask_arr[:, :, None]
 
@@ -623,7 +618,7 @@ def edit_video(
             composited_np.append(result)
 
             mask_np = np.array(
-                masks[i].resize(frames[i].size, Image.NEAREST)
+                masks[i].resize(frames[i].size, Image.NEAREST)  # type: ignore[attr-defined]
                 if masks[i].size != frames[i].size
                 else masks[i]
             ).astype(np.float32) / 255.0
@@ -746,12 +741,14 @@ print("RESULT:" + result, flush=True)
         )
 
         # Send args via stdin
+        assert proc.stdin is not None
         proc.stdin.write(json.dumps(args_dict))
         proc.stdin.close()
 
         # Stream stderr in real-time
         def _stream_stderr():
             try:
+                assert proc.stderr is not None
                 for line in proc.stderr:
                     line = line.rstrip()
                     if not line:
@@ -763,7 +760,8 @@ print("RESULT:" + result, flush=True)
                 pass
             finally:
                 try:
-                    proc.stderr.close()
+                    if proc.stderr is not None:
+                        proc.stderr.close()
                 except OSError:
                     pass
 
@@ -781,9 +779,11 @@ print("RESULT:" + result, flush=True)
             )
 
         try:
+            assert proc.stdout is not None
             stdout_data = proc.stdout.read()
         finally:
-            proc.stdout.close()
+            if proc.stdout is not None:
+                proc.stdout.close()
 
         stderr_thread.join(timeout=5)
 
