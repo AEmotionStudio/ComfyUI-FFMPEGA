@@ -188,7 +188,10 @@ class TestSingleSkill:
 
         assert result.returncode == 0, f"ffmpeg failed: {result.stderr.decode()}"
         probe = _probe(output_path)
-        duration = float(probe["format"]["duration"])
+        # Use audio stream duration rather than container format duration,
+        # as container padding can obscure actual length changes on short clips
+        audio = _get_audio_stream(probe)
+        duration = float(audio["duration"])
         # 2x speed on 0.2s → ~0.1s (allow tolerance for container overhead)
         assert duration < 0.2, f"Expected ~0.1s but got {duration}s"
 
