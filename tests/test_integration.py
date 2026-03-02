@@ -4,8 +4,8 @@ These tests verify that composed pipelines actually produce valid
 output files when executed through ffmpeg.  They require ffmpeg
 to be installed on the system.
 
-The test video is generated dynamically at session start: a 5-frame,
-160×120, 0.2s clip with a 440 Hz sine tone — small enough to
+The test video is generated dynamically at session start: a 25-frame,
+160×120, 1.0s clip with a 440 Hz sine tone — small enough to
 process in <1s per test.
 """
 
@@ -42,8 +42,8 @@ def _generated_video() -> str:
     subprocess.run(
         [
             _ffmpeg, "-y",
-            "-f", "lavfi", "-i", "testsrc=duration=0.2:size=160x120:rate=25",
-            "-f", "lavfi", "-i", "sine=frequency=440:duration=0.2",
+            "-f", "lavfi", "-i", "testsrc=duration=1.0:size=160x120:rate=25",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=1.0",
             "-c:v", "libx264", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-shortest", path,
         ],
@@ -189,8 +189,8 @@ class TestSingleSkill:
         assert result.returncode == 0, f"ffmpeg failed: {result.stderr.decode()}"
         probe = _probe(output_path)
         duration = float(probe["format"]["duration"])
-        # 2x speed on 0.2s → ~0.1s (allow tolerance for container overhead)
-        assert duration < 0.2, f"Expected ~0.1s but got {duration}s"
+        # 2x speed on 1.0s → ~0.5s (allow tolerance for container overhead)
+        assert duration < 0.8, f"Expected ~0.5s but got {duration}s"
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +231,7 @@ class TestMultiSkillPipeline:
         assert result.returncode == 0, f"ffmpeg failed: {result.stderr.decode()}"
         probe = _probe(output_path)
         duration = float(probe["format"]["duration"])
-        assert duration <= 0.15, f"Expected ≤0.1s but got {duration}s"
+        assert duration <= 0.25, f"Expected ≤0.25s but got {duration}s"
 
     def test_video_and_audio_skills(self, test_video: str, output_path: str):
         """brightness (video) + volume (audio) both apply."""
