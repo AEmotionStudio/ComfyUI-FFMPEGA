@@ -669,7 +669,6 @@ def _generate_chunk(
     start_sec=0.0,
 ):
     """Generate audio for a single chunk (≤ 8s)."""
-    import torch
 
     if video_path is not None:
         video_info = load_video_fn(Path(video_path), duration)
@@ -714,7 +713,6 @@ def _generate_chunked(
     generate_fn,
 ):
     """Generate audio for a long video by chunking into segments."""
-    import torch
 
     sampling_rate = seq_cfg.sampling_rate
     step = _CHUNK_DURATION - _OVERLAP_SECS
