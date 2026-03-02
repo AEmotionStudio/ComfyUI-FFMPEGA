@@ -11,7 +11,10 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
-from ..core.sanitize import validate_video_path
+try:
+    from ..core.sanitize import validate_video_path
+except ImportError:
+    from core.sanitize import validate_video_path
 
 logger = logging.getLogger("ffmpega")
 
@@ -52,7 +55,7 @@ def frames_to_base64(
             img = Image.open(p)
             # Resize if larger than max_size
             if max(img.size) > max_size:
-                img.thumbnail((max_size, max_size), Image.LANCZOS)
+                img.thumbnail((max_size, max_size), Image.LANCZOS)  # type: ignore[attr-defined]
             buf = io.BytesIO()
             img.save(buf, format="PNG", optimize=True)
             b64 = base64.b64encode(buf.getvalue()).decode("ascii")
@@ -99,7 +102,7 @@ def frames_to_base64_anthropic(
         try:
             img = Image.open(p)
             if max(img.size) > max_size:
-                img.thumbnail((max_size, max_size), Image.LANCZOS)
+                img.thumbnail((max_size, max_size), Image.LANCZOS)  # type: ignore[attr-defined]
             buf = io.BytesIO()
             img.save(buf, format="PNG", optimize=True)
             b64 = base64.b64encode(buf.getvalue()).decode("ascii")
@@ -169,7 +172,7 @@ def frames_to_base64_raw_strings(
         try:
             img = Image.open(p)
             if max(img.size) > max_size:
-                img.thumbnail((max_size, max_size), Image.LANCZOS)
+                img.thumbnail((max_size, max_size), Image.LANCZOS)  # type: ignore[attr-defined]
             buf = io.BytesIO()
             img.save(buf, format="PNG", optimize=True)
             strings.append(base64.b64encode(buf.getvalue()).decode("ascii"))

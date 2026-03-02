@@ -210,13 +210,15 @@ class MediaConverter:
             # Optimization: Use in-place operations (mul, clamp_) to avoid intermediate
             # float tensor allocation for the chunk scaling step.
             chunk = images[start:end].mul(255.0).clamp_(0, 255).to(torch.uint8).cpu().numpy()
-            proc.stdin.write(chunk)
+            assert proc.stdin is not None
+            proc.stdin.write(chunk)  # type: ignore[arg-type]  # numpy buffer protocol
             del chunk
-        proc.stdin.close()
+        if proc.stdin is not None:
+            proc.stdin.close()
         proc.wait()
 
         if proc.returncode != 0:
-            stderr = proc.stderr.read().decode("utf-8", "backslashreplace")
+            stderr = (proc.stderr.read() if proc.stderr else b"").decode("utf-8", "backslashreplace")
             os.remove(tmp.name)
             raise RuntimeError(f"Failed to create temp video from images: {stderr}")
 

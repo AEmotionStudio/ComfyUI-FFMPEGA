@@ -135,7 +135,7 @@ class ProcessManager:
             output_path = None
 
         # Replace 'ffmpeg' with actual path
-        if args[0] == "ffmpeg":
+        if args[0] == "ffmpeg" and self.ffmpeg_path:
             args[0] = self.ffmpeg_path
 
         self._reset_cancel()
@@ -230,7 +230,7 @@ class ProcessManager:
             output_path = None
 
         # Replace 'ffmpeg' with actual path
-        if args[0] == "ffmpeg":
+        if args[0] == "ffmpeg" and self.ffmpeg_path:
             args[0] = self.ffmpeg_path
 
         # Add progress reporting
@@ -253,6 +253,7 @@ class ProcessManager:
             stderr_data = []
 
             async def read_stderr():
+                assert process.stderr is not None
                 while True:
                     line = await process.stderr.readline()
                     if not line:
@@ -260,6 +261,7 @@ class ProcessManager:
                     stderr_data.append(line.decode())
 
             async def read_stdout():
+                assert process.stdout is not None
                 progress = ProgressInfo()
                 while True:
                     line = await process.stdout.readline()
@@ -320,7 +322,7 @@ class ProcessManager:
 
             return ProcessResult(
                 success=success,
-                return_code=process.returncode,
+                return_code=process.returncode or 0,
                 stdout="\n".join(stdout_data),
                 stderr=stderr_str,
                 command=cmd_string,
@@ -361,7 +363,7 @@ class ProcessManager:
             cmd_string = " ".join(args)
             output_path = None
 
-        if args[0] == "ffmpeg":
+        if args[0] == "ffmpeg" and self.ffmpeg_path:
             args[0] = self.ffmpeg_path
 
         args = [args[0], "-progress", "pipe:1", "-nostats"] + args[1:]
@@ -377,6 +379,7 @@ class ProcessManager:
 
         # Read stderr in background
         async def collect_stderr():
+            assert process.stderr is not None
             while True:
                 line = await process.stderr.readline()
                 if not line:
@@ -386,6 +389,7 @@ class ProcessManager:
         stderr_task = asyncio.create_task(collect_stderr())
 
         # Read stdout and yield progress
+        assert process.stdout is not None
         while True:
             line = await process.stdout.readline()
             if not line:
@@ -419,7 +423,7 @@ class ProcessManager:
 
         yield ProcessResult(
             success=success,
-            return_code=process.returncode,
+            return_code=process.returncode or 0,
             stdout="",
             stderr=stderr_str,
             command=cmd_string,
