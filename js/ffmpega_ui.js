@@ -2858,6 +2858,9 @@ app.registerExtension({
             // Build the modal
             const overlay = document.createElement("div");
             overlay.id = "ffmpega-point-selector";
+            overlay.setAttribute("role", "dialog");
+            overlay.setAttribute("aria-modal", "true");
+            overlay.setAttribute("aria-label", "Point Selector");
             overlay.style.cssText = `
                 position:fixed;top:0;left:0;width:100vw;height:100vh;
                 background:rgba(0,0,0,0.85);z-index:999999;
@@ -2872,9 +2875,9 @@ app.registerExtension({
                 display:flex;gap:16px;align-items:center;
             `;
             header.innerHTML = `
-                <span>🎯 <b>Point Selector</b></span>
-                <span style="color:#4f4">⬤ Left-click = Include</span>
-                <span style="color:#f44">⬤ Right-click = Exclude</span>
+                <span><span aria-hidden="true">🎯</span> <b>Point Selector</b></span>
+                <span style="color:#4f4"><span aria-hidden="true">⬤</span> Left-click = Include</span>
+                <span style="color:#f44"><span aria-hidden="true">⬤</span> Right-click = Exclude</span>
                 <span style="color:#888">Click existing point to remove</span>
             `;
             overlay.appendChild(header);
@@ -2892,6 +2895,8 @@ app.registerExtension({
             const statusBar = document.createElement("div");
             statusBar.style.cssText = "color:#aaa;font-size:12px;margin-top:6px;";
             statusBar.textContent = "Loading image...";
+            statusBar.setAttribute("role", "status");
+            statusBar.setAttribute("aria-live", "polite");
             overlay.appendChild(statusBar);
 
             // Button bar
