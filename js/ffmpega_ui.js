@@ -1532,7 +1532,11 @@ app.registerExtension({
                             if (!Object.prototype.hasOwnProperty.call(uploadBtn, '_originalBorder')) {
                                 uploadBtn._originalBorder = uploadBtn.style.border;
                             }
+                            if (!Object.prototype.hasOwnProperty.call(uploadBtn, '_originalAriaLabel')) {
+                                uploadBtn._originalAriaLabel = uploadBtn.getAttribute("aria-label");
+                            }
                             uploadBtn.textContent = "📂 Drop to Upload";
+                            uploadBtn.setAttribute("aria-label", "Drop to Upload");
                             uploadBtn.style.border = "1px dashed #4a6a8a";
                             uploadBtn.style.backgroundColor = "#333";
 
@@ -1546,6 +1550,14 @@ app.registerExtension({
                                     if (Object.prototype.hasOwnProperty.call(uploadBtn, '_originalBorder')) {
                                         uploadBtn.style.border = uploadBtn._originalBorder;
                                         delete uploadBtn._originalBorder;
+                                    }
+                                    if (Object.prototype.hasOwnProperty.call(uploadBtn, '_originalAriaLabel')) {
+                                        if (uploadBtn._originalAriaLabel) {
+                                            uploadBtn.setAttribute("aria-label", uploadBtn._originalAriaLabel);
+                                        } else {
+                                            uploadBtn.removeAttribute("aria-label");
+                                        }
+                                        delete uploadBtn._originalAriaLabel;
                                     }
                                     updateUploadBtn();
                                 }
@@ -2122,8 +2134,12 @@ app.registerExtension({
                             if (!Object.prototype.hasOwnProperty.call(uploadBtn, '_originalBorder')) {
                                 uploadBtn._originalBorder = uploadBtn.style.border;
                             }
+                            if (!Object.prototype.hasOwnProperty.call(uploadBtn, '_originalAriaLabel')) {
+                                uploadBtn._originalAriaLabel = uploadBtn.getAttribute("aria-label");
+                            }
 
                             uploadBtn.textContent = "📂 Drop to Upload";
+                            uploadBtn.setAttribute("aria-label", "Drop to Upload");
                             uploadBtn.style.border = "1px dashed #4a6a8a";
                             uploadBtn.style.backgroundColor = "#333";
 
@@ -2138,6 +2154,14 @@ app.registerExtension({
                                     if (Object.prototype.hasOwnProperty.call(uploadBtn, '_originalBorder')) {
                                         uploadBtn.style.border = uploadBtn._originalBorder;
                                         delete uploadBtn._originalBorder;
+                                    }
+                                    if (Object.prototype.hasOwnProperty.call(uploadBtn, '_originalAriaLabel')) {
+                                        if (uploadBtn._originalAriaLabel) {
+                                            uploadBtn.setAttribute("aria-label", uploadBtn._originalAriaLabel);
+                                        } else {
+                                            uploadBtn.removeAttribute("aria-label");
+                                        }
+                                        delete uploadBtn._originalAriaLabel;
                                     }
                                     updateBtn();
                                 }
