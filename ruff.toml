@@ -1,0 +1,10 @@
+line-length = 120
+target-version = "py310"
+
+[lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E501"]  # handled by formatter
+
+[lint.per-file-ignores]
+"tests/*" = ["B", "UP"]
+"core/musetalk/*" = ["E", "F", "W", "I", "UP", "B"]  # vendored code
