@@ -1,0 +1,15 @@
+[run]
+source = [core, skills, nodes, mcp]
+omit =
+    tests/*
+    .venv/*
+    */__pycache__/*
+    core/musetalk/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if TYPE_CHECKING:
+    if __name__ == .__main__.:
+show_missing = true
+precision = 1
