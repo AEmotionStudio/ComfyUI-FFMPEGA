@@ -10,12 +10,13 @@ License note:
 """
 
 import logging
-import os
 
 try:
     from ..handler_contract import make_result
+    from ...core.sanitize import validate_video_path, ValidationError
 except ImportError:
     from skills.handler_contract import make_result
+    from core.sanitize import validate_video_path, ValidationError
 
 log = logging.getLogger("ffmpega")
 
@@ -31,24 +32,32 @@ def _f_lip_sync(p):
         face_index (int):   Which face to process: -1 = all faces, 0+ = specific face.
         batch_size (int):   Frames processed per batch (lower = less VRAM).
     """
-    audio_path = str(p.get("audio_path", ""))
+    raw_audio_path = str(p.get("audio_path", ""))
     face_index = int(p.get("face_index", -1))
     batch_size = int(p.get("batch_size", 8))
-    video_path = p.get("_input_path", "")
+    raw_video_path = p.get("_input_path", "")
 
-    if not audio_path or not os.path.isfile(audio_path):
+    try:
+        if not raw_audio_path:
+            raise ValidationError("audio_path is empty")
+        audio_path = validate_video_path(raw_audio_path)
+    except ValidationError as e:
         log.warning(
-            "lip_sync requires an audio_path parameter pointing to an "
-            "existing audio file."
+            f"lip_sync requires a valid audio_path parameter pointing to an "
+            f"existing audio file. Validation failed: {e}"
         )
         _metadata_ref = p.get("_metadata_ref")
         if _metadata_ref is not None and isinstance(_metadata_ref, dict):
             _metadata_ref["_skill_degraded"] = True
         return make_result()
 
-    if not video_path or not os.path.isfile(video_path):
+    try:
+        if not raw_video_path:
+            raise ValidationError("video_path is empty")
+        video_path = validate_video_path(raw_video_path)
+    except ValidationError as e:
         log.warning(
-            "lip_sync requires a video input. No valid video path available."
+            f"lip_sync requires a valid video input. Validation failed: {e}"
         )
         _metadata_ref = p.get("_metadata_ref")
         if _metadata_ref is not None and isinstance(_metadata_ref, dict):
