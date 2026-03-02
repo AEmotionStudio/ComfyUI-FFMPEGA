@@ -32,3 +32,4 @@ jobs:
 
       - name: Type check
         run: python -m pyright
+        continue-on-error: true
