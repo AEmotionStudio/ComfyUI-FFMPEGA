@@ -103,6 +103,7 @@ errors_2.md
 .pyre_configuration
 .mypy_cache/
 .ruff_cache/
+.pyright/
 
 # Node.js (if Gemini CLI is installed locally)
 node_modules/
