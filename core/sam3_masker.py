@@ -279,7 +279,10 @@ def _load_state_dict(path: str, device: str = "cpu") -> dict:
     ``comfy.utils.load_torch_file`` first, then falls back to
     ``safetensors.torch.load_file`` / ``torch.load``.
     """
-    from .platform import load_torch_file
+    try:
+        from .platform import load_torch_file
+    except ImportError:
+        from core.platform import load_torch_file  # type: ignore
 
     return load_torch_file(path, device=device, safe_load=False)
 
@@ -368,8 +371,15 @@ def _warn_if_bad_checkpoint(ckpt: dict, model, model_type: str = "image") -> Non
 
 def _free_vram() -> None:
     """Free ComfyUI VRAM before loading SAM3."""
-    from .platform import free_comfyui_vram
-    free_comfyui_vram()
+    try:
+        from .platform import free_comfyui_vram
+    except ImportError:
+        try:
+            from core.platform import free_comfyui_vram  # type: ignore
+        except ImportError:
+            free_comfyui_vram = None  # subprocess — no ComfyUI runtime
+    if free_comfyui_vram is not None:
+        free_comfyui_vram()
 
     import torch
     if torch.cuda.is_available():

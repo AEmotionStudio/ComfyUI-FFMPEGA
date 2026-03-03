@@ -379,16 +379,16 @@ Token Usage{est_tag}:
 
         if track_tokens:
             est_label = " (estimated)" if token_usage.get("estimated") else ""
-            logger.info("┌─ Token Usage%s ────────────────────────────┐", est_label)
-            logger.info("│ Model:       %-30s │", token_usage.get("model", "unknown"))
-            logger.info("│ Provider:    %-30s │", token_usage.get("provider", "unknown"))
-            logger.info("│ Prompt:      %-30s │", f"{token_usage.get('total_prompt_tokens', 0):,} tokens")
-            logger.info("│ Completion:  %-30s │", f"{token_usage.get('total_completion_tokens', 0):,} tokens")
-            logger.info("│ Total:       %-30s │", f"{token_usage.get('total_tokens', 0):,} tokens")
-            logger.info("│ LLM calls:   %-30s │", str(token_usage.get("llm_calls", 0)))
-            logger.info("│ Tool calls:  %-30s │", str(token_usage.get("tool_calls", 0)))
-            logger.info("│ Elapsed:     %-30s │", f"{token_usage.get('elapsed_sec', 0)}s")
-            logger.info("└────────────────────────────────────────────┘")
+            print("┌─ Token Usage%s ────────────────────────────┐" % est_label)
+            print("│ Model:       %-30s │" % token_usage.get("model", "unknown"))
+            print("│ Provider:    %-30s │" % token_usage.get("provider", "unknown"))
+            print("│ Prompt:      %-30s │" % ("%s tokens" % f"{token_usage.get('total_prompt_tokens', 0):,}"))
+            print("│ Completion:  %-30s │" % ("%s tokens" % f"{token_usage.get('total_completion_tokens', 0):,}"))
+            print("│ Total:       %-30s │" % ("%s tokens" % f"{token_usage.get('total_tokens', 0):,}"))
+            print("│ LLM calls:   %-30s │" % token_usage.get("llm_calls", 0))
+            print("│ Tool calls:  %-30s │" % token_usage.get("tool_calls", 0))
+            print("│ Elapsed:     %-30s │" % ("%ss" % token_usage.get("elapsed_sec", 0)))
+            print("└────────────────────────────────────────────────┘")
 
         if log_usage:
             try:

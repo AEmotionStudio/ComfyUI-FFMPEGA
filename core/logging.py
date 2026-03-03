@@ -89,6 +89,7 @@ def setup_logging(
 
     root = logging.getLogger("ffmpega")
     root.setLevel(level)
+    root.propagate = False  # Don't bubble up to ComfyUI's root handler
 
     if not root.handlers:
         handler = logging.StreamHandler()
