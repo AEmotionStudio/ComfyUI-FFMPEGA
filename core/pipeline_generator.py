@@ -10,8 +10,9 @@ import re
 from typing import Optional
 
 from .errors import PipelineGenerationError
+from .logging import get_logger
 
-logger = logging.getLogger("ffmpega")
+logger = get_logger(__name__)
 
 
 class PipelineGenerator:
@@ -326,7 +327,7 @@ class PipelineGenerator:
         _model = getattr(connector, 'config', None)
         _model_name = getattr(_model, 'model', 'unknown') if _model else 'unknown'
         _provider_name = getattr(_model, 'provider', 'unknown') if _model else 'unknown'
-        _provider_str = _provider_name.value if hasattr(_provider_name, 'value') else str(_provider_name)
+        _provider_str = _provider_name.value if hasattr(_provider_name, 'value') else str(_provider_name)  # type: ignore[union-attr]
         tracker = TokenTracker(model=_model_name, provider=_provider_str)
 
         def _extract_frames_handler(args: dict) -> dict:
@@ -453,7 +454,7 @@ class PipelineGenerator:
                         init_frames["paths"], max_size=256,
                     )
                     if raw_b64:
-                        messages[1]["images"] = raw_b64
+                        messages[1]["images"] = raw_b64  # type: ignore[literal-required]
                         logger.info(
                             "Vision: auto-embedded %d initial frames "
                             "for Ollama VL model",
