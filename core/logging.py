@@ -25,6 +25,12 @@ import time
 from typing import Any
 
 
+# Computed once at import time — avoids re-creating a LogRecord + frozenset
+# on every JSONFormatter.format() call.
+_RESERVED_LOG_ATTRS = frozenset(
+    logging.LogRecord("", 0, "", 0, "", (), None).__dict__
+)
+
 # ---------------------------------------------------------------------------
 #  JSON Formatter
 # ---------------------------------------------------------------------------
@@ -46,9 +52,8 @@ class JSONFormatter(logging.Formatter):
         }
 
         # Merge extra fields (skip internal LogRecord attrs)
-        _RESERVED = frozenset(logging.LogRecord("", 0, "", 0, "", (), None).__dict__)
         for key, value in record.__dict__.items():
-            if key not in _RESERVED and key not in log_data:
+            if key not in _RESERVED_LOG_ATTRS and key not in log_data:
                 log_data[key] = value
 
         return json.dumps(log_data, default=str)
@@ -115,6 +120,8 @@ def get_logger(name: str) -> logging.Logger:
     Returns:
         A ``logging.Logger`` instance.
     """
+    setup_logging()
+
     if name.startswith("ffmpega"):
         return logging.getLogger(name)
 
