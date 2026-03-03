@@ -424,44 +424,6 @@ class FFMPEGAgentNode:
     #  Private helpers extracted from process()                           #
     # ------------------------------------------------------------------ #
 
-    @staticmethod
-    def _inject_effects_hints(prompt: str, pipeline_json: str) -> str:
-        """Inject FFMPEGAEffectsBuilder parameters into the prompt.
-
-        This converts the pipeline_json from the effects builder node
-        into explicit instructions for the LLM to follow.
-        """
-        import json as _json
-        try:
-            data = _json.loads(pipeline_json)
-        except (ValueError, TypeError):
-            return prompt
-
-        steps = data.get("pipeline", [])
-        raw = data.get("raw_ffmpeg", "")
-        if not steps and not raw:
-            return prompt
-
-        hint_lines = [
-            "\n\n--- EFFECTS BUILDER (pre-selected by user) ---",
-            "The user has pre-selected the following effects. You MUST include",
-            "these EXACT skills in your pipeline with the specified parameters.",
-            "You may add additional skills if the user's prompt requires them.",
-        ]
-
-        for step in steps:
-            skill = step.get("skill", "")
-            params = step.get("params", {})
-            if skill:
-                params_str = ", ".join(f"{k}={v}" for k, v in params.items()) if params else "defaults"
-                hint_lines.append(f"  - {skill} ({params_str})")
-
-        if raw:
-            hint_lines.append(f"  - RAW FFMPEG FILTERS: {raw}")
-
-        hint_lines.append("--- END EFFECTS BUILDER ---")
-        return prompt + "\n".join(hint_lines)
-
     def _resolve_inputs(self, video_path, images_a, image_a, image_path_a, video_a, text_a, subtitle_path, audio_a, **kwargs):
         """Delegate to input_resolver module."""
         return _ir.resolve_inputs(self.media_converter, video_path, images_a, image_a, image_path_a, video_a, text_a, subtitle_path, audio_a, **kwargs)
