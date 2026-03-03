@@ -10,7 +10,7 @@ Example usage:
     - "Create a vintage VHS look with grain and color shift"
 """
 
-__version__ = "2.6.6"
+__version__ = "2.9.1"
 __author__ = "Æmotion Studio"
 
 # Import node mappings for ComfyUI

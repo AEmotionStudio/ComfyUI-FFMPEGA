@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.9.0] - 2026-03-01
+## [2.9.1] - 2026-03-03
 
 ### Added
 - **AI Object Removal & Editing (`auto_mask:effect=remove|edit`)**: New FLUX Klein 4B integration for AI-powered per-frame object removal and text-guided video editing. Replaces LaMa for the `remove` effect with higher-quality FLUX Klein inpainting. New `edit` effect enables text-guided changes (e.g. "change hair to red", "replace background with beach"). Uses reference-image conditioning with 4-step inference, temporal smoothing, and fixed seeding for cross-frame consistency. ~8–13 GB VRAM (fp16/bf16 with CPU offload).
@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MuseTalk Model Mirror**: MuseTalk UNet weights hosted on `AEmotionStudio/musetalk-models` as `.safetensors` in both fp32 (3.2 GB) and fp16 (1.6 GB). Lip sync auto-downloads the fp16 variant by default — 50% smaller. Falls back to fp32 safetensors, then upstream `.pth`.
 - **Mask Points Chaining**: `SaveVideoNode` now has optional `mask_points` input/output for passing segmentation point data through the node chain. `LoadVideoPathNode` accepts upstream `mask_points` to override locally generated points.
 - **LoadImagePath Node Styling**: Consistent color styling applied to `LoadImagePath` to match other FFMPEGA nodes.
+- **Structured Logging (`core/logging.py`)**: New `JSONFormatter` for machine-readable logs, `get_logger()` convenience function, and `LogTimer` context manager for performance tracking. Enable via `FFMPEGA_LOG_JSON=1` env var. *(PR #136)*
+- **CONTRIBUTING.md**: New contributor documentation with architecture overview, development setup, coding standards, and PR guidelines. *(PR #136)*
+- **Pre-commit Hooks**: New `.pre-commit-config.yaml` with Ruff lint/format and Pyright checks. New `ruff.toml` (120-char lines, py310 target). *(PR #136)*
+- **CI Workflow (`.github/workflows/ci.yml`)**: Pytest + Pyright runs on every PR/push. `publish_action.yml` updated with `needs: test` gate. `.coveragerc` and `pytest-cov` CI integration for code coverage. *(PR #130)*
+- **12 Integration Tests (`tests/test_integration.py`)**: Real FFmpeg pipeline tests — single-skill (brightness, resize, volume, remove_audio, speed), multi-skill (resize+brightness, trim+resize, video+audio, full), and edge cases (empty pipeline, overwrite, pixel_format enforcement). Test video generated dynamically via ffmpeg (no binary in repo). *(PR #130)*
 - **Node Chaining Tests**: New `tests/test_node_chaining.py` with comprehensive tests for mask_points pass-through, save/load node wiring, and metadata propagation.
 - **Model Manager Tests**: New `tests/test_model_manager.py` with tests for mirror download, download guards, and safetensors conversion.
 - **Audio Generation Tests**: New `tests/test_generate_audio.py` with 20 tests covering skill registration, handler dispatch, aliases, subprocess wiring, and model manager integration.
@@ -32,14 +37,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Mirror Download Test Robustness**: Mocked `require_downloads_allowed` in mirror download tests to prevent spurious failures when download guard settings differ.
 - **`no_llm_mode` Default Revert**: Reverted unintentional default change in an unrelated PR to keep focused scope.
 - **Audio Extraction Buffer**: Fixed buffer size bug in audio extraction pipeline.
+- **Log Propagation Leak**: Prevented FFMPEGA logger messages from propagating to ComfyUI's root logger, avoiding duplicate or noisy console output.
+- **Token Usage Display**: Switched token usage summary from logger to `print()` so it always appears in the console regardless of log level configuration.
+- **Platform Utility Import Robustness**: `core/platform.py` utilities now import gracefully when ComfyUI modules are unavailable (e.g. standalone testing, MCP server).
 
 ### Security
 - **CC-BY-NC 4.0 License Warnings**: Prominent license warnings for MMAudio model weights in 5 locations — skill description (visible to LLM agents), handler docstring, handler runtime log, model registry, and README. MMAudio model checkpoints are CC-BY-NC 4.0 (non-commercial); users must accept the license when downloading.
 
 ### Changed
+- **Modular Node Architecture**: Broke up monolithic `agent_node.py` into 6 focused modules — `input_resolver.py` (input path resolution/validation), `execution_engine.py` (FFmpeg pipeline execution/retry), `output_handler.py` (frame collection/formatting), `batch_processor.py` (batch/queue processing), `nollm_modes.py` (no-LLM mode presets), and `pipeline_assembler.py` (pipeline generation/assembly). `agent_node.py` remains as a thin orchestrator. *(PRs #127, #136)*
+- **Platform Abstraction (`core/platform.py`)**: Extracted all ComfyUI boundary interactions (folder paths, model loading, progress callbacks) into a single adapter module. Core logic no longer imports ComfyUI directly. *(PR #128)*
+- **Pyright Type Checking**: Added `pyrightconfig.json` (Python 3.10+, basic mode), created type stubs for ComfyUI modules (`folder_paths`, `comfy.*`). Fixed 78 type errors across `core/`, `skills/`, `mcp/` — subprocess stream None-safety, Optional return types, forward references, tuple unpacking, numpy buffer protocol. *(PR #127)*
+- **`_RESERVED` Hoisted**: Moved `_RESERVED` from instance-level to module-level constant; lazy-initialized logging to avoid import-time side effects.
+- **Removed `_inject_effects_hints`**: Cleaned up dead method from agent_node.
 - **Model Registry Updated**: `mmaudio` entry updated with accurate size (~5.5 GB), `license` field, mirror URL, and ⚠️ warning in manual instructions.
 - **Safetensors Model Conversion**: Whisper models on HuggingFace mirror converted from `.pt` to `.safetensors` to avoid being flagged. LaMa kept as `.pt` (TorchScript JIT). MuseTalk UNet converted from `.pth` to `.safetensors` (fp32 + fp16). `try_mirror_download` updated to handle per-model conversion strategy.
 - **AI-Powered Skills Count**: Updated from 3 to 5 in README (added `generate_audio`, `lip_sync`).
+- **Point Selector Accessibility**: Added `role="dialog"`, `aria-modal="true"`, `aria-label` to point selector overlay. Status bar uses `role="status"` and `aria-live="polite"` for screen reader announcements. Decorative emojis hidden with `aria-hidden="true"`. *(PR #124)*
+- **Test Suite**: Expanded from 656 to **799 tests** across 40 test files, 0 failures. New integration tests (12), structured logging coverage, and platform abstraction tests.
 
 ---
 
