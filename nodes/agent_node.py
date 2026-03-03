@@ -21,6 +21,7 @@ from . import output_handler as _oh
 from . import execution_engine as _ee
 from . import nollm_modes as _nollm
 from . import batch_processor as _bp
+from . import pipeline_assembler as _pa
 
 
 class FFMPEGAgentNode:
@@ -1007,49 +1008,20 @@ class FFMPEGAgentNode:
             **kwargs,
         )
 
-        # --- Generate pipeline via LLM ---
-        if not ollama_url or not ollama_url.startswith(("http://", "https://")):
-            ollama_url = "http://localhost:11434"
-        effective_model = llm_model
-        if llm_model == "custom":
-            if not custom_model or not custom_model.strip():
-                raise ValueError(
-                    "Please enter a model name in the 'custom_model' field "
-                    "when using 'custom' mode."
-                )
-            effective_model = custom_model.strip()
-        connector = self.pipeline_generator.create_connector(effective_model, ollama_url, api_key)
-
-        # --- LLM Hint Mode: inject Effects Builder selections into prompt ---
-        effective_prompt = prompt
-        if pipeline_json and pipeline_json.strip():
-            effective_prompt = self._inject_effects_hints(prompt, pipeline_json)
-
-        try:
-            spec = await self.pipeline_generator.generate(
-                connector, effective_prompt, metadata_str,
-                connected_inputs=connected_inputs_str,
-                video_path=effective_video_path,
-                use_vision=use_vision,
-                ptc_mode=ptc_mode,
-            )
-        except Exception as e:
-            if hasattr(connector, 'close'):
-                await connector.close()  # type: ignore[union-attr]
-            if api_key and api_key in str(e):
-                from core.sanitize import sanitize_api_key
-                raise RuntimeError(sanitize_api_key(str(e), api_key)) from None
-            raise
-
-        interpretation = spec.get("interpretation", "")
-        warnings = spec.get("warnings", [])
-        estimated_changes = spec.get("estimated_changes", "")
-        pipeline_steps = spec.get("pipeline", [])
-        audio_source = spec.get("audio_source", "mix")
-        audio_mode = spec.get("audio_mode", "loop")
-        if audio_mode not in ("loop", "pad", "trim"):
-            audio_mode = "loop"
-        logger.debug("audio_source from LLM: %s, audio_mode: %s", audio_source, audio_mode)
+        # --- Generate pipeline spec via LLM ---
+        spec, connector = await _pa.generate_pipeline_spec(
+            pipeline_generator=self.pipeline_generator,
+            prompt=prompt,
+            metadata_str=metadata_str,
+            connected_inputs_str=connected_inputs_str,
+            effective_video_path=effective_video_path,
+            llm_model=llm_model,
+            custom_model=custom_model,
+            ollama_url=ollama_url,
+            api_key=api_key,
+            use_vision=use_vision,
+            ptc_mode=ptc_mode,
+        )
 
         # --- Build output path ---
         output_path, temp_render_dir = self._build_output_path(
@@ -1059,81 +1031,27 @@ class FFMPEGAgentNode:
             preview_mode=preview_mode,
         )
 
-        # --- Assemble pipeline object ---
-        pipeline = Pipeline(input_path=effective_video_path, output_path=output_path)
-        input_fps = (
-            video_metadata.primary_video.frame_rate
-            if video_metadata.primary_video and video_metadata.primary_video.frame_rate
-            else 24
+        # --- Assemble pipeline from LLM spec ---
+        (
+            pipeline, output_path, interpretation, warnings,
+            estimated_changes, audio_source, audio_mode,
+        ) = _pa.assemble_pipeline(
+            Pipeline=Pipeline,
+            spec=spec,
+            effective_video_path=effective_video_path,
+            output_path=output_path,
+            video_metadata=video_metadata,
+            quality_preset=quality_preset,
+            crf=crf,
+            encoding_preset=encoding_preset,
+            whisper_device=whisper_device,
+            whisper_model=whisper_model,
+            sam3_device=sam3_device,
+            sam3_max_objects=sam3_max_objects,
+            sam3_det_threshold=sam3_det_threshold,
+            mask_points=mask_points,
+            composer=self.composer,
         )
-        pipeline.metadata["_input_fps"] = int(round(input_fps))
-        input_duration = (
-            video_metadata.primary_video.duration
-            if video_metadata.primary_video and video_metadata.primary_video.duration
-            else 0
-        )
-        if input_duration:
-            pipeline.metadata["_video_duration"] = input_duration
-        if video_metadata.primary_video:
-            pipeline.metadata["_input_width"] = video_metadata.primary_video.width
-            pipeline.metadata["_input_height"] = video_metadata.primary_video.height
-
-        for step in pipeline_steps:
-            skill_name = step.get("skill")
-            params = step.get("params", {})
-            if skill_name:
-                pipeline.add_step(skill_name, params)
-
-        # Fix format-changing skill output extension
-        _FORMAT_SKILLS = {"gif": ".gif", "webm": ".webm"}
-        new_ext = None
-        for step in pipeline.steps:
-            if step.skill_name in _FORMAT_SKILLS:
-                new_ext = _FORMAT_SKILLS[step.skill_name]
-            elif step.skill_name == "container":
-                fmt = step.params.get("format", "mp4")
-                new_ext = f".{fmt}"
-        if new_ext and not output_path.endswith(new_ext):
-            old_path = output_path
-            output_path = str(Path(output_path).with_suffix(new_ext))
-            pipeline.output_path = output_path
-            logger.debug("Output format changed: %s → %s", old_path, output_path)
-
-        # Add quality preset
-        _NO_QUALITY_PRESET_SKILLS = {"gif", "webm"}
-        has_incompatible_format = any(
-            s.skill_name in _NO_QUALITY_PRESET_SKILLS for s in pipeline.steps
-        ) or (new_ext and new_ext in {".gif", ".webm"})
-        if quality_preset and not has_incompatible_format and not any(
-            s.skill_name in ["quality", "compress"] for s in pipeline.steps
-        ):
-            crf_map = {"draft": 28, "standard": 23, "high": 18, "lossless": 0}
-            preset_map = {"draft": "ultrafast", "standard": "medium", "high": "slow", "lossless": "veryslow"}
-            pipeline.add_step("quality", {
-                "crf": crf if crf >= 0 else crf_map.get(quality_preset, 23),
-                "preset": encoding_preset if encoding_preset != "auto" else preset_map.get(quality_preset, "medium"),
-            })
-
-        # Validate pipeline
-        is_valid, errors = self.composer.validate_pipeline(pipeline)
-        if not is_valid:
-            for err in errors:
-                logger.warning("Pipeline validation: %s (continuing anyway)", err)
-
-        # Pass whisper/SAM3 preferences
-        has_transcribe_skill = any(
-            s.skill_name in {"auto_transcribe", "transcribe", "speech_to_text",
-                             "karaoke_subtitles", "whisper", "auto_subtitle", "auto_caption"}
-            for s in pipeline.steps
-        )
-        if has_transcribe_skill:
-            pipeline.metadata["_whisper_device"] = whisper_device
-            pipeline.metadata["_whisper_model"] = whisper_model
-        pipeline.metadata["_sam3_device"] = sam3_device
-        pipeline.metadata["_sam3_max_objects"] = sam3_max_objects
-        pipeline.metadata["_sam3_det_threshold"] = sam3_det_threshold
-        if mask_points and mask_points.strip():
-            pipeline.metadata["_mask_points"] = mask_points.strip()
 
         # --- Inject extra inputs (multi-input, audio muxing, etc.) ---
         (
@@ -1195,58 +1113,17 @@ class FFMPEGAgentNode:
             pass
 
         # --- Build analysis string ---
-        analysis = f"""Interpretation: {interpretation}
-
-Estimated Changes: {estimated_changes}
-
-Pipeline Steps:
-{self.composer.explain_pipeline(pipeline)}
-
-Warnings: {', '.join(warnings) if warnings else 'None'}"""
-
-        # --- Token usage tracking ---
-        token_usage = getattr(self.pipeline_generator, 'last_token_usage', None)
-        if token_usage and (track_tokens or log_usage):
-            est_tag = " (estimated)" if token_usage.get("estimated") else ""
-            analysis += f"""
-
-Token Usage{est_tag}:
-  Prompt tokens:     {token_usage.get('total_prompt_tokens', 0):,}
-  Completion tokens: {token_usage.get('total_completion_tokens', 0):,}
-  Total tokens:      {token_usage.get('total_tokens', 0):,}
-  LLM calls:         {token_usage.get('llm_calls', 0)}
-  Tool calls:        {token_usage.get('tool_calls', 0)}
-  Elapsed:           {token_usage.get('elapsed_sec', 0)}s"""
-
-            if track_tokens:
-                est_label = " (estimated)" if token_usage.get("estimated") else ""
-                logger.info("┌─ Token Usage%s ────────────────────────────┐", est_label)
-                logger.info("│ Model:       %-30s │", token_usage.get("model", "unknown"))
-                logger.info("│ Provider:    %-30s │", token_usage.get("provider", "unknown"))
-                logger.info("│ Prompt:      %-30s │", f"{token_usage.get('total_prompt_tokens', 0):,} tokens")
-                logger.info("│ Completion:  %-30s │", f"{token_usage.get('total_completion_tokens', 0):,} tokens")
-                logger.info("│ Total:       %-30s │", f"{token_usage.get('total_tokens', 0):,} tokens")
-                logger.info("│ LLM calls:   %-30s │", str(token_usage.get("llm_calls", 0)))
-                logger.info("│ Tool calls:  %-30s │", str(token_usage.get("tool_calls", 0)))
-                logger.info("│ Elapsed:     %-30s │", f"{token_usage.get('elapsed_sec', 0)}s")
-                logger.info("└────────────────────────────────────────────┘")
-
-            if log_usage:
-                from ..core.token_tracker import TokenTracker as _TT  # type: ignore[import-not-found]
-                entry = {
-                    "timestamp": __import__("time").strftime("%Y-%m-%dT%H:%M:%S"),
-                    "model": token_usage.get("model", "unknown"),
-                    "provider": token_usage.get("provider", "unknown"),
-                    "prompt_tokens": token_usage.get("total_prompt_tokens", 0),
-                    "completion_tokens": token_usage.get("total_completion_tokens", 0),
-                    "total_tokens": token_usage.get("total_tokens", 0),
-                    "estimated": token_usage.get("estimated", False),
-                    "llm_calls": token_usage.get("llm_calls", 0),
-                    "tool_calls": token_usage.get("tool_calls", 0),
-                    "elapsed_sec": token_usage.get("elapsed_sec", 0),
-                    "prompt_preview": prompt[:120] if prompt else "",
-                }
-                _TT.append_to_log(entry)
+        analysis = _oh.build_analysis_string(
+            interpretation=interpretation,
+            estimated_changes=estimated_changes,
+            warnings=warnings,
+            composer=self.composer,
+            pipeline=pipeline,
+            pipeline_generator=self.pipeline_generator,
+            track_tokens=track_tokens,
+            log_usage=log_usage,
+            prompt=prompt,
+        )
 
         # --- Handle audio output ---
         self._handle_audio_output(
@@ -1285,53 +1162,24 @@ Token Usage{est_tag}:
                 hidden_extra_pnginfo,
             )
 
-        # --- Generate mask output if auto_mask was used ---
-        # IMPORTANT: This must run BEFORE temp file cleanup because
-        # effective_video_path may point to a temp file (e.g. from image
-        # inputs or audio muxing) that gets deleted in the cleanup block.
-        mask_overlay_path = ""
-        has_auto_mask = any(
-            s.skill_name in {"auto_mask", "auto_segment", "segment",
-                             "smart_mask", "sam_mask", "ai_mask", "object_mask"}
-            for s in pipeline.steps
+        # --- Generate mask output (must run BEFORE temp cleanup) ---
+        mask_overlay_path = _oh.generate_mask_output(
+            pipeline=pipeline,
+            effective_video_path=effective_video_path,
+            mask_output_type=kwargs.get("mask_output_type", "colored_overlay"),
         )
-        if has_auto_mask:
-            # Look for the mask video generated by _f_auto_mask
-            mask_video_path = pipeline.metadata.get("_mask_video_path", "")
-            if mask_video_path and os.path.isfile(mask_video_path):
-                mask_type = kwargs.get("mask_output_type", "colored_overlay")
-                if mask_type == "black_white":
-                    # Pass through the raw B&W mask video directly
-                    mask_overlay_path = mask_video_path
-                    logger.info("Using B&W mask video: %s", mask_overlay_path)
-                else:
-                    try:
-                        from ..core.sam3_masker import generate_mask_overlay
-                        mask_overlay_path = generate_mask_overlay(
-                            video_path=effective_video_path,
-                            mask_video_path=mask_video_path,
-                        )
-                        logger.info("Generated mask overlay: %s", mask_overlay_path)
-                    except Exception as e:
-                        logger.warning("Mask overlay generation failed: %s", e)
 
         # --- Cleanup temp files ---
-        for tmp_path in (
-            [temp_video_from_images, temp_video_with_audio, temp_audio_input]
-            + temp_multi_videos
-            + temp_audio_files
-        ):
-            if tmp_path and os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
-        for d in temp_frames_dirs:
-            if os.path.isdir(d):
-                shutil.rmtree(d, ignore_errors=True)
-        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
-            if not os.listdir(temp_render_dir):
-                shutil.rmtree(temp_render_dir, ignore_errors=True)
+        _oh.cleanup_temp_files(
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            temp_audio_input=temp_audio_input,
+            temp_multi_videos=temp_multi_videos,
+            temp_audio_files=temp_audio_files,
+            temp_frames_dirs=temp_frames_dirs,
+            temp_render_dir=temp_render_dir,
+            save_output=save_output,
+        )
 
         return (images_tensor, audio_out, output_path, command.to_string(), analysis, mask_overlay_path)
 

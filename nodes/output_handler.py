@@ -333,3 +333,162 @@ def probe_duration(video_path: str) -> float:
         return float(result.stdout.strip())
     except Exception:
         return 0.0
+
+
+def build_analysis_string(
+    interpretation: str,
+    estimated_changes: str,
+    warnings: list,
+    composer,
+    pipeline,
+    pipeline_generator,
+    track_tokens: bool,
+    log_usage: bool,
+    prompt: str,
+) -> str:
+    """Build the analysis output string, including optional token usage.
+
+    Parameters
+    ----------
+    composer : SkillComposer
+        Used to explain the pipeline.
+    pipeline_generator : PipelineGenerator
+        Checked for ``last_token_usage`` attribute.
+    """
+    analysis = f"""Interpretation: {interpretation}
+
+Estimated Changes: {estimated_changes}
+
+Pipeline Steps:
+{composer.explain_pipeline(pipeline)}
+
+Warnings: {', '.join(warnings) if warnings else 'None'}"""
+
+    token_usage = getattr(pipeline_generator, 'last_token_usage', None)
+    if token_usage and (track_tokens or log_usage):
+        est_tag = " (estimated)" if token_usage.get("estimated") else ""
+        analysis += f"""
+
+Token Usage{est_tag}:
+  Prompt tokens:     {token_usage.get('total_prompt_tokens', 0):,}
+  Completion tokens: {token_usage.get('total_completion_tokens', 0):,}
+  Total tokens:      {token_usage.get('total_tokens', 0):,}
+  LLM calls:         {token_usage.get('llm_calls', 0)}
+  Tool calls:        {token_usage.get('tool_calls', 0)}
+  Elapsed:           {token_usage.get('elapsed_sec', 0)}s"""
+
+        if track_tokens:
+            est_label = " (estimated)" if token_usage.get("estimated") else ""
+            logger.info("┌─ Token Usage%s ────────────────────────────┐", est_label)
+            logger.info("│ Model:       %-30s │", token_usage.get("model", "unknown"))
+            logger.info("│ Provider:    %-30s │", token_usage.get("provider", "unknown"))
+            logger.info("│ Prompt:      %-30s │", f"{token_usage.get('total_prompt_tokens', 0):,} tokens")
+            logger.info("│ Completion:  %-30s │", f"{token_usage.get('total_completion_tokens', 0):,} tokens")
+            logger.info("│ Total:       %-30s │", f"{token_usage.get('total_tokens', 0):,} tokens")
+            logger.info("│ LLM calls:   %-30s │", str(token_usage.get("llm_calls", 0)))
+            logger.info("│ Tool calls:  %-30s │", str(token_usage.get("tool_calls", 0)))
+            logger.info("│ Elapsed:     %-30s │", f"{token_usage.get('elapsed_sec', 0)}s")
+            logger.info("└────────────────────────────────────────────┘")
+
+        if log_usage:
+            try:
+                from ..core.token_tracker import TokenTracker as _TT  # type: ignore[import-not-found]
+            except ImportError:
+                from core.token_tracker import TokenTracker as _TT  # type: ignore
+            import time as _time
+            entry = {
+                "timestamp": _time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "model": token_usage.get("model", "unknown"),
+                "provider": token_usage.get("provider", "unknown"),
+                "prompt_tokens": token_usage.get("total_prompt_tokens", 0),
+                "completion_tokens": token_usage.get("total_completion_tokens", 0),
+                "total_tokens": token_usage.get("total_tokens", 0),
+                "estimated": token_usage.get("estimated", False),
+                "llm_calls": token_usage.get("llm_calls", 0),
+                "tool_calls": token_usage.get("tool_calls", 0),
+                "elapsed_sec": token_usage.get("elapsed_sec", 0),
+                "prompt_preview": prompt[:120] if prompt else "",
+            }
+            _TT.append_to_log(entry)
+
+    return analysis
+
+
+def generate_mask_output(
+    pipeline,
+    effective_video_path: str,
+    mask_output_type: str = "colored_overlay",
+) -> str:
+    """Generate mask overlay if auto_mask was used.
+
+    IMPORTANT: This must run BEFORE temp file cleanup because
+    effective_video_path may point to a temp file that gets deleted
+    in the cleanup block.
+
+    Returns
+    -------
+    str
+        Path to the mask overlay video, or '' if not applicable.
+    """
+    _MASK_SKILLS = {
+        "auto_mask", "auto_segment", "segment",
+        "smart_mask", "sam_mask", "ai_mask", "object_mask",
+    }
+    has_auto_mask = any(
+        s.skill_name in _MASK_SKILLS for s in pipeline.steps
+    )
+    if not has_auto_mask:
+        return ""
+
+    mask_video_path = pipeline.metadata.get("_mask_video_path", "")
+    if not mask_video_path or not os.path.isfile(mask_video_path):
+        return ""
+
+    if mask_output_type == "black_white":
+        logger.info("Using B&W mask video: %s", mask_video_path)
+        return mask_video_path
+
+    try:
+        try:
+            from ..core.sam3_masker import generate_mask_overlay as _gen  # type: ignore[import-not-found]
+        except ImportError:
+            from core.sam3_masker import generate_mask_overlay as _gen  # type: ignore
+        overlay_path = _gen(
+            video_path=effective_video_path,
+            mask_video_path=mask_video_path,
+        )
+        logger.info("Generated mask overlay: %s", overlay_path)
+        return overlay_path
+    except Exception as e:
+        logger.warning("Mask overlay generation failed: %s", e)
+        return ""
+
+
+def cleanup_temp_files(
+    temp_video_from_images: Optional[str],
+    temp_video_with_audio: Optional[str],
+    temp_audio_input: Optional[str],
+    temp_multi_videos: list,
+    temp_audio_files: list,
+    temp_frames_dirs: list,
+    temp_render_dir: Optional[str],
+    save_output: bool,
+) -> None:
+    """Remove all temporary files and directories created during processing."""
+    for tmp_path in (
+        [temp_video_from_images, temp_video_with_audio, temp_audio_input]
+        + temp_multi_videos
+        + temp_audio_files
+    ):
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+    for d in temp_frames_dirs:
+        if os.path.isdir(d):
+            shutil.rmtree(d, ignore_errors=True)
+    if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+        if not os.listdir(temp_render_dir):
+            shutil.rmtree(temp_render_dir, ignore_errors=True)
+
