@@ -437,7 +437,7 @@ function addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, get
  */
 function addDownloadOverlay(container, videoEl) {
     const btn = document.createElement("button");
-    btn.textContent = "💾";
+    btn.innerHTML = `<span aria-hidden="true">💾</span>`;
     btn.title = "Save Video";
     btn.type = "button";
     btn.setAttribute("aria-label", "Save Video");
@@ -505,11 +505,11 @@ function addDownloadOverlay(container, videoEl) {
 
             // Feedback animation
             if (btn._timeout) clearTimeout(btn._timeout);
-            btn.textContent = "✅";
+            btn.innerHTML = `<span aria-hidden="true">✅</span>`;
             btn.setAttribute("aria-label", "Saved!");
 
             btn._timeout = setTimeout(() => {
-                btn.textContent = "💾";
+                btn.innerHTML = `<span aria-hidden="true">💾</span>`;
                 btn.setAttribute("aria-label", "Save Video");
                 btn._timeout = null;
             }, 1000);
@@ -1209,6 +1209,7 @@ app.registerExtension({
                     "font-family:monospace;background:#111;";
                 infoEl.textContent = "No video loaded";
                 infoEl.setAttribute("role", "status");
+                infoEl.setAttribute("aria-live", "polite");
 
                 previewContainer.appendChild(videoEl);
                 previewContainer.appendChild(infoEl);
@@ -1417,7 +1418,7 @@ app.registerExtension({
                 document.body.append(fileInput);
 
                 const uploadBtn = document.createElement("button");
-                uploadBtn.textContent = "Upload Video...";
+                uploadBtn.innerHTML = "Upload Video...";
                 uploadBtn.setAttribute("aria-label", "Upload Video");
                 uploadBtn.style.cssText = `
                     width: 100%;
@@ -1453,7 +1454,7 @@ app.registerExtension({
 
                 const setUploadState = (uploading, filename = "") => {
                     if (uploading) {
-                        uploadBtn.textContent = "⏳ Uploading...";
+                        uploadBtn.innerHTML = `<span aria-hidden="true">⏳</span> Uploading...`;
                         uploadBtn.setAttribute("aria-label", "Uploading Video");
                         uploadBtn.disabled = true;
                         uploadBtn.style.cursor = "wait";
@@ -1461,7 +1462,7 @@ app.registerExtension({
                         previewContainer.style.display = "";
                         videoEl.style.display = "none";
                     } else {
-                        uploadBtn.textContent = "Upload Video...";
+                        uploadBtn.innerHTML = "Upload Video...";
                         uploadBtn.setAttribute("aria-label", "Upload Video");
                         uploadBtn.disabled = false;
                         uploadBtn.style.cursor = "pointer";
@@ -1526,8 +1527,8 @@ app.registerExtension({
                 this.onDragOver = (e) => {
                     if (e?.dataTransfer?.types?.includes?.("Files")) {
                         if (!uploadBtn.disabled) {
-                            if (!Object.prototype.hasOwnProperty.call(uploadBtn, '_originalTextContent')) {
-                                uploadBtn._originalTextContent = uploadBtn.textContent;
+                            if (!Object.prototype.hasOwnProperty.call(uploadBtn, '_originalInnerHTML')) {
+                                uploadBtn._originalInnerHTML = uploadBtn.innerHTML;
                             }
                             if (!Object.prototype.hasOwnProperty.call(uploadBtn, '_originalBorder')) {
                                 uploadBtn._originalBorder = uploadBtn.style.border;
@@ -1535,7 +1536,7 @@ app.registerExtension({
                             if (!Object.prototype.hasOwnProperty.call(uploadBtn, '_originalAriaLabel')) {
                                 uploadBtn._originalAriaLabel = uploadBtn.getAttribute("aria-label");
                             }
-                            uploadBtn.textContent = "📂 Drop to Upload";
+                            uploadBtn.innerHTML = `<span aria-hidden="true">📂</span> Drop to Upload`;
                             uploadBtn.setAttribute("aria-label", "Drop to Upload");
                             uploadBtn.style.border = "1px dashed #4a6a8a";
                             uploadBtn.style.backgroundColor = "#333";
@@ -1543,9 +1544,9 @@ app.registerExtension({
                             if (uploadBtn._dragTimeout) clearTimeout(uploadBtn._dragTimeout);
                             uploadBtn._dragTimeout = setTimeout(() => {
                                 if (!uploadBtn.disabled) {
-                                    if (Object.prototype.hasOwnProperty.call(uploadBtn, '_originalTextContent')) {
-                                        uploadBtn.textContent = uploadBtn._originalTextContent;
-                                        delete uploadBtn._originalTextContent;
+                                    if (Object.prototype.hasOwnProperty.call(uploadBtn, '_originalInnerHTML')) {
+                                        uploadBtn.innerHTML = uploadBtn._originalInnerHTML;
+                                        delete uploadBtn._originalInnerHTML;
                                     }
                                     if (Object.prototype.hasOwnProperty.call(uploadBtn, '_originalBorder')) {
                                         uploadBtn.style.border = uploadBtn._originalBorder;
@@ -1920,6 +1921,7 @@ app.registerExtension({
                     "font-family:monospace;background:#111;";
                 infoEl.textContent = "No video selected";
                 infoEl.setAttribute("role", "status");
+                infoEl.setAttribute("aria-live", "polite");
 
                 previewContainer.appendChild(videoEl);
                 previewContainer.appendChild(infoEl);
@@ -2013,7 +2015,7 @@ app.registerExtension({
 
                 // Add upload button widget (DOM)
                 const uploadBtn = document.createElement("button");
-                uploadBtn.textContent = "Upload Video...";
+                uploadBtn.innerHTML = "Upload Video...";
                 uploadBtn.setAttribute("aria-label", "Upload Video");
                 uploadBtn.style.cssText = `
                     width: 100%;
@@ -2058,7 +2060,7 @@ app.registerExtension({
                 // Helper to set upload state
                 const setUploadState = (isUploading, filename = "") => {
                     if (isUploading) {
-                        uploadBtn.textContent = "⏳ Uploading...";
+                        uploadBtn.innerHTML = `<span aria-hidden="true">⏳</span> Uploading...`;
                         uploadBtn.setAttribute("aria-label", "Uploading Video");
                         uploadBtn.disabled = true;
                         uploadBtn.style.cursor = "wait";
@@ -2066,7 +2068,7 @@ app.registerExtension({
                         previewContainer.style.display = ""; // Ensure info is visible
                         videoEl.style.display = "none";      // Hide stale video
                     } else {
-                        uploadBtn.textContent = "Upload Video...";
+                        uploadBtn.innerHTML = "Upload Video...";
                         uploadBtn.setAttribute("aria-label", "Upload Video");
                         uploadBtn.disabled = false;
                         uploadBtn.style.cursor = "pointer";
@@ -2128,8 +2130,8 @@ app.registerExtension({
                     if (e?.dataTransfer?.types?.includes?.("Files")) {
                         // Visual feedback on the button
                         if (!uploadBtn.disabled) {
-                            if (!Object.prototype.hasOwnProperty.call(uploadBtn, '_originalTextContent')) {
-                                uploadBtn._originalTextContent = uploadBtn.textContent;
+                            if (!Object.prototype.hasOwnProperty.call(uploadBtn, '_originalInnerHTML')) {
+                                uploadBtn._originalInnerHTML = uploadBtn.innerHTML;
                             }
                             if (!Object.prototype.hasOwnProperty.call(uploadBtn, '_originalBorder')) {
                                 uploadBtn._originalBorder = uploadBtn.style.border;
@@ -2138,7 +2140,7 @@ app.registerExtension({
                                 uploadBtn._originalAriaLabel = uploadBtn.getAttribute("aria-label");
                             }
 
-                            uploadBtn.textContent = "📂 Drop to Upload";
+                            uploadBtn.innerHTML = `<span aria-hidden="true">📂</span> Drop to Upload`;
                             uploadBtn.setAttribute("aria-label", "Drop to Upload");
                             uploadBtn.style.border = "1px dashed #4a6a8a";
                             uploadBtn.style.backgroundColor = "#333";
@@ -2147,9 +2149,9 @@ app.registerExtension({
                             if (uploadBtn._dragTimeout) clearTimeout(uploadBtn._dragTimeout);
                             uploadBtn._dragTimeout = setTimeout(() => {
                                 if (!uploadBtn.disabled) {
-                                    if (Object.prototype.hasOwnProperty.call(uploadBtn, '_originalTextContent')) {
-                                        uploadBtn.textContent = uploadBtn._originalTextContent;
-                                        delete uploadBtn._originalTextContent;
+                                    if (Object.prototype.hasOwnProperty.call(uploadBtn, '_originalInnerHTML')) {
+                                        uploadBtn.innerHTML = uploadBtn._originalInnerHTML;
+                                        delete uploadBtn._originalInnerHTML;
                                     }
                                     if (Object.prototype.hasOwnProperty.call(uploadBtn, '_originalBorder')) {
                                         uploadBtn.style.border = uploadBtn._originalBorder;
@@ -2308,6 +2310,7 @@ app.registerExtension({
                     "font-family:monospace;background:#111;";
                 infoEl.textContent = "Waiting for execution...";
                 infoEl.setAttribute("role", "status");
+                infoEl.setAttribute("aria-live", "polite");
 
                 previewContainer.appendChild(videoEl);
                 previewContainer.appendChild(infoEl);
