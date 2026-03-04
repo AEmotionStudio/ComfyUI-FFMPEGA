@@ -2970,7 +2970,7 @@ def register_skills(registry: SkillRegistry) -> None:
                 required=False,
                 default="blur",
                 choices=["blur", "pixelate", "remove", "edit", "grayscale",
-                         "highlight", "greenscreen", "transparent"],
+                         "highlight", "greenscreen", "transparent", "thermal"],
             ),
             SkillParameter(
                 name="strength",
@@ -2998,6 +2998,18 @@ def register_skills(registry: SkillRegistry) -> None:
                 required=False,
                 default="",
             ),
+            SkillParameter(
+                name="smoothing",
+                type=ParameterType.CHOICE,
+                description=(
+                    "Temporal smoothing mode for FLUX Klein effects (remove/edit). "
+                    "'none' preserves per-frame detail, 'gaussian' reduces flicker, "
+                    "'adaptive' fixes outlier frames only."
+                ),
+                required=False,
+                default="none",
+                choices=["none", "gaussian", "adaptive"],
+            ),
         ],
         examples=[
             "auto_mask:target=face:effect=blur - Blur all faces",
@@ -3010,6 +3022,7 @@ def register_skills(registry: SkillRegistry) -> None:
             "auto_mask:target=the person:effect=transparent:invert=true - Isolate person with transparent background (WebM)",
             "auto_mask:target=the hair:effect=edit:edit_prompt=change hair to vibrant red - AI-edit hair color",
             "auto_mask:target=background:effect=edit:edit_prompt=replace with a sunny beach scene - AI-edit background",
+            "auto_mask:target=the person:effect=thermal:invert=true - Apply thermal effect to background only",
         ],
         tags=[
             "mask", "segment", "sam3", "auto", "blur", "pixelate", "censor",

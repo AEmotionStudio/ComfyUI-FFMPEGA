@@ -13,6 +13,16 @@ from typing import Optional
 
 logger = logging.getLogger("ffmpega")
 
+# Model-based skills that are too expensive to retry via LLM re-generation.
+# "auto_mask" is the only skill currently in the registry; the rest are
+# speculative aliases that LLMs sometimes generate.  Update this set if
+# new model-based skills are added to the registry.
+_MODEL_SKILLS = frozenset({
+    "auto_mask",                                   # registered skill
+    "auto_segment", "segment", "smart_mask",       # LLM aliases
+    "sam2", "sam_mask", "ai_mask", "object_mask",  # LLM aliases
+})
+
 
 async def execute_pipeline(
     pipeline,
@@ -86,6 +96,17 @@ async def execute_pipeline(
     # Execute with error-feedback retry
     max_attempts = 2
     result = None
+
+    # Detect pipelines with expensive model-based skills.  When ffmpeg
+    # fails for these pipelines, re-generating via LLM typically produces
+    # the same broken filter graph while also re-running SAM3/FLUX Klein
+    # (minutes of GPU time).  Skip retry — fail fast with a clear error.
+    _has_model_skills = any(
+        s.skill_name in _MODEL_SKILLS for s in pipeline.steps
+    )
+    if _has_model_skills:
+        max_attempts = 1
+
     for attempt in range(max_attempts):
         result = process_manager.execute(command, timeout=600)
         if result.success:
@@ -153,6 +174,7 @@ async def execute_pipeline(
                 logger.warning("Error feedback retry failed: %s", retry_err)
                 break
 
+
     assert result is not None, "No execution attempt was made"
     if not result.success:
         if hasattr(connector, 'close'):
@@ -168,6 +190,8 @@ async def execute_pipeline(
     _skill_degraded = pipeline.metadata.get("_skill_degraded", False)
     if _skill_degraded:
         logger.info("Skipping output verification — skill handler reported degraded output (e.g. SAM3 OOM fallback)")
+    elif _has_model_skills:
+        logger.info("Skipping output verification — pipeline has model-based skills (SAM3/FLUX Klein); re-execution too expensive")
     elif verify_output and result.success:
         logger.info("Output verification enabled — inspecting result...")
         for attempt in range(_MAX_CORRECTION_ATTEMPTS):
