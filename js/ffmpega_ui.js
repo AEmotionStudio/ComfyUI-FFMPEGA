@@ -3150,15 +3150,22 @@ app.registerExtension({
                 if (_greenOverlay) {
                     const oCtx = _greenOverlay.getContext("2d");
                     const dispBrushR = parseInt(sizeSlider.value);
-                    oCtx.beginPath();
-                    oCtx.arc(canvasX, canvasY, dispBrushR, 0, Math.PI * 2);
                     if (erase) {
+                        // Clip to circle so erase matches the circular mask
+                        oCtx.save();
+                        oCtx.beginPath();
+                        oCtx.arc(canvasX, canvasY, dispBrushR, 0, Math.PI * 2);
+                        oCtx.clip();
                         oCtx.clearRect(
                             canvasX - dispBrushR, canvasY - dispBrushR,
                             dispBrushR * 2, dispBrushR * 2,
                         );
+                        oCtx.restore();
                     } else {
-                        oCtx.fillStyle = "rgba(0, 220, 80, 0.39)";
+                        oCtx.beginPath();
+                        oCtx.arc(canvasX, canvasY, dispBrushR, 0, Math.PI * 2);
+                        // Alpha 100/255 ≈ 0.392 — matches full-rebuild path
+                        oCtx.fillStyle = "rgba(0, 220, 80, 0.392)";
                         oCtx.fill();
                     }
                 } else {

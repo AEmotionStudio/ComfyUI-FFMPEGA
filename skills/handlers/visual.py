@@ -658,6 +658,11 @@ def _f_auto_mask(p):
     if _metadata_ref is not None and isinstance(_metadata_ref, dict):
         _metadata_ref["_mask_video_path"] = mask_path
 
+    # Temporal smoothing mode for FLUX Klein effects
+    smoothing = str(p.get("smoothing", "none"))
+    if smoothing not in ("none", "gaussian", "adaptive"):
+        smoothing = "none"
+
     # Special handling for "remove" — use FLUX Klein AI inpainting
     if effect == "remove":
         try:
@@ -668,6 +673,7 @@ def _f_auto_mask(p):
             inpainted_path = remove_object(
                 video_path=video_path,
                 mask_video_path=mask_path,
+                smoothing=smoothing,
             )
             log.info("FLUX Klein removal complete: %s", inpainted_path)
             if _metadata_ref is not None and isinstance(_metadata_ref, dict):
@@ -696,6 +702,7 @@ def _f_auto_mask(p):
                 video_path=video_path,
                 mask_video_path=mask_path,
                 prompt=edit_prompt,
+                smoothing=smoothing,
             )
             log.info("FLUX Klein edit complete: %s", edited_path)
             if _metadata_ref is not None and isinstance(_metadata_ref, dict):
