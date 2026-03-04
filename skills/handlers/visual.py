@@ -559,6 +559,8 @@ def _f_auto_mask(p):
     )
     _cache_key = str(p.get("edit_prompt", effect))
 
+    mask_path = None  # will be set by cache hit or SAM3 generation
+
     if _cached_mask and os.path.isfile(_cached_mask):
         log.info("auto_mask: reusing cached mask from previous run: %s", _cached_mask)
         # FLUX Klein outputs (remove/edit) are self-contained videos
@@ -572,12 +574,10 @@ def _f_auto_mask(p):
         if effect not in ("remove", "edit"):
             return _build_mask_fc(_cached_mask, effect, strength, invert)
         # Mask exists but no cached FLUX output for this prompt —
-        # skip SAM3 and reuse the cached mask for the new FLUX edit.
+        # reuse the cached mask for the new FLUX edit (skip SAM3).
         mask_path = _cached_mask
-        _skip_sam3 = True
     else:
-        _skip_sam3 = False
-    if not _skip_sam3:
+        # No cache hit — run SAM3 to generate the mask
         sam3_device = str(p.get("_sam3_device", "gpu")).lower()
         sam3_max_objects = int(p.get("_sam3_max_objects", 5))
         sam3_det_threshold = float(p.get("_sam3_det_threshold", 0.7))
@@ -644,6 +644,8 @@ def _f_auto_mask(p):
             if _metadata_ref is not None and isinstance(_metadata_ref, dict):
                 _metadata_ref["_skill_degraded"] = True
             return _auto_mask_fallback(effect, strength)
+
+    assert mask_path is not None, "mask_path must be set by cache or SAM3"
 
     # Store mask path in metadata so agent_node can generate overlay
     _metadata_ref = p.get("_metadata_ref")

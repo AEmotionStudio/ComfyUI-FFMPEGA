@@ -33,6 +33,9 @@ except ImportError:
 
 log = logging.getLogger("ffmpega")
 
+# Cached ffmpeg binary path (resolved once at import time)
+_FFMPEG_BIN = shutil.which("ffmpeg") or "ffmpeg"
+
 # ---------------------------------------------------------------------------
 #  Constants
 # ---------------------------------------------------------------------------
@@ -272,7 +275,7 @@ def _load_video_frames(video_path: str):
     from PIL import Image
 
     tmpdir = tempfile.mkdtemp(prefix="fk_frames_")
-    _ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
+    _ffmpeg = _FFMPEG_BIN
     subprocess.run(
         [
             _ffmpeg, "-i", video_path,
@@ -308,7 +311,7 @@ def _load_mask_frames(mask_video_path: str, num_frames: int):
     from PIL import Image
 
     tmpdir = tempfile.mkdtemp(prefix="fk_masks_")
-    _ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
+    _ffmpeg = _FFMPEG_BIN
     subprocess.run(
         [
             _ffmpeg, "-i", mask_video_path,
@@ -335,7 +338,7 @@ def _encode_video(frames: list, output_path: str, fps: float) -> str:
     for i, frame in enumerate(frames):
         frame.save(os.path.join(tmpdir, f"{i:06d}.png"))
 
-    _ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
+    _ffmpeg = _FFMPEG_BIN
     subprocess.run(
         [
             _ffmpeg, "-y",
@@ -417,6 +420,9 @@ def _temporal_smooth_adaptive(
 
     stack = np.stack(frames).astype(np.float32)
     mask_stack = np.stack(masks)
+    # Ensure masks are 2D (H×W) — squeeze trailing channel dim if present
+    if mask_stack.ndim == 4:
+        mask_stack = mask_stack.squeeze(-1)
     half_w = window // 2
 
     result = []

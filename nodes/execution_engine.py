@@ -13,10 +13,14 @@ from typing import Optional
 
 logger = logging.getLogger("ffmpega")
 
-# Model-based skills that are too expensive to retry via LLM re-generation
+# Model-based skills that are too expensive to retry via LLM re-generation.
+# "auto_mask" is the only skill currently in the registry; the rest are
+# speculative aliases that LLMs sometimes generate.  Update this set if
+# new model-based skills are added to the registry.
 _MODEL_SKILLS = frozenset({
-    "auto_mask", "auto_segment", "segment", "smart_mask",
-    "sam2", "sam_mask", "ai_mask", "object_mask",
+    "auto_mask",                                   # registered skill
+    "auto_segment", "segment", "smart_mask",       # LLM aliases
+    "sam2", "sam_mask", "ai_mask", "object_mask",  # LLM aliases
 })
 
 
