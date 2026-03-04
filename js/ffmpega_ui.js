@@ -2914,13 +2914,15 @@ app.registerExtension({
                     font-size:14px;cursor:pointer;color:#fff;
                     background:${bg};font-weight:600;
                     transition:opacity 0.15s;
+                    outline: none;
                 `;
                 let isHovered = false;
                 let isFocused = false;
                 const update = () => {
                     const active = isHovered || isFocused;
                     b.style.opacity = active ? "0.85" : "1";
-                    b.style.boxShadow = isFocused ? "0 0 0 2px #fff" : "none";
+                    b.style.outline = isFocused ? "2px solid #fff" : "none";
+                    b.style.outlineOffset = isFocused ? "2px" : "0px";
                 };
                 b.onmouseenter = () => { isHovered = true; update(); };
                 b.onmouseleave = () => { isHovered = false; update(); };
