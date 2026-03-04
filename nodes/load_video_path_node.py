@@ -21,12 +21,12 @@ import json
 import logging
 import math
 import os
-import shutil
 import subprocess
 
 import torch
 
 import folder_paths
+from ..core.bin_paths import get_ffprobe_bin
 
 logger = logging.getLogger("FFMPEGA")
 
@@ -44,7 +44,7 @@ def _probe_video(video_path: str) -> dict:
         "width": 0, "height": 0,
         "fps": 24.0, "duration": 0.0, "total_frames": 0,
     }
-    ffprobe_bin = shutil.which("ffprobe")
+    ffprobe_bin = get_ffprobe_bin()
     if not ffprobe_bin or not os.path.isfile(video_path):
         return defaults
 

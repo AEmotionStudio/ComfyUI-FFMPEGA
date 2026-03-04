@@ -122,7 +122,7 @@ class TestProcessManagerCancel:
 
     def test_cancel_with_no_active_process_returns_false(self):
         from unittest.mock import patch
-        with patch('core.executor.process_manager.shutil.which', return_value='/usr/bin/ffmpeg'):
+        with patch('core.executor.process_manager.get_ffmpeg_bin', return_value='/usr/bin/ffmpeg'):
             from core.executor.process_manager import ProcessManager
             pm = ProcessManager()
             result = pm.cancel()
@@ -130,7 +130,7 @@ class TestProcessManagerCancel:
 
     def test_cancel_clears_cancelled_flag_before_new_execute(self):
         from unittest.mock import patch
-        with patch('core.executor.process_manager.shutil.which', return_value='/usr/bin/ffmpeg'):
+        with patch('core.executor.process_manager.get_ffmpeg_bin', return_value='/usr/bin/ffmpeg'):
             from core.executor.process_manager import ProcessManager
             pm = ProcessManager()
             pm._cancelled = True
@@ -139,7 +139,7 @@ class TestProcessManagerCancel:
 
     def test_execute_still_works_after_cancel(self):
         from unittest.mock import patch, MagicMock
-        with patch('core.executor.process_manager.shutil.which', return_value='/usr/bin/ffmpeg'):
+        with patch('core.executor.process_manager.get_ffmpeg_bin', return_value='/usr/bin/ffmpeg'):
             from core.executor.process_manager import ProcessManager
             pm = ProcessManager()
             pm.cancel()  # cancel with nothing running
@@ -154,7 +154,7 @@ class TestProcessManagerCancel:
 
     def test_cancel_sets_cancelled_flag(self):
         from unittest.mock import patch
-        with patch('core.executor.process_manager.shutil.which', return_value='/usr/bin/ffmpeg'):
+        with patch('core.executor.process_manager.get_ffmpeg_bin', return_value='/usr/bin/ffmpeg'):
             from core.executor.process_manager import ProcessManager
             pm = ProcessManager()
             pm.cancel()
@@ -164,7 +164,7 @@ class TestProcessManagerCancel:
     def test_cancel_releases_active_proc_slot(self):
         # Simulate cancelling a stored proc reference (mock it)
         from unittest.mock import patch
-        with patch('core.executor.process_manager.shutil.which', return_value='/usr/bin/ffmpeg'):
+        with patch('core.executor.process_manager.get_ffmpeg_bin', return_value='/usr/bin/ffmpeg'):
             from core.executor.process_manager import ProcessManager
             pm = ProcessManager()
             # Put a fake proc object in the slot

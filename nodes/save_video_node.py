@@ -23,6 +23,7 @@ import numpy as np
 import torch
 
 import folder_paths
+from ..core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin
 
 logger = logging.getLogger("FFMPEGA")
 
@@ -314,8 +315,8 @@ class SaveVideoNode:
         """
         silence = {"waveform": torch.zeros(1, 1, 1), "sample_rate": 44100}
 
-        ffmpeg_bin = shutil.which("ffmpeg")
-        ffprobe_bin = shutil.which("ffprobe")
+        ffmpeg_bin = get_ffmpeg_bin()
+        ffprobe_bin = get_ffprobe_bin()
         if not ffmpeg_bin or not ffprobe_bin:
             return silence
 

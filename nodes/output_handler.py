@@ -8,12 +8,12 @@ API-key stripping, duration probing, and audio-dict conversion.
 import json
 import logging
 import os
-import shutil
 import tempfile
 from pathlib import Path
 from typing import Optional
 
 import torch  # type: ignore[import-not-found]
+from ..core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin
 
 logger = logging.getLogger("ffmpega")
 
@@ -284,7 +284,7 @@ def audio_dict_to_wav(audio: dict) -> Optional[str]:
     tmp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
     tmp_wav.close()
 
-    ffmpeg_bin = shutil.which("ffmpeg")
+    ffmpeg_bin = get_ffmpeg_bin()
     if not ffmpeg_bin:
         return None
 
@@ -315,7 +315,7 @@ def probe_duration(video_path: str) -> float:
         Duration in seconds, or 0.0 if probing fails.
     """
     import subprocess
-    ffprobe_bin = shutil.which("ffprobe")
+    ffprobe_bin = get_ffprobe_bin()
     if not ffprobe_bin:
         return 0.0
     try:
