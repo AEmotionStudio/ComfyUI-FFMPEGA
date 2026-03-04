@@ -275,10 +275,9 @@ def _load_video_frames(video_path: str):
     from PIL import Image
 
     tmpdir = tempfile.mkdtemp(prefix="fk_frames_")
-    _ffmpeg = _FFMPEG_BIN
     subprocess.run(
         [
-            _ffmpeg, "-i", video_path,
+            _FFMPEG_BIN, "-i", video_path,
             "-q:v", "2",
             os.path.join(tmpdir, "%06d.png"),
         ],
@@ -311,10 +310,9 @@ def _load_mask_frames(mask_video_path: str, num_frames: int):
     from PIL import Image
 
     tmpdir = tempfile.mkdtemp(prefix="fk_masks_")
-    _ffmpeg = _FFMPEG_BIN
     subprocess.run(
         [
-            _ffmpeg, "-i", mask_video_path,
+            _FFMPEG_BIN, "-i", mask_video_path,
             "-q:v", "2",
             os.path.join(tmpdir, "%06d.png"),
         ],
@@ -338,10 +336,9 @@ def _encode_video(frames: list, output_path: str, fps: float) -> str:
     for i, frame in enumerate(frames):
         frame.save(os.path.join(tmpdir, f"{i:06d}.png"))
 
-    _ffmpeg = _FFMPEG_BIN
     subprocess.run(
         [
-            _ffmpeg, "-y",
+            _FFMPEG_BIN, "-y",
             "-framerate", str(fps),
             "-i", os.path.join(tmpdir, "%06d.png"),
             "-c:v", "libx264",
@@ -385,6 +382,9 @@ def _temporal_smooth(
 
     stack = np.stack(frames).astype(np.float32)
     mask_stack = np.stack(masks)
+    # Ensure masks are 2D (H×W) — squeeze trailing channel dim if present
+    if mask_stack.ndim == 4:
+        mask_stack = mask_stack.squeeze(-1)
     sigma = window / 3.0
     smoothed = gaussian_filter1d(stack, sigma=sigma, axis=0)
 

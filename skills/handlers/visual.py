@@ -278,14 +278,19 @@ def _f_neon_enhanced(p):
     return make_result(fc=fc)
 
 
+# Shared thermal pseudocolor expression — used by both _f_thermal_enhanced
+# and _effect_filter_map (auto_mask thermal effect).  Single source of truth.
+_THERMAL_PSEUDOCOLOR = (
+    "pseudocolor="
+    "c0='if(between(val,0,85),255,if(between(val,85,170),255,if(between(val,170,255),255,0)))':"
+    "c1='if(between(val,0,85),0,if(between(val,85,170),val*3-255,if(between(val,170,255),255,0)))':"
+    "c2='if(between(val,0,85),0,if(between(val,85,170),0,if(between(val,170,255),val*3-510,0)))'"
+)
+
+
 def _f_thermal_enhanced(p):
     """Real thermal/heat vision using pseudocolor."""
-    return make_result(vf=[
-        "pseudocolor="
-        "c0='if(between(val,0,85),255,if(between(val,85,170),255,if(between(val,170,255),255,0)))':"
-        "c1='if(between(val,0,85),0,if(between(val,85,170),val*3-255,if(between(val,170,255),255,0)))':"
-        "c2='if(between(val,0,85),0,if(between(val,85,170),0,if(between(val,170,255),val*3-510,0)))'"
-    ])
+    return make_result(vf=[_THERMAL_PSEUDOCOLOR])
 
 
 def _f_comic_book_enhanced(p):
@@ -645,7 +650,8 @@ def _f_auto_mask(p):
                 _metadata_ref["_skill_degraded"] = True
             return _auto_mask_fallback(effect, strength)
 
-    assert mask_path is not None, "mask_path must be set by cache or SAM3"
+    if mask_path is None:
+        raise RuntimeError("mask_path must be set by cache or SAM3")
 
     # Store mask path in metadata so agent_node can generate overlay
     _metadata_ref = p.get("_metadata_ref")
@@ -716,12 +722,7 @@ def _effect_filter_map(strength: int) -> dict:
         "highlight": f"eq=brightness={min(0.5, strength / 200.0)}:saturation=1.5",
         "remove": "drawbox=c=black:t=fill",
         "greenscreen": "drawbox=c=#00FF00:t=fill",
-        "thermal": (
-            "pseudocolor="
-            "c0='if(between(val,0,85),255,if(between(val,85,170),255,if(between(val,170,255),255,0)))':"
-            "c1='if(between(val,0,85),0,if(between(val,85,170),val*3-255,if(between(val,170,255),255,0)))':"
-            "c2='if(between(val,0,85),0,if(between(val,85,170),0,if(between(val,170,255),val*3-510,0)))'"
-        ),
+        "thermal": _THERMAL_PSEUDOCOLOR,
     }
 
 
