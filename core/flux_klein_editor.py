@@ -20,6 +20,7 @@ from __future__ import annotations
 import gc
 import logging
 import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -271,9 +272,10 @@ def _load_video_frames(video_path: str):
     from PIL import Image
 
     tmpdir = tempfile.mkdtemp(prefix="fk_frames_")
+    _ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
     subprocess.run(
         [
-            "ffmpeg", "-i", video_path,
+            _ffmpeg, "-i", video_path,
             "-q:v", "2",
             os.path.join(tmpdir, "%06d.png"),
         ],
@@ -306,9 +308,10 @@ def _load_mask_frames(mask_video_path: str, num_frames: int):
     from PIL import Image
 
     tmpdir = tempfile.mkdtemp(prefix="fk_masks_")
+    _ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
     subprocess.run(
         [
-            "ffmpeg", "-i", mask_video_path,
+            _ffmpeg, "-i", mask_video_path,
             "-q:v", "2",
             os.path.join(tmpdir, "%06d.png"),
         ],
@@ -332,9 +335,10 @@ def _encode_video(frames: list, output_path: str, fps: float) -> str:
     for i, frame in enumerate(frames):
         frame.save(os.path.join(tmpdir, f"{i:06d}.png"))
 
+    _ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
     subprocess.run(
         [
-            "ffmpeg", "-y",
+            _ffmpeg, "-y",
             "-framerate", str(fps),
             "-i", os.path.join(tmpdir, "%06d.png"),
             "-c:v", "libx264",
@@ -422,10 +426,15 @@ def _temporal_smooth_adaptive(
             result.append(frames[i])
             continue
 
-        # Compute mean of neighbors in the window
+        # Compute mean of neighbors in the window (exclude frame i itself
+        # so the outlier doesn't dilute its own deviation signal)
         lo = max(0, i - half_w)
         hi = min(n, i + half_w + 1)
-        neighbors = stack[lo:hi]
+        neighbor_idx = [j for j in range(lo, hi) if j != i]
+        if not neighbor_idx:
+            result.append(frames[i])
+            continue
+        neighbors = stack[neighbor_idx]
         neighbor_mean = neighbors.mean(axis=0)
 
         # Per-pixel diff in masked region

@@ -13,6 +13,12 @@ from typing import Optional
 
 logger = logging.getLogger("ffmpega")
 
+# Model-based skills that are too expensive to retry via LLM re-generation
+_MODEL_SKILLS = frozenset({
+    "auto_mask", "auto_segment", "segment", "smart_mask",
+    "sam2", "sam_mask", "ai_mask", "object_mask",
+})
+
 
 async def execute_pipeline(
     pipeline,
@@ -91,8 +97,6 @@ async def execute_pipeline(
     # fails for these pipelines, re-generating via LLM typically produces
     # the same broken filter graph while also re-running SAM3/FLUX Klein
     # (minutes of GPU time).  Skip retry — fail fast with a clear error.
-    _MODEL_SKILLS = {"auto_mask", "auto_segment", "segment", "smart_mask",
-                     "sam2", "sam_mask", "ai_mask", "object_mask"}
     _has_model_skills = any(
         s.skill_name in _MODEL_SKILLS for s in pipeline.steps
     )

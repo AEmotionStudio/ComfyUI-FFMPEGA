@@ -336,7 +336,10 @@ class LoadVideoPathNode:
             temp_dir = folder_paths.get_temp_directory()
             os.makedirs(temp_dir, exist_ok=True)
             ext = os.path.splitext(resolved_path)[1] or ".mp4"
-            trim_name = f"ffmpega_trim_{os.getpid()}{ext}"
+            # Hash input path + params for a unique, collision-free name
+            _trim_key = f"{resolved_path}:{skip_first_frames}:{frame_load_cap}:{select_every_nth}:{force_rate}"
+            _trim_hash = hashlib.sha256(_trim_key.encode()).hexdigest()[:12]
+            trim_name = f"ffmpega_trim_{_trim_hash}{ext}"
             trim_path = os.path.join(temp_dir, trim_name)
 
             ffmpeg_bin = shutil.which("ffmpeg") or "ffmpeg"
@@ -363,7 +366,7 @@ class LoadVideoPathNode:
 
             # Use stream copy when no filtering is needed, otherwise re-encode
             if select_every_nth <= 1 and force_rate <= 0:
-                ffmpeg_cmd += ["-c", "copy"]
+                ffmpeg_cmd += ["-c:v", "copy"]
             else:
                 ffmpeg_cmd += ["-c:v", "libx264", "-crf", "18",
                                "-pix_fmt", "yuv420p"]
