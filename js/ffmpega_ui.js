@@ -3253,6 +3253,12 @@ app.registerExtension({
             });
 
             const stopDrawing = () => {
+                if (isDrawing) {
+                    // Rebuild green overlay from authoritative mask canvas
+                    // to eliminate accumulated alpha from overlapping strokes
+                    _greenOverlayDirty = true;
+                    redraw();
+                }
                 isDrawing = false;
                 drawButton = -1;
                 lastDrawX = -1;

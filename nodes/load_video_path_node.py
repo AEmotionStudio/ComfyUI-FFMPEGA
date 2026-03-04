@@ -330,7 +330,7 @@ class LoadVideoPathNode:
             skip_first_frames > 0
             or (frame_load_cap > 0 and frame_load_cap < source_frames)
             or select_every_nth > 1
-            or force_rate > 0
+            or (force_rate > 0 and force_rate != source_fps)
         )
         if needs_trim and available_frames > 0:
             temp_dir = folder_paths.get_temp_directory()
