@@ -13,7 +13,7 @@ import tempfile
 import numpy as np  # type: ignore[import-not-found]
 import torch  # type: ignore[import-not-found]
 
-from core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin
+from .bin_paths import get_ffmpeg_bin, get_ffprobe_bin
 
 
 class MediaConverter:

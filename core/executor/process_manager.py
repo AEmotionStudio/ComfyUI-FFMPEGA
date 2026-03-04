@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Callable, AsyncIterator
 from .command_builder import FFMPEGCommand
-from core.bin_paths import get_ffmpeg_bin
+from ..bin_paths import get_ffmpeg_bin
 
 logger = logging.getLogger("ffmpega")
 

@@ -36,7 +36,7 @@ def _probe_duration(path):
     Returns 0.0 on any failure (missing ffprobe, invalid file, etc.).
     """
     import subprocess
-    from core.bin_paths import get_ffprobe_bin
+    from ...core.bin_paths import get_ffprobe_bin
 
     ffprobe_bin = get_ffprobe_bin()
     if not ffprobe_bin:

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional
 from pydantic import BaseModel
 
-from core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin
+from ..bin_paths import get_ffmpeg_bin, get_ffprobe_bin
 
 
 class StreamInfo(BaseModel):
