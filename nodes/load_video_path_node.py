@@ -342,59 +342,69 @@ class LoadVideoPathNode:
             trim_name = f"ffmpega_trim_{_trim_hash}{ext}"
             trim_path = os.path.join(temp_dir, trim_name)
 
-            ffmpeg_bin = shutil.which("ffmpeg") or "ffmpeg"
-            ffmpeg_cmd = [ffmpeg_bin, "-y"]
-
-            # Skip frames: convert to time offset for fast seeking
-            if skip_first_frames > 0 and source_fps > 0:
-                ss_time = skip_first_frames / source_fps
-                ffmpeg_cmd += ["-ss", f"{ss_time:.4f}"]
-
-            ffmpeg_cmd += ["-i", resolved_path]
-
-            # Force rate (re-sample FPS)
-            if force_rate > 0:
-                ffmpeg_cmd += ["-r", str(force_rate)]
-
-            # Select every Nth frame
-            if select_every_nth > 1:
-                ffmpeg_cmd += ["-vf", f"select='not(mod(n\\,{select_every_nth}))',setpts=N/FRAME_RATE/TB"]
-
-            # Frame cap
-            if frame_load_cap > 0:
-                ffmpeg_cmd += ["-frames:v", str(frame_load_cap)]
-
-            # Use stream copy when no filtering is needed, otherwise re-encode
-            if select_every_nth <= 1 and force_rate <= 0:
-                ffmpeg_cmd += ["-c:v", "copy"]
-            else:
-                ffmpeg_cmd += ["-c:v", "libx264", "-crf", "18",
-                               "-pix_fmt", "yuv420p"]
-
-            ffmpeg_cmd += ["-c:a", "copy", trim_path]
-
-            try:
-                result = subprocess.run(
-                    ffmpeg_cmd,
-                    capture_output=True, text=True, timeout=60,
+            # Skip if already trimmed (cache hit)
+            if os.path.isfile(trim_path):
+                logger.info(
+                    "LoadVideoPath: reusing cached trim: %s",
+                    os.path.basename(trim_path),
                 )
-                if result.returncode == 0 and os.path.isfile(trim_path):
-                    logger.info(
-                        "LoadVideoPath: pre-trimmed %s → %s "
-                        "(skip=%d, cap=%d, nth=%d, rate=%.1f)",
-                        os.path.basename(resolved_path),
-                        os.path.basename(trim_path),
-                        skip_first_frames, frame_load_cap,
-                        select_every_nth, force_rate,
-                    )
-                    resolved_path = trim_path
+                resolved_path = trim_path
+                needs_trim = False  # skip the ffmpeg block below
+
+            if needs_trim:
+                ffmpeg_bin = shutil.which("ffmpeg") or "ffmpeg"
+                ffmpeg_cmd = [ffmpeg_bin, "-y"]
+
+                # Skip frames: convert to time offset for fast seeking
+                if skip_first_frames > 0 and source_fps > 0:
+                    ss_time = skip_first_frames / source_fps
+                    ffmpeg_cmd += ["-ss", f"{ss_time:.4f}"]
+
+                ffmpeg_cmd += ["-i", resolved_path]
+
+                # Force rate (re-sample FPS)
+                if force_rate > 0:
+                    ffmpeg_cmd += ["-r", str(force_rate)]
+
+                # Select every Nth frame
+                if select_every_nth > 1:
+                    ffmpeg_cmd += ["-vf", f"select='not(mod(n\\,{select_every_nth}))',setpts=N/FRAME_RATE/TB"]
+
+                # Frame cap
+                if frame_load_cap > 0:
+                    ffmpeg_cmd += ["-frames:v", str(frame_load_cap)]
+
+                # Use stream copy when no filtering is needed, otherwise re-encode
+                if select_every_nth <= 1 and force_rate <= 0:
+                    ffmpeg_cmd += ["-c:v", "copy"]
                 else:
-                    logger.warning(
-                        "LoadVideoPath: ffmpeg trim failed (rc=%d): %s",
-                        result.returncode, result.stderr[:500],
+                    ffmpeg_cmd += ["-c:v", "libx264", "-crf", "18",
+                                   "-pix_fmt", "yuv420p"]
+
+                ffmpeg_cmd += ["-c:a", "copy", trim_path]
+
+                try:
+                    result = subprocess.run(
+                        ffmpeg_cmd,
+                        capture_output=True, text=True, timeout=60,
                     )
-            except Exception as e:
-                logger.warning("LoadVideoPath: trim failed: %s", e)
+                    if result.returncode == 0 and os.path.isfile(trim_path):
+                        logger.info(
+                            "LoadVideoPath: pre-trimmed %s → %s "
+                            "(skip=%d, cap=%d, nth=%d, rate=%.1f)",
+                            os.path.basename(resolved_path),
+                            os.path.basename(trim_path),
+                            skip_first_frames, frame_load_cap,
+                            select_every_nth, force_rate,
+                        )
+                        resolved_path = trim_path
+                    else:
+                        logger.warning(
+                            "LoadVideoPath: ffmpeg trim failed (rc=%d): %s",
+                            result.returncode, result.stderr[:500],
+                        )
+                except Exception as e:
+                    logger.warning("LoadVideoPath: trim failed: %s", e)
 
         logger.info(
             "LoadVideoPath: %s | %dx%d | %.1ffps | %d frames | %.1fs",

@@ -3144,7 +3144,26 @@ app.registerExtension({
                 }
                 mCtx.fill();
                 maskDirty = true;
-                _greenOverlayDirty = true;
+
+                // Incremental green overlay update — paint directly onto
+                // the cached overlay instead of rebuilding all pixels.
+                if (_greenOverlay) {
+                    const oCtx = _greenOverlay.getContext("2d");
+                    const dispBrushR = parseInt(sizeSlider.value);
+                    oCtx.beginPath();
+                    oCtx.arc(canvasX, canvasY, dispBrushR, 0, Math.PI * 2);
+                    if (erase) {
+                        oCtx.clearRect(
+                            canvasX - dispBrushR, canvasY - dispBrushR,
+                            dispBrushR * 2, dispBrushR * 2,
+                        );
+                    } else {
+                        oCtx.fillStyle = "rgba(0, 220, 80, 0.39)";
+                        oCtx.fill();
+                    }
+                } else {
+                    _greenOverlayDirty = true;
+                }
             };
 
             const paintLine = (x1, y1, x2, y2, erase) => {

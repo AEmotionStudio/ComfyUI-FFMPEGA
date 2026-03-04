@@ -17,6 +17,7 @@ License: Apache 2.0 (compatible with GPL-3.0)
 
 from __future__ import annotations
 
+import functools
 import gc
 import logging
 import os
@@ -33,8 +34,10 @@ except ImportError:
 
 log = logging.getLogger("ffmpega")
 
-# Cached ffmpeg binary path (resolved once at import time)
-_FFMPEG_BIN = shutil.which("ffmpeg") or "ffmpeg"
+@functools.lru_cache(maxsize=None)
+def _get_ffmpeg_bin() -> str:
+    """Resolve ffmpeg binary path (cached after first call)."""
+    return shutil.which("ffmpeg") or "ffmpeg"
 
 # ---------------------------------------------------------------------------
 #  Constants
@@ -277,7 +280,7 @@ def _load_video_frames(video_path: str):
     tmpdir = tempfile.mkdtemp(prefix="fk_frames_")
     subprocess.run(
         [
-            _FFMPEG_BIN, "-i", video_path,
+            _get_ffmpeg_bin(), "-i", video_path,
             "-q:v", "2",
             os.path.join(tmpdir, "%06d.png"),
         ],
@@ -312,7 +315,7 @@ def _load_mask_frames(mask_video_path: str, num_frames: int):
     tmpdir = tempfile.mkdtemp(prefix="fk_masks_")
     subprocess.run(
         [
-            _FFMPEG_BIN, "-i", mask_video_path,
+            _get_ffmpeg_bin(), "-i", mask_video_path,
             "-q:v", "2",
             os.path.join(tmpdir, "%06d.png"),
         ],
@@ -338,7 +341,7 @@ def _encode_video(frames: list, output_path: str, fps: float) -> str:
 
     subprocess.run(
         [
-            _FFMPEG_BIN, "-y",
+            _get_ffmpeg_bin(), "-y",
             "-framerate", str(fps),
             "-i", os.path.join(tmpdir, "%06d.png"),
             "-c:v", "libx264",
