@@ -121,7 +121,10 @@ coverage.xml
 
 # Agent workflows
 .agent/
+.agents/
 You are Sentinel🛡.md
+AgentAnalysis.md
+Command_log.md
 
 # PostScript artifacts (ImageMagick generates these)
 *.ps

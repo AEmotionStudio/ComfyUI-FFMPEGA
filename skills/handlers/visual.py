@@ -532,6 +532,7 @@ def _f_auto_mask(p):
         invert (bool):      Invert mask — apply effect to background instead.
     """
     import logging
+    import os
     log = logging.getLogger("ffmpega")
 
     target = str(p.get("target", "the subject"))
@@ -539,98 +540,138 @@ def _f_auto_mask(p):
     strength = int(p.get("strength", 50))
     invert = bool(p.get("invert", False))
     video_path = p.get("_input_path", "")
-    sam3_device = str(p.get("_sam3_device", "gpu")).lower()
-    sam3_max_objects = int(p.get("_sam3_max_objects", 5))
-    sam3_det_threshold = float(p.get("_sam3_det_threshold", 0.7))
 
-    # Parse point prompt data (from the JS point selector)
-    mask_points_json = p.get("_mask_points", "")
-    point_coords = None
-    point_labels = None
-    point_src_w = 0
-    point_src_h = 0
-    if mask_points_json:
-        import json as _json
-        try:
-            pt_data = _json.loads(mask_points_json)
-            if isinstance(pt_data, dict):
-                point_coords = pt_data.get("points")
-                point_labels = pt_data.get("labels")
-                point_src_w = int(pt_data.get("image_width", 0))
-                point_src_h = int(pt_data.get("image_height", 0))
-                if point_coords and point_labels:
-                    log.info("auto_mask: using %d point prompt(s) (src %dx%d)",
-                             len(point_coords), point_src_w, point_src_h)
-        except (ValueError, TypeError) as exc:
-            log.warning("Failed to parse mask_points JSON: %s", exc)
+    # ── Cache: reuse model outputs from a previous compose() pass ────
+    # When ffmpeg fails and the execution engine retries with a corrected
+    # pipeline, compose() is called again.  SAM3 + FLUX Klein outputs are
+    # expensive (minutes of GPU time), so reuse them if they still exist.
+    _metadata_ref = p.get("_metadata_ref")
+    _cached_mask = (
+        _metadata_ref.get("_mask_video_path")
+        if isinstance(_metadata_ref, dict) else None
+    )
+    # FLUX Klein outputs are cached per-prompt so two auto_mask calls
+    # with different edit prompts (e.g. "chrome skin" vs "thermal") don't
+    # collide.  The cache dict maps prompt → output_path.
+    _flux_cache = (
+        _metadata_ref.get("_flux_klein_outputs", {})
+        if isinstance(_metadata_ref, dict) else {}
+    )
+    _cache_key = str(p.get("edit_prompt", effect))
 
-    # Try to load SAM3
-    try:
-        from ...core.sam3_masker import mask_video_subprocess as sam3_mask_video  # noqa: F811
-        _has_sam3 = True
-    except ImportError:
+    if _cached_mask and os.path.isfile(_cached_mask):
+        log.info("auto_mask: reusing cached mask from previous run: %s", _cached_mask)
+        # FLUX Klein outputs (remove/edit) are self-contained videos
+        _cached_flux = _flux_cache.get(_cache_key)
+        if effect in ("remove", "edit") and _cached_flux and os.path.isfile(_cached_flux):
+            log.info("auto_mask: reusing cached FLUX Klein output: %s", _cached_flux)
+            escaped = _escape_filter_path(_cached_flux)
+            fc = f"movie={escaped}[inp];[inp]format=yuv420p[_vout]"
+            return make_result(fc=fc)
+        # For non-FLUX effects, rebuild the ffmpeg filter with the cached mask
+        if effect not in ("remove", "edit"):
+            return _build_mask_fc(_cached_mask, effect, strength, invert)
+        # Mask exists but no cached FLUX output for this prompt —
+        # skip SAM3 and reuse the cached mask for the new FLUX edit.
+        mask_path = _cached_mask
+        _skip_sam3 = True
+    else:
+        _skip_sam3 = False
+    if not _skip_sam3:
+        sam3_device = str(p.get("_sam3_device", "gpu")).lower()
+        sam3_max_objects = int(p.get("_sam3_max_objects", 5))
+        sam3_det_threshold = float(p.get("_sam3_det_threshold", 0.7))
+
+        # Parse point prompt data (from the JS point selector)
+        mask_points_json = p.get("_mask_points", "")
+        point_coords = None
+        point_labels = None
+        point_src_w = 0
+        point_src_h = 0
+        if mask_points_json:
+            import json as _json
+            try:
+                pt_data = _json.loads(mask_points_json)
+                if isinstance(pt_data, dict):
+                    point_coords = pt_data.get("points")
+                    point_labels = pt_data.get("labels")
+                    point_src_w = int(pt_data.get("image_width", 0))
+                    point_src_h = int(pt_data.get("image_height", 0))
+                    if point_coords and point_labels:
+                        log.info("auto_mask: using %d point prompt(s) (src %dx%d)",
+                                 len(point_coords), point_src_w, point_src_h)
+            except (ValueError, TypeError) as exc:
+                log.warning("Failed to parse mask_points JSON: %s", exc)
+
+        # Try to load SAM3
         try:
-            from core.sam3_masker import mask_video_subprocess as sam3_mask_video  # noqa: F811
+            from ...core.sam3_masker import mask_video_subprocess as sam3_mask_video  # noqa: F811
             _has_sam3 = True
         except ImportError:
-            _has_sam3 = False
+            try:
+                from core.sam3_masker import mask_video_subprocess as sam3_mask_video  # noqa: F811
+                _has_sam3 = True
+            except ImportError:
+                _has_sam3 = False
 
-    if not _has_sam3:
-        log.warning(
-            "SAM3 not available for auto_mask — falling back to full-frame "
-            "effect. Install with: pip install git+https://github.com/facebookresearch/sam3.git"
-        )
-        _metadata_ref = p.get("_metadata_ref")
-        if _metadata_ref is not None and isinstance(_metadata_ref, dict):
-            _metadata_ref["_skill_degraded"] = True
-        return _auto_mask_fallback(effect, strength)
+        if not _has_sam3:
+            log.warning(
+                "SAM3 not available for auto_mask — falling back to full-frame "
+                "effect. Install with: pip install git+https://github.com/facebookresearch/sam3.git"
+            )
+            _metadata_ref = p.get("_metadata_ref")
+            if _metadata_ref is not None and isinstance(_metadata_ref, dict):
+                _metadata_ref["_skill_degraded"] = True
+            return _auto_mask_fallback(effect, strength)
 
-    # Generate mask video using SAM3 with text + optional point prompts
-    # Runs in a subprocess to avoid CUDA memory leaks (~1.5 GB/run).
-    try:
-        mask_path = sam3_mask_video(
-            video_path=video_path,
-            prompt=target,
-            device=sam3_device,
-            max_objects=sam3_max_objects,
-            det_threshold=sam3_det_threshold,
-            points=point_coords,
-            labels=point_labels,
-            point_src_width=point_src_w,
-            point_src_height=point_src_h,
-        )
-    except Exception as e:
-        log.error("SAM3 mask generation failed: %s — falling back", e)
-        _metadata_ref = p.get("_metadata_ref")
-        if _metadata_ref is not None and isinstance(_metadata_ref, dict):
-            _metadata_ref["_skill_degraded"] = True
-        return _auto_mask_fallback(effect, strength)
+        # Generate mask video using SAM3 with text + optional point prompts
+        # Runs in a subprocess to avoid CUDA memory leaks (~1.5 GB/run).
+        try:
+            mask_path = sam3_mask_video(
+                video_path=video_path,
+                prompt=target,
+                device=sam3_device,
+                max_objects=sam3_max_objects,
+                det_threshold=sam3_det_threshold,
+                points=point_coords,
+                labels=point_labels,
+                point_src_width=point_src_w,
+                point_src_height=point_src_h,
+            )
+        except Exception as e:
+            log.error("SAM3 mask generation failed: %s — falling back", e)
+            _metadata_ref = p.get("_metadata_ref")
+            if _metadata_ref is not None and isinstance(_metadata_ref, dict):
+                _metadata_ref["_skill_degraded"] = True
+            return _auto_mask_fallback(effect, strength)
 
     # Store mask path in metadata so agent_node can generate overlay
     _metadata_ref = p.get("_metadata_ref")
     if _metadata_ref is not None and isinstance(_metadata_ref, dict):
         _metadata_ref["_mask_video_path"] = mask_path
 
-    # Special handling for "remove" — use FLUX Klein AI inpainting (subprocess)
+    # Special handling for "remove" — use FLUX Klein AI inpainting
     if effect == "remove":
         try:
             try:
-                from ...core.flux_klein_editor import remove_object_subprocess
+                from ...core.flux_klein_editor import remove_object
             except ImportError:
-                from core.flux_klein_editor import remove_object_subprocess
-            inpainted_path = remove_object_subprocess(
+                from core.flux_klein_editor import remove_object
+            inpainted_path = remove_object(
                 video_path=video_path,
                 mask_video_path=mask_path,
             )
             log.info("FLUX Klein removal complete: %s", inpainted_path)
+            if _metadata_ref is not None and isinstance(_metadata_ref, dict):
+                _metadata_ref.setdefault("_flux_klein_outputs", {})[_cache_key] = inpainted_path
             escaped = _escape_filter_path(inpainted_path)
-            fc = f"movie={escaped}[inp];[inp]format=yuv420p"
+            fc = f"movie={escaped}[inp];[inp]format=yuv420p[_vout]"
             return make_result(fc=fc)
         except Exception as e:
             log.error("FLUX Klein removal failed: %s", e)
             raise
 
-    # Special handling for "edit" — use FLUX Klein text-guided editing (subprocess)
+    # Special handling for "edit" — use FLUX Klein text-guided editing
     if effect == "edit":
         edit_prompt = str(p.get("edit_prompt", ""))
         if not edit_prompt:
@@ -640,17 +681,19 @@ def _f_auto_mask(p):
             )
         try:
             try:
-                from ...core.flux_klein_editor import edit_video_subprocess
+                from ...core.flux_klein_editor import edit_video
             except ImportError:
-                from core.flux_klein_editor import edit_video_subprocess
-            edited_path = edit_video_subprocess(
+                from core.flux_klein_editor import edit_video
+            edited_path = edit_video(
                 video_path=video_path,
                 mask_video_path=mask_path,
                 prompt=edit_prompt,
             )
             log.info("FLUX Klein edit complete: %s", edited_path)
+            if _metadata_ref is not None and isinstance(_metadata_ref, dict):
+                _metadata_ref.setdefault("_flux_klein_outputs", {})[_cache_key] = edited_path
             escaped = _escape_filter_path(edited_path)
-            fc = f"movie={escaped}[inp];[inp]format=yuv420p"
+            fc = f"movie={escaped}[inp];[inp]format=yuv420p[_vout]"
             return make_result(fc=fc)
         except Exception as e:
             log.error("FLUX Klein edit failed: %s", e)
@@ -671,6 +714,12 @@ def _effect_filter_map(strength: int) -> dict:
         "highlight": f"eq=brightness={min(0.5, strength / 200.0)}:saturation=1.5",
         "remove": "drawbox=c=black:t=fill",
         "greenscreen": "drawbox=c=#00FF00:t=fill",
+        "thermal": (
+            "pseudocolor="
+            "c0='if(between(val,0,85),255,if(between(val,85,170),255,if(between(val,170,255),255,0)))':"
+            "c1='if(between(val,0,85),0,if(between(val,85,170),val*3-255,if(between(val,170,255),255,0)))':"
+            "c2='if(between(val,0,85),0,if(between(val,85,170),0,if(between(val,170,255),val*3-510,0)))'"
+        ),
     }
 
 

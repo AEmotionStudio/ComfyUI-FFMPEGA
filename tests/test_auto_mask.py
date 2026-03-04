@@ -81,7 +81,7 @@ class TestAutoMaskRegistration:
         effect_param = next(p for p in skill.parameters if p.name == "effect")
         assert set(effect_param.choices) == {
             "blur", "pixelate", "remove", "edit", "grayscale", "highlight",
-            "greenscreen", "transparent",
+            "greenscreen", "transparent", "thermal",
         }
 
     def test_skill_has_tags(self, registry):

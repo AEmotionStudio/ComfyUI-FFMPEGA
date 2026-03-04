@@ -366,7 +366,10 @@ class SkillComposer:
                         output_options = new_opts
                     else:
                         pipe_label = f"[_pipe_{ci}]"
-                        chained.append(fc_block + pipe_label)
+                        if "[_vout]" in fc_block:
+                            chained.append(fc_block.replace("[_vout]", pipe_label))
+                        else:
+                            chained.append(fc_block + pipe_label)
                 elif not is_last:
                     if _fc_audio_label:
                         prev_label = f"[_pipe_{ci - 1}_v]"
@@ -374,7 +377,10 @@ class SkillComposer:
                         prev_label = f"[_pipe_{ci - 1}]"
                     pipe_label = f"[_pipe_{ci}]"
                     rewired = fc_block.replace("[0:v]", prev_label)
-                    chained.append(rewired + pipe_label)
+                    if "[_vout]" in rewired:
+                        chained.append(rewired.replace("[_vout]", pipe_label))
+                    else:
+                        chained.append(rewired + pipe_label)
                 else:
                     if _fc_audio_label and ci == 1:
                         prev_label = f"[_pipe_{ci - 1}_v]"
@@ -451,7 +457,7 @@ class SkillComposer:
             audio_filters = []
 
         if "[_vout]" in fc_graph and "-map" not in output_options:
-            output_options.extend(["-map", "[_vout]"])
+            output_options.extend(["-map", "[_vout]", "-map", "0:a?"])
 
         return fc_graph, audio_filters, output_options
 
@@ -762,6 +768,17 @@ class SkillComposer:
             # chain from the video pad, and audio filters can be appended
             # to the audio pad.
             _fc_audio_label = None  # Track the audio output label
+
+            # Deduplicate complex_filters: LLMs sometimes generate the same
+            # skill twice (e.g. auto_mask for edit), producing identical fc
+            # blocks that create duplicate output labels in FFmpeg.
+            seen_fc: set[str] = set()
+            deduped_fc: list[str] = []
+            for fc in complex_filters:
+                if fc not in seen_fc:
+                    seen_fc.add(fc)
+                    deduped_fc.append(fc)
+            complex_filters = deduped_fc
 
             fc_graph, _fc_audio_label, output_options = self._chain_filter_complex(
                 complex_filters, output_options, audio_in_fc,

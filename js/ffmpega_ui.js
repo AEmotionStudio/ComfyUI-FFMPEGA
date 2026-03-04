@@ -2839,8 +2839,8 @@ app.registerExtension({
         // ------------------------------------------------------------------
 
         /** Open a modal popout where the user clicks to place positive/negative
-         *  points on the image (or first video frame). Data is stored as JSON
-         *  in the node's hidden mask_points_data widget.
+         *  points on the image (or first video frame), OR paint a mask directly.
+         *  Data is stored as JSON in the node's hidden mask_points_data widget.
          *  @param {object} node   - the ComfyUI node
          *  @param {string} imgSrc - data-URL or URL for the first frame
          *  @param {string} [videoSrc] - optional video URL for last-frame extraction
@@ -2849,7 +2849,7 @@ app.registerExtension({
             // Remove any existing popout
             document.getElementById("ffmpega-point-selector")?.remove();
 
-            // Existing point data
+            // Existing data
             let existing = {
                 points: [], labels: [], image_width: 0, image_height: 0,
             };
@@ -2858,12 +2858,15 @@ app.registerExtension({
                 try { existing = JSON.parse(mpWidget.value); } catch { }
             }
 
+            // Determine initial mode
+            let mode = existing.mode || "points"; // "points" or "draw"
+
             // Build the modal
             const overlay = document.createElement("div");
             overlay.id = "ffmpega-point-selector";
             overlay.setAttribute("role", "dialog");
             overlay.setAttribute("aria-modal", "true");
-            overlay.setAttribute("aria-label", "Point Selector");
+            overlay.setAttribute("aria-label", "Mask Editor");
             overlay.style.cssText = `
                 position:fixed;top:0;left:0;width:100vw;height:100vh;
                 background:rgba(0,0,0,0.85);z-index:999999;
@@ -2877,14 +2880,25 @@ app.registerExtension({
                 color:#eee;font-size:14px;margin-bottom:8px;
                 display:flex;gap:16px;align-items:center;
             `;
-            header.innerHTML = `
-                <span><span aria-hidden="true">🎯</span> <b>Point Selector</b></span>
-                <span style="color:#4f4"><span aria-hidden="true">⬤</span> Left-click = Include</span>
-                <span style="color:#f44"><span aria-hidden="true">⬤</span> Right-click = Exclude</span>
-                <span style="color:#888">Click existing point to remove</span>
-            `;
             overlay.appendChild(header);
 
+            const updateHeader = () => {
+                if (mode === "points") {
+                    header.innerHTML = `
+                        <span><span aria-hidden="true">🎯</span> <b>Point Mode</b></span>
+                        <span style="color:#4f4"><span aria-hidden="true">⬤</span> Left-click = Include</span>
+                        <span style="color:#f44"><span aria-hidden="true">⬤</span> Right-click = Exclude</span>
+                        <span style="color:#888">Click existing point to remove</span>
+                    `;
+                } else {
+                    header.innerHTML = `
+                        <span><span aria-hidden="true">🖌</span> <b>Draw Mode</b></span>
+                        <span style="color:#4f4"><span aria-hidden="true">⬤</span> Left-drag = Paint</span>
+                        <span style="color:#f44"><span aria-hidden="true">⬤</span> Right-drag = Erase</span>
+                    `;
+                }
+            };
+            updateHeader();
 
             // Canvas container
             const canvasWrap = document.createElement("div");
@@ -2893,6 +2907,28 @@ app.registerExtension({
             canvas.style.cssText = "max-width:90vw;max-height:75vh;cursor:crosshair;display:block;";
             canvasWrap.appendChild(canvas);
             overlay.appendChild(canvasWrap);
+
+            // Brush size slider (draw mode only)
+            const sliderWrap = document.createElement("div");
+            sliderWrap.style.cssText = `
+                display:flex;gap:10px;align-items:center;margin-top:6px;
+                color:#ccc;font-size:13px;
+            `;
+            sliderWrap.innerHTML = `<span aria-hidden="true">🖌</span> Brush:`;
+            const sizeSlider = document.createElement("input");
+            sizeSlider.type = "range";
+            sizeSlider.min = "3";
+            sizeSlider.max = "80";
+            sizeSlider.value = "20";
+            sizeSlider.style.cssText = "width:140px;accent-color:#4fc;";
+            sizeSlider.setAttribute("aria-label", "Brush Size");
+            const sizeLabel = document.createElement("span");
+            sizeLabel.textContent = "20px";
+            sizeLabel.style.cssText = "min-width:36px;";
+            sizeSlider.oninput = () => { sizeLabel.textContent = `${sizeSlider.value}px`; };
+            sliderWrap.appendChild(sizeSlider);
+            sliderWrap.appendChild(sizeLabel);
+            overlay.appendChild(sliderWrap);
 
             // Status bar
             const statusBar = document.createElement("div");
@@ -2928,60 +2964,121 @@ app.registerExtension({
                 b.onblur = () => { isFocused = false; update(); };
                 return b;
             };
+            const modeToggle = makeBtn("🖌 Draw", "#3a5a8a");
             const clearBtn = makeBtn("Clear All", "#555");
             const applyBtn = makeBtn("✓ Apply", "#2a7a2a");
             const cancelBtn = makeBtn("Cancel", "#7a2a2a");
+            btnBar.appendChild(modeToggle);
             btnBar.appendChild(clearBtn);
             btnBar.appendChild(applyBtn);
             btnBar.appendChild(cancelBtn);
             overlay.appendChild(btnBar);
             document.body.appendChild(overlay);
 
-            // State
+            // ── State ──
             let pts = existing.points ? [...existing.points] : [];
             let lbls = existing.labels ? [...existing.labels] : [];
             let imgW = 0, imgH = 0;
             let scaleX = 1, scaleY = 1;
             const firstImg = new Image();
 
+            // Offscreen mask canvas (full image resolution, black/white)
+            const maskOff = document.createElement("canvas");
+            let maskDirty = false;
+
+            // Cached green overlay (regenerated only when mask changes)
+            let _greenOverlay = null;
+            let _greenOverlayDirty = true;
+
+            // ── Mode toggle ──
+            const updateModeUI = () => {
+                if (mode === "points") {
+                    modeToggle.textContent = "🖌 Draw";
+                    modeToggle.style.background = "#3a5a8a";
+                    canvas.style.cursor = "crosshair";
+                    sliderWrap.style.display = "none";
+                } else {
+                    modeToggle.textContent = "🎯 Points";
+                    modeToggle.style.background = "#5a3a8a";
+                    canvas.style.cursor = "none"; // custom brush cursor
+                    sliderWrap.style.display = "flex";
+                }
+                updateHeader();
+                redraw();
+            };
+
+            modeToggle.onclick = () => {
+                mode = mode === "points" ? "draw" : "points";
+                updateModeUI();
+            };
+
+            // ── Redraw ──
             const redraw = () => {
                 const ctx = canvas.getContext("2d");
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // Draw the image
                 if (firstImg.complete && firstImg.naturalWidth > 0) {
                     ctx.drawImage(firstImg, 0, 0, canvas.width, canvas.height);
                 }
 
-                for (let i = 0; i < pts.length; i++) {
-                    const px = pts[i][0] / scaleX;
-                    const py = pts[i][1] / scaleY;
-                    const isPos = lbls[i] === 1;
+                if (mode === "points") {
+                    // Draw points
+                    for (let i = 0; i < pts.length; i++) {
+                        const px = pts[i][0] / scaleX;
+                        const py = pts[i][1] / scaleY;
+                        const isPos = lbls[i] === 1;
 
-                    // Outer ring
-                    ctx.beginPath();
-                    ctx.arc(px, py, 14, 0, Math.PI * 2);
-                    ctx.fillStyle = isPos ? "rgba(0,255,0,0.25)" : "rgba(255,0,0,0.25)";
-                    ctx.fill();
-                    ctx.strokeStyle = isPos ? "#0f0" : "#f00";
-                    ctx.lineWidth = 2.5;
-                    ctx.stroke();
+                        ctx.beginPath();
+                        ctx.arc(px, py, 14, 0, Math.PI * 2);
+                        ctx.fillStyle = isPos ? "rgba(0,255,0,0.25)" : "rgba(255,0,0,0.25)";
+                        ctx.fill();
+                        ctx.strokeStyle = isPos ? "#0f0" : "#f00";
+                        ctx.lineWidth = 2.5;
+                        ctx.stroke();
 
-                    // Inner dot
-                    ctx.beginPath();
-                    ctx.arc(px, py, 5, 0, Math.PI * 2);
-                    ctx.fillStyle = isPos ? "#0f0" : "#f00";
-                    ctx.fill();
+                        ctx.beginPath();
+                        ctx.arc(px, py, 5, 0, Math.PI * 2);
+                        ctx.fillStyle = isPos ? "#0f0" : "#f00";
+                        ctx.fill();
 
-                    // Label
-                    ctx.font = "bold 16px sans-serif";
-                    ctx.fillStyle = "#fff";
-                    ctx.strokeStyle = "#000";
-                    ctx.lineWidth = 3;
-                    ctx.strokeText(isPos ? "+" : "×", px + 12, py - 8);
-                    ctx.fillText(isPos ? "+" : "×", px + 12, py - 8);
+                        ctx.font = "bold 16px sans-serif";
+                        ctx.fillStyle = "#fff";
+                        ctx.strokeStyle = "#000";
+                        ctx.lineWidth = 3;
+                        ctx.strokeText(isPos ? "+" : "×", px + 12, py - 8);
+                        ctx.fillText(isPos ? "+" : "×", px + 12, py - 8);
+                    }
+                    statusBar.textContent = `${pts.length} point(s) | ${imgW}×${imgH}`;
+                } else {
+                    // Draw cached green overlay (regenerate only when dirty)
+                    if (_greenOverlayDirty || !_greenOverlay) {
+                        _greenOverlay = document.createElement("canvas");
+                        _greenOverlay.width = canvas.width;
+                        _greenOverlay.height = canvas.height;
+                        const tmpCtx = _greenOverlay.getContext("2d");
+                        tmpCtx.drawImage(maskOff, 0, 0, canvas.width, canvas.height);
+                        const imgData = tmpCtx.getImageData(0, 0, canvas.width, canvas.height);
+                        for (let i = 0; i < imgData.data.length; i += 4) {
+                            if (imgData.data[i] > 128) {
+                                imgData.data[i] = 0;       // R
+                                imgData.data[i + 1] = 220;  // G
+                                imgData.data[i + 2] = 80;   // B
+                                imgData.data[i + 3] = 100;  // A
+                            } else {
+                                imgData.data[i + 3] = 0; // transparent
+                            }
+                        }
+                        tmpCtx.putImageData(imgData, 0, 0);
+                        _greenOverlayDirty = false;
+                    }
+                    ctx.drawImage(_greenOverlay, 0, 0);
+
+                    statusBar.textContent = `Draw mode | ${imgW}×${imgH} | Brush: ${sizeSlider.value}px`;
                 }
-                statusBar.textContent = `${pts.length} point(s) | ${imgW}×${imgH}`;
             };
 
+            // ── Canvas sizing ──
             const fitCanvas = (w, h) => {
                 imgW = w;
                 imgH = h;
@@ -2994,10 +3091,29 @@ app.registerExtension({
                 canvas.height = Math.round(dispH);
                 scaleX = imgW / canvas.width;
                 scaleY = imgH / canvas.height;
+
+                // Init offscreen mask at full image resolution
+                maskOff.width = imgW;
+                maskOff.height = imgH;
+                const mCtx = maskOff.getContext("2d");
+                mCtx.fillStyle = "#000";
+                mCtx.fillRect(0, 0, imgW, imgH);
+
+                // Restore existing mask data if present
+                if (existing.mask_data && existing.mode === "draw") {
+                    const maskImg = new Image();
+                    maskImg.onload = () => {
+                        mCtx.drawImage(maskImg, 0, 0, imgW, imgH);
+                        maskDirty = true;
+                        redraw();
+                    };
+                    maskImg.src = "data:image/png;base64," + existing.mask_data;
+                }
             };
 
             firstImg.onload = () => {
                 fitCanvas(firstImg.naturalWidth, firstImg.naturalHeight);
+                updateModeUI();
                 redraw();
             };
             firstImg.onerror = () => {
@@ -3007,6 +3123,52 @@ app.registerExtension({
             firstImg.crossOrigin = "anonymous";
             firstImg.src = imgSrc;
 
+            // ── Drawing state ──
+            let isDrawing = false;
+            let drawButton = -1; // 0=left(paint), 2=right(erase)
+            let lastDrawX = -1, lastDrawY = -1;
+
+            const paintOnMask = (canvasX, canvasY, erase) => {
+                const mCtx = maskOff.getContext("2d");
+                // Convert display coords → full-res mask coords
+                const mx = canvasX * scaleX;
+                const my = canvasY * scaleY;
+                const brushR = parseInt(sizeSlider.value) * scaleX; // scale brush to image res
+
+                mCtx.beginPath();
+                mCtx.arc(mx, my, brushR, 0, Math.PI * 2);
+                if (erase) {
+                    mCtx.fillStyle = "#000";
+                } else {
+                    mCtx.fillStyle = "#fff";
+                }
+                mCtx.fill();
+                maskDirty = true;
+                _greenOverlayDirty = true;
+            };
+
+            const paintLine = (x1, y1, x2, y2, erase) => {
+                // Interpolate between last and current for smooth strokes
+                const dist = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+                const steps = Math.max(1, Math.floor(dist / 3));
+                for (let i = 0; i <= steps; i++) {
+                    const t = i / steps;
+                    const x = x1 + (x2 - x1) * t;
+                    const y = y1 + (y2 - y1) * t;
+                    paintOnMask(x, y, erase);
+                }
+            };
+
+            // ── Mouse events ──
+            const getCanvasPos = (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const cssScaleX = canvas.width / rect.width;
+                const cssScaleY = canvas.height / rect.height;
+                return {
+                    x: (e.clientX - rect.left) * cssScaleX,
+                    y: (e.clientY - rect.top) * cssScaleY,
+                };
+            };
 
             // Click handling — find if near existing point (within 20px radius)
             const HIT_RADIUS = 20;
@@ -3019,21 +3181,75 @@ app.registerExtension({
                 return -1;
             };
 
-            canvas.addEventListener("click", (e) => {
-                const rect = canvas.getBoundingClientRect();
-                const cssScaleX = canvas.width / rect.width;
-                const cssScaleY = canvas.height / rect.height;
-                const mx = (e.clientX - rect.left) * cssScaleX;
-                const my = (e.clientY - rect.top) * cssScaleY;
+            canvas.addEventListener("mousedown", (e) => {
+                if (mode === "draw") {
+                    e.preventDefault();
+                    isDrawing = true;
+                    drawButton = e.button;
+                    const pos = getCanvasPos(e);
+                    lastDrawX = pos.x;
+                    lastDrawY = pos.y;
+                    paintOnMask(pos.x, pos.y, e.button === 2);
+                    redraw();
 
-                const hitIdx = findNearPoint(mx, my);
+                    // Draw brush cursor
+                    const ctx = canvas.getContext("2d");
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, parseInt(sizeSlider.value), 0, Math.PI * 2);
+                    ctx.strokeStyle = e.button === 2 ? "rgba(255,80,80,0.7)" : "rgba(80,255,120,0.7)";
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+            });
+
+            canvas.addEventListener("mousemove", (e) => {
+                if (mode === "draw") {
+                    const pos = getCanvasPos(e);
+
+                    if (isDrawing) {
+                        paintLine(lastDrawX, lastDrawY, pos.x, pos.y, drawButton === 2);
+                        lastDrawX = pos.x;
+                        lastDrawY = pos.y;
+                        redraw();
+                    }
+
+                    // Always show brush cursor
+                    const ctx = canvas.getContext("2d");
+                    const brushR = parseInt(sizeSlider.value);
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, brushR, 0, Math.PI * 2);
+                    ctx.strokeStyle = isDrawing
+                        ? (drawButton === 2 ? "rgba(255,80,80,0.7)" : "rgba(80,255,120,0.7)")
+                        : "rgba(255,255,255,0.5)";
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+            });
+
+            const stopDrawing = () => {
+                isDrawing = false;
+                drawButton = -1;
+                lastDrawX = -1;
+                lastDrawY = -1;
+            };
+
+            canvas.addEventListener("mouseup", stopDrawing);
+            canvas.addEventListener("mouseleave", () => {
+                stopDrawing();
+                if (mode === "draw") redraw(); // clear cursor
+            });
+
+            // Points mode click
+            canvas.addEventListener("click", (e) => {
+                if (mode !== "points") return;
+                const pos = getCanvasPos(e);
+
+                const hitIdx = findNearPoint(pos.x, pos.y);
                 if (hitIdx >= 0) {
-                    // Remove existing point
                     pts.splice(hitIdx, 1);
                     lbls.splice(hitIdx, 1);
                 } else {
-                    // Add positive point
-                    pts.push([Math.round(mx * scaleX), Math.round(my * scaleY)]);
+                    pts.push([Math.round(pos.x * scaleX), Math.round(pos.y * scaleY)]);
                     lbls.push(1);
                 }
                 redraw();
@@ -3042,39 +3258,42 @@ app.registerExtension({
             canvas.addEventListener("contextmenu", (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                const rect = canvas.getBoundingClientRect();
-                const cssScaleX = canvas.width / rect.width;
-                const cssScaleY = canvas.height / rect.height;
-                const mx = (e.clientX - rect.left) * cssScaleX;
-                const my = (e.clientY - rect.top) * cssScaleY;
+                if (mode !== "points") return;
+                const pos = getCanvasPos(e);
 
-                const hitIdx = findNearPoint(mx, my);
+                const hitIdx = findNearPoint(pos.x, pos.y);
                 if (hitIdx >= 0) {
                     pts.splice(hitIdx, 1);
                     lbls.splice(hitIdx, 1);
                 } else {
-                    // Add negative point
-                    pts.push([Math.round(mx * scaleX), Math.round(my * scaleY)]);
+                    pts.push([Math.round(pos.x * scaleX), Math.round(pos.y * scaleY)]);
                     lbls.push(0);
                 }
                 redraw();
             });
 
-            // Click outside image/buttons to close (same as Cancel)
+            // Click outside image/buttons to close
             overlay.addEventListener("click", (e) => {
                 if (e.target === overlay) {
                     document.removeEventListener("keydown", keyHandler);
                     overlay.remove();
                 }
             });
-
-            // Prevent background interactions
             overlay.addEventListener("contextmenu", e => e.preventDefault());
 
-            // Buttons
+            // ── Buttons ──
             clearBtn.onclick = () => {
-                pts.length = 0;
-                lbls.length = 0;
+                if (mode === "points") {
+                    pts.length = 0;
+                    lbls.length = 0;
+                } else {
+                    // Clear mask
+                    const mCtx = maskOff.getContext("2d");
+                    mCtx.fillStyle = "#000";
+                    mCtx.fillRect(0, 0, maskOff.width, maskOff.height);
+                    maskDirty = false;
+                    _greenOverlayDirty = true;
+                }
                 redraw();
             };
             cancelBtn.onclick = () => {
@@ -3083,27 +3302,38 @@ app.registerExtension({
             };
 
             applyBtn.onclick = () => {
-                const data = JSON.stringify({
-                    points: pts,
-                    labels: lbls,
-                    image_width: imgW,
-                    image_height: imgH,
-                });
+                let data;
+                if (mode === "draw" && maskDirty) {
+                    // Export mask as base64 PNG
+                    const maskDataUrl = maskOff.toDataURL("image/png");
+                    const b64 = maskDataUrl.split(",")[1];
+                    data = JSON.stringify({
+                        mode: "draw",
+                        mask_data: b64,
+                        image_width: imgW,
+                        image_height: imgH,
+                    });
+                } else {
+                    data = JSON.stringify({
+                        mode: "points",
+                        points: pts,
+                        labels: lbls,
+                        image_width: imgW,
+                        image_height: imgH,
+                    });
+                }
                 // Store in hidden widget
                 if (mpWidget) {
                     mpWidget.value = data;
                 } else {
-                    // Create widget if it doesn't exist
                     const w = node.addWidget("text", "mask_points_data", data,
                         () => { }, { serialize: true });
                     w.type = "text";
-                    // Hide it
                     if (w.computeSize) w.computeSize = () => [0, -4];
                 }
                 node.setDirtyCanvas(true, true);
                 document.removeEventListener("keydown", keyHandler);
                 overlay.remove();
-                // Flash green
                 flashNode(node, "#2a7a2a");
             };
 

@@ -420,3 +420,186 @@ class TestResolveOverlayInputs:
             pipeline, "concat", [], 1, {},
         )
         assert result == set()
+
+
+class TestFluxKleinPlusVideoFilters:
+    """Regression test: FLUX Klein fc + video filters must chain correctly.
+
+    When auto_mask (effect=edit/remove) produces a movie= based fc and other
+    skills produce video filters, the filters must chain from the movie output
+    — NOT create a disconnected [0:v] subgraph.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _setup(self):
+        self.composer = SkillComposer()
+
+    def _cmd(self, steps, metadata=None):
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+        )
+        if metadata:
+            pipeline.metadata.update(metadata)
+        for name, params in steps:
+            pipeline.add_step(name, params)
+        cmd = self.composer.compose(pipeline)
+        return cmd.to_string()
+
+    def test_auto_mask_edit_plus_contrast_vignette(self):
+        """FLUX Klein edit + contrast + vignette should chain, not disconnect."""
+        import os
+        import tempfile
+
+        # Create a dummy "edited" file for the cached path
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            f.write(b"\x00")  # dummy content
+            edited_path = f.name
+
+        try:
+            cmd = self._cmd(
+                [
+                    ("auto_mask", {
+                        "target": "the person",
+                        "effect": "edit",
+                        "edit_prompt": "make it cinematic",
+                        "_metadata_ref": {
+                            "_mask_video_path": edited_path,
+                            "_flux_klein_outputs": {"make it cinematic": edited_path},
+                        },
+                    }),
+                    ("contrast", {"value": 1.1}),
+                    ("vignette", {"intensity": 0.3}),
+                ],
+                metadata={
+                    "_mask_video_path": edited_path,
+                    "_flux_klein_outputs": {"make it cinematic": edited_path},
+                },
+            )
+
+            # The filter_complex should chain from [_vout], not have
+            # a disconnected [0:v] subgraph
+            assert "filter_complex" in cmd or "filter-complex" in cmd
+            # Video filters should chain from the movie output, not [0:v]
+            assert "[0:v]" not in cmd, (
+                "Video filters should chain from movie output [_vout], "
+                "not create a disconnected [0:v] subgraph"
+            )
+            # The movie source and video filters should both be present
+            assert "movie=" in cmd
+            assert "eq=contrast" in cmd
+            assert "vignette=" in cmd
+        finally:
+            os.unlink(edited_path)
+
+    def test_vout_chains_correctly(self):
+        """A single fc with [_vout] + video filters: filters chain from [_vout]."""
+        fc, _label, opts = SkillComposer._fold_audio_into_fc(
+            "movie=/path/edited.mp4[inp];[inp]format=yuv420p[_vout]",
+            [],
+            [],
+            None,
+        )
+        # Should have -map [_vout] and audio passthrough
+        assert "-map" in opts
+        assert "[_vout]" in opts
+        assert "0:a?" in opts
+
+    def test_duplicate_auto_mask_deduplicated(self):
+        """When LLM generates auto_mask twice, duplicate fc blocks should be merged."""
+        import os
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            f.write(b"\x00")
+            edited_path = f.name
+
+        try:
+            cmd = self._cmd(
+                [
+                    ("auto_mask", {
+                        "target": "the person",
+                        "effect": "edit",
+                        "edit_prompt": "make it thermal",
+                        "_metadata_ref": {
+                            "_mask_video_path": edited_path,
+                            "_flux_klein_outputs": {"make it thermal": edited_path},
+                        },
+                    }),
+                    # LLM generates auto_mask again (duplicate)
+                    ("auto_mask", {
+                        "target": "the person",
+                        "effect": "edit",
+                        "edit_prompt": "make it thermal",
+                        "_metadata_ref": {
+                            "_mask_video_path": edited_path,
+                            "_flux_klein_outputs": {"make it thermal": edited_path},
+                        },
+                    }),
+                    ("contrast", {"value": 1.1}),
+                ],
+                metadata={
+                    "_mask_video_path": edited_path,
+                    "_flux_klein_outputs": {"make it thermal": edited_path},
+                },
+            )
+
+            # movie= should appear exactly once (deduplication)
+            assert cmd.count("movie=") == 1, (
+                f"Duplicate movie= blocks should be deduplicated, "
+                f"found {cmd.count('movie=')} occurrences"
+            )
+            assert "[0:v]" not in cmd
+        finally:
+            os.unlink(edited_path)
+
+
+    def test_auto_mask_edit_plus_mask_overlay(self):
+        """Auto_mask edit (movie= with [_vout]) combined with mask overlay fc.
+
+        Regression test: chaining a fc block that already has [_vout]
+        with another fc block must replace [_vout] with [_pipe_0],
+        NOT append [_pipe_0] (which creates an invalid double-label).
+        """
+        import os
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            f.write(b"\x00")
+            edited_path = f.name
+
+        try:
+            # Simulate: auto_mask edit + thermal overlay on the masked region
+            cmd = self._cmd(
+                [
+                    ("auto_mask", {
+                        "target": "the person",
+                        "effect": "edit",
+                        "edit_prompt": "chrome skin",
+                        "_metadata_ref": {
+                            "_mask_video_path": edited_path,
+                            "_flux_klein_outputs": {"chrome skin": edited_path},
+                        },
+                    }),
+                    ("false_color", {
+                        "preset": "thermal"
+                    }),
+                ],
+                metadata={
+                    "_mask_video_path": edited_path,
+                    "_flux_klein_outputs": {"chrome skin": edited_path},
+                },
+            )
+
+            # Must NOT have adjacent labels like [_vout][_pipe_0]
+            import re
+            for match_pos in [m.start() for m in re.finditer(r'\]\[', cmd)]:
+                # Allow [inp] or [mask] references, but not two output
+                # labels on the same filter e.g. [_vout][_pipe_0]
+                context = cmd[max(0, match_pos - 20):match_pos + 20]
+                assert not (
+                    "[_vout][_pipe_" in context
+                ), f"Double output label found: {context}"
+        finally:
+            os.unlink(edited_path)
+

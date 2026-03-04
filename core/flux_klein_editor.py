@@ -17,14 +17,18 @@ License: Apache 2.0 (compatible with GPL-3.0)
 
 from __future__ import annotations
 
+import gc
 import logging
 import os
-
-from .sanitize import validate_video_path, validate_output_file_path
 import subprocess
 import tempfile
 from pathlib import Path
 from typing import Optional
+
+try:
+    from .sanitize import validate_video_path, validate_output_file_path
+except ImportError:
+    from core.sanitize import validate_video_path, validate_output_file_path  # type: ignore
 
 log = logging.getLogger("ffmpega")
 
@@ -141,21 +145,39 @@ def _download_model(model_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def _free_vram() -> None:
-    """Free ComfyUI and SAM3 VRAM before loading FLUX Klein."""
+    """Free all GPU VRAM before loading FLUX Klein.
+
+    Follows WanVideoWrapper's pattern:
+    1. Tell ComfyUI to unload ALL cached models from GPU
+    2. Free SAM3 models if loaded
+    3. Empty CUDA cache
+    4. Run garbage collection to release Python-side references
+    """
     import torch
 
-    from .platform import free_comfyui_vram
-    free_comfyui_vram()
-
-    # Also free SAM3 if loaded
+    # 1. Unload ComfyUI models (the main VRAM consumer)
     try:
-        from . import sam3_masker
+        import comfy.model_management as mm  # type: ignore[import-not-found]
+        mm.unload_all_models()
+        mm.soft_empty_cache()
+        log.debug("Freed ComfyUI GPU VRAM via model_management")
+    except (ImportError, AttributeError):
+        pass
+
+    # 2. Free SAM3 if loaded
+    try:
+        try:
+            from . import sam3_masker
+        except ImportError:
+            from core import sam3_masker  # type: ignore
         sam3_masker.cleanup()
     except Exception:
         pass
 
+    # 3. Empty CUDA cache + gc.collect
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+    gc.collect()
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +236,11 @@ def load_pipeline():
 
 
 def cleanup() -> None:
-    """Free GPU memory and clear cached pipeline."""
+    """Free GPU memory and clear cached pipeline.
+
+    Follows WanVideoWrapper's cleanup pattern: release pipeline,
+    empty CUDA cache, run gc, and tell ComfyUI to reclaim memory.
+    """
     global _pipeline
     _pipeline = None
     try:
@@ -222,6 +248,12 @@ def cleanup() -> None:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
     except ImportError:
+        pass
+    gc.collect()
+    try:
+        import comfy.model_management as mm  # type: ignore[import-not-found]
+        mm.soft_empty_cache()
+    except (ImportError, AttributeError):
         pass
     log.info("FLUX Klein pipeline unloaded")
 
@@ -354,6 +386,59 @@ def _temporal_smooth(
         m = mask_stack[i][:, :, None]
         blended = stack[i] * (1 - m) + smoothed[i] * m
         result.append(np.clip(blended, 0, 255).astype(np.uint8))
+
+    return result
+
+
+def _temporal_smooth_adaptive(
+    frames: list,
+    masks: list,
+    threshold: float = 30.0,
+    window: int = 5,
+) -> list:
+    """Adaptive temporal smoothing — only correct outlier frames.
+
+    Compares each frame to its temporal neighbors in the masked region.
+    If the per-pixel difference exceeds *threshold*, blend with neighbors.
+    Otherwise, keep the original frame untouched.
+
+    This preserves sharp per-frame detail while fixing occasional
+    flickering artifacts.
+    """
+    import numpy as np
+
+    n = len(frames)
+    if n <= 1:
+        return frames
+
+    stack = np.stack(frames).astype(np.float32)
+    mask_stack = np.stack(masks)
+    half_w = window // 2
+
+    result = []
+    for i in range(n):
+        m = mask_stack[i]
+        if m.max() < 0.01:
+            result.append(frames[i])
+            continue
+
+        # Compute mean of neighbors in the window
+        lo = max(0, i - half_w)
+        hi = min(n, i + half_w + 1)
+        neighbors = stack[lo:hi]
+        neighbor_mean = neighbors.mean(axis=0)
+
+        # Per-pixel diff in masked region
+        diff = np.abs(stack[i] - neighbor_mean)
+        masked_diff = diff * m[:, :, None]
+        avg_diff = masked_diff.sum() / max(m.sum() * 3, 1)
+
+        if avg_diff > threshold:
+            # This frame is an outlier — blend with neighbors
+            blended = stack[i] * (1 - m[:, :, None]) + neighbor_mean * m[:, :, None]
+            result.append(np.clip(blended, 0, 255).astype(np.uint8))
+        else:
+            result.append(frames[i])
 
     return result
 
@@ -502,6 +587,7 @@ def remove_object(
     video_path: str,
     mask_video_path: str,
     output_path: Optional[str] = None,
+    smoothing: str = "none",
 ) -> str:
     """Remove an object from a video using FLUX Klein per-frame inpainting.
 
@@ -526,6 +612,7 @@ def remove_object(
         prompt=_REMOVAL_PROMPT,
         output_path=output_path,
         mode="remove",
+        smoothing=smoothing,
     )
 
 
@@ -535,6 +622,7 @@ def edit_video(
     prompt: str,
     output_path: Optional[str] = None,
     mode: str = "edit",
+    smoothing: str = "none",
 ) -> str:
     """Edit a video using FLUX Klein per-frame image editing.
 
@@ -548,6 +636,12 @@ def edit_video(
         prompt: text prompt describing the desired edit
         output_path: output path (auto-generated if None)
         mode: "remove" or "edit"
+        smoothing: temporal smoothing mode:
+            - "none": no smoothing (best for high-quality per-frame edits)
+            - "gaussian": full Gaussian blur across time (reduces flicker,
+              but can muddy motion)
+            - "adaptive": only smooth frames that deviate significantly
+              from neighbors (preserves good frames, fixes outliers)
 
     Returns:
         Path to the edited video.
@@ -591,6 +685,8 @@ def edit_video(
         composited_np = []
         mask_np_list = []
 
+        import torch
+
         for i in range(total_frames):
             if i % 10 == 0:
                 log.info("  Frame %d/%d", i + 1, total_frames)
@@ -607,11 +703,13 @@ def edit_video(
                 )
                 continue
 
-            # Edit or remove the frame
-            if mode == "remove":
-                edited = _remove_frame(pipe, frames[i], masks[i], seed=base_seed)
-            else:
-                edited = _edit_frame(pipe, frames[i], prompt, seed=base_seed)
+            # Edit or remove the frame (no_grad prevents autograd from
+            # accumulating graph memory across frames)
+            with torch.no_grad():
+                if mode == "remove":
+                    edited = _remove_frame(pipe, frames[i], masks[i], seed=base_seed)
+                else:
+                    edited = _edit_frame(pipe, frames[i], prompt, seed=base_seed)
 
             # Composite
             result = _composite_frame(frames[i], edited, masks[i])
@@ -624,9 +722,22 @@ def edit_video(
             ).astype(np.float32) / 255.0
             mask_np_list.append(mask_np)
 
-        # Temporal smoothing to reduce flicker
-        log.info("Applying temporal smoothing...")
-        smoothed = _temporal_smooth(composited_np, mask_np_list, window=5)
+            # Periodic VRAM cleanup to prevent fragmentation over long videos
+            if i % 5 == 0 and torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+        # Temporal smoothing
+        if smoothing == "gaussian":
+            log.info("Applying temporal Gaussian smoothing...")
+            smoothed = _temporal_smooth(composited_np, mask_np_list, window=5)
+        elif smoothing == "adaptive":
+            log.info("Applying adaptive temporal smoothing...")
+            smoothed = _temporal_smooth_adaptive(
+                composited_np, mask_np_list, threshold=30.0, window=5,
+            )
+        else:
+            log.info("Temporal smoothing disabled")
+            smoothed = composited_np
 
         # Convert back to PIL
         result_frames = [Image.fromarray(arr) for arr in smoothed]
@@ -650,193 +761,3 @@ def edit_video(
     log.info("FLUX Klein %s complete: %s", mode, output_path)
     return output_path
 
-
-# ---------------------------------------------------------------------------
-#  Subprocess wrappers (prevent CUDA memory leaks)
-# ---------------------------------------------------------------------------
-
-def _cleanup_dir(d: str) -> None:
-    """Best-effort directory cleanup."""
-    import shutil
-    try:
-        shutil.rmtree(d)
-    except OSError:
-        pass
-
-
-def edit_video_subprocess(
-    video_path: str,
-    mask_video_path: str,
-    prompt: str,
-    output_path: Optional[str] = None,
-    mode: str = "edit",
-) -> str:
-    """Run edit_video() in a subprocess to avoid CUDA memory leaks.
-
-    Same interface as edit_video(). All args are JSON-serialized to
-    the child process via stdin, and the video path is returned via stdout.
-    Falls back to in-process edit_video() if the subprocess fails.
-    """
-    video_path = validate_video_path(video_path)
-    mask_video_path = validate_video_path(mask_video_path)
-    if output_path is not None:
-        output_path = validate_output_file_path(output_path)
-
-    import json
-    import sys
-    import threading
-
-    if output_path is None:
-        output_path = os.path.join(
-            tempfile.mkdtemp(prefix="fk_result_"), "edited.mp4"
-        )
-
-    args_dict = {
-        "video_path": video_path,
-        "mask_video_path": mask_video_path,
-        "prompt": prompt,
-        "output_path": output_path,
-        "mode": mode,
-    }
-
-    child_script = """
-import sys, json, importlib.util
-args = json.loads(sys.stdin.read())
-mod_path = args.pop("_module_path")
-spec = importlib.util.spec_from_file_location("flux_klein_editor", mod_path)
-mod = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(mod)
-result = mod.edit_video(**args)
-print("RESULT:" + result, flush=True)
-"""
-
-    try:
-        _this_dir = os.path.dirname(os.path.abspath(__file__))
-        _project_root = os.path.dirname(_this_dir)
-        _module_path = os.path.abspath(__file__)
-
-        args_dict["_module_path"] = _module_path
-
-        env = os.environ.copy()
-        existing_pp = env.get("PYTHONPATH", "")
-        env["PYTHONPATH"] = _project_root + (
-            os.pathsep + existing_pp if existing_pp else ""
-        )
-        env["FFMPEGA_FLUX_KLEIN_MODEL_DIR"] = str(_get_model_dir())
-        env["PYTHONUNBUFFERED"] = "1"
-
-        log.info(
-            "FLUX Klein subprocess: starting (mode=%s, video=%s)",
-            mode, video_path,
-        )
-
-        proc = subprocess.Popen(
-            [sys.executable, "-u", "-c", child_script],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            cwd=_project_root,
-            env=env,
-        )
-
-        # Send args via stdin
-        assert proc.stdin is not None
-        proc.stdin.write(json.dumps(args_dict))
-        proc.stdin.close()
-
-        # Stream stderr in real-time
-        def _stream_stderr():
-            try:
-                assert proc.stderr is not None
-                for line in proc.stderr:
-                    line = line.rstrip()
-                    if not line:
-                        continue
-                    if "pkg_resources" in line or "slated for removal" in line:
-                        continue
-                    log.info("[FLUX Klein] %s", line)
-            except ValueError:
-                pass
-            finally:
-                try:
-                    if proc.stderr is not None:
-                        proc.stderr.close()
-                except OSError:
-                    pass
-
-        stderr_thread = threading.Thread(target=_stream_stderr, daemon=True)
-        stderr_thread.start()
-
-        # Wait for process (timeout: 60 min for long videos with many frames)
-        try:
-            proc.wait(timeout=3600)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-            raise RuntimeError(
-                "FLUX Klein subprocess timed out after 60 minutes"
-            )
-
-        try:
-            assert proc.stdout is not None
-            stdout_data = proc.stdout.read()
-        finally:
-            if proc.stdout is not None:
-                proc.stdout.close()
-
-        stderr_thread.join(timeout=5)
-
-        if proc.returncode != 0:
-            raise RuntimeError(
-                f"FLUX Klein subprocess exited with code {proc.returncode}"
-            )
-
-        # Extract result path
-        video_result = None
-        for line in stdout_data.strip().split("\n"):
-            if line.startswith("RESULT:"):
-                video_result = line[7:].strip()
-                break
-
-        if not video_result:
-            raise RuntimeError(
-                "FLUX Klein subprocess did not return a result path"
-            )
-        if not os.path.isfile(video_result):
-            raise RuntimeError(
-                f"FLUX Klein subprocess returned non-existent: {video_result}"
-            )
-
-        log.info("FLUX Klein subprocess: completed — %s", video_result)
-        return video_result
-
-    except Exception as e:
-        log.error("FLUX Klein subprocess failed: %s", e)
-        log.info("FLUX Klein: falling back to in-process editing")
-        _free_vram()
-        return edit_video(
-            video_path=video_path,
-            mask_video_path=mask_video_path,
-            prompt=prompt,
-            output_path=output_path,
-            mode=mode,
-        )
-
-
-def remove_object_subprocess(
-    video_path: str,
-    mask_video_path: str,
-    output_path: Optional[str] = None,
-) -> str:
-    """Remove an object via subprocess-isolated FLUX Klein.
-
-    Convenience wrapper around edit_video_subprocess with mode="remove".
-    """
-    return edit_video_subprocess(
-        video_path=video_path,
-        mask_video_path=mask_video_path,
-        prompt=_REMOVAL_PROMPT,
-        output_path=output_path,
-        mode="remove",
-    )
