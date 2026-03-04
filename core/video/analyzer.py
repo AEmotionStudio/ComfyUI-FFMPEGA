@@ -2,10 +2,11 @@
 
 import json
 import subprocess
-import shutil
 from pathlib import Path
 from typing import Optional
 from pydantic import BaseModel
+
+from core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin
 
 
 class StreamInfo(BaseModel):
@@ -111,7 +112,7 @@ class VideoAnalyzer:
         Args:
             ffprobe_path: Path to ffprobe executable. If None, will search PATH.
         """
-        self.ffprobe_path = ffprobe_path or shutil.which("ffprobe")
+        self.ffprobe_path = ffprobe_path or get_ffprobe_bin()
         if not self.ffprobe_path:
             raise RuntimeError("ffprobe not found in PATH")
 
@@ -243,7 +244,7 @@ class VideoAnalyzer:
         Returns:
             PNG image data as bytes.
         """
-        ffmpeg_path = shutil.which("ffmpeg")
+        ffmpeg_path = get_ffmpeg_bin()
         if not ffmpeg_path:
             raise RuntimeError("ffmpeg not found in PATH")
 

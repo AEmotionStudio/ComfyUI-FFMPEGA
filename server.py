@@ -9,9 +9,9 @@ at arbitrary filesystem paths).
 import asyncio
 import logging
 import os
-import shutil
 
 import server
+from .core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin
 
 log = logging.getLogger("ffmpega")
 web = server.web
@@ -83,7 +83,7 @@ async def preview_video(request):
     if not filepath:
         return web.Response(status=404, text="File not found")
 
-    ffmpeg_bin = shutil.which("ffmpeg")
+    ffmpeg_bin = get_ffmpeg_bin()
     if not ffmpeg_bin:
         return web.Response(status=500, text="ffmpeg not found in PATH")
 
@@ -189,7 +189,7 @@ async def video_info(request):
     if not filepath:
         return web.json_response({}, status=404)
 
-    ffprobe_bin = shutil.which("ffprobe")
+    ffprobe_bin = get_ffprobe_bin()
     if not ffprobe_bin:
         return web.json_response({}, status=500)
 
