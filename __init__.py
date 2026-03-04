@@ -39,15 +39,15 @@ __all__ = [
 
 def check_dependencies():
     """Check if required dependencies are available."""
-    from .core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin
+    import shutil
 
     issues = []
 
     # Check FFMPEG
-    if not get_ffmpeg_bin():
+    if not shutil.which("ffmpeg"):
         issues.append("FFMPEG not found in PATH. Please install FFMPEG.")
 
-    if not get_ffprobe_bin():
+    if not shutil.which("ffprobe"):
         issues.append("FFprobe not found in PATH. Please install FFMPEG.")
 
     return issues
