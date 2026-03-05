@@ -538,6 +538,8 @@ def load_models() -> dict:
     # ── Manually assemble FeaturesUtils ──────────────────────────
     # Bypass the upstream constructor which tries to download CLIP from HF
     # and load synchformer/VAE from .pth files. We set sub-modules directly.
+    # Tested against mmaudio v0.3.x (hkchengrex/MMAudio@main 2025-03).
+    # If upstream renames attributes, load_models tests will catch it.
     feature_utils = FeaturesUtils.__new__(FeaturesUtils)
     nn.Module.__init__(feature_utils)
 
@@ -887,21 +889,27 @@ def _generate_chunked(
                     chunk_video_path = None
 
             try:
-                audio_chunk = _generate_chunk(
-                    video_path=chunk_video_path,
-                    prompt=prompt,
-                    negative_prompt=negative_prompt,
-                    duration=chunk_dur,
-                    net=net,
-                    feature_utils=feature_utils,
-                    fm=fm,
-                    rng=rng,
-                    cfg_strength=cfg_strength,
-                    seq_cfg=seq_cfg,
-                    load_video_fn=load_video_fn,
-                    generate_fn=generate_fn,
-                    start_sec=offset,
-                )
+                try:
+                    audio_chunk = _generate_chunk(
+                        video_path=chunk_video_path,
+                        prompt=prompt,
+                        negative_prompt=negative_prompt,
+                        duration=chunk_dur,
+                        net=net,
+                        feature_utils=feature_utils,
+                        fm=fm,
+                        rng=rng,
+                        cfg_strength=cfg_strength,
+                        seq_cfg=seq_cfg,
+                        load_video_fn=load_video_fn,
+                        generate_fn=generate_fn,
+                        start_sec=offset,
+                    )
+                except Exception as chunk_err:
+                    raise RuntimeError(
+                        f"MMAudio: failed to process chunk "
+                        f"{offset:.1f}–{offset + chunk_dur:.1f}s: {chunk_err}"
+                    ) from chunk_err
             finally:
                 # Clean up temp segment file
                 if segment_tmp and os.path.exists(segment_tmp):
