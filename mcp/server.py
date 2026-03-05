@@ -301,6 +301,22 @@ class FFMPEGAMCPServer:
         """
         return list(self._resources.values())
 
+    # Tool name → handler method name
+    _DISPATCH: dict[str, str] = {
+        "analyze_video": "_call_analyze_video",
+        "list_skills": "_call_list_skills",
+        "search_skills": "_call_search_skills",
+        "get_skill_details": "_call_get_skill_details",
+        "validate_skill_params": "_call_validate_skill_params",
+        "build_pipeline": "_call_build_pipeline",
+        "execute_pipeline": "_call_execute_pipeline",
+        "extract_frames": "_call_extract_frames",
+        "cleanup_vision_frames": "_call_cleanup_vision_frames",
+        "analyze_colors": "_call_analyze_colors",
+        "analyze_audio": "_call_analyze_audio",
+        "list_luts": "_call_list_luts",
+    }
+
     async def call_tool(self, name: str, arguments: dict) -> dict:
         """Call an MCP tool.
 
@@ -311,32 +327,10 @@ class FFMPEGAMCPServer:
         Returns:
             Tool result.
         """
-        if name == "analyze_video":
-            return await self._call_analyze_video(arguments)
-        elif name == "list_skills":
-            return await self._call_list_skills(arguments)
-        elif name == "search_skills":
-            return await self._call_search_skills(arguments)
-        elif name == "get_skill_details":
-            return await self._call_get_skill_details(arguments)
-        elif name == "validate_skill_params":
-            return await self._call_validate_skill_params(arguments)
-        elif name == "build_pipeline":
-            return await self._call_build_pipeline(arguments)
-        elif name == "execute_pipeline":
-            return await self._call_execute_pipeline(arguments)
-        elif name == "extract_frames":
-            return await self._call_extract_frames(arguments)
-        elif name == "cleanup_vision_frames":
-            return await self._call_cleanup_vision_frames(arguments)
-        elif name == "analyze_colors":
-            return await self._call_analyze_colors(arguments)
-        elif name == "analyze_audio":
-            return await self._call_analyze_audio(arguments)
-        elif name == "list_luts":
-            return await self._call_list_luts(arguments)
-        else:
+        handler_name = self._DISPATCH.get(name)
+        if not handler_name:
             return {"error": f"Unknown tool: {name}"}
+        return await getattr(self, handler_name)(arguments)
 
     async def _call_analyze_video(self, arguments: dict) -> dict:
         """Handle analyze_video tool call."""
