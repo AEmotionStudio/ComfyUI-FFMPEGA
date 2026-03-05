@@ -16,12 +16,12 @@ TOOL_DEFINITIONS = [
         "function": {
             "name": "list_skills",
             "description": (
-                "List available video editing skills. "
-                "Returns skill names, descriptions, parameters, and examples. "
-                "Use this to discover what skills exist. "
+                "List available video editing skills (compact index: names, "
+                "categories, descriptions, and tags only). Use search_skills "
+                "to find specific skills by keyword, then get_skill_details "
+                "for full parameters before building a pipeline. "
                 "Returns: {total_count: int, skills: [{name: str, category: str, "
-                "description: str, parameters: [{name, type, description, "
-                "required, default}], tags: [str], examples: [str]}], "
+                "description: str, tags: [str]}], "
                 "by_category: {category: [skills]}}"
             ),
             "parameters": {
@@ -121,6 +121,8 @@ TOOL_DEFINITIONS = [
             "description": (
                 "Analyze a video file and return its metadata: resolution, "
                 "duration, codec, FPS, audio info, file size, etc. "
+                "Use detail='summary' for a compact probe (7 fields) or "
+                "detail='full' for everything including analysis_text. "
                 "Returns: {file_path: str, file_size_mb: float, "
                 "format: str, duration_seconds: float, "
                 "video: {width: int, height: int, codec: str, fps: float, "
@@ -134,12 +136,22 @@ TOOL_DEFINITIONS = [
                     "video_path": {
                         "type": "string",
                         "description": "Absolute path to the video file",
-                    }
+                    },
+                    "detail": {
+                        "type": "string",
+                        "description": (
+                            "Level of detail: 'summary' for compact output "
+                            "(resolution, duration, fps, codec, has_audio) "
+                            "or 'full' for everything (default: 'full')"
+                        ),
+                        "enum": ["summary", "full"],
+                    },
                 },
                 "required": ["video_path"],
             },
             "input_examples": [
                 {"video_path": "/tmp/input.mp4"},
+                {"video_path": "/tmp/input.mp4", "detail": "summary"},
             ],
         },
     },

@@ -60,7 +60,7 @@ def _get_model_dir() -> str:
     Checks (in order):
     1. FFMPEGA_MMAUDIO_MODEL_DIR env var (set by subprocess wrapper)
     2. ComfyUI/models/mmaudio/ (standard ComfyUI convention)
-    3. Extension's own models/mmaudio/ (fallback for testing)
+    3. ComfyUI/models/mmaudio/ (same path via standalone fallback)
     """
     env_dir = os.environ.get("FFMPEGA_MMAUDIO_MODEL_DIR")
     if env_dir and os.path.isdir(env_dir):

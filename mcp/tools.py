@@ -17,11 +17,14 @@ except ImportError:
     from core.sanitize import validate_video_path, validate_output_file_path  # type: ignore[no-redef]
 
 
-def analyze_video(video_path: str) -> dict:
+def analyze_video(video_path: str, detail: str = "full") -> dict:
     """Analyze input video properties and metadata.
 
     Args:
         video_path: Path to the video file.
+        detail: Level of detail — ``"summary"`` for compact output
+                (resolution, duration, fps, codec, has_audio) or
+                ``"full"`` for everything including analysis_text.
 
     Returns:
         Dictionary with video metadata.
@@ -33,6 +36,18 @@ def analyze_video(video_path: str) -> dict:
 
     analyzer = VideoAnalyzer()
     metadata = analyzer.analyze(video_path)
+
+    if detail == "summary":
+        v = metadata.primary_video
+        return {
+            "file_path": metadata.file_path,
+            "duration_seconds": round(metadata.duration, 2),
+            "width": v.width if v else None,
+            "height": v.height if v else None,
+            "fps": round(v.frame_rate, 2) if v and v.frame_rate else None,
+            "codec": v.codec_name if v else None,
+            "has_audio": metadata.primary_audio is not None,
+        }
 
     return {
         "file_path": metadata.file_path,
@@ -81,18 +96,7 @@ def list_skills(category: Optional[str] = None) -> dict:
             "name": skill.name,
             "category": skill.category.value,
             "description": skill.description,
-            "parameters": [
-                {
-                    "name": p.name,
-                    "type": p.type.value,
-                    "description": p.description,
-                    "required": p.required,
-                    "default": p.default,
-                }
-                for p in skill.parameters
-            ],
             "tags": skill.tags,
-            "examples": skill.examples,
         }
         skill_list.append(skill_info)
 

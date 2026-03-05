@@ -73,6 +73,9 @@ tmp/
 temp/
 _vision_frames/
 
+# Model weights — must live in ComfyUI/models/, never in extension folder
+models/
+
 # Output files (generated during testing/processing)
 output/
 *.output.mp4
@@ -157,9 +160,6 @@ uv.lock
 
 # MiniMax-Remover (local-only, not pushed to public — unlicensed code)
 core/minimax_remover.py
-
-# Model weights (use ComfyUI/models/ instead)
-models/
 
 # Advertisements
 advert/
