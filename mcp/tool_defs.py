@@ -16,12 +16,12 @@ TOOL_DEFINITIONS = [
         "function": {
             "name": "list_skills",
             "description": (
-                "List available video editing skills. "
-                "Returns skill names, descriptions, parameters, and examples. "
-                "Use this to discover what skills exist. "
+                "List available video editing skills (compact index: names, "
+                "categories, descriptions, and tags only). Use search_skills "
+                "to find specific skills by keyword, then get_skill_details "
+                "for full parameters before building a pipeline. "
                 "Returns: {total_count: int, skills: [{name: str, category: str, "
-                "description: str, parameters: [{name, type, description, "
-                "required, default}], tags: [str], examples: [str]}], "
+                "description: str, tags: [str]}], "
                 "by_category: {category: [skills]}}"
             ),
             "parameters": {
@@ -121,8 +121,13 @@ TOOL_DEFINITIONS = [
             "description": (
                 "Analyze a video file and return its metadata: resolution, "
                 "duration, codec, FPS, audio info, file size, etc. "
-                "Returns: {file_path: str, file_size_mb: float, "
-                "format: str, duration_seconds: float, "
+                "Use detail='summary' for a compact probe or "
+                "detail='full' for everything including analysis_text. "
+                "When detail='summary' returns: {file_path: str, "
+                "duration_seconds: float, width: int, height: int, "
+                "fps: float, codec: str, has_audio: bool}. "
+                "When detail='full' returns: {file_path: str, "
+                "file_size_mb: float, format: str, duration_seconds: float, "
                 "video: {width: int, height: int, codec: str, fps: float, "
                 "pixel_format: str}, "
                 "audio: {codec: str, sample_rate: int, channels: int}, "
@@ -134,12 +139,22 @@ TOOL_DEFINITIONS = [
                     "video_path": {
                         "type": "string",
                         "description": "Absolute path to the video file",
-                    }
+                    },
+                    "detail": {
+                        "type": "string",
+                        "description": (
+                            "Level of detail: 'summary' for compact output "
+                            "(resolution, duration, fps, codec, has_audio) "
+                            "or 'full' for everything (default: 'full')"
+                        ),
+                        "enum": ["summary", "full"],
+                    },
                 },
                 "required": ["video_path"],
             },
             "input_examples": [
                 {"video_path": "/tmp/input.mp4"},
+                {"video_path": "/tmp/input.mp4", "detail": "summary"},
             ],
         },
     },
@@ -229,6 +244,10 @@ TOOL_DEFINITIONS = [
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "video_path": {
+                        "type": "string",
+                        "description": "Absolute path to the video file",
+                    },
                     "start": {
                         "type": "number",
                         "description": (
@@ -258,11 +277,11 @@ TOOL_DEFINITIONS = [
                         ),
                     },
                 },
+                "required": ["video_path"],
             },
             "input_examples": [
-                {"max_frames": 3},
-                {"start": 0, "duration": 10, "fps": 0.5, "max_frames": 5},
-                {},
+                {"video_path": "/tmp/input.mp4", "max_frames": 3},
+                {"video_path": "/tmp/input.mp4", "start": 0, "duration": 10, "fps": 0.5, "max_frames": 5},
             ],
         },
     },
@@ -290,6 +309,10 @@ TOOL_DEFINITIONS = [
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "video_path": {
+                        "type": "string",
+                        "description": "Absolute path to the video file",
+                    },
                     "start": {
                         "type": "number",
                         "description": (
@@ -305,10 +328,11 @@ TOOL_DEFINITIONS = [
                         ),
                     },
                 },
+                "required": ["video_path"],
             },
             "input_examples": [
-                {},
-                {"start": 2, "duration": 3},
+                {"video_path": "/tmp/input.mp4"},
+                {"video_path": "/tmp/input.mp4", "start": 2, "duration": 3},
             ],
         },
     },
@@ -357,6 +381,10 @@ TOOL_DEFINITIONS = [
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "video_path": {
+                        "type": "string",
+                        "description": "Absolute path to the video/audio file",
+                    },
                     "start": {
                         "type": "number",
                         "description": (
@@ -372,13 +400,75 @@ TOOL_DEFINITIONS = [
                         ),
                     },
                 },
+                "required": ["video_path"],
             },
             "input_examples": [
-                {},
-                {"start": 0, "duration": 5},
+                {"video_path": "/tmp/input.mp4"},
+                {"video_path": "/tmp/input.mp4", "start": 0, "duration": 5},
             ],
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "validate_skill_params",
+            "description": (
+                "Validate parameters for a skill before building a pipeline. "
+                "Checks required params, types, and value ranges. "
+                "Returns: {valid: bool, errors: [str], skill: str, params: object}"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "skill_name": {
+                        "type": "string",
+                        "description": "Name of the skill to validate against",
+                    },
+                    "params": {
+                        "type": "object",
+                        "description": "Parameters to validate",
+                    },
+                },
+                "required": ["skill_name", "params"],
+            },
+            "input_examples": [
+                {"skill_name": "colorbalance", "params": {"rs": 0.1}},
+                {"skill_name": "speed", "params": {"factor": 2.0}},
+            ],
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cleanup_vision_frames",
+            "description": (
+                "Remove temporary vision frames extracted by extract_frames. "
+                "Call after pipeline generation to free disk space. "
+                "If run_id is provided, only that run's frames are removed; "
+                "otherwise all vision frames are cleaned up. "
+                "Returns: {success: true}"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "run_id": {
+                        "type": "string",
+                        "description": (
+                            "Specific run ID to clean up (from extract_frames "
+                            "result). Omit to clean all."
+                        ),
+                    },
+                },
+            },
+            "input_examples": [
+                {},
+                {"run_id": "abc123def456"},
+            ],
+        },
+    },
+    # NOTE: execute_code is CLI-connector-only — it is NOT routed through
+    # the MCP server (no _call_execute_code handler).  CLI connectors embed
+    # these definitions as text in the prompt and execute code locally.
     {
         "type": "function",
         "function": {
@@ -390,10 +480,12 @@ TOOL_DEFINITIONS = [
                 "search_skills(query), get_skill_details(skill_name), "
                 "list_skills(category=None), "
                 "build_pipeline(skills, input_path, output_path), "
-                "analyze_video(video_path), "
+                "analyze_video(video_path, detail='full'), "
                 "extract_frames(video_path, start, duration, fps, max_frames), "
+                "cleanup_vision_frames(run_id=''), "
                 "analyze_colors(video_path, start, duration), "
-                "list_luts(), analyze_audio(video_path, start, duration). "
+                "list_luts(), analyze_audio(video_path, start, duration), "
+                "validate_skill_params(skill_name, params). "
                 "The json module is available for serialization. "
                 "Use print() to output results — ONLY print output is returned. "
                 "No imports are allowed. Use this for complex requests that need "
@@ -410,11 +502,13 @@ TOOL_DEFINITIONS = [
                             "search_skills(query), get_skill_details(skill_name), "
                             "list_skills(category=None), "
                             "build_pipeline(skills, input_path, output_path), "
-                            "analyze_video(video_path), "
+                            "analyze_video(video_path, detail='full'), "
                             "extract_frames(video_path, start=0, duration=5, fps=1, max_frames=8), "
+                            "cleanup_vision_frames(run_id=''), "
                             "analyze_colors(video_path, start=0.0, duration=5.0), "
                             "list_luts(), "
-                            "analyze_audio(video_path, start=0.0, duration=10.0). "
+                            "analyze_audio(video_path, start=0.0, duration=10.0), "
+                            "validate_skill_params(skill_name, params). "
                             "Use json.dumps() for JSON output. Use print() to "
                             "return results. No imports allowed."
                         ),

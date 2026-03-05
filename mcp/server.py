@@ -3,7 +3,20 @@
 import json
 from typing import Optional
 
-from .tools import analyze_video, list_skills, build_pipeline, execute_pipeline
+from .tools import (
+    analyze_video,
+    list_skills,
+    build_pipeline,
+    execute_pipeline,
+    search_skills,
+    get_skill_details,
+    validate_skill_params,
+    extract_frames,
+    cleanup_vision_frames,
+    analyze_colors,
+    analyze_audio,
+    list_luts,
+)
 from .resources import get_resource
 
 
@@ -22,14 +35,23 @@ class FFMPEGAMCPServer:
                         "video_path": {
                             "type": "string",
                             "description": "Path to video file",
-                        }
+                        },
+                        "detail": {
+                            "type": "string",
+                            "description": "Level of detail: 'summary' for compact output or 'full' for everything",
+                            "enum": ["summary", "full"],
+                        },
                     },
                     "required": ["video_path"],
                 },
             },
             "list_skills": {
                 "name": "list_skills",
-                "description": "List available editing skills",
+                "description": (
+                    "List available editing skills (compact index: names, categories, tags). "
+                    "Use search_skills to find specific skills, then get_skill_details "
+                    "before building a pipeline."
+                ),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -39,6 +61,56 @@ class FFMPEGAMCPServer:
                             "enum": ["temporal", "spatial", "visual", "audio", "encoding", "outcome"],
                         }
                     },
+                },
+            },
+            "search_skills": {
+                "name": "search_skills",
+                "description": "Search for skills by keyword (matches names, descriptions, tags)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query",
+                        }
+                    },
+                    "required": ["query"],
+                },
+            },
+            "get_skill_details": {
+                "name": "get_skill_details",
+                "description": (
+                    "Get full details about a specific skill including parameters, "
+                    "value ranges, defaults, ffmpeg template, and examples. "
+                    "Always call this before using a skill in a pipeline."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "skill_name": {
+                            "type": "string",
+                            "description": "Name of the skill",
+                        }
+                    },
+                    "required": ["skill_name"],
+                },
+            },
+            "validate_skill_params": {
+                "name": "validate_skill_params",
+                "description": "Validate parameters for a skill before building a pipeline",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "skill_name": {
+                            "type": "string",
+                            "description": "Name of the skill",
+                        },
+                        "params": {
+                            "type": "object",
+                            "description": "Parameters to validate",
+                        },
+                    },
+                    "required": ["skill_name", "params"],
                 },
             },
             "build_pipeline": {
@@ -85,6 +157,101 @@ class FFMPEGAMCPServer:
                     "required": ["pipeline_id"],
                 },
             },
+            "extract_frames": {
+                "name": "extract_frames",
+                "description": "Extract frames from a video as PNG images for visual inspection",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "video_path": {
+                            "type": "string",
+                            "description": "Path to video file",
+                        },
+                        "start": {
+                            "type": "number",
+                            "description": "Start time in seconds (default: 0)",
+                        },
+                        "duration": {
+                            "type": "number",
+                            "description": "Duration in seconds (default: 5)",
+                        },
+                        "fps": {
+                            "type": "number",
+                            "description": "Frames per second to extract (default: 1)",
+                        },
+                        "max_frames": {
+                            "type": "integer",
+                            "description": "Maximum frames to extract (default: 8, max: 16)",
+                        },
+                    },
+                    "required": ["video_path"],
+                },
+            },
+            "cleanup_vision_frames": {
+                "name": "cleanup_vision_frames",
+                "description": "Remove temporary vision frames folder",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "run_id": {
+                            "type": "string",
+                            "description": "Specific run ID to clean up (optional, cleans all if empty)",
+                        }
+                    },
+                },
+            },
+            "analyze_colors": {
+                "name": "analyze_colors",
+                "description": "Analyze video color characteristics (luminance, saturation, color balance)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "video_path": {
+                            "type": "string",
+                            "description": "Path to video file",
+                        },
+                        "start": {
+                            "type": "number",
+                            "description": "Start time in seconds (default: 0)",
+                        },
+                        "duration": {
+                            "type": "number",
+                            "description": "Duration in seconds (default: 5)",
+                        },
+                    },
+                    "required": ["video_path"],
+                },
+            },
+            "analyze_audio": {
+                "name": "analyze_audio",
+                "description": "Analyze audio characteristics (volume, loudness, silence detection)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "video_path": {
+                            "type": "string",
+                            "description": "Path to video/audio file",
+                        },
+                        "start": {
+                            "type": "number",
+                            "description": "Start time in seconds (default: 0)",
+                        },
+                        "duration": {
+                            "type": "number",
+                            "description": "Duration in seconds (default: 10)",
+                        },
+                    },
+                    "required": ["video_path"],
+                },
+            },
+            "list_luts": {
+                "name": "list_luts",
+                "description": "List available LUT files for color grading",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                },
+            },
         }
 
         self._resources = {
@@ -118,6 +285,11 @@ class FFMPEGAMCPServer:
         self._pipelines: dict[str, dict] = {}
         self._pipeline_counter = 0
 
+        # Derive dispatch table from registered tools so they stay in sync
+        self._dispatch: dict[str, str] = {
+            name: f"_call_{name}" for name in self._tools
+        }
+
     def list_tools(self) -> list[dict]:
         """List available MCP tools.
 
@@ -144,16 +316,10 @@ class FFMPEGAMCPServer:
         Returns:
             Tool result.
         """
-        if name == "analyze_video":
-            return await self._call_analyze_video(arguments)
-        elif name == "list_skills":
-            return await self._call_list_skills(arguments)
-        elif name == "build_pipeline":
-            return await self._call_build_pipeline(arguments)
-        elif name == "execute_pipeline":
-            return await self._call_execute_pipeline(arguments)
-        else:
+        handler_name = self._dispatch.get(name)
+        if not handler_name:
             return {"error": f"Unknown tool: {name}"}
+        return await getattr(self, handler_name)(arguments)
 
     async def _call_analyze_video(self, arguments: dict) -> dict:
         """Handle analyze_video tool call."""
@@ -162,7 +328,10 @@ class FFMPEGAMCPServer:
             return {"error": "video_path is required"}
 
         try:
-            result = analyze_video(video_path)
+            detail = arguments.get("detail", "full")
+            result = analyze_video(video_path, detail=detail)
+            if "error" in result:
+                return {"error": result["error"]}
             return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
         except Exception as e:
             return {"error": str(e)}
@@ -193,6 +362,9 @@ class FFMPEGAMCPServer:
         try:
             result = build_pipeline(skills, input_path, output_path)
 
+            if not result.get("success"):
+                return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+
             # Store pipeline for execution
             self._pipeline_counter += 1
             pipeline_id = f"pipeline_{self._pipeline_counter}"
@@ -221,6 +393,109 @@ class FFMPEGAMCPServer:
 
         try:
             result = await execute_pipeline(pipeline["command"])
+            return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def _call_search_skills(self, arguments: dict) -> dict:
+        """Handle search_skills tool call."""
+        query = arguments.get("query")
+        if not query:
+            return {"error": "query is required"}
+
+        try:
+            result = search_skills(query)
+            return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def _call_get_skill_details(self, arguments: dict) -> dict:
+        """Handle get_skill_details tool call."""
+        skill_name = arguments.get("skill_name")
+        if not skill_name:
+            return {"error": "skill_name is required"}
+
+        try:
+            result = get_skill_details(skill_name)
+            return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def _call_validate_skill_params(self, arguments: dict) -> dict:
+        """Handle validate_skill_params tool call."""
+        skill_name = arguments.get("skill_name")
+        params = arguments.get("params", {})
+        if not skill_name:
+            return {"error": "skill_name is required"}
+
+        try:
+            result = validate_skill_params(skill_name, params)
+            return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def _call_extract_frames(self, arguments: dict) -> dict:
+        """Handle extract_frames tool call."""
+        video_path = arguments.get("video_path")
+        if not video_path:
+            return {"error": "video_path is required"}
+
+        try:
+            result = extract_frames(
+                video_path=video_path,
+                start=arguments.get("start", 0.0),
+                duration=arguments.get("duration", 5.0),
+                fps=arguments.get("fps", 1.0),
+                max_frames=arguments.get("max_frames", 8),
+            )
+            return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def _call_cleanup_vision_frames(self, arguments: dict) -> dict:
+        """Handle cleanup_vision_frames tool call."""
+        try:
+            result = cleanup_vision_frames(run_id=arguments.get("run_id", ""))
+            return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def _call_analyze_colors(self, arguments: dict) -> dict:
+        """Handle analyze_colors tool call."""
+        video_path = arguments.get("video_path")
+        if not video_path:
+            return {"error": "video_path is required"}
+
+        try:
+            result = analyze_colors(
+                video_path=video_path,
+                start=arguments.get("start", 0.0),
+                duration=arguments.get("duration", 5.0),
+            )
+            return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def _call_analyze_audio(self, arguments: dict) -> dict:
+        """Handle analyze_audio tool call."""
+        video_path = arguments.get("video_path")
+        if not video_path:
+            return {"error": "video_path is required"}
+
+        try:
+            result = analyze_audio(
+                video_path=video_path,
+                start=arguments.get("start", 0.0),
+                duration=arguments.get("duration", 10.0),
+            )
+            return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def _call_list_luts(self, arguments: dict) -> dict:
+        """Handle list_luts tool call."""
+        try:
+            result = list_luts()
             return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
         except Exception as e:
             return {"error": str(e)}

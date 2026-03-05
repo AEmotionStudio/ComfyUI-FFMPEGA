@@ -17,15 +17,21 @@ except ImportError:
     from core.sanitize import validate_video_path, validate_output_file_path  # type: ignore[no-redef]
 
 
-def analyze_video(video_path: str) -> dict:
+def analyze_video(video_path: str, detail: str = "full") -> dict:
     """Analyze input video properties and metadata.
 
     Args:
         video_path: Path to the video file.
+        detail: Level of detail — ``"summary"`` for compact output
+                (resolution, duration, fps, codec, has_audio) or
+                ``"full"`` for everything including analysis_text.
 
     Returns:
         Dictionary with video metadata.
     """
+    if detail not in ("summary", "full"):
+        return {"error": f"Invalid detail level: {detail!r} (expected 'summary' or 'full')"}
+
     try:
         video_path = validate_video_path(video_path)
     except Exception as e:
@@ -33,6 +39,18 @@ def analyze_video(video_path: str) -> dict:
 
     analyzer = VideoAnalyzer()
     metadata = analyzer.analyze(video_path)
+
+    if detail == "summary":
+        v = metadata.primary_video
+        return {
+            "file_path": metadata.file_path,
+            "duration_seconds": round(metadata.duration, 2),
+            "width": v.width if v else None,
+            "height": v.height if v else None,
+            "fps": round(v.frame_rate, 2) if v and v.frame_rate else None,
+            "codec": v.codec_name if v else None,
+            "has_audio": metadata.primary_audio is not None,
+        }
 
     return {
         "file_path": metadata.file_path,
@@ -81,18 +99,7 @@ def list_skills(category: Optional[str] = None) -> dict:
             "name": skill.name,
             "category": skill.category.value,
             "description": skill.description,
-            "parameters": [
-                {
-                    "name": p.name,
-                    "type": p.type.value,
-                    "description": p.description,
-                    "required": p.required,
-                    "default": p.default,
-                }
-                for p in skill.parameters
-            ],
             "tags": skill.tags,
-            "examples": skill.examples,
         }
         skill_list.append(skill_info)
 
@@ -357,20 +364,30 @@ def extract_frames(
     }
 
 
-def cleanup_vision_frames(run_id: str = "") -> None:
+def cleanup_vision_frames(run_id: str = "") -> dict:
     """Remove the temporary vision frames folder.
 
     Args:
         run_id: If provided, removes only the specific run's subfolder.
+                Must be alphanumeric (uuid4().hex format from extract_frames).
                 If empty, removes the entire _vision_frames directory.
 
     Called after pipeline generation completes to clean up disk space.
+
+    Returns:
+        Dictionary with ``{success: True}`` on success, or
+        ``{error: str}`` if ``run_id`` is invalid.
     """
     import shutil
 
     base_dir = Path(__file__).resolve().parent.parent / "_vision_frames"
     if run_id:
+        # Guard against path traversal — run_id must be a hex string
+        if not run_id.isalnum():
+            return {"error": f"Invalid run_id: {run_id!r} (must be alphanumeric)"}
         target = base_dir / run_id
+        if not target.resolve().is_relative_to(base_dir.resolve()):
+            return {"error": f"Invalid run_id: {run_id!r} (path traversal detected)"}
         if target.exists():
             shutil.rmtree(target, ignore_errors=True)
         # Remove parent if empty (ignore errors to avoid masking success)
@@ -381,6 +398,8 @@ def cleanup_vision_frames(run_id: str = "") -> None:
             pass
     elif base_dir.exists():
         shutil.rmtree(base_dir, ignore_errors=True)
+
+    return {"success": True}
 
 
 def validate_skill_params(skill_name: str, params: dict) -> dict:

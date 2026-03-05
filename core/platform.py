@@ -31,9 +31,13 @@ def get_models_dir(subdir: str = "") -> str:
     """Return ComfyUI's models directory, with optional subdirectory.
 
     Resolution order:
-        1. ``folder_paths.models_dir``      (ComfyUI runtime)
-        2. ``<comfyui_root>/models/``        (outside runtime, standard install)
-        3. ``<extension_root>/models/``      (standalone / testing fallback)
+        1. ``folder_paths.models_dir``  (ComfyUI runtime)
+        2. ``ComfyUI/models/``          (standalone / testing fallback)
+
+    The fallback resolves to the ComfyUI root's ``models/`` directory
+    (two levels above the extension: ``custom_nodes/ComfyUI-FFMPEGA``
+    → ``custom_nodes`` → ``ComfyUI``).  Models must **never** be
+    downloaded into the extension folder itself.
 
     The directory is created if it doesn't exist.
 
@@ -48,13 +52,17 @@ def get_models_dir(subdir: str = "") -> str:
 
         base: str = folder_paths.models_dir
     except (ImportError, AttributeError):
-        # Outside ComfyUI runtime — try <comfyui_root>/models/ first
-        # _EXT_ROOT = ComfyUI/custom_nodes/ComfyUI-FFMPEGA
-        comfyui_models = _EXT_ROOT.parent.parent / "models"
-        if comfyui_models.is_dir():
-            base = str(comfyui_models)
-        else:
-            base = str(_EXT_ROOT / "models")
+        # _EXT_ROOT = .../ComfyUI/custom_nodes/ComfyUI-FFMPEGA
+        # .parent    = .../ComfyUI/custom_nodes
+        # .parent    = .../ComfyUI
+        comfyui_root = _EXT_ROOT.parent.parent
+        base = str(comfyui_root / "models")
+        if not (comfyui_root / "custom_nodes").is_dir():
+            log.warning(
+                "Extension is not under a standard ComfyUI/custom_nodes/ "
+                "tree — models dir resolved to %s which may be incorrect",
+                base,
+            )
 
     path = os.path.join(base, subdir) if subdir else base
     os.makedirs(path, exist_ok=True)
