@@ -738,17 +738,16 @@ def generate_audio(
         sampling_rate = seq_cfg.sampling_rate
         output_path = os.path.join(output_dir, "mmaudio_output.wav")
 
-        # Use scipy instead of torchaudio to avoid torchcodec dependency
+        # Use scipy instead of torchaudio to avoid torchcodec dependency.
+        # float32 WAV preserves full model precision (old code used FLAC).
         import numpy as np
         from scipy.io import wavfile
         audio_np = audio.cpu().float().numpy()
         # audio shape is (channels, samples) — scipy expects (samples,) or (samples, channels)
         if audio_np.ndim == 2:
             audio_np = audio_np.T  # (samples, channels)
-        # Clamp and convert to int16
-        audio_np = np.clip(audio_np, -1.0, 1.0)
-        audio_int16 = (audio_np * 32767).astype(np.int16)
-        wavfile.write(output_path, sampling_rate, audio_int16)
+        audio_np = np.clip(audio_np, -1.0, 1.0).astype(np.float32)
+        wavfile.write(output_path, sampling_rate, audio_np)
         log.info("MMAudio: audio saved to %s", output_path)
 
         return output_path

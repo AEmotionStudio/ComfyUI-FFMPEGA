@@ -389,7 +389,12 @@ def _encode_video(frames: list, output_path: str, fps: float) -> str:
 
 
 def _encode_video_from_dir(frame_dir: str, output_path: str, fps: float) -> str:
-    """Encode PNG frames from an existing directory to a video file."""
+    """Encode PNG frames from an existing directory to a video file.
+
+    .. note:: Expects **0-indexed** filenames (``000000.png``, ``000001.png``, ...).
+       ``_load_video_frames`` produces 1-indexed files — do NOT pass its output
+       directory here directly.
+    """
     subprocess.run(
         [
             _get_ffmpeg_bin(), "-y",
@@ -832,6 +837,7 @@ def edit_video(
             del smoothed
         else:
             log.info("Temporal smoothing disabled")
+            del mask_np_list  # free ~2.4 GB for 1080p/300-frame videos
 
         # Encode directly from the composited frames directory
         log.info("Encoding edited video to %s", output_path)
