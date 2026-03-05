@@ -121,10 +121,13 @@ TOOL_DEFINITIONS = [
             "description": (
                 "Analyze a video file and return its metadata: resolution, "
                 "duration, codec, FPS, audio info, file size, etc. "
-                "Use detail='summary' for a compact probe (7 fields) or "
+                "Use detail='summary' for a compact probe or "
                 "detail='full' for everything including analysis_text. "
-                "Returns: {file_path: str, file_size_mb: float, "
-                "format: str, duration_seconds: float, "
+                "When detail='summary' returns: {file_path: str, "
+                "duration_seconds: float, width: int, height: int, "
+                "fps: float, codec: str, has_audio: bool}. "
+                "When detail='full' returns: {file_path: str, "
+                "file_size_mb: float, format: str, duration_seconds: float, "
                 "video: {width: int, height: int, codec: str, fps: float, "
                 "pixel_format: str}, "
                 "audio: {codec: str, sample_rate: int, channels: int}, "
@@ -241,6 +244,10 @@ TOOL_DEFINITIONS = [
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "video_path": {
+                        "type": "string",
+                        "description": "Absolute path to the video file",
+                    },
                     "start": {
                         "type": "number",
                         "description": (
@@ -270,11 +277,11 @@ TOOL_DEFINITIONS = [
                         ),
                     },
                 },
+                "required": ["video_path"],
             },
             "input_examples": [
-                {"max_frames": 3},
-                {"start": 0, "duration": 10, "fps": 0.5, "max_frames": 5},
-                {},
+                {"video_path": "/tmp/input.mp4", "max_frames": 3},
+                {"video_path": "/tmp/input.mp4", "start": 0, "duration": 10, "fps": 0.5, "max_frames": 5},
             ],
         },
     },
@@ -302,6 +309,10 @@ TOOL_DEFINITIONS = [
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "video_path": {
+                        "type": "string",
+                        "description": "Absolute path to the video file",
+                    },
                     "start": {
                         "type": "number",
                         "description": (
@@ -317,10 +328,11 @@ TOOL_DEFINITIONS = [
                         ),
                     },
                 },
+                "required": ["video_path"],
             },
             "input_examples": [
-                {},
-                {"start": 2, "duration": 3},
+                {"video_path": "/tmp/input.mp4"},
+                {"video_path": "/tmp/input.mp4", "start": 2, "duration": 3},
             ],
         },
     },
@@ -369,6 +381,10 @@ TOOL_DEFINITIONS = [
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "video_path": {
+                        "type": "string",
+                        "description": "Absolute path to the video/audio file",
+                    },
                     "start": {
                         "type": "number",
                         "description": (
@@ -384,10 +400,11 @@ TOOL_DEFINITIONS = [
                         ),
                     },
                 },
+                "required": ["video_path"],
             },
             "input_examples": [
-                {},
-                {"start": 0, "duration": 5},
+                {"video_path": "/tmp/input.mp4"},
+                {"video_path": "/tmp/input.mp4", "start": 0, "duration": 5},
             ],
         },
     },
