@@ -833,6 +833,7 @@ def edit_video(
                     os.path.join(comp_tmpdir, f"{idx:06d}.png")
                 )
             del smoothed
+            del mask_np_list  # free ~2.4 GB for 1080p/300-frame videos
         else:
             log.info("Temporal smoothing disabled")
             del mask_np_list  # free ~2.4 GB for 1080p/300-frame videos
