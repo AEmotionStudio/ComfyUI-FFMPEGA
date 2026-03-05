@@ -285,6 +285,11 @@ class FFMPEGAMCPServer:
         self._pipelines: dict[str, dict] = {}
         self._pipeline_counter = 0
 
+        # Derive dispatch table from registered tools so they stay in sync
+        self._dispatch: dict[str, str] = {
+            name: f"_call_{name}" for name in self._tools
+        }
+
     def list_tools(self) -> list[dict]:
         """List available MCP tools.
 
@@ -301,22 +306,6 @@ class FFMPEGAMCPServer:
         """
         return list(self._resources.values())
 
-    # Tool name → handler method name
-    _DISPATCH: dict[str, str] = {
-        "analyze_video": "_call_analyze_video",
-        "list_skills": "_call_list_skills",
-        "search_skills": "_call_search_skills",
-        "get_skill_details": "_call_get_skill_details",
-        "validate_skill_params": "_call_validate_skill_params",
-        "build_pipeline": "_call_build_pipeline",
-        "execute_pipeline": "_call_execute_pipeline",
-        "extract_frames": "_call_extract_frames",
-        "cleanup_vision_frames": "_call_cleanup_vision_frames",
-        "analyze_colors": "_call_analyze_colors",
-        "analyze_audio": "_call_analyze_audio",
-        "list_luts": "_call_list_luts",
-    }
-
     async def call_tool(self, name: str, arguments: dict) -> dict:
         """Call an MCP tool.
 
@@ -327,7 +316,7 @@ class FFMPEGAMCPServer:
         Returns:
             Tool result.
         """
-        handler_name = self._DISPATCH.get(name)
+        handler_name = self._dispatch.get(name)
         if not handler_name:
             return {"error": f"Unknown tool: {name}"}
         return await getattr(self, handler_name)(arguments)
@@ -465,7 +454,7 @@ class FFMPEGAMCPServer:
         """Handle cleanup_vision_frames tool call."""
         try:
             result = cleanup_vision_frames(run_id=arguments.get("run_id", ""))
-            return {"content": [{"type": "text", "text": json.dumps(result)}]}
+            return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
         except Exception as e:
             return {"error": str(e)}
 
