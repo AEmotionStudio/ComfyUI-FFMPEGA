@@ -69,6 +69,8 @@ def resolve_cli_binary(*names: str) -> str | None:
     Checks ``shutil.which`` first (uses the current ``PATH``), then
     falls back to probing well-known user-local directories.
 
+    Note: Results are cached for the lifetime of the process.
+
     Works on Linux, macOS, and Windows.
 
     Parameters
