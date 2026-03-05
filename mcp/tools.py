@@ -364,20 +364,30 @@ def extract_frames(
     }
 
 
-def cleanup_vision_frames(run_id: str = "") -> None:
+def cleanup_vision_frames(run_id: str = "") -> dict:
     """Remove the temporary vision frames folder.
 
     Args:
         run_id: If provided, removes only the specific run's subfolder.
+                Must be alphanumeric (uuid4().hex format from extract_frames).
                 If empty, removes the entire _vision_frames directory.
 
     Called after pipeline generation completes to clean up disk space.
+
+    Returns:
+        Dictionary with ``{success: True}`` on success, or
+        ``{error: str}`` if ``run_id`` is invalid.
     """
     import shutil
 
     base_dir = Path(__file__).resolve().parent.parent / "_vision_frames"
     if run_id:
+        # Guard against path traversal — run_id must be a hex string
+        if not run_id.isalnum():
+            return {"error": f"Invalid run_id: {run_id!r} (must be alphanumeric)"}
         target = base_dir / run_id
+        if not target.resolve().is_relative_to(base_dir.resolve()):
+            return {"error": f"Invalid run_id: {run_id!r} (path traversal detected)"}
         if target.exists():
             shutil.rmtree(target, ignore_errors=True)
         # Remove parent if empty (ignore errors to avoid masking success)
@@ -388,6 +398,8 @@ def cleanup_vision_frames(run_id: str = "") -> None:
             pass
     elif base_dir.exists():
         shutil.rmtree(base_dir, ignore_errors=True)
+
+    return {"success": True}
 
 
 def validate_skill_params(skill_name: str, params: dict) -> dict:

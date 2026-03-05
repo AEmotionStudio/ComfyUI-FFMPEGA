@@ -371,6 +371,9 @@ class FFMPEGAMCPServer:
         try:
             result = build_pipeline(skills, input_path, output_path)
 
+            if not result.get("success"):
+                return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+
             # Store pipeline for execution
             self._pipeline_counter += 1
             pipeline_id = f"pipeline_{self._pipeline_counter}"
@@ -461,8 +464,8 @@ class FFMPEGAMCPServer:
     async def _call_cleanup_vision_frames(self, arguments: dict) -> dict:
         """Handle cleanup_vision_frames tool call."""
         try:
-            cleanup_vision_frames(run_id=arguments.get("run_id", ""))
-            return {"content": [{"type": "text", "text": json.dumps({"success": True})}]}
+            result = cleanup_vision_frames(run_id=arguments.get("run_id", ""))
+            return {"content": [{"type": "text", "text": json.dumps(result)}]}
         except Exception as e:
             return {"error": str(e)}
 
