@@ -657,6 +657,8 @@ class TestResolveCLIBinary:
     def clear_cache(self):
         """Clear the lru_cache on resolve_cli_binary before each test."""
         resolve_cli_binary.cache_clear()
+        yield
+        resolve_cli_binary.cache_clear()
 
     def test_found_on_path(self):
         """Binary found via shutil.which should be returned."""
