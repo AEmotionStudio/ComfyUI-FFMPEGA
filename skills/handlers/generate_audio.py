@@ -1,7 +1,7 @@
 """FFMPEGA Generate Audio skill handler.
 
 Uses MMAudio to synthesize audio from video content and/or text prompts.
-Runs in a subprocess to avoid CUDA memory leaks.
+Runs in-process with GPU↔CPU offloading (cached models).
 
 License note:
     MMAudio model weights are CC-BY-NC 4.0 (non-commercial use only).
@@ -36,7 +36,7 @@ def _f_generate_audio(p):
     """
     prompt = str(p.get("prompt", ""))
     negative_prompt = str(p.get("negative_prompt", ""))
-    mode = str(p.get("mode", "replace")).lower()
+    mode = str(p.get("_mmaudio_mode", p.get("mode", "replace"))).lower()
     seed = int(p.get("seed", 42))
     cfg_strength = float(p.get("cfg_strength", 4.5))
     video_path = p.get("_input_path", "")
@@ -52,9 +52,9 @@ def _f_generate_audio(p):
     # Try to import MMAudio
     try:
         try:
-            from ...core.mmaudio_synthesizer import generate_audio_subprocess
+            from ...core.mmaudio_synthesizer import generate_audio
         except ImportError:
-            from core.mmaudio_synthesizer import generate_audio_subprocess
+            from core.mmaudio_synthesizer import generate_audio
         _has_mmaudio = True
     except ImportError:
         _has_mmaudio = False
@@ -79,9 +79,9 @@ def _f_generate_audio(p):
         # Text-to-audio mode — no video, just prompt
         video_path = None
 
-    # Generate audio via subprocess
+    # Generate audio in-process (with GPU↔CPU offloading)
     try:
-        audio_path = generate_audio_subprocess(
+        audio_path = generate_audio(
             video_path=video_path,
             prompt=prompt,
             negative_prompt=negative_prompt,
@@ -113,17 +113,10 @@ def _f_generate_audio(p):
             f"amovie={escaped}[_gen_audio];"
             f"[0:v]null[_vpass]"
         )
-        if mode == "mix" and p.get("_has_embedded_audio"):
-            fc += ";[0:a][_gen_audio]amix=inputs=2:duration=shortest[_aout]"
-            return _mr(
-                fc=fc,
-                opts=["-map", "[_vpass]", "-map", "[_aout]"],
-            )
-        else:
-            return _mr(
-                fc=fc,
-                opts=["-map", "[_vpass]", "-map", "[_gen_audio]"],
-            )
+        return _mr(
+            fc=fc,
+            opts=["-map", "[_vpass]", "-map", "[_gen_audio]"],
+        )
 
     elif mode == "mix":
         # Mix generated audio with original

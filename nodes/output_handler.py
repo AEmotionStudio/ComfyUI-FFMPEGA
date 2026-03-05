@@ -8,12 +8,16 @@ API-key stripping, duration probing, and audio-dict conversion.
 import json
 import logging
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Optional
 
 import torch  # type: ignore[import-not-found]
-from ..core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin
+try:
+    from ..core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin
+except ImportError:
+    from core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin  # type: ignore
 
 logger = logging.getLogger("ffmpega")
 

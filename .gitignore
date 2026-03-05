@@ -158,6 +158,9 @@ uv.lock
 # MiniMax-Remover (local-only, not pushed to public — unlicensed code)
 core/minimax_remover.py
 
+# Model weights (use ComfyUI/models/ instead)
+models/
+
 # Advertisements
 advert/
 index.html

@@ -658,8 +658,8 @@ def _f_auto_mask(p):
     if _metadata_ref is not None and isinstance(_metadata_ref, dict):
         _metadata_ref["_mask_video_path"] = mask_path
 
-    # Temporal smoothing mode for FLUX Klein effects
-    smoothing = str(p.get("smoothing", "none"))
+    # Temporal smoothing mode for FLUX Klein effects (node-level toggle)
+    smoothing = str(p.get("_flux_smoothing", p.get("smoothing", "none")))
     if smoothing not in ("none", "gaussian", "adaptive"):
         smoothing = "none"
 
@@ -683,6 +683,14 @@ def _f_auto_mask(p):
             return make_result(fc=fc)
         except Exception as e:
             log.error("FLUX Klein removal failed: %s", e)
+            try:
+                try:
+                    from ...core.flux_klein_editor import cleanup as _fk_cleanup
+                except ImportError:
+                    from core.flux_klein_editor import cleanup as _fk_cleanup
+                _fk_cleanup()
+            except Exception:
+                pass
             raise
 
     # Special handling for "edit" — use FLUX Klein text-guided editing
@@ -712,6 +720,14 @@ def _f_auto_mask(p):
             return make_result(fc=fc)
         except Exception as e:
             log.error("FLUX Klein edit failed: %s", e)
+            try:
+                try:
+                    from ...core.flux_klein_editor import cleanup as _fk_cleanup
+                except ImportError:
+                    from core.flux_klein_editor import cleanup as _fk_cleanup
+                _fk_cleanup()
+            except Exception:
+                pass
             raise
 
     # Build FFmpeg filter_complex that uses the mask
