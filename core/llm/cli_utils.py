@@ -10,11 +10,11 @@ locate binaries reliably.
 Supports **Linux**, **macOS**, and **Windows**.
 """
 
+import functools
 import os
 import pathlib
 import platform
 import shutil
-from typing import Optional
 
 
 def _build_search_dirs() -> list[pathlib.Path]:
@@ -45,8 +45,8 @@ def _build_search_dirs() -> list[pathlib.Path]:
 
     else:
         # Linux + macOS shared paths
-        dirs.append(home / ".local" / "bin")              # pipx, user installs
-        dirs.append(home / ".local" / "share" / "pnpm")   # pnpm global
+        dirs.append(home / ".local" / "bin")  # pipx, user installs
+        dirs.append(home / ".local" / "share" / "pnpm")  # pnpm global
         dirs.append(home / ".nvm" / "versions")            # nvm global
         dirs.append(pathlib.Path("/usr/local/bin"))         # Homebrew (Intel Mac) / manual installs
 
@@ -62,11 +62,15 @@ def _build_search_dirs() -> list[pathlib.Path]:
 _EXTRA_SEARCH_DIRS = _build_search_dirs()
 
 
-def resolve_cli_binary(*names: str) -> Optional[str]:
+# NOTE: Cache is process-lifetime — newly installed binaries require a restart.
+@functools.cache
+def resolve_cli_binary(*names: str) -> str | None:
     """Return the full path to the first binary found, or ``None``.
 
     Checks ``shutil.which`` first (uses the current ``PATH``), then
     falls back to probing well-known user-local directories.
+
+    Note: Results are cached for the lifetime of the process.
 
     Works on Linux, macOS, and Windows.
 
