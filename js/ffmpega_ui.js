@@ -475,7 +475,8 @@ function addDownloadOverlay(container, videoEl) {
         const isActive = btnHover || btnFocus;
         btn.style.opacity = isVisible ? "1" : "0";
         btn.style.background = isActive ? "rgba(0, 0, 0, 0.8)" : "rgba(0, 0, 0, 0.6)";
-        btn.style.boxShadow = btnFocus ? "0 0 0 2px #4a6a8a" : "none";
+        btn.style.outline = btnFocus ? "2px solid #4a6a8a" : "none";
+        btn.style.outlineOffset = btnFocus ? "2px" : "0px";
     };
 
     container.addEventListener("mouseenter", () => { containerHover = true; updateStyle(); });
@@ -2486,8 +2487,14 @@ app.registerExtension({
                     `;
 
                     // Focus styles
-                    hexLabel.onfocus = () => { hexLabel.style.boxShadow = "0 0 0 1px #4a6a8a"; };
-                    hexLabel.onblur = () => { hexLabel.style.boxShadow = "none"; };
+                    hexLabel.onfocus = () => {
+                        hexLabel.style.outline = "1px solid #4a6a8a";
+                        hexLabel.style.outlineOffset = "2px";
+                    };
+                    hexLabel.onblur = () => {
+                        hexLabel.style.outline = "none";
+                        hexLabel.style.outlineOffset = "0px";
+                    };
 
                     // Copy handler
                     const copyHex = async () => {
