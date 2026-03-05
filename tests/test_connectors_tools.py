@@ -416,7 +416,9 @@ class TestExtractFramesToolDefinition:
         assert "analyze_colors" in tool_names
         assert "list_luts" in tool_names
         assert "analyze_audio" in tool_names
-        assert len(tool_defs.TOOL_DEFINITIONS) == 10
+        assert "validate_skill_params" in tool_names
+        assert "cleanup_vision_frames" in tool_names
+        assert len(tool_defs.TOOL_DEFINITIONS) == 12
 
 
 class TestExtractFramesCleanup:

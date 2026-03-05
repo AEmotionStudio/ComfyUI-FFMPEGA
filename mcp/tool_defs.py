@@ -394,6 +394,64 @@ TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
+            "name": "validate_skill_params",
+            "description": (
+                "Validate parameters for a skill before building a pipeline. "
+                "Checks required params, types, and value ranges. "
+                "Returns: {valid: bool, errors: [str], skill: str, params: object}"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "skill_name": {
+                        "type": "string",
+                        "description": "Name of the skill to validate against",
+                    },
+                    "params": {
+                        "type": "object",
+                        "description": "Parameters to validate",
+                    },
+                },
+                "required": ["skill_name", "params"],
+            },
+            "input_examples": [
+                {"skill_name": "colorbalance", "params": {"rs": 0.1}},
+                {"skill_name": "speed", "params": {"factor": 2.0}},
+            ],
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cleanup_vision_frames",
+            "description": (
+                "Remove temporary vision frames extracted by extract_frames. "
+                "Call after pipeline generation to free disk space. "
+                "If run_id is provided, only that run's frames are removed; "
+                "otherwise all vision frames are cleaned up. "
+                "Returns: {success: true}"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "run_id": {
+                        "type": "string",
+                        "description": (
+                            "Specific run ID to clean up (from extract_frames "
+                            "result). Omit to clean all."
+                        ),
+                    },
+                },
+            },
+            "input_examples": [
+                {},
+                {"run_id": "abc123def456"},
+            ],
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "execute_code",
             "description": (
                 "Execute a Python script that orchestrates multiple tool calls "
@@ -404,8 +462,10 @@ TOOL_DEFINITIONS = [
                 "build_pipeline(skills, input_path, output_path), "
                 "analyze_video(video_path, detail='full'), "
                 "extract_frames(video_path, start, duration, fps, max_frames), "
+                "cleanup_vision_frames(run_id=''), "
                 "analyze_colors(video_path, start, duration), "
-                "list_luts(), analyze_audio(video_path, start, duration). "
+                "list_luts(), analyze_audio(video_path, start, duration), "
+                "validate_skill_params(skill_name, params). "
                 "The json module is available for serialization. "
                 "Use print() to output results — ONLY print output is returned. "
                 "No imports are allowed. Use this for complex requests that need "
@@ -424,9 +484,11 @@ TOOL_DEFINITIONS = [
                             "build_pipeline(skills, input_path, output_path), "
                             "analyze_video(video_path, detail='full'), "
                             "extract_frames(video_path, start=0, duration=5, fps=1, max_frames=8), "
+                            "cleanup_vision_frames(run_id=''), "
                             "analyze_colors(video_path, start=0.0, duration=5.0), "
                             "list_luts(), "
-                            "analyze_audio(video_path, start=0.0, duration=10.0). "
+                            "analyze_audio(video_path, start=0.0, duration=10.0), "
+                            "validate_skill_params(skill_name, params). "
                             "Use json.dumps() for JSON output. Use print() to "
                             "return results. No imports allowed."
                         ),

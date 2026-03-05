@@ -34,6 +34,9 @@ def analyze_video(video_path: str, detail: str = "full") -> dict:
     except Exception as e:
         return {"error": str(e)}
 
+    if detail not in ("summary", "full"):
+        return {"error": f"Invalid detail level: {detail!r} (expected 'summary' or 'full')"}
+
     analyzer = VideoAnalyzer()
     metadata = analyzer.analyze(video_path)
 
