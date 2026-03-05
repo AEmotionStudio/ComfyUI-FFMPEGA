@@ -1,8 +1,8 @@
 """No-LLM mode handlers extracted from FFMPEGAgentNode.
 
 Provides ``inject_effects_hints()``, ``process_effects_pipeline()``,
-``process_sam3_only()``, and ``process_whisper_only()`` — all the
-codepaths that run without an LLM.
+``process_sam3_only()``, ``process_whisper_only()``, and
+``process_mmaudio_only()`` — all the codepaths that run without an LLM.
 """
 
 import atexit
@@ -22,7 +22,22 @@ from .output_handler import (
     collect_frame_output,
 )
 
+try:
+    from ..core.bin_paths import get_ffmpeg_bin as _get_ffmpeg_bin_raw
+except ImportError:
+    from core.bin_paths import get_ffmpeg_bin as _get_ffmpeg_bin_raw  # type: ignore
+
+
+def _get_ffmpeg_bin() -> str:
+    """Resolve ffmpeg binary, with fallback to bare 'ffmpeg'."""
+    return _get_ffmpeg_bin_raw() or "ffmpeg"
+
+
 logger = logging.getLogger("ffmpega")
+
+# Quality encoding constants — shared by SAM3, Whisper, and MMAudio modes
+_CRF_MAP = {"draft": 28, "standard": 23, "high": 18, "lossless": 0}
+_PRESET_MAP = {"draft": "ultrafast", "standard": "medium", "high": "slow", "lossless": "veryslow"}
 
 
 def inject_effects_hints(prompt: str, pipeline_json: str) -> str:
@@ -85,6 +100,7 @@ async def process_effects_pipeline(
     sam3_max_objects: int = 5,
     sam3_det_threshold: float = 0.7,
     mask_points: str = "",
+    flux_smoothing: str = "none",
     temp_video_from_images: Optional[str] = None,
     temp_video_with_audio: Optional[str] = None,
     image_a=None,
@@ -156,6 +172,8 @@ async def process_effects_pipeline(
     pipeline.metadata["_sam3_det_threshold"] = sam3_det_threshold
     if mask_points and mask_points.strip():
         pipeline.metadata["_mask_points"] = mask_points.strip()
+    if flux_smoothing and flux_smoothing != "none":
+        pipeline.metadata["_flux_smoothing"] = flux_smoothing
 
     # Whisper preferences (for transcription steps)
     pipeline.metadata["_whisper_device"] = whisper_device
@@ -193,11 +211,9 @@ async def process_effects_pipeline(
     if quality_preset and not any(
         s.skill_name in _NO_QUALITY_PRESET_SKILLS for s in pipeline.steps
     ):
-        crf_map = {"draft": 28, "standard": 23, "high": 18, "lossless": 0}
-        preset_map = {"draft": "ultrafast", "standard": "medium", "high": "slow", "lossless": "veryslow"}
         pipeline.add_step("quality", {
-            "crf": crf if crf >= 0 else crf_map.get(quality_preset, 23),
-            "preset": encoding_preset if encoding_preset != "auto" else preset_map.get(quality_preset, "medium"),
+            "crf": crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23),
+            "preset": encoding_preset if encoding_preset != "auto" else _PRESET_MAP.get(quality_preset, "medium"),
         })
 
     # --- Compose & execute ---
@@ -381,13 +397,12 @@ async def process_sam3_only(
         raise RuntimeError(f"SAM3 mask generation failed: {e}") from e
 
     # --- Copy source video through as the main output (no effects) ---
-    crf_map = {"draft": 28, "standard": 23, "high": 18, "lossless": 0}
-    preset_map = {"draft": "ultrafast", "standard": "medium", "high": "slow", "lossless": "veryslow"}
-    effective_crf = crf if crf >= 0 else crf_map.get(quality_preset, 23)
-    effective_preset = encoding_preset if encoding_preset != "auto" else preset_map.get(quality_preset, "medium")
+    effective_crf = crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23)
+    effective_preset = encoding_preset if encoding_preset != "auto" else _PRESET_MAP.get(quality_preset, "medium")
 
+    _ffmpeg = _get_ffmpeg_bin()
     ffmpeg_cmd = [
-        "ffmpeg", "-y",
+        _ffmpeg, "-y",
         "-i", effective_video_path,
         "-c:v", "libx264",
         "-crf", str(effective_crf),
@@ -400,7 +415,7 @@ async def process_sam3_only(
     if preview_mode:
         # Insert scale + duration limit before output path
         ffmpeg_cmd = [
-            "ffmpeg", "-y",
+            _ffmpeg, "-y",
             "-i", effective_video_path,
             "-vf", "scale=480:trunc(ow/a/2)*2",
             "-t", "10",
@@ -585,12 +600,11 @@ async def process_whisper_only(
             sub_filter = f"subtitles={escaped_path}"
 
     # --- Build ffmpeg command ---
-    crf_map = {"draft": 28, "standard": 23, "high": 18, "lossless": 0}
-    preset_map = {"draft": "ultrafast", "standard": "medium", "high": "slow", "lossless": "veryslow"}
-    effective_crf = crf if crf >= 0 else crf_map.get(quality_preset, 23)
-    effective_preset = encoding_preset if encoding_preset != "auto" else preset_map.get(quality_preset, "medium")
+    effective_crf = crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23)
+    effective_preset = encoding_preset if encoding_preset != "auto" else _PRESET_MAP.get(quality_preset, "medium")
 
-    ffmpeg_cmd = ["ffmpeg", "-y", "-i", effective_video_path]
+    _ffmpeg = _get_ffmpeg_bin()
+    ffmpeg_cmd = [_ffmpeg, "-y", "-i", effective_video_path]
 
     if sub_filter:
         ffmpeg_cmd.extend(["-vf", sub_filter])
@@ -660,3 +674,196 @@ async def process_whisper_only(
             shutil.rmtree(temp_render_dir, ignore_errors=True)
 
     return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
+
+
+async def process_mmaudio_only(
+    # dependencies
+    media_converter,
+    # parameters
+    prompt: str,
+    mmaudio_mode: str,
+    effective_video_path: str,
+    video_metadata,
+    save_output: bool,
+    output_path: str,
+    preview_mode: bool,
+    quality_preset: str,
+    crf: int,
+    encoding_preset: str,
+    temp_video_from_images: Optional[str] = None,
+    temp_video_with_audio: Optional[str] = None,
+    **kwargs,
+) -> tuple[torch.Tensor, dict, str, str, str, str]:
+    """Run MMAudio audio generation directly without any LLM involvement.
+
+    Generates audio from the video (and optional text prompt) using MMAudio,
+    then muxes the result into the output video.
+
+    Args:
+        prompt: Text description to guide audio generation (can be empty
+                for pure video-to-audio).
+        mmaudio_mode: "replace" to discard original audio, "mix" to blend.
+
+    Returns the standard 6-tuple:
+        (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
+    """
+    logger.info(
+        "MMAudio-only mode: prompt=%r, mode=%s", prompt, mmaudio_mode,
+    )
+
+    # --- Import MMAudio ---
+    try:
+        try:
+            from ..core.mmaudio_synthesizer import generate_audio
+        except ImportError:
+            from core.mmaudio_synthesizer import generate_audio  # type: ignore
+    except ImportError:
+        raise RuntimeError(
+            "MMAudio is not installed. Install with: "
+            "pip install --no-deps git+https://github.com/hkchengrex/MMAudio.git && "
+            "pip install torchdiffeq"
+        )
+
+    # --- Build output path ---
+    output_path, temp_render_dir = build_output_path(
+        effective_video_path=effective_video_path,
+        save_output=save_output,
+        output_path=output_path,
+        preview_mode=preview_mode,
+    )
+
+    # --- Generate audio via MMAudio (in-process with offloading) ---
+    audio_file = None  # ensure defined for finally block
+    try:
+        audio_file = generate_audio(
+            video_path=effective_video_path,
+            prompt=prompt,
+        )
+    except Exception as e:
+        logger.error("MMAudio-only: audio generation failed: %s", e)
+        # Free VRAM from loaded MMAudio models on failure
+        try:
+            try:
+                from ..core.mmaudio_synthesizer import cleanup as _mm_cleanup
+            except ImportError:
+                from core.mmaudio_synthesizer import cleanup as _mm_cleanup  # type: ignore
+            _mm_cleanup()
+        except Exception:
+            pass
+        raise RuntimeError(f"MMAudio audio generation failed: {e}") from e
+
+    # --- Detect if source video has audio ---
+    has_audio = False
+    if video_metadata.primary_audio:
+        has_audio = True
+
+    # --- Build ffmpeg command to mux generated audio ---
+    _ffmpeg = _get_ffmpeg_bin()
+    effective_crf = crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23)
+    effective_preset = encoding_preset if encoding_preset != "auto" else _PRESET_MAP.get(quality_preset, "medium")
+
+    if mmaudio_mode == "mix" and has_audio:
+        # Mix generated audio with original audio
+        ffmpeg_cmd = [
+            _ffmpeg, "-y",
+            "-i", effective_video_path,
+            "-i", audio_file,
+            "-filter_complex",
+            "[0:a][1:a]amix=inputs=2:duration=shortest[aout]",
+            "-map", "0:v",
+            "-map", "[aout]",
+            "-c:v", "libx264",
+            "-crf", str(effective_crf),
+            "-preset", effective_preset,
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "192k",
+        ]
+    else:
+        # Replace mode (or mix with no existing audio) — pass through
+        # the video codec since only the audio track is changing.
+        ffmpeg_cmd = [
+            _ffmpeg, "-y",
+            "-i", effective_video_path,
+            "-i", audio_file,
+            "-map", "0:v",
+            "-map", "1:a",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-shortest",
+        ]
+
+    if preview_mode:
+        if mmaudio_mode == "mix" and has_audio:
+            # Mix mode already re-encodes — just add scale + time limit
+            ffmpeg_cmd.extend(["-vf", "scale=480:trunc(ow/a/2)*2", "-t", "10"])
+        else:
+            # Replace mode uses -c:v copy — rebuild with re-encode for scaling
+            ffmpeg_cmd = [
+                _ffmpeg, "-y",
+                "-i", effective_video_path,
+                "-i", audio_file,
+                "-map", "0:v",
+                "-map", "1:a",
+                "-vf", "scale=480:trunc(ow/a/2)*2",
+                "-t", "10",
+                "-c:v", "libx264",
+                "-crf", str(effective_crf),
+                "-preset", effective_preset,
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-shortest",
+            ]
+
+    ffmpeg_cmd.append(output_path)
+
+    logger.debug("MMAudio-only ffmpeg command: %s", " ".join(ffmpeg_cmd))
+    try:
+        proc = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"MMAudio-only mode: ffmpeg mux failed:\n{proc.stderr[-500:]}"
+            )
+
+        # --- Collect frame/audio output ---
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=False,
+        )
+
+        # --- Build analysis string ---
+        cmd_log = " ".join(ffmpeg_cmd)
+        analysis = (
+            f"MMAudio-Only Mode (no LLM)\n"
+            f"Prompt: {prompt or '(video-to-audio, no text prompt)'}\n"
+            f"Audio mode: {mmaudio_mode}\n"
+            f"Source had audio: {has_audio}\n\n"
+            f"Generated audio: {audio_file}\n"
+            f"Output: {output_path}"
+        )
+
+        return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
+    finally:
+        # --- Cleanup temp files (always runs, even on error) ---
+        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        # Clean up generated audio file
+        if audio_file and os.path.exists(audio_file):
+            try:
+                os.remove(audio_file)
+            except OSError:
+                pass
+        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+            if not os.listdir(temp_render_dir):
+                shutil.rmtree(temp_render_dir, ignore_errors=True)

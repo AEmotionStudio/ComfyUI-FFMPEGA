@@ -17,11 +17,9 @@ License: Apache 2.0 (compatible with GPL-3.0)
 
 from __future__ import annotations
 
-import functools
 import gc
 import logging
 import os
-import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -32,12 +30,17 @@ try:
 except ImportError:
     from core.sanitize import validate_video_path, validate_output_file_path  # type: ignore
 
+try:
+    from .bin_paths import get_ffmpeg_bin as _get_ffmpeg_bin_raw
+except ImportError:
+    from core.bin_paths import get_ffmpeg_bin as _get_ffmpeg_bin_raw  # type: ignore
+
 log = logging.getLogger("ffmpega")
 
-@functools.lru_cache(maxsize=None)
+
 def _get_ffmpeg_bin() -> str:
-    """Resolve ffmpeg binary path (cached after first call)."""
-    return shutil.which("ffmpeg") or "ffmpeg"
+    """Resolve ffmpeg binary, with fallback to bare 'ffmpeg'."""
+    return _get_ffmpeg_bin_raw() or "ffmpeg"
 
 # ---------------------------------------------------------------------------
 #  Constants
@@ -151,40 +154,63 @@ def _download_model(model_dir: Path) -> None:
 #  VRAM management
 # ---------------------------------------------------------------------------
 
+_freeing_vram = False
+
+
 def _free_vram() -> None:
     """Free all GPU VRAM before loading FLUX Klein.
-
-    Follows WanVideoWrapper's pattern:
+    
     1. Tell ComfyUI to unload ALL cached models from GPU
     2. Free SAM3 models if loaded
-    3. Empty CUDA cache
-    4. Run garbage collection to release Python-side references
+    3. Free MMAudio models if loaded
+    4. Empty CUDA cache + gc.collect
+
+    Uses a re-entrancy guard (``_freeing_vram``) to prevent infinite
+    recursion — ``mmaudio_synthesizer._free_vram()`` calls back into
+    ``flux_klein_editor.cleanup()``.
     """
-    import torch
-
-    # 1. Unload ComfyUI models (the main VRAM consumer)
+    global _freeing_vram
+    if _freeing_vram:
+        return
+    _freeing_vram = True
     try:
-        import comfy.model_management as mm  # type: ignore[import-not-found]
-        mm.unload_all_models()
-        mm.soft_empty_cache()
-        log.debug("Freed ComfyUI GPU VRAM via model_management")
-    except (ImportError, AttributeError):
-        pass
+        import torch
 
-    # 2. Free SAM3 if loaded
-    try:
+        # 1. Unload ComfyUI models (the main VRAM consumer)
         try:
-            from . import sam3_masker
-        except ImportError:
-            from core import sam3_masker  # type: ignore
-        sam3_masker.cleanup()
-    except Exception:
-        pass
+            import comfy.model_management as mm  # type: ignore[import-not-found]
+            mm.unload_all_models()
+            mm.soft_empty_cache()
+            log.debug("Freed ComfyUI GPU VRAM via model_management")
+        except (ImportError, AttributeError):
+            pass
 
-    # 3. Empty CUDA cache + gc.collect
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    gc.collect()
+        # 2. Free SAM3 if loaded
+        try:
+            try:
+                from . import sam3_masker
+            except ImportError:
+                from core import sam3_masker  # type: ignore
+            sam3_masker.cleanup()
+        except Exception:
+            pass
+
+        # 3. Free MMAudio if loaded
+        try:
+            try:
+                from . import mmaudio_synthesizer
+            except ImportError:
+                from core import mmaudio_synthesizer  # type: ignore
+            mmaudio_synthesizer.cleanup()
+        except Exception:
+            pass
+
+        # 4. Empty CUDA cache + gc.collect
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+    finally:
+        _freeing_vram = False
 
 
 # ---------------------------------------------------------------------------
@@ -359,6 +385,25 @@ def _encode_video(frames: list, output_path: str, fps: float) -> str:
     except OSError:
         pass
 
+    return output_path
+
+
+def _encode_video_from_dir(frame_dir: str, output_path: str, fps: float) -> str:
+    """Encode PNG frames from an existing directory to a video file."""
+    subprocess.run(
+        [
+            _get_ffmpeg_bin(), "-y",
+            "-framerate", str(fps),
+            "-start_number", "0",
+            "-i", os.path.join(frame_dir, "%06d.png"),
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-crf", "18",
+            output_path,
+        ],
+        capture_output=True,
+        check=True,
+    )
     return output_path
 
 
@@ -688,6 +733,7 @@ def edit_video(
     # Load masks
     log.info("Loading mask frames from %s", mask_video_path)
     masks_tmpdir = None
+    comp_tmpdir = None
 
     try:
         masks, masks_tmpdir = _load_mask_frames(mask_video_path, total_frames)
@@ -698,9 +744,10 @@ def edit_video(
         # Use a fixed seed for temporal consistency across frames
         base_seed = 42
 
-        # Per-frame processing
+        # Per-frame processing — write composited frames to disk to
+        # avoid accumulating ~135 MiB of numpy arrays in memory.
         log.info("Running FLUX Klein %s on %d frames...", mode, total_frames)
-        composited_np = []
+        comp_tmpdir = tempfile.mkdtemp(prefix="fk_comp_")
         mask_np_list = []
 
         import torch
@@ -709,63 +756,89 @@ def edit_video(
             if i % 10 == 0:
                 log.info("  Frame %d/%d", i + 1, total_frames)
 
+            frame_i = frames[i]
+            mask_i = masks[i]
+
             # Check if mask has any content (skip blank masks)
-            mask_arr = np.array(masks[i])
+            mask_arr = np.array(mask_i)
             if mask_arr.max() < 10:
-                composited_np.append(np.array(frames[i]))
+                Image.fromarray(np.array(frame_i)).save(
+                    os.path.join(comp_tmpdir, f"{i:06d}.png")
+                )
                 mask_np_list.append(
                     np.zeros(
-                        (frames[i].height, frames[i].width),
+                        (frame_i.height, frame_i.width),
                         dtype=np.float32,
                     )
                 )
+                # Release PIL sources immediately
+                frames[i] = None  # type: ignore[assignment]
+                masks[i] = None  # type: ignore[assignment]
                 continue
 
             # Edit or remove the frame (no_grad prevents autograd from
             # accumulating graph memory across frames)
             with torch.no_grad():
                 if mode == "remove":
-                    edited = _remove_frame(pipe, frames[i], masks[i], seed=base_seed)
+                    edited = _remove_frame(pipe, frame_i, mask_i, seed=base_seed)
                 else:
-                    edited = _edit_frame(pipe, frames[i], prompt, seed=base_seed)
+                    edited = _edit_frame(pipe, frame_i, prompt, seed=base_seed)
 
-            # Composite
-            result = _composite_frame(frames[i], edited, masks[i])
-            composited_np.append(result)
+            # Composite and write to disk
+            result = _composite_frame(frame_i, edited, mask_i)
+            Image.fromarray(result).save(
+                os.path.join(comp_tmpdir, f"{i:06d}.png")
+            )
+            del edited, result  # drop refs before cache flush
 
             mask_np = np.array(
-                masks[i].resize(frames[i].size, Image.NEAREST)  # type: ignore[attr-defined]
-                if masks[i].size != frames[i].size
-                else masks[i]
+                mask_i.resize(frame_i.size, Image.NEAREST)  # type: ignore[attr-defined]
+                if mask_i.size != frame_i.size
+                else mask_i
             ).astype(np.float32) / 255.0
             mask_np_list.append(mask_np)
 
-            # Periodic VRAM cleanup to prevent fragmentation over long videos
-            if i % 5 == 0 and torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            # Release PIL sources — they're only needed once
+            frames[i] = None  # type: ignore[assignment]
+            masks[i] = None  # type: ignore[assignment]
+
+            # Periodic VRAM cleanup (every 5 frames balances speed vs fragmentation)
+            if i % 5 == 0:
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
         # Temporal smoothing
-        if smoothing == "gaussian":
-            log.info("Applying temporal Gaussian smoothing...")
-            smoothed = _temporal_smooth(composited_np, mask_np_list, window=5)
-        elif smoothing == "adaptive":
-            log.info("Applying adaptive temporal smoothing...")
-            smoothed = _temporal_smooth_adaptive(
-                composited_np, mask_np_list, threshold=30.0, window=5,
-            )
+        if smoothing != "none":
+            # Reload composited frames from disk for smoothing pass
+            comp_files = sorted(Path(comp_tmpdir).glob("*.png"))
+            composited_np = [np.array(Image.open(f)) for f in comp_files]
+
+            if smoothing == "gaussian":
+                log.info("Applying temporal Gaussian smoothing...")
+                smoothed = _temporal_smooth(composited_np, mask_np_list, window=5)
+            else:
+                log.info("Applying adaptive temporal smoothing...")
+                smoothed = _temporal_smooth_adaptive(
+                    composited_np, mask_np_list, threshold=30.0, window=5,
+                )
+            del composited_np  # free before writing
+
+            # Overwrite disk frames with smoothed versions
+            for idx, arr in enumerate(smoothed):
+                Image.fromarray(arr).save(
+                    os.path.join(comp_tmpdir, f"{idx:06d}.png")
+                )
+            del smoothed
         else:
             log.info("Temporal smoothing disabled")
-            smoothed = composited_np
 
-        # Convert back to PIL
-        result_frames = [Image.fromarray(arr) for arr in smoothed]
-
-        # Encode result
+        # Encode directly from the composited frames directory
         log.info("Encoding edited video to %s", output_path)
-        _encode_video(result_frames, output_path, fps)
+        _encode_video_from_dir(comp_tmpdir, output_path, fps)
     finally:
         import shutil
-        for d in (frames_tmpdir, masks_tmpdir):
+        for d in (frames_tmpdir, masks_tmpdir, comp_tmpdir):
             if d is None:
                 continue
             try:
@@ -773,8 +846,9 @@ def edit_video(
             except OSError:
                 pass
 
-    # Free VRAM
-    cleanup()
+        # Free VRAM — always runs (even on OOM) to reclaim ~8 GB.
+        # The pipeline is re-loaded on next call via load_pipeline().
+        cleanup()
 
     log.info("FLUX Klein %s complete: %s", mode, output_path)
     return output_path

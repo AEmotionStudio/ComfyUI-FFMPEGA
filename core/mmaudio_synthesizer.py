@@ -9,8 +9,8 @@ Supports:
 - **Long video handling**: Automatically chunks videos > 8s and crossfades
 
 Architecture:
-- Runs inference in a subprocess to prevent CUDA memory leaks
-  (same pattern as ``sam3_masker.py``)
+- In-process inference with GPU↔CPU offloading
+- Models cached globally and moved to GPU only during inference
 - Uses ``model_manager`` for download guards and mirror support
 - Models stored in ``ComfyUI/models/mmaudio/``
 - Native safetensors loading via ``comfy.utils.load_torch_file``
@@ -22,11 +22,9 @@ License note:
     that license themselves.  See https://huggingface.co/hkchengrex/MMAudio
 """
 
-import atexit
+import gc
 import logging
 import os
-import subprocess
-import sys
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -286,17 +284,59 @@ def _detect_model_variant(sd: dict) -> tuple[str, bool]:
 #  VRAM management
 # ---------------------------------------------------------------------------
 
-def _free_vram():
-    """Free ComfyUI VRAM before loading MMAudio."""
-    from .platform import free_comfyui_vram
-    free_comfyui_vram()
+_freeing_vram = False
 
+
+def _free_vram():
+    """Free all GPU VRAM before loading MMAudio.
+
+    Follows WanVideoWrapper's pattern:
+    1. Tell ComfyUI to unload ALL cached models from GPU
+    2. Free SAM3 models if loaded
+    3. Free FLUX Klein pipeline if loaded
+    4. Empty CUDA cache + gc.collect
+
+    Uses a re-entrancy guard (``_freeing_vram``) to prevent infinite
+    recursion — ``flux_klein_editor._free_vram()`` calls back into
+    ``mmaudio_synthesizer.cleanup()``.
+    """
+    global _freeing_vram
+    if _freeing_vram:
+        return
+    _freeing_vram = True
     try:
-        import torch
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-    except ImportError:
-        pass
+        from .platform import free_comfyui_vram
+        free_comfyui_vram()
+
+        # Free SAM3 if loaded
+        try:
+            try:
+                from . import sam3_masker
+            except ImportError:
+                from core import sam3_masker  # type: ignore
+            sam3_masker.cleanup()
+        except Exception:
+            pass
+
+        # Free FLUX Klein if loaded
+        try:
+            try:
+                from . import flux_klein_editor
+            except ImportError:
+                from core import flux_klein_editor  # type: ignore
+            flux_klein_editor.cleanup()
+        except Exception:
+            pass
+
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except ImportError:
+            pass
+        gc.collect()
+    finally:
+        _freeing_vram = False
 
 
 def _get_offload_device():
@@ -310,62 +350,43 @@ def _get_offload_device():
 
 
 # ---------------------------------------------------------------------------
-#  Core inference
+#  Cached model state (in-process offloading)
 # ---------------------------------------------------------------------------
 
-_CHUNK_DURATION = 8.0   # MMAudio training duration
-_OVERLAP_SECS = 1.0     # Crossfade overlap between chunks
+_models: Optional[dict] = None
 
 
-def generate_audio(
-    video_path: Optional[str] = None,
-    prompt: str = "",
-    negative_prompt: str = "",
-    duration: Optional[float] = None,
-    seed: int = 42,
-    cfg_strength: float = 4.5,
-    output_dir: Optional[str] = None,
-) -> str:
-    """Generate audio from video and/or text using MMAudio.
+def load_models() -> dict:
+    """Load and cache all MMAudio models.
 
-    Uses native safetensors loading and memory-efficient model initialization
-    via ``accelerate``.
+    On first call, downloads models if needed, frees VRAM from other
+    AI models (ComfyUI, SAM3, FLUX Klein), and loads all 5 components
+    (MMAudio net, Synchformer, BigVGAN, VAE, CLIP) into a cached dict.
 
-    Args:
-        video_path: Path to input video (None for text-to-audio mode).
-        prompt: Text description to guide audio generation.
-        negative_prompt: What to avoid in generated audio.
-        duration: Override duration in seconds (default: video length or 8s).
-        seed: Random seed for reproducibility.
-        cfg_strength: Classifier-free guidance strength.
-        output_dir: Where to save output. Uses tempdir if not specified.
+    Subsequent calls return the cached models immediately.
 
     Returns:
-        Path to generated audio file (.flac).
-
-    Raises:
-        ImportError: If MMAudio is not installed.
-        RuntimeError: If inference fails.
+        Dict with keys: net, feature_utils, seq_cfg, device, dtype,
+        offload_device.
     """
-    import torch
-    import torchaudio
+    global _models
+    if _models is not None:
+        return _models
 
-    from mmaudio.eval_utils import generate, load_video
+    import torch
+    import torch.nn as nn
+
     from mmaudio.model.flow_matching import FlowMatching
-    from mmaudio.model.networks import MMAudio as MMAudioNet, get_my_mmaudio
+    from mmaudio.model.networks import MMAudio as MMAudioNet
     from mmaudio.model.utils.features_utils import FeaturesUtils
     from mmaudio.model.sequence_config import CONFIG_44K
     from mmaudio.ext.synchformer import Synchformer
     from mmaudio.ext.autoencoder import AutoEncoderModule
-    from mmaudio.ext.bigvgan_v2.bigvgan import BigVGAN as BigVGANv2
 
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
 
-    if output_dir is None:
-        output_dir = tempfile.mkdtemp(prefix="ffmpega_mmaudio_")
-
-    # ── Device / dtype setup ──────────────────────────────────────
+    # Device / dtype setup
     device = "cpu"
     if torch.cuda.is_available():
         device = "cuda"
@@ -374,14 +395,17 @@ def generate_audio(
     dtype = torch.bfloat16
     offload_device = _get_offload_device()
 
-    log.info("MMAudio: loading models (device=%s, dtype=%s)", device, dtype)
-
-    # ── Resolve model paths ───────────────────────────────────────
+    # Resolve model paths (downloads if needed)
     model_path = _find_or_download_model("model")
     vae_path = _find_or_download_model("vae")
     synchformer_path = _find_or_download_model("synchformer")
     clip_path = _find_or_download_model("clip")
     bigvgan_dir = _find_or_download_bigvgan()
+
+    # Free VRAM from other models
+    _free_vram()
+
+    log.info("MMAudio: loading models (device=%s, dtype=%s)", device, dtype)
 
     # ── Load MMAudio main model (memory-efficient) ────────────────
     model_sd = _load_state_dict(model_path, device=str(offload_device))
@@ -413,19 +437,33 @@ def generate_audio(
 
         for name, _param in net.named_parameters():
             set_module_tensor_to_device(
-                net, name, device=device, dtype=dtype, value=model_sd[name]
+                net, name, device=str(offload_device), dtype=dtype, value=model_sd[name]
             )
+        # Also materialize any buffers left as meta tensors
+        for name, buf in net.named_buffers():
+            if buf.device.type == "meta":
+                if name in model_sd:
+                    set_module_tensor_to_device(
+                        net, name, device=str(offload_device), dtype=dtype, value=model_sd[name]
+                    )
+                else:
+                    # Buffer not in checkpoint — create a zero tensor
+                    set_module_tensor_to_device(
+                        net, name, device=str(offload_device), dtype=dtype,
+                        value=torch.zeros(buf.shape, dtype=dtype),
+                    )
         del model_sd
         log.info("MMAudio: loaded model via accelerate (%s, v2=%s)", size, is_v2)
 
     except ImportError:
-        # Fallback: standard loading
         log.info("MMAudio: accelerate not available — using standard loading")
         if size == "small":
-            net = get_my_mmaudio("small_16k").to(device, dtype).eval()
+            from mmaudio.model.networks import get_my_mmaudio
+            net = get_my_mmaudio("small_16k").to(str(offload_device), dtype).eval()
         else:
+            from mmaudio.model.networks import get_my_mmaudio
             model_name = "large_44k_v2" if is_v2 else "large_44k"
-            net = get_my_mmaudio(model_name).to(device, dtype).eval()
+            net = get_my_mmaudio(model_name).to(str(offload_device), dtype).eval()
         net.load_weights(model_sd)
         del model_sd
 
@@ -441,114 +479,200 @@ def generate_audio(
             synchformer = Synchformer().eval()
         for name, _param in synchformer.named_parameters():
             set_module_tensor_to_device(
-                synchformer, name, device=device, dtype=dtype, value=synch_sd[name]
+                synchformer, name, device=str(offload_device), dtype=dtype, value=synch_sd[name]
             )
     except ImportError:
         synchformer = Synchformer().eval()
         synchformer.load_state_dict(synch_sd)
-        synchformer = synchformer.to(device, dtype)
+        synchformer = synchformer.to(str(offload_device), dtype)
     del synch_sd
     log.info("MMAudio: loaded Synchformer")
 
-    # ── Load BigVGAN vocoder ──────────────────────────────────────
-    bigvgan_vocoder = BigVGANv2.from_pretrained(bigvgan_dir).eval().to(device, dtype)
-    log.info("MMAudio: loaded BigVGAN vocoder")
+    # ── Load VAE + BigVGAN (bypass AutoEncoderModule constructor) ──
+    # Upstream AutoEncoderModule uses torch.load(weights_only=True) on .pth
+    # files, but our models are .safetensors. We construct it manually.
+    from mmaudio.ext.autoencoder.vae import get_my_vae
+    from mmaudio.ext.bigvgan_v2.bigvgan import BigVGAN as BigVGANv2
+    from mmaudio.ext.mel_converter import get_mel_converter
 
-    # ── Load VAE ──────────────────────────────────────────────────
+    # Load VAE from safetensors
     vae_sd = _load_state_dict(vae_path, device=str(offload_device))
-    vae = AutoEncoderModule(
-        vae_state_dict=vae_sd,
-        bigvgan_vocoder=bigvgan_vocoder,
-        mode="44k",
-    )
-    vae = vae.eval().to(device, dtype)
+    vae_inner = get_my_vae("44k").eval()
+    vae_inner.load_state_dict(vae_sd)
+    vae_inner.remove_weight_norm()
     del vae_sd
-    log.info("MMAudio: loaded VAE")
 
-    # ── Load CLIP ─────────────────────────────────────────────────
+    # Load BigVGAN from pretrained (HuggingFace, already downloaded)
+    bigvgan_vocoder = BigVGANv2.from_pretrained(
+        bigvgan_dir, use_cuda_kernel=False
+    ).eval()
+    bigvgan_vocoder.remove_weight_norm()
+
+    # Manually assemble AutoEncoderModule
+    autoencoder = AutoEncoderModule.__new__(AutoEncoderModule)
+    nn.Module.__init__(autoencoder)
+    autoencoder.vae = vae_inner
+    autoencoder.vocoder = bigvgan_vocoder
+    for param in autoencoder.parameters():
+        param.requires_grad = False
+    autoencoder = autoencoder.eval().to(str(offload_device), dtype)
+    log.info("MMAudio: loaded VAE + BigVGAN vocoder")
+
+    # ── Load CLIP via open_clip ───────────────────────────────────
+    # Upstream FeaturesUtils downloads CLIP from HuggingFace. We load ours
+    # from the cached safetensors instead.
+    import open_clip
+    from torchvision.transforms import Normalize as TVNormalize
+    from mmaudio.model.utils.features_utils import patch_clip
+
     clip_sd = _load_state_dict(clip_path, device=str(offload_device))
 
-    try:
-        from open_clip import CLIP as OpenCLIP
-        import json
+    # Create CLIP model from open_clip and load our weights
+    clip_model = open_clip.create_model('ViT-H-14-378-quickgelu', pretrained=False)
+    clip_model.load_state_dict(clip_sd, strict=False)
+    clip_model = patch_clip(clip_model)
+    clip_model = clip_model.eval().to(str(offload_device), dtype)
+    del clip_sd
+    log.info("MMAudio: loaded CLIP")
 
-        # Load CLIP config
-        clip_config_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "mmaudio_clip_config.json",
-        )
-        if not os.path.isfile(clip_config_path):
-            # Try from mmaudio package
-            import mmaudio
-            pkg_dir = os.path.dirname(os.path.abspath(mmaudio.__file__ or ""))
-            clip_config_path = os.path.join(pkg_dir, "..", "configs", "DFN5B-CLIP-ViT-H-14-384.json")
+    # ── Manually assemble FeaturesUtils ──────────────────────────
+    # Bypass the upstream constructor which tries to download CLIP from HF
+    # and load synchformer/VAE from .pth files. We set sub-modules directly.
+    feature_utils = FeaturesUtils.__new__(FeaturesUtils)
+    nn.Module.__init__(feature_utils)
 
-        if os.path.isfile(clip_config_path):
-            with open(clip_config_path) as f:
-                clip_config = json.load(f)
-            model_cfg = clip_config.get("model_cfg", clip_config)
-        else:
-            # Hardcode the known config for DFN5B-CLIP-ViT-H-14-384
-            model_cfg = {
-                "embed_dim": 1024,
-                "vision_cfg": {
-                    "image_size": 384,
-                    "layers": 32,
-                    "width": 1280,
-                    "head_width": 80,
-                    "mlp_ratio": 4,
-                    "patch_size": 14,
-                },
-                "text_cfg": {
-                    "context_length": 77,
-                    "vocab_size": 49408,
-                    "width": 1024,
-                    "heads": 16,
-                    "layers": 24,
-                },
-            }
-
-        try:
-            from accelerate import init_empty_weights
-            from accelerate.utils import set_module_tensor_to_device
-
-            with init_empty_weights():
-                try:
-                    clip_model = OpenCLIP(**model_cfg).eval()
-                except TypeError:
-                    model_cfg["nonscalar_logit_scale"] = True
-                    clip_model = OpenCLIP(**model_cfg).eval()
-
-            for name, _param in clip_model.named_parameters():
-                if name in clip_sd:
-                    set_module_tensor_to_device(
-                        clip_model, name, device=device, dtype=dtype, value=clip_sd[name]
-                    )
-        except ImportError:
-            try:
-                clip_model = OpenCLIP(**model_cfg).eval()
-            except TypeError:
-                model_cfg["nonscalar_logit_scale"] = True
-                clip_model = OpenCLIP(**model_cfg).eval()
-            clip_model.load_state_dict(clip_sd, strict=False)
-            clip_model = clip_model.to(device, dtype)
-
-        del clip_sd
-        log.info("MMAudio: loaded CLIP")
-
-    except ImportError:
-        log.warning("open_clip not available — CLIP will be loaded by FeaturesUtils internally")
-        clip_model = None
-        del clip_sd
-
-    # ── Assemble FeaturesUtils ────────────────────────────────────
-    feature_utils = FeaturesUtils(
-        vae=vae,
-        synchformer=synchformer,
-        clip_model=clip_model,
-        enable_conditions=True,
+    # Set CLIP components (matching upstream FeaturesUtils.__init__)
+    feature_utils.clip_model = clip_model
+    feature_utils.clip_preprocess = TVNormalize(
+        mean=[0.48145466, 0.4578275, 0.40821073],
+        std=[0.26862954, 0.26130258, 0.27577711],
     )
-    feature_utils = feature_utils.to(device, dtype).eval()
+    feature_utils.synchformer = synchformer
+    feature_utils.tokenizer = open_clip.get_tokenizer('ViT-H-14-378-quickgelu')
+
+    # Set VAE/vocoder components
+    feature_utils.mel_converter = get_mel_converter("44k")
+    feature_utils.tod = autoencoder
+
+    feature_utils = feature_utils.eval().to(str(offload_device), dtype)
+
+    log.info("MMAudio: all models loaded and cached (offloaded to %s)", offload_device)
+
+    _models = {
+        "net": net,
+        "feature_utils": feature_utils,
+        "seq_cfg": seq_cfg,
+        "device": device,
+        "dtype": dtype,
+        "offload_device": offload_device,
+    }
+    return _models
+
+
+def cleanup() -> None:
+    """Free GPU memory and clear cached MMAudio models.
+
+    Moves models to CPU offload device, clears the cache, empties
+    CUDA cache, and runs garbage collection.
+    """
+    global _models
+    if _models is None:
+        return
+
+    # Capture and clear the global ref first so gc.collect() can reclaim
+    models = _models
+    _models = None
+
+    try:
+        offload = models["offload_device"]
+        models["net"].to(offload)
+        models["feature_utils"].to(offload)
+    except Exception:
+        pass
+    del models
+
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except ImportError:
+        pass
+    gc.collect()
+    try:
+        import comfy.model_management as mm  # type: ignore[import-not-found]
+        mm.soft_empty_cache()
+    except (ImportError, AttributeError):
+        pass
+    log.info("MMAudio: models unloaded")
+
+
+# ---------------------------------------------------------------------------
+#  Core inference
+# ---------------------------------------------------------------------------
+
+_CHUNK_DURATION = 8.0   # MMAudio training duration
+_OVERLAP_SECS = 1.0     # Crossfade overlap between chunks
+
+
+def generate_audio(
+    video_path: Optional[str] = None,
+    prompt: str = "",
+    negative_prompt: str = "",
+    duration: Optional[float] = None,
+    seed: int = 42,
+    cfg_strength: float = 4.5,
+    output_dir: Optional[str] = None,
+) -> str:
+    """Generate audio from video and/or text using MMAudio.
+
+    Uses cached in-process models with GPU↔CPU offloading.
+    Models are loaded on first call and cached for reuse.
+    After inference, models are offloaded back to CPU.
+
+    Args:
+        video_path: Path to input video (None for text-to-audio mode).
+        prompt: Text description to guide audio generation.
+        negative_prompt: What to avoid in generated audio.
+        duration: Override duration in seconds (default: video length or 8s).
+        seed: Random seed for reproducibility.
+        cfg_strength: Classifier-free guidance strength.
+        output_dir: Where to save output. Uses tempdir if not specified.
+
+    Returns:
+        Path to generated audio file (.wav).
+
+    Raises:
+        ImportError: If MMAudio is not installed.
+        RuntimeError: If inference fails.
+    """
+    # Validate video path to prevent path traversal
+    if video_path is not None:
+        try:
+            from .sanitize import validate_video_path
+        except ImportError:
+            from core.sanitize import validate_video_path  # type: ignore
+        video_path = validate_video_path(video_path)
+
+    import torch
+
+    from mmaudio.eval_utils import generate, load_video
+    from mmaudio.model.flow_matching import FlowMatching
+
+    if output_dir is None:
+        output_dir = tempfile.mkdtemp(prefix="ffmpega_mmaudio_")
+
+    # ── Load or reuse cached models ───────────────────────────────
+    models = load_models()
+    net = models["net"]
+    feature_utils = models["feature_utils"]
+    seq_cfg = models["seq_cfg"]
+    device = models["device"]
+    offload_device = models["offload_device"]
+
+    # Move models to GPU for inference
+    log.info("MMAudio: moving models to %s for inference", device)
+    net.to(device)
+    feature_utils.to(device)
 
     rng = torch.Generator(device=device)
     rng.manual_seed(seed)
@@ -578,56 +702,71 @@ def generate_audio(
     )
 
     # ── Generate audio ────────────────────────────────────────────
-    if total_duration <= _CHUNK_DURATION + 0.5:
-        audio = _generate_chunk(
-            video_path=video_path,
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            duration=total_duration,
-            net=net,
-            feature_utils=feature_utils,
-            fm=fm,
-            rng=rng,
-            cfg_strength=cfg_strength,
-            seq_cfg=seq_cfg,
-            load_video_fn=load_video,
-            generate_fn=generate,
-        )
-    else:
-        audio = _generate_chunked(
-            video_path=video_path,
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            total_duration=total_duration,
-            net=net,
-            feature_utils=feature_utils,
-            fm=fm,
-            rng=rng,
-            cfg_strength=cfg_strength,
-            seq_cfg=seq_cfg,
-            load_video_fn=load_video,
-            generate_fn=generate,
-        )
-
-    # ── Save output ───────────────────────────────────────────────
-    sampling_rate = seq_cfg.sampling_rate
-    output_path = os.path.join(output_dir, "mmaudio_output.flac")
-    torchaudio.save(output_path, audio, sampling_rate)
-    log.info("MMAudio: audio saved to %s", output_path)
-
-    # ── Cleanup GPU memory ────────────────────────────────────────
-    # In subprocess mode this is redundant (process exits anyway),
-    # but for in-process fallback, move to offload device.
     try:
-        net.to(offload_device)
-        feature_utils.to(offload_device)
-    except Exception:
-        pass
-    del net, feature_utils, fm
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+        if total_duration <= _CHUNK_DURATION + 0.5:
+            audio = _generate_chunk(
+                video_path=video_path,
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                duration=total_duration,
+                net=net,
+                feature_utils=feature_utils,
+                fm=fm,
+                rng=rng,
+                cfg_strength=cfg_strength,
+                seq_cfg=seq_cfg,
+                load_video_fn=load_video,
+                generate_fn=generate,
+            )
+        else:
+            audio = _generate_chunked(
+                video_path=video_path,
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                total_duration=total_duration,
+                net=net,
+                feature_utils=feature_utils,
+                fm=fm,
+                rng=rng,
+                cfg_strength=cfg_strength,
+                seq_cfg=seq_cfg,
+                load_video_fn=load_video,
+                generate_fn=generate,
+            )
 
-    return output_path
+        # ── Save output (inside try so errors don't hit save code) ──
+        sampling_rate = seq_cfg.sampling_rate
+        output_path = os.path.join(output_dir, "mmaudio_output.wav")
+
+        # Use scipy instead of torchaudio to avoid torchcodec dependency
+        import numpy as np
+        from scipy.io import wavfile
+        audio_np = audio.cpu().float().numpy()
+        # audio shape is (channels, samples) — scipy expects (samples,) or (samples, channels)
+        if audio_np.ndim == 2:
+            audio_np = audio_np.T  # (samples, channels)
+        # Clamp and convert to int16
+        audio_np = np.clip(audio_np, -1.0, 1.0)
+        audio_int16 = (audio_np * 32767).astype(np.int16)
+        wavfile.write(output_path, sampling_rate, audio_int16)
+        log.info("MMAudio: audio saved to %s", output_path)
+
+        return output_path
+    finally:
+        # ── Offload models back to CPU ────────────────────────────
+        log.info("MMAudio: offloading models to %s", offload_device)
+        try:
+            net.to(offload_device)
+            feature_utils.to(offload_device)
+        except Exception:
+            pass
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        try:
+            import comfy.model_management as mm  # type: ignore[import-not-found]
+            mm.soft_empty_cache()
+        except (ImportError, AttributeError):
+            pass
 
 
 def _generate_chunk(
@@ -690,6 +829,8 @@ def _generate_chunked(
     generate_fn,
 ):
     """Generate audio for a long video by chunking into segments."""
+    import subprocess
+    import tempfile
 
     sampling_rate = seq_cfg.sampling_rate
     step = _CHUNK_DURATION - _OVERLAP_SECS
@@ -706,25 +847,69 @@ def _generate_chunked(
             offset, offset + chunk_dur,
         )
 
-        # For video mode, we'd ideally extract the segment.
-        # MMAudio's load_video reads from the start, so for chunking
-        # we generate text-guided audio for each segment.
-        # TODO: Once we add segment extraction, pass video segments.
-        audio_chunk = _generate_chunk(
-            video_path=video_path if offset == 0 else None,
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            duration=chunk_dur,
-            net=net,
-            feature_utils=feature_utils,
-            fm=fm,
-            rng=rng,
-            cfg_strength=cfg_strength,
-            seq_cfg=seq_cfg,
-            load_video_fn=load_video_fn,
-            generate_fn=generate_fn,
-            start_sec=offset,
-        )
+        # Extract video segment for this chunk so MMAudio gets visual
+        # context for every chunk, not just the first one.
+        chunk_video_path = video_path
+        segment_tmp = None
+        if video_path is not None and offset > 0:
+            try:
+                from .bin_paths import get_ffmpeg_bin  # type: ignore[import-not-found]
+                _ffmpeg = get_ffmpeg_bin() or "ffmpeg"
+            except ImportError:
+                _ffmpeg = "ffmpeg"
+            try:
+                _seg_f = tempfile.NamedTemporaryFile(
+                    suffix=".mp4", delete=False, prefix="mmaudio_seg_"
+                )
+                segment_tmp = _seg_f.name
+                _seg_f.close()
+                cmd = [
+                    _ffmpeg, "-y",
+                    "-ss", str(offset),
+                    "-i", video_path,
+                    "-t", str(chunk_dur),
+                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                    "-an", "-pix_fmt", "yuv420p",
+                    segment_tmp,
+                ]
+                proc = subprocess.run(cmd, capture_output=True, timeout=30)
+                if proc.returncode == 0:
+                    chunk_video_path = segment_tmp
+                else:
+                    log.warning(
+                        "MMAudio: segment extraction failed for %.1f–%.1fs, "
+                        "falling back to text-only",
+                        offset, offset + chunk_dur,
+                    )
+                    chunk_video_path = None
+            except Exception as exc:
+                log.warning("MMAudio: segment extraction error: %s", exc)
+                chunk_video_path = None
+
+        try:
+            audio_chunk = _generate_chunk(
+                video_path=chunk_video_path,
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                duration=chunk_dur,
+                net=net,
+                feature_utils=feature_utils,
+                fm=fm,
+                rng=rng,
+                cfg_strength=cfg_strength,
+                seq_cfg=seq_cfg,
+                load_video_fn=load_video_fn,
+                generate_fn=generate_fn,
+                start_sec=offset,
+            )
+        finally:
+            # Clean up temp segment file
+            if segment_tmp and os.path.exists(segment_tmp):
+                try:
+                    os.remove(segment_tmp)
+                except OSError:
+                    pass
+
         chunks.append(audio_chunk)
         offset += step
 
@@ -765,174 +950,3 @@ def _crossfade_chunks(chunks, sampling_rate, overlap_secs):
 
     return result
 
-
-# ---------------------------------------------------------------------------
-#  Subprocess wrapper (prevents CUDA memory leaks)
-# ---------------------------------------------------------------------------
-
-def generate_audio_subprocess(
-    video_path: Optional[str] = None,
-    prompt: str = "",
-    negative_prompt: str = "",
-    duration: Optional[float] = None,
-    seed: int = 42,
-    cfg_strength: float = 4.5,
-    output_dir: Optional[str] = None,
-) -> str:
-    """Run generate_audio() in a subprocess to avoid CUDA memory leaks.
-
-    Same interface as generate_audio(). All args are JSON-serialized to
-    the child process via stdin, and the audio path is returned via stdout.
-    Falls back to in-process generate_audio() if the subprocess fails.
-    """
-    import json
-
-    if output_dir is None:
-        output_dir = tempfile.mkdtemp(prefix="ffmpega_mmaudio_")
-        atexit.register(lambda d=output_dir: _cleanup_dir(d))
-
-    args_dict = {
-        "video_path": video_path,
-        "prompt": prompt,
-        "negative_prompt": negative_prompt,
-        "duration": duration,
-        "seed": seed,
-        "cfg_strength": cfg_strength,
-        "output_dir": output_dir,
-    }
-
-    # Inline script for the child process
-    child_script = """
-import sys, json, importlib.util
-args = json.loads(sys.stdin.read())
-mod_path = args.pop("_module_path")
-spec = importlib.util.spec_from_file_location("mmaudio_synthesizer", mod_path)
-mod = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(mod)
-result = mod.generate_audio(**args)
-print("RESULT:" + result, flush=True)
-"""
-
-    try:
-        _this_dir = os.path.dirname(os.path.abspath(__file__))
-        _project_root = os.path.dirname(_this_dir)
-        _module_path = os.path.abspath(__file__)
-
-        args_dict["_module_path"] = _module_path
-
-        env = os.environ.copy()
-        existing_pp = env.get("PYTHONPATH", "")
-        env["PYTHONPATH"] = _project_root + (
-            os.pathsep + existing_pp if existing_pp else ""
-        )
-        env["FFMPEGA_MMAUDIO_MODEL_DIR"] = str(_get_model_dir())
-        env["PYTHONUNBUFFERED"] = "1"
-
-        log.info(
-            "MMAudio subprocess: starting (video=%s, prompt=%r)",
-            video_path, prompt,
-        )
-
-        proc = subprocess.Popen(
-            [sys.executable, "-u", "-c", child_script],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            cwd=_project_root,
-            env=env,
-        )
-
-        # Send args via stdin
-        assert proc.stdin is not None
-        proc.stdin.write(json.dumps(args_dict))
-        proc.stdin.close()
-
-        # Stream stderr in real-time
-        import threading
-
-        def _stream_stderr():
-            try:
-                assert proc.stderr is not None
-                for line in proc.stderr:
-                    line = line.rstrip()
-                    if not line:
-                        continue
-                    if "pkg_resources" in line or "slated for removal" in line:
-                        continue
-                    log.info("[MMAudio] %s", line)
-            except ValueError:
-                pass
-            finally:
-                try:
-                    if proc.stderr is not None:
-                        proc.stderr.close()
-                except OSError:
-                    pass
-
-        stderr_thread = threading.Thread(target=_stream_stderr, daemon=True)
-        stderr_thread.start()
-
-        # Wait for process (timeout: 30 minutes for long videos)
-        try:
-            proc.wait(timeout=1800)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-            raise RuntimeError("MMAudio subprocess timed out after 30 minutes")
-
-        try:
-            assert proc.stdout is not None
-            stdout_data = proc.stdout.read()
-        finally:
-            if proc.stdout is not None:
-                proc.stdout.close()
-
-        stderr_thread.join(timeout=5)
-
-        if proc.returncode != 0:
-            raise RuntimeError(
-                f"MMAudio subprocess exited with code {proc.returncode}"
-            )
-
-        # Extract result path
-        audio_path = None
-        for line in stdout_data.strip().split("\n"):
-            if line.startswith("RESULT:"):
-                audio_path = line[7:].strip()
-                break
-
-        if not audio_path:
-            raise RuntimeError(
-                "MMAudio subprocess did not return a result path"
-            )
-        if not os.path.isfile(audio_path):
-            raise RuntimeError(
-                f"MMAudio subprocess returned non-existent path: {audio_path}"
-            )
-
-        log.info("MMAudio subprocess: completed — audio at %s", audio_path)
-        return audio_path
-
-    except Exception as e:
-        log.error("MMAudio subprocess failed: %s", e)
-        log.info("MMAudio: falling back to in-process generation")
-        _free_vram()
-        return generate_audio(
-            video_path=video_path,
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            duration=duration,
-            seed=seed,
-            cfg_strength=cfg_strength,
-            output_dir=output_dir,
-        )
-
-
-def _cleanup_dir(d: str):
-    """Remove a temporary directory on exit."""
-    import shutil
-    try:
-        shutil.rmtree(d, ignore_errors=True)
-    except Exception:
-        pass

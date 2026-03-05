@@ -126,10 +126,10 @@ class TestGenerateAudioHandler:
             })
             assert isinstance(result, HandlerResult)
 
-    @patch("core.mmaudio_synthesizer.generate_audio_subprocess")
+    @patch("core.mmaudio_synthesizer.generate_audio")
     def test_replace_mode(self, mock_synth):
         """mode=replace should produce filter_complex with amovie source."""
-        mock_synth.return_value = "/tmp/test_audio.flac"
+        mock_synth.return_value = "/tmp/test_audio.wav"
 
         # Patch os.path.isfile to return True for our fake paths
         with patch("os.path.isfile", return_value=True):
@@ -145,10 +145,10 @@ class TestGenerateAudioHandler:
         if result.filter_complex:
             assert "amovie" in result.filter_complex
 
-    @patch("core.mmaudio_synthesizer.generate_audio_subprocess")
+    @patch("core.mmaudio_synthesizer.generate_audio")
     def test_mix_mode_with_audio(self, mock_synth):
         """mode=mix with embedded audio should use amix in filter_complex."""
-        mock_synth.return_value = "/tmp/test_audio.flac"
+        mock_synth.return_value = "/tmp/test_audio.wav"
 
         with patch("os.path.isfile", return_value=True):
             from skills.handlers.generate_audio import _f_generate_audio
@@ -249,3 +249,49 @@ class TestMMAudioModelManager:
         from core.model_manager import require_downloads_allowed
         with pytest.raises(RuntimeError, match="MMAudio"):
             require_downloads_allowed("mmaudio")
+
+
+# ── No-LLM Mode Tests ───────────────────────────────────────────
+
+
+class TestMMAudioNoLLMMode:
+    """Verify generate_audio is wired into the no_llm_mode system."""
+
+    def test_generate_audio_in_no_llm_mode_dropdown(self):
+        """generate_audio should be a valid no_llm_mode option."""
+        from nodes.agent_node import FFMPEGAgentNode
+        inputs = FFMPEGAgentNode.INPUT_TYPES()
+        no_llm_choices = inputs["required"]["no_llm_mode"][0]
+        assert "generate_audio" in no_llm_choices
+
+    def test_mmaudio_mode_input_exists(self):
+        """mmaudio_mode input should be present with replace/mix choices."""
+        from nodes.agent_node import FFMPEGAgentNode
+        inputs = FFMPEGAgentNode.INPUT_TYPES()
+        # mmaudio_mode is an optional advanced parameter
+        assert "mmaudio_mode" in inputs["optional"]
+        choices = inputs["optional"]["mmaudio_mode"][0]
+        assert "replace" in choices
+        assert "mix" in choices
+
+
+# ── In-Process Model API Tests ─────────────────────────────────────
+
+
+class TestMMAudioModelCaching:
+    """Verify the in-process model caching API exists."""
+
+    def test_load_models_exists(self):
+        """load_models function should be importable."""
+        from core.mmaudio_synthesizer import load_models
+        assert callable(load_models)
+
+    def test_cleanup_exists(self):
+        """cleanup function should be importable."""
+        from core.mmaudio_synthesizer import cleanup
+        assert callable(cleanup)
+
+    def test_generate_audio_subprocess_removed(self):
+        """generate_audio_subprocess should no longer exist."""
+        import core.mmaudio_synthesizer as synth
+        assert not hasattr(synth, "generate_audio_subprocess")

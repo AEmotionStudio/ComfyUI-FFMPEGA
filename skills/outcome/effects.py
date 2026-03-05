@@ -2998,18 +2998,6 @@ def register_skills(registry: SkillRegistry) -> None:
                 required=False,
                 default="",
             ),
-            SkillParameter(
-                name="smoothing",
-                type=ParameterType.CHOICE,
-                description=(
-                    "Temporal smoothing mode for FLUX Klein effects (remove/edit). "
-                    "'none' preserves per-frame detail, 'gaussian' reduces flicker, "
-                    "'adaptive' fixes outlier frames only."
-                ),
-                required=False,
-                default="none",
-                choices=["none", "gaussian", "adaptive"],
-            ),
         ],
         examples=[
             "auto_mask:target=face:effect=blur - Blur all faces",

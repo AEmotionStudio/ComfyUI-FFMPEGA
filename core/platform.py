@@ -31,8 +31,9 @@ def get_models_dir(subdir: str = "") -> str:
     """Return ComfyUI's models directory, with optional subdirectory.
 
     Resolution order:
-        1. ``folder_paths.models_dir``  (ComfyUI runtime)
-        2. ``<extension_root>/models/`` (standalone / testing fallback)
+        1. ``folder_paths.models_dir``      (ComfyUI runtime)
+        2. ``<comfyui_root>/models/``        (outside runtime, standard install)
+        3. ``<extension_root>/models/``      (standalone / testing fallback)
 
     The directory is created if it doesn't exist.
 
@@ -47,7 +48,13 @@ def get_models_dir(subdir: str = "") -> str:
 
         base: str = folder_paths.models_dir
     except (ImportError, AttributeError):
-        base = str(_EXT_ROOT / "models")
+        # Outside ComfyUI runtime — try <comfyui_root>/models/ first
+        # _EXT_ROOT = ComfyUI/custom_nodes/ComfyUI-FFMPEGA
+        comfyui_models = _EXT_ROOT.parent.parent / "models"
+        if comfyui_models.is_dir():
+            base = str(comfyui_models)
+        else:
+            base = str(_EXT_ROOT / "models")
 
     path = os.path.join(base, subdir) if subdir else base
     os.makedirs(path, exist_ok=True)

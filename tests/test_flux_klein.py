@@ -165,3 +165,62 @@ class TestFluxKleinPathValidation:
         with pytest.raises(ValidationError):
             edit_video("../../../../etc/passwd", "/tmp/mask.mp4", "test")
 
+
+# --- OOM Cleanup Tests ---------------------------------------------------------
+
+class TestFluxKleinOOMCleanup:
+    """Test that cleanup() is always called, even on OOM errors."""
+
+    @pytest.mark.skipif(not _has_torch, reason="PyTorch not available")
+    def test_cleanup_called_on_oom(self):
+        """cleanup() should run even when a frame raises OOM."""
+        from unittest.mock import patch, MagicMock
+        import core.flux_klein_editor as fk
+
+        # Set up a fake pipeline so load_pipeline returns it
+        fk._pipeline = MagicMock()
+
+        with (
+            patch.object(fk, "_load_video_frames") as mock_load,
+            patch.object(fk, "_load_mask_frames") as mock_masks,
+            patch.object(fk, "_edit_frame", side_effect=RuntimeError("fake OOM")),
+            patch.object(fk, "cleanup") as mock_cleanup,
+            patch.object(fk, "validate_video_path", side_effect=lambda x: x),
+        ):
+            # Provide minimal frame/mask data
+            from PIL import Image
+            import numpy as np
+            dummy_frame = Image.fromarray(np.zeros((64, 64, 3), dtype=np.uint8))
+            dummy_mask = Image.fromarray(np.full((64, 64), 255, dtype=np.uint8))
+            mock_load.return_value = ([dummy_frame], 8.0, "/tmp/fake_frames")
+            mock_masks.return_value = ([dummy_mask], "/tmp/fake_masks")
+
+            with pytest.raises(RuntimeError, match="fake OOM"):
+                fk.edit_video("/tmp/v.mp4", "/tmp/m.mp4", "test")
+
+            # cleanup() must have been called even though we raised
+            mock_cleanup.assert_called_once()
+
+    @pytest.mark.skipif(not _has_torch, reason="PyTorch not available")
+    def test_auto_mask_edit_cleanup_on_flux_error(self):
+        """_f_auto_mask should call flux cleanup when edit_video fails."""
+        from unittest.mock import patch, MagicMock
+        from skills.handlers.visual import _f_auto_mask
+
+        params = {
+            "_input_path": "/tmp/fake.mp4",
+            "target": "hair",
+            "effect": "edit",
+            "edit_prompt": "blonde hair",
+            "_metadata_ref": {"_mask_video_path": "/tmp/mask.mp4"},
+        }
+
+        with (
+            patch("os.path.isfile", return_value=True),
+            patch("core.flux_klein_editor.edit_video", side_effect=RuntimeError("OOM")),
+            patch("core.flux_klein_editor.cleanup") as mock_cleanup,
+        ):
+            with pytest.raises(RuntimeError, match="OOM"):
+                _f_auto_mask(params)
+            mock_cleanup.assert_called_once()
+

@@ -98,7 +98,10 @@ class FFMPEGAgentNode:
 
         # --- CLI auto-detection -------------------------------------------
         # Use shared resolver that checks PATH + well-known user-local dirs.
-        from ..core.llm.cli_utils import resolve_cli_binary
+        try:
+            from ..core.llm.cli_utils import resolve_cli_binary
+        except ImportError:
+            from core.llm.cli_utils import resolve_cli_binary  # type: ignore
 
         cli_models: list[str] = []
         if resolve_cli_binary("gemini", "gemini.cmd"):
@@ -135,13 +138,14 @@ class FFMPEGAgentNode:
                     "default": all_models[0],
                     "tooltip": "AI model used to interpret your prompt. Select 'none' for no-LLM mode — use 'no_llm_mode' to choose between SAM3 masking, Whisper transcription, or karaoke subtitles. Local Ollama models appear next, followed by cloud API models (require api_key).",
                 }),
-                "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles"], {
+                "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles", "generate_audio"], {
                     "default": "manual",
                     "tooltip": "What to do when llm_model is 'none'. "
                                "'manual' runs the Effects Builder pipeline directly (no AI). "
                                "'sam3_masking' uses the prompt as a SAM3 text target. "
                                "'transcribe' runs Whisper speech-to-text and burns SRT subtitles. "
-                               "'karaoke_subtitles' runs Whisper and burns word-by-word karaoke subtitles.",
+                               "'karaoke_subtitles' runs Whisper and burns word-by-word karaoke subtitles. "
+                               "'generate_audio' uses MMAudio to synthesize audio from video/prompt.",
                 }),
                 "quality_preset": (cls.QUALITY_PRESETS, {
                     "default": "standard",
@@ -293,6 +297,20 @@ class FFMPEGAgentNode:
                 "mask_output_type": (["black_white", "colored_overlay"], {
                     "default": "black_white",
                     "tooltip": "Mask preview output format. 'black_white' outputs a raw B&W mask video (white = detected object) for use in external compositing. 'colored_overlay' composites colored SAM3-style regions + contours onto the video.",
+                }),
+
+                # ── Advanced: FLUX Klein ──────────────────────────────────
+                "flux_smoothing": (["none", "gaussian", "adaptive"], {
+                    "default": "none",
+                    "tooltip": "Temporal smoothing for FLUX Klein effects (remove/edit). 'none' = no smoothing (fastest, least VRAM). 'gaussian' = Gaussian blur across time (reduces flicker, +700 MiB RAM). 'adaptive' = per-pixel deviation check, only smooths outlier frames (+700 MiB RAM).",
+                }),
+
+                # ── Advanced: MMAudio ─────────────────────────────────────
+                "mmaudio_mode": (["replace", "mix"], {
+                    "default": "replace",
+                    "tooltip": "How to combine AI-generated audio with existing audio (used in 'generate_audio' no_llm_mode). "
+                               "'replace' replaces existing audio entirely. "
+                               "'mix' blends generated audio with the original track.",
                 }),
 
                 # ── Advanced: Batch processing ────────────────────────────
@@ -763,6 +781,8 @@ class FFMPEGAgentNode:
         sam3_max_objects: int = 5,
         sam3_det_threshold: float = 0.7,
         mask_points: str = "",
+        flux_smoothing: str = "none",
+        mmaudio_mode: str = "replace",
         batch_mode: bool = False,
         video_folder: str = "",
         file_pattern: str = "*.mp4",
@@ -826,6 +846,7 @@ class FFMPEGAgentNode:
                 sam3_max_objects=sam3_max_objects,
                 sam3_det_threshold=sam3_det_threshold,
                 mask_points=mask_points,
+                flux_smoothing=flux_smoothing,
                 pipeline_json=pipeline_json,
             )
 
@@ -854,7 +875,7 @@ class FFMPEGAgentNode:
 
         if not prompt.strip():
             # manual + whisper modes don't need a prompt
-            if llm_model != "none" or no_llm_mode not in ("manual", "transcribe", "karaoke_subtitles"):
+            if llm_model != "none" or no_llm_mode not in ("manual", "transcribe", "karaoke_subtitles", "generate_audio"):
                 raise ValueError("Prompt cannot be empty")
 
         # --- Analyze input video ---
@@ -884,6 +905,7 @@ class FFMPEGAgentNode:
                     sam3_max_objects=sam3_max_objects,
                     sam3_det_threshold=sam3_det_threshold,
                     mask_points=mask_points,
+                    flux_smoothing=flux_smoothing,
                     temp_video_from_images=temp_video_from_images,
                     temp_video_with_audio=temp_video_with_audio,
                     image_a=image_a,
@@ -927,6 +949,23 @@ class FFMPEGAgentNode:
                     sam3_max_objects=sam3_max_objects,
                     sam3_det_threshold=sam3_det_threshold,
                     mask_points=mask_points,
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    **kwargs,
+                )
+            # MMAudio-only mode (generate_audio from video/prompt)
+            if no_llm_mode == "generate_audio":
+                return await self._process_mmaudio_only(
+                    prompt=prompt,
+                    mmaudio_mode=mmaudio_mode,
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
                     temp_video_from_images=temp_video_from_images,
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
@@ -978,6 +1017,7 @@ class FFMPEGAgentNode:
                     sam3_max_objects=sam3_max_objects,
                     sam3_det_threshold=sam3_det_threshold,
                     mask_points=mask_points,
+                    flux_smoothing=flux_smoothing,
                     temp_video_from_images=temp_video_from_images,
                     temp_video_with_audio=temp_video_with_audio,
                     image_a=image_a,
@@ -992,7 +1032,7 @@ class FFMPEGAgentNode:
                 "No-LLM 'manual' mode requires an Effects Builder node or "
                 "FFMPEGA Text node. Connect one to the pipeline_json or "
                 "text_a input, or switch no_llm_mode to 'sam3_masking', "
-                "'transcribe', or 'karaoke_subtitles'."
+                "'transcribe', 'karaoke_subtitles', or 'generate_audio'."
             )
         # --- Build connected-inputs context string ---
         connected_inputs_str = self._build_connected_inputs_summary(
@@ -1050,6 +1090,8 @@ class FFMPEGAgentNode:
             sam3_max_objects=sam3_max_objects,
             sam3_det_threshold=sam3_det_threshold,
             mask_points=mask_points,
+            flux_smoothing=flux_smoothing,
+            mmaudio_mode=mmaudio_mode,
             composer=self.composer,
         )
 
@@ -1228,7 +1270,7 @@ class FFMPEGAgentNode:
 
         return prompt + "\n".join(hint_lines)
 
-    async def _process_effects_pipeline(self, pipeline_json, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, whisper_device="cpu", whisper_model="large-v3", sam3_device="gpu", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", temp_video_from_images=None, temp_video_with_audio=None, image_a=None, audio_a=None, _all_video_paths=None, _all_image_paths=None, _all_text_inputs=None, **kwargs):
+    async def _process_effects_pipeline(self, pipeline_json, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, whisper_device="cpu", whisper_model="large-v3", sam3_device="gpu", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", flux_smoothing="none", temp_video_from_images=None, temp_video_with_audio=None, image_a=None, audio_a=None, _all_video_paths=None, _all_image_paths=None, _all_text_inputs=None, **kwargs):
         """Delegate to nollm_modes module."""
         return await _nollm.process_effects_pipeline(
             composer=self.composer, process_manager=self.process_manager,
@@ -1242,6 +1284,7 @@ class FFMPEGAgentNode:
             whisper_device=whisper_device, whisper_model=whisper_model,
             sam3_device=sam3_device, sam3_max_objects=sam3_max_objects,
             sam3_det_threshold=sam3_det_threshold, mask_points=mask_points,
+            flux_smoothing=flux_smoothing,
             temp_video_from_images=temp_video_from_images,
             temp_video_with_audio=temp_video_with_audio,
             image_a=image_a, audio_a=audio_a,
@@ -1289,6 +1332,25 @@ class FFMPEGAgentNode:
             temp_video_with_audio=temp_video_with_audio,
             **kwargs,
         )
+    # ------------------------------------------------------------------ #
+    #  MMAudio-only mode (no LLM)                                         #
+    # ------------------------------------------------------------------ #
+
+    async def _process_mmaudio_only(self, prompt, mmaudio_mode, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+        """Delegate to nollm_modes module."""
+        return await _nollm.process_mmaudio_only(
+            media_converter=self.media_converter,
+            prompt=prompt, mmaudio_mode=mmaudio_mode,
+            effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
+        )
+
     async def _verify_output(self, connector, output_path, prompt, pipeline, effective_video_path, use_vision):
         """Delegate to execution_engine module."""
         return await _ee._verify_output(
@@ -1325,7 +1387,7 @@ class FFMPEGAgentNode:
         """Delegate to output_handler module."""
         return _oh.strip_api_key_from_metadata(api_key, prompt, extra_pnginfo)
 
-    async def _process_batch(self, video_folder, file_pattern, prompt, llm_model, quality_preset, ollama_url, api_key, custom_model, crf, encoding_preset, max_concurrent, save_output, output_path, use_vision=True, verify_output=False, ptc_mode="off", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", pipeline_json=""):
+    async def _process_batch(self, video_folder, file_pattern, prompt, llm_model, quality_preset, ollama_url, api_key, custom_model, crf, encoding_preset, max_concurrent, save_output, output_path, use_vision=True, verify_output=False, ptc_mode="off", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", pipeline_json="", flux_smoothing="none"):
         """Delegate to batch_processor module."""
         return await _bp.process_batch(
             analyzer=self.analyzer, composer=self.composer,
@@ -1343,6 +1405,7 @@ class FFMPEGAgentNode:
             sam3_max_objects=sam3_max_objects,
             sam3_det_threshold=sam3_det_threshold,
             mask_points=mask_points, pipeline_json=pipeline_json,
+            flux_smoothing=flux_smoothing,
         )
     @classmethod
     def IS_CHANGED(cls, video_path, prompt, seed=0, **kwargs):

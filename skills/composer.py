@@ -680,6 +680,10 @@ class SkillComposer:
                 step.params["_sam3_det_threshold"] = pipeline.metadata["_sam3_det_threshold"]
             if "_mask_points" in pipeline.metadata:
                 step.params["_mask_points"] = pipeline.metadata["_mask_points"]
+            if "_flux_smoothing" in pipeline.metadata:
+                step.params["_flux_smoothing"] = pipeline.metadata["_flux_smoothing"]
+            if "_mmaudio_mode" in pipeline.metadata:
+                step.params["_mmaudio_mode"] = pipeline.metadata["_mmaudio_mode"]
             # Provide mutable reference so handlers can write back metadata
             # (e.g. _f_auto_mask stores _mask_video_path for overlay generation)
             step.params["_metadata_ref"] = pipeline.metadata

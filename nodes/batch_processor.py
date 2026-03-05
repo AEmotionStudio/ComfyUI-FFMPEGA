@@ -46,6 +46,7 @@ async def process_batch(
     sam3_det_threshold: float = 0.7,
     mask_points: str = "",
     pipeline_json: str = "",
+    flux_smoothing: str = "none",
 ) -> tuple[torch.Tensor, dict, str, str, str, str]:
     """Process all matching videos in a folder with the same pipeline.
 
@@ -155,6 +156,8 @@ async def process_batch(
             pipeline.metadata["_sam3_det_threshold"] = sam3_det_threshold
             if mask_points and mask_points.strip():
                 pipeline.metadata["_mask_points"] = mask_points.strip()
+            if flux_smoothing and flux_smoothing != "none":
+                pipeline.metadata["_flux_smoothing"] = flux_smoothing
             for step in pipeline_steps:
                 skill_name = step.get("skill")
                 params = step.get("params", {})

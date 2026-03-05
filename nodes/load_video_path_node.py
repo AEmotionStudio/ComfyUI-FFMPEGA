@@ -26,7 +26,10 @@ import subprocess
 import torch
 
 import folder_paths
-from ..core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin
+try:
+    from ..core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin
+except ImportError:
+    from core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin  # type: ignore
 
 logger = logging.getLogger("FFMPEGA")
 

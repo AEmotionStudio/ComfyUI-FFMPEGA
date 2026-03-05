@@ -89,6 +89,8 @@ def assemble_pipeline(
     sam3_max_objects: int,
     sam3_det_threshold: float,
     mask_points: str,
+    flux_smoothing: str,
+    mmaudio_mode: str,
     composer,
 ) -> tuple:
     """Build a Pipeline from the LLM spec and apply quality/format/metadata.
@@ -192,6 +194,10 @@ def assemble_pipeline(
     pipeline.metadata["_sam3_det_threshold"] = sam3_det_threshold
     if mask_points and mask_points.strip():
         pipeline.metadata["_mask_points"] = mask_points.strip()
+    if flux_smoothing and flux_smoothing != "none":
+        pipeline.metadata["_flux_smoothing"] = flux_smoothing
+    if mmaudio_mode and mmaudio_mode != "replace":
+        pipeline.metadata["_mmaudio_mode"] = mmaudio_mode
 
     return (pipeline, output_path, interpretation, warnings, estimated_changes,
             audio_source, audio_mode)

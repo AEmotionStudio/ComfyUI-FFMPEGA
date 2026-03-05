@@ -11,8 +11,12 @@ import torch
 from PIL import Image
 
 import folder_paths
-from ..core.sanitize import validate_video_path  # type: ignore[import-not-found]
-from ..core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin
+try:
+    from ..core.sanitize import validate_video_path  # type: ignore[import-not-found]
+    from ..core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin
+except ImportError:
+    from core.sanitize import validate_video_path  # type: ignore
+    from core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin  # type: ignore
 
 logger = logging.getLogger("ffmpega")
 
