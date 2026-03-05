@@ -259,6 +259,7 @@ class TestMMAudioNoLLMMode:
 
     def test_generate_audio_in_no_llm_mode_dropdown(self):
         """generate_audio should be a valid no_llm_mode option."""
+        pytest.importorskip("torch")
         from nodes.agent_node import FFMPEGAgentNode
         inputs = FFMPEGAgentNode.INPUT_TYPES()
         no_llm_choices = inputs["required"]["no_llm_mode"][0]
@@ -266,6 +267,7 @@ class TestMMAudioNoLLMMode:
 
     def test_mmaudio_mode_input_exists(self):
         """mmaudio_mode input should be present with replace/mix choices."""
+        pytest.importorskip("torch")
         from nodes.agent_node import FFMPEGAgentNode
         inputs = FFMPEGAgentNode.INPUT_TYPES()
         # mmaudio_mode is an optional advanced parameter
