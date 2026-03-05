@@ -23,14 +23,12 @@ from .output_handler import (
 )
 
 try:
-    from ..core.bin_paths import get_ffmpeg_bin as _get_ffmpeg_bin_raw
+    from ..core.bin_paths import get_ffmpeg_bin as _get_ffmpeg_bin
 except ImportError:
-    from core.bin_paths import get_ffmpeg_bin as _get_ffmpeg_bin_raw  # type: ignore
+    from core.bin_paths import get_ffmpeg_bin as _get_ffmpeg_bin  # type: ignore
 
 
-def _get_ffmpeg_bin() -> str:
-    """Resolve ffmpeg binary, with fallback to bare 'ffmpeg'."""
-    return _get_ffmpeg_bin_raw() or "ffmpeg"
+
 
 
 logger = logging.getLogger("ffmpega")

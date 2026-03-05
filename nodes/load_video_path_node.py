@@ -355,7 +355,7 @@ class LoadVideoPathNode:
                 needs_trim = False  # skip the ffmpeg block below
 
             if needs_trim:
-                ffmpeg_bin = get_ffmpeg_bin() or "ffmpeg"
+                ffmpeg_bin = get_ffmpeg_bin()
                 ffmpeg_cmd = [ffmpeg_bin, "-y"]
 
                 # Skip frames: convert to time offset for fast seeking

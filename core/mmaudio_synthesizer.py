@@ -853,7 +853,7 @@ def _generate_chunked(
         if video_path is not None and offset > 0:
             try:
                 from .bin_paths import get_ffmpeg_bin  # type: ignore[import-not-found]
-                _ffmpeg = get_ffmpeg_bin() or "ffmpeg"
+                _ffmpeg = get_ffmpeg_bin()
             except ImportError:
                 _ffmpeg = "ffmpeg"
             try:
@@ -871,7 +871,7 @@ def _generate_chunked(
                     "-an", "-pix_fmt", "yuv420p",
                     segment_tmp,
                 ]
-                proc = subprocess.run(cmd, capture_output=True, timeout=30)
+                proc = subprocess.run(cmd, capture_output=True, timeout=60)
                 if proc.returncode == 0:
                     chunk_video_path = segment_tmp
                 else:
