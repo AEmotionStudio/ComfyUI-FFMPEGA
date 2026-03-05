@@ -1441,6 +1441,7 @@ app.registerExtension({
                     const active = isHovered || isFocused;
                     uploadBtn.style.backgroundColor = active ? "#333" : "#222";
                     uploadBtn.style.outline = isFocused ? "2px solid #4a6a8a" : "none";
+                    uploadBtn.style.outlineOffset = isFocused ? "2px" : "0px";
                 };
                 uploadBtn.onmouseenter = () => { isHovered = true; updateUploadBtn(); };
                 uploadBtn.onmouseleave = () => { isHovered = false; updateUploadBtn(); };
@@ -2039,6 +2040,7 @@ app.registerExtension({
                     const active = isHovered || isFocused;
                     uploadBtn.style.backgroundColor = active ? "#333" : "#222";
                     uploadBtn.style.outline = isFocused ? "2px solid #4a6a8a" : "none";
+                    uploadBtn.style.outlineOffset = isFocused ? "2px" : "0px";
                 };
                 uploadBtn.onmouseenter = () => { isHovered = true; updateBtn(); };
                 uploadBtn.onmouseleave = () => { isHovered = false; updateBtn(); };
