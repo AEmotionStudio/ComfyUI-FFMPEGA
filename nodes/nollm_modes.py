@@ -29,8 +29,6 @@ except ImportError:
 
 
 
-
-
 logger = logging.getLogger("ffmpega")
 
 # Quality encoding constants — shared by SAM3, Whisper, and MMAudio modes
@@ -762,6 +760,9 @@ async def process_mmaudio_only(
 
     if mmaudio_mode == "mix" and has_audio:
         # Mix generated audio with original audio
+        logger.info(
+            "MMAudio-only: 'mix' mode requires video re-encoding (slower than 'replace')"
+        )
         ffmpeg_cmd = [
             _ffmpeg, "-y",
             "-i", effective_video_path,

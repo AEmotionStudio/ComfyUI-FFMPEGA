@@ -836,81 +836,86 @@ def _generate_chunked(
     chunks = []
     offset = 0.0
 
-    while offset < total_duration:
-        chunk_dur = min(_CHUNK_DURATION, total_duration - offset)
-        if chunk_dur < 1.0:
-            break
+    try:
+        while offset < total_duration:
+            chunk_dur = min(_CHUNK_DURATION, total_duration - offset)
+            if chunk_dur < 1.0:
+                break
 
-        log.info(
-            "MMAudio: generating chunk %.1f–%.1fs",
-            offset, offset + chunk_dur,
-        )
-
-        # Extract video segment for this chunk so MMAudio gets visual
-        # context for every chunk, not just the first one.
-        chunk_video_path = video_path
-        segment_tmp = None
-        if video_path is not None and offset > 0:
-            try:
-                from .bin_paths import get_ffmpeg_bin  # type: ignore[import-not-found]
-                _ffmpeg = get_ffmpeg_bin()
-            except ImportError:
-                _ffmpeg = "ffmpeg"
-            try:
-                _seg_f = tempfile.NamedTemporaryFile(
-                    suffix=".mp4", delete=False, prefix="mmaudio_seg_"
-                )
-                segment_tmp = _seg_f.name
-                _seg_f.close()
-                cmd = [
-                    _ffmpeg, "-y",
-                    "-ss", str(offset),
-                    "-i", video_path,
-                    "-t", str(chunk_dur),
-                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
-                    "-an", "-pix_fmt", "yuv420p",
-                    segment_tmp,
-                ]
-                proc = subprocess.run(cmd, capture_output=True, timeout=60)
-                if proc.returncode == 0:
-                    chunk_video_path = segment_tmp
-                else:
-                    log.warning(
-                        "MMAudio: segment extraction failed for %.1f–%.1fs, "
-                        "falling back to text-only",
-                        offset, offset + chunk_dur,
-                    )
-                    chunk_video_path = None
-            except Exception as exc:
-                log.warning("MMAudio: segment extraction error: %s", exc)
-                chunk_video_path = None
-
-        try:
-            audio_chunk = _generate_chunk(
-                video_path=chunk_video_path,
-                prompt=prompt,
-                negative_prompt=negative_prompt,
-                duration=chunk_dur,
-                net=net,
-                feature_utils=feature_utils,
-                fm=fm,
-                rng=rng,
-                cfg_strength=cfg_strength,
-                seq_cfg=seq_cfg,
-                load_video_fn=load_video_fn,
-                generate_fn=generate_fn,
-                start_sec=offset,
+            log.info(
+                "MMAudio: generating chunk %.1f–%.1fs",
+                offset, offset + chunk_dur,
             )
-        finally:
-            # Clean up temp segment file
-            if segment_tmp and os.path.exists(segment_tmp):
-                try:
-                    os.remove(segment_tmp)
-                except OSError:
-                    pass
 
-        chunks.append(audio_chunk)
-        offset += step
+            # Extract video segment for this chunk so MMAudio gets visual
+            # context for every chunk, not just the first one.
+            chunk_video_path = video_path
+            segment_tmp = None
+            if video_path is not None and offset > 0:
+                try:
+                    from .bin_paths import get_ffmpeg_bin  # type: ignore[import-not-found]
+                    _ffmpeg = get_ffmpeg_bin()
+                except ImportError:
+                    _ffmpeg = "ffmpeg"
+                try:
+                    _seg_f = tempfile.NamedTemporaryFile(
+                        suffix=".mp4", delete=False, prefix="mmaudio_seg_"
+                    )
+                    segment_tmp = _seg_f.name
+                    _seg_f.close()
+                    cmd = [
+                        _ffmpeg, "-y",
+                        "-ss", str(offset),
+                        "-i", video_path,
+                        "-t", str(chunk_dur),
+                        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                        "-an", "-pix_fmt", "yuv420p",
+                        segment_tmp,
+                    ]
+                    proc = subprocess.run(cmd, capture_output=True, timeout=60)
+                    if proc.returncode == 0:
+                        chunk_video_path = segment_tmp
+                    else:
+                        log.warning(
+                            "MMAudio: segment extraction failed for %.1f–%.1fs, "
+                            "falling back to text-only",
+                            offset, offset + chunk_dur,
+                        )
+                        chunk_video_path = None
+                except Exception as exc:
+                    log.warning("MMAudio: segment extraction error: %s", exc)
+                    chunk_video_path = None
+
+            try:
+                audio_chunk = _generate_chunk(
+                    video_path=chunk_video_path,
+                    prompt=prompt,
+                    negative_prompt=negative_prompt,
+                    duration=chunk_dur,
+                    net=net,
+                    feature_utils=feature_utils,
+                    fm=fm,
+                    rng=rng,
+                    cfg_strength=cfg_strength,
+                    seq_cfg=seq_cfg,
+                    load_video_fn=load_video_fn,
+                    generate_fn=generate_fn,
+                    start_sec=offset,
+                )
+            finally:
+                # Clean up temp segment file
+                if segment_tmp and os.path.exists(segment_tmp):
+                    try:
+                        os.remove(segment_tmp)
+                    except OSError:
+                        pass
+
+            chunks.append(audio_chunk)
+            offset += step
+    except Exception:
+        # Release accumulated chunk tensors so GPU memory is freed faster
+        chunks.clear()
+        raise
 
     if len(chunks) == 1:
         return chunks[0]
