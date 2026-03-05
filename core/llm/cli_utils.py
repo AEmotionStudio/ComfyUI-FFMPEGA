@@ -47,8 +47,8 @@ def _build_search_dirs() -> list[pathlib.Path]:
         # Linux + macOS shared paths
         dirs.append(home / ".local" / "bin")  # pipx, user installs
         dirs.append(home / ".local" / "share" / "pnpm")  # pnpm global
-        dirs.append(home / ".nvm" / "versions")  # nvm global
-        dirs.append(pathlib.Path("/usr/local/bin"))  # Homebrew (Intel Mac) / manual installs
+        dirs.append(home / ".nvm" / "versions")            # nvm global
+        dirs.append(pathlib.Path("/usr/local/bin"))         # Homebrew (Intel Mac) / manual installs
 
         if system == "Darwin":
             # Homebrew on Apple Silicon
@@ -62,6 +62,7 @@ def _build_search_dirs() -> list[pathlib.Path]:
 _EXTRA_SEARCH_DIRS = _build_search_dirs()
 
 
+# NOTE: Cache is process-lifetime — newly installed binaries require a restart.
 @functools.cache
 def resolve_cli_binary(*names: str) -> str | None:
     """Return the full path to the first binary found, or ``None``.
