@@ -466,6 +466,9 @@ TOOL_DEFINITIONS = [
             ],
         },
     },
+    # NOTE: execute_code is CLI-connector-only — it is NOT routed through
+    # the MCP server (no _call_execute_code handler).  CLI connectors embed
+    # these definitions as text in the prompt and execute code locally.
     {
         "type": "function",
         "function": {

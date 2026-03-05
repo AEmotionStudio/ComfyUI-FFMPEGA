@@ -330,6 +330,8 @@ class FFMPEGAMCPServer:
         try:
             detail = arguments.get("detail", "full")
             result = analyze_video(video_path, detail=detail)
+            if "error" in result:
+                return {"error": result["error"]}
             return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
         except Exception as e:
             return {"error": str(e)}
