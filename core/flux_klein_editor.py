@@ -389,10 +389,19 @@ def _encode_video(frames: list, output_path: str, fps: float) -> str:
 def _encode_video_from_dir(frame_dir: str, output_path: str, fps: float) -> str:
     """Encode PNG frames from an existing directory to a video file.
 
-    .. note:: Expects **0-indexed** filenames (``000000.png``, ``000001.png``, ...).
-       ``_load_video_frames`` produces 1-indexed files — do NOT pass its output
-       directory here directly.
+    Expects **0-indexed** filenames (``000000.png``, ``000001.png``, ...).
+    ``_load_video_frames`` produces 1-indexed files — do NOT pass its output
+    directory here directly.
+
+    Raises:
+        FileNotFoundError: If ``000000.png`` is missing (wrong indexing).
     """
+    first_frame = os.path.join(frame_dir, "000000.png")
+    if not os.path.isfile(first_frame):
+        raise FileNotFoundError(
+            f"_encode_video_from_dir expects 0-indexed frames but "
+            f"{first_frame} does not exist. Check the caller."
+        )
     subprocess.run(
         [
             _get_ffmpeg_bin(), "-y",
@@ -805,11 +814,12 @@ def edit_video(
             frames[i] = None  # type: ignore[assignment]
             masks[i] = None  # type: ignore[assignment]
 
-            # Periodic VRAM cleanup (every 5 frames balances speed vs fragmentation)
-            if i % 5 == 0:
-                gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+            # Per-frame cleanup: gc.collect + empty_cache every frame to
+            # minimise OOM risk.  Adds ~10-50 ms/frame overhead but avoids
+            # accumulating unreachable tensors across long videos.
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         # Temporal smoothing
         if smoothing != "none":
