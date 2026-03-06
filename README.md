@@ -5,7 +5,7 @@
 **The ultimate video editing suite for ComfyUI — edit with natural language or hands-on manual controls.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-2.12.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-2.13.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-2-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 [![Downloads](https://img.shields.io/badge/dynamic/json?color=blueviolet&label=Downloads&query=downloads.smart_count&url=https://raw.githubusercontent.com/AEmotionStudio/ComfyUI-FFMPEGA/refs/heads/badges/traffic_stats.json&style=for-the-badge&logo=github)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
@@ -24,132 +24,33 @@
 
 ---
 
-## 🚀 What's New in v2.12.0 (March 6, 2026)
+## 🚀 What's New in v2.13.0
 
-**AI Face Animation (LivePortrait), MMAudio In-Process, MCP Progressive Disclosure, LaMa Safetensors**
-
-*   **🎭 AI Face Animation (`animate_portrait`)**: New skill powered by [LivePortrait](https://github.com/KlingAIResearch/LivePortrait) — transfers facial motion from a driving video onto a source portrait. Supports images and video as source, per-frame face detection, affine crop/paste-back with elliptical Gaussian-blurred blending, relative motion mode, and configurable driving multiplier. In-process inference with automatic GPU↔CPU offloading. 7 aliases (`live_portrait`, `face_animate`, `motion_transfer`, etc.). Mirror-hosted safetensors on `AEmotionStudio/liveportrait-models` (~497 MB).
-*   **🎭 Animate Portrait No-LLM Mode**: New `animate_portrait` option in the `no_llm_mode` dropdown — animate a face directly without any LLM. Source from `video_path`/`images_a`, driving video from `video_a`.
-*   **🔊 MMAudio In-Process**: Migrated MMAudio from subprocess to in-process execution with GPU↔CPU offloading. New `generate_audio` no-LLM mode.
-*   **🔌 MCP Progressive Disclosure**: MCP tool discovery uses progressive disclosure (`list_tools` → `get_tool_details`), plus new `validate_skill_params` and `cleanup_vision_frames` tools. *(PR #144)*
-*   **✨ FLUX Klein In-Process**: Migrated FLUX Klein 4B to in-process inference with mask drawing UI and model output caching. *(PR #140)*
-*   **🔒 LaMa Safetensors**: Converted `big-lama.pt` to `big-lama.safetensors` — eliminates pickle warnings and HuggingFace security flags.
-*   **⚡ Path Caching**: FFmpeg/FFprobe binary resolution and CLI binary lookups cached with `@functools.cache`. *(PRs #139, #143)*
-*   **♿ Accessibility**: Focus ring improvements across point selector and interactive widgets. *(PRs #138, #142)*
-*   **🧪 939 Tests**: Test suite expanded from 799 → **939 tests**, 0 failures.
-*   **🐛 Fixes**: MediaPipe `mp.solutions` crash, LivePortrait RGB/BGR mismatch, paste-back affine math, lip sync filter composition, FLUX Klein memory leaks, MCP dispatch errors.
+*   🖼️ **AI Background Removal** — remove or replace backgrounds using BRIA RMBG with 6 model choices and solid-color or transparent output
+*   🎛️ **FLUX Klein Toggle** — enable/disable FLUX Klein 4B per-run with a single checkbox for zero-VRAM editing
+*   🎬 **Edit FFmpeg Fallback** — when FLUX Klein is off, masked edits use lightweight FFmpeg color/tone filters instead
+*   ⚡ **Smarter Defaults** — `use_vision` and `verify_output` now default to off, cutting token usage and VRAM pressure
+*   🧪 **952 Tests**, 0 failures
 
 <details>
-<summary><b>Previous: v2.9.1 — AI Audio, Lip Sync, FLUX Klein Editing, Modular Architecture & CI/CD</b></summary>
+<summary><b>📋 Previous Releases</b></summary>
 
-*   **✨ AI Object Removal & Editing (FLUX Klein 4B)**: `auto_mask:effect=remove` and `auto_mask:effect=edit` powered by FLUX Klein 4B. AI-powered per-frame object removal and text-guided editing.
-*   **🔊 AI Audio Generation (`generate_audio`)**: Powered by MMAudio — synthesizes audio/foley from video and/or text. 11 aliases.
-*   **👄 AI Lip Sync (`lip_sync`)**: Powered by MuseTalk V15 — synchronizes lip movements to audio. 7 aliases.
-*   **🏗️ Modular Node Architecture**: Broke up `agent_node.py` into 6 focused modules. Pyright type checking with 78 errors fixed.
-*   **🧱 Platform Abstraction**: All ComfyUI boundary interactions extracted into `core/platform.py`.
-*   **📋 Structured Logging & CI**: `JSONFormatter`, `LogTimer`, CI workflow with Pytest + Pyright, pre-commit hooks.
-*   **🪞 Model Mirrors**: MMAudio, MuseTalk, and LaMa weights hosted on AEmotionStudio HuggingFace repos.
-
-</details>
-
-<details>
-<summary><b>Previous: v2.8.0 — Effects Builder, Manual Mode, SAM3 Hardening & 15+ Bug Fixes</b></summary>
-
-*   **🏗️ Effects Builder Node**: New companion node for manual effect composition — select up to 3 skills with params, combine with raw FFmpeg filters, and use presets. No LLM required.
-*   **🎬 Effects Builder Presets**: Right-click the Effects Builder for quick access to all 18 built-in presets, plus save/load/delete custom presets and a "Clear All Effects" reset.
-*   **📝 Text Node Presets**: Right-click the FFMPEGA Text node for 10 built-in presets (SRT Subtitle Example, Cinematic Subtitles, Watermark, Title Card, Social Caption, Meme Text, Lower Third, Copyright Notice, Credits Roll, Chapter Marker) with example text. Custom save/load/delete and "Clear Text" reset.
-*   **💬 No-LLM Text Support**: Connect a Text node to the Agent in no-LLM manual mode (without an Effects Builder) and it auto-generates a text overlay or subtitle pipeline.
-*   **🏛️ Manual Mode (Default)**: New `manual` no-LLM mode — set `llm_model` to `none` and use the Effects Builder to edit videos without any AI. This is now the default `no_llm_mode`.
-*   **🎙️ Whisper No-LLM Modes**: `transcribe` and `karaoke_subtitles` in the `no_llm_mode` dropdown — run Whisper directly without an LLM. Also available as Effects Builder presets.
-*   **🧠 SAM3 Subprocess Isolation**: SAM3 now runs in a separate subprocess to prevent CUDA memory leaks. Multiple OOM fixes, point prompt support, and real-time progress streaming.
-*   **🔒 MCP Security**: Fixed path traversal vulnerabilities in MCP tools. SkillComposer parameter hardening.
-*   **🔗 Effects Builder Multi-Input**: Fixed concat, grid, xfade, and all multi-input skills in the Effects Builder. Extra inputs (`video_b`, etc.) now correctly injected.
-*   **📐 Concat Resolution Fix**: Concat/xfade/slideshow now default to input resolution instead of hardcoded 1920×1080.
-*   **🔧 Dynamic Slot Root Cause Fix**: `video_b` no longer disappears on page refresh.
-*   **⚡ Performance**: Ultrafast temp video encoding, optimized pipe buffers, SAM3 VRAM offloading.
-*   **🐛 Template Placeholder Fix**: Unsubstituted template placeholders no longer crash ffmpeg.
-
-</details>
-
-<details>
-<summary><b>Previous: v2.7.1 — Advanced Options Toggle, Dynamic Input Fix & Default Refinements</b></summary>
-
-*   **⚙️ Advanced Options Toggle**: New Simple/Advanced toggle hides power-user settings (`preview_mode`, `crf`, `encoding_preset`, `video_path`, `subtitle_path`, `batch_mode`) behind a single switch. The node is now much more compact by default.
-*   **🔧 Dynamic Input Persistence**: Fixed dynamic input slots (e.g. `video_b` auto-appearing when `video_a` is connected) not restoring when loading saved workflows or images.
-*   **🎛️ Default Refinements**: Whisper defaults to CPU (avoids VRAM pressure), token tracking enabled by default, PTC mode and SAM3 CPU inputs removed from UI.
-*   **⚠️ SAM3 Checkpoint Warnings**: Detects wrong checkpoint format and logs reconversion instructions.
-*   **🧹 Code Cleanup**: Removed ~1100 lines of dead code, added `ValidationError` for path validation, token log rotation for `usage_log.jsonl`.
-
-</details>
-
-<details>
-<summary><b>Previous: v2.7.0 — SAM3 Auto-Mask, LaMa Inpainting & PTC</b></summary>
-
-*   **🎭 SAM3 Auto-Mask**: New `remove` skill powered by Segment Anything Model 3 — describe what to remove in natural language (e.g. *"remove the person"*) and SAM3 generates per-frame masks automatically.
-*   **🖌️ LaMa Inpainting**: AI-powered video object removal using LaMa (Large Mask Inpainting). Temporal Gaussian smoothing reduces frame-to-frame flicker. Falls back to black fill if LaMa is not installed.
-*   **🟢 Greenscreen**: New `greenscreen` skill — uses SAM3 masks to replace backgrounds with solid colors or transparency (WebM output).
-*   **⚡ Programmatic Tool Calling (PTC)**: New `execute_code` tool lets LLMs write a single Python script that orchestrates multiple tool calls in one pass, reducing round-trips from ~6 to 1. Three modes: `off`, `auto`, `on`.
-*   **🔒 PTC Sandbox**: Hardened with 25+ escape vector blocks — dunder introspection, module access, traceback traversal, dynamic attribute access, and `chr()` construction bypasses.
-*   **🧪 656 Tests**: Expanded test suite from 516 → 656 with 0 failures. 34 new PTC executor tests, security hardening tests, and corrected mock contracts.
-
-
-</details>
-
-<details>
-<summary><b>Previous: v2.6.5 — Whisper Auto-Transcription, Karaoke Subtitles & Letterbox Fixes</b></summary>
-
-*   **🎙️ Auto-Transcribe**: New `auto_transcribe` skill — transcribes video audio with OpenAI Whisper and burns SRT subtitles directly into the output. Supports multi-video concat with correct cross-clip timing.
-*   **🎤 Karaoke Subtitles**: New `karaoke_subtitles` skill — word-by-word progressive-fill karaoke effect using Whisper's word-level timestamps and ASS `\kf` tags.
-*   **⚙️ Whisper Controls**: Choose your Whisper model size (`tiny` → `large-v3`) and device (`gpu`/`cpu`) via node settings — trade off speed vs. accuracy, or offload to CPU on low-VRAM systems.
-*   **📐 Letterbox Fix**: Replaced `crop+pad` with `drawbox` for letterboxing, preserving video content. Handles both letterbox and pillarbox cases correctly.
-*   **🧹 Code Dedup**: Extracted shared `ffmpeg_escape_path`, `color_to_ass_bgr`, and `_run_transcription` helpers — 3 deduplication refactors reducing maintenance surface.
-*   **🔧 9 Bug Fixes**: Whisper memory leak, xfade subtitle timing, ASS escaping, hex color validation, aspect ratio div-by-zero, and more.
-
-</details>
-
-<details>
-<summary><b>Previous: v2.6.0 — HandlerResult, Compose Decomposition & 516 Tests</b></summary>
-
-*   **🏗️ HandlerResult Contract**: All 9 handler modules now return a formal `HandlerResult` dataclass, replacing ad-hoc tuples. Backward-compatible with existing code.
-*   **🔧 Compose Decomposition**: Extracted 5 orchestration methods from the 600+ line `compose()` into pure, testable static methods.
-*   **🎵 PiP Audio Mixing**: `picture_in_picture` now supports `audio_mix` to blend both audio tracks via ffmpeg's `amix`.
-*   **🔄 CLI Retry**: CLI connectors retry on transient failures with exponential backoff (3 attempts).
-*   **📝 TextInput Node**: New node for subtitle and text overlay workflows with auto SRT detection.
-*   **🔒 Security**: Sanitized text overlay `enable` parameter, fixed path traversal on output dirs, fixed weak UUID entropy.
-*   **🧪 516 Tests**: Expanded test suite from 481 → 516 with 0 failures. New handler unit tests, skill combination tests, and orchestration helper tests.
-
-</details>
-
-<details>
-<summary><b>Previous: v2.5.0 — PiP Overlay Fixes, VL Model Vision & Border Support</b></summary>
-
-*   **🖼️ PiP Border Support**: `picture_in_picture` now accepts `border` and `border_color` parameters.
-*   **👁️ Ollama VL Auto-Embedding**: Vision-language models automatically receive 3 video frames in the initial message.
-*   **🔗 PiP Alias Fix**: Models using `pip`, `picture-in-picture`, etc. now correctly resolve to `picture_in_picture`.
-*   **🔧 Ollama VL Verification**: Fixed 400 error when verifying output with Ollama VL models.
-
-</details>
-
-<details>
-<summary><b>Previous: v2.4.0 — Pipeline Chaining, Animated Overlays & Zero-Memory Image Paths</b></summary>
-
-*   **🖼️ Zero-Memory Image Paths**: Image inputs passed as file paths instead of decoded tensors.
-*   **🎯 Overlay Animation**: `overlay_image` supports `animation=bounce` and more motion presets.
-*   **🔗 Pipeline Chaining Fixes**: Fixed filter graph chaining for multi-skill pipelines.
-*   **🏗️ Handler Module Extraction**: Skill handlers split into `skills/handlers/` modules.
-*   **🔒 Security Hardening**: Extended FFMPEG parameter sanitization.
-*   **⚡ Performance**: `frames_to_tensor` pre-allocates memory.
-
-</details>
-
-<details>
-<summary><b>Previous: v2.3.0 — Token Tracking, LUT Color Grading & Vision</b></summary>
-
-*   **📊 Token Usage Tracking**: Opt-in `track_tokens` and `log_usage` toggles — monitor prompt/completion tokens, LLM calls, tool calls, and elapsed time.
-*   **🎨 LUT Color Grading**: 8 bundled cinematic `.cube` LUT files. Drop custom LUTs into `luts/` for automatic discovery.
-*   **🖼️ Vision System**: Multimodal frame analysis — the agent extracts frames and "sees" the video.
-*   **🔊 Audio Analysis**: Volume (dB), EBU R128 loudness (LUFS), and silence detection.
-*   **🤖 Real Token Stats**: Gemini CLI and Claude CLI return native token counts via JSON output.
+| Version | Highlights |
+| :--- | :--- |
+| **v2.12.0** | AI Face Animation (LivePortrait), MMAudio in-process inference, MCP progressive disclosure, LaMa safetensors conversion |
+| **v2.11.0** | MMAudio in-process migration, `generate_audio` no-LLM mode, MCP tools, CLI binary caching |
+| **v2.10.0** | FLUX Klein in-process migration, interactive mask drawing UI, model output caching |
+| **v2.9.1** | AI object removal & editing (FLUX Klein 4B), AI audio generation (MMAudio), AI lip sync (MuseTalk), modular architecture refactor |
+| **v2.8.0** | Effects Builder node, manual no-LLM mode, text node presets, SAM3 subprocess isolation, 15+ bug fixes |
+| **v2.7.0** | SAM3 auto-mask & greenscreen, LaMa inpainting, programmatic tool calling (PTC), 656 tests |
+| **v2.6.5** | Whisper auto-transcription, karaoke subtitles, whisper model/device controls |
+| **v2.6.0** | HandlerResult contract, compose decomposition, TextInput node, PiP audio mixing, CLI retry |
+| **v2.5.0** | PiP borders, Ollama VL auto-embedding, overlay animation delegation |
+| **v2.4.0** | Zero-memory image paths, pipeline chaining fixes, handler module extraction |
+| **v2.3.0** | Token usage tracking, LUT color grading, vision system, audio analysis |
+| **v2.2.0** | 200 skills, dynamic input slots, 48 new skills across all categories |
+| **v2.0.0** | Dynamic input slots, concat, xfade, split screen, animated overlays, text overlays |
+| **v1.9.0** | Claude CLI, Cursor Agent CLI, Qwen CLI connectors, 50+ context menu presets |
 
 </details>
 

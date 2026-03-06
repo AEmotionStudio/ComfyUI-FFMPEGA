@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.13.0] - 2026-03-06
+
+### Added
+- **FLUX Klein Toggle (`use_flux_klein`)**: New node-level boolean toggle to enable/disable FLUX Klein 4B inference. Threaded through all 5 pipeline paths (LLM, effects builder, batch, SAM3-only, whisper-only) via `_enable_flux_klein` metadata key. Defaults to `False` for zero-VRAM baseline. *(PR #150)*
+- **Edit FFmpeg Fallback (`_edit_ffmpeg_fallback`)**: When FLUX Klein is disabled, `auto_mask:effect=edit` now falls back to keyword-matched FFmpeg color/tone filters (22 keywords across 12 color + 10 tone categories) applied via `maskedmerge`. Uses word-boundary regex matching to prevent false positives. Zero VRAM. *(PR #150)*
+- **AI Background Removal (`remove_background`)**: Full per-frame implementation using [BRIA RMBG](https://huggingface.co/briaai/RMBG-2.0) via `rembg`. Extracts frames with OpenCV, generates alpha masks, writes a lossless FFV1 mask video, and composites via FFmpeg `maskedmerge` or `alphamerge` (transparent mode). New `background` parameter supports `transparent` or any color name/hex for solid-color replacement. *(PR #146)*
+- **Background Removal Model Choices**: Expanded `remove_background` model selection from 3 choices (`silueta`, `u2net`, `isnet`) to 6 choices (`bria-rmbg` default, `birefnet-general`, `birefnet-general-lite`, `isnet-general-use`, `u2net`, `silueta`). *(PR #146)*
+
+### Fixed
+- **FLUX Klein Cache Coherence**: Cache reuse for FLUX Klein outputs is now gated by the `_enable_flux_klein` toggle — prevents stale AI outputs from being used when the user switches to FFmpeg fallback mode. *(PR #150)*
+- **`remove` Effect Fallback**: When FLUX Klein is disabled, `auto_mask:effect=remove` falls back to LaMa inpainting instead of attempting FLUX Klein inference. *(PR #150)*
+
+### Changed
+- **Resource Stewardship Defaults**: `use_vision` and `verify_output` defaults changed from `True` to `False` across `agent_node.py` and `batch_processor.py`. High-resource features are now opt-in, reducing token usage and processing time by default. *(PR #150)*
+- **`import re` Cleanup**: Hoisted `import re` from function-level to module-level in `visual.py`, removing duplicate imports. *(PR #150)*
+- **♿ Mask Editor Accessibility**: Mask Editor buttons (`modeToggle`, `clearBtn`, `applyBtn`, `cancelBtn`) now wrap emojis in `<span aria-hidden="true">` and set explicit `aria-label` attributes — prevents screen readers from announcing decorative icons. *(PR #148)*
+- **AI-Powered Skills Count**: Updated from 6 to 7 (added `remove_background` with BRIA RMBG).
+- **Model Registry**: Updated `remove_background` model entry from U²-Net (~170 MB) to BRIA RMBG (~270 MB).
+- **Test Suite**: Expanded from 939 to **952 tests**, 0 failures.
+
+---
+
 ## [2.12.0] - 2026-03-06
 
 ### Added
