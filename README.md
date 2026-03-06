@@ -5,7 +5,7 @@
 **The ultimate video editing suite for ComfyUI — edit with natural language or hands-on manual controls.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-2.9.1-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-2.12.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-2-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 [![Downloads](https://img.shields.io/badge/dynamic/json?color=blueviolet&label=Downloads&query=downloads.smart_count&url=https://raw.githubusercontent.com/AEmotionStudio/ComfyUI-FFMPEGA/refs/heads/badges/traffic_stats.json&style=for-the-badge&logo=github)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
@@ -24,26 +24,33 @@
 
 ---
 
-## 🚀 What's New in v2.9.1 (March 3, 2026)
+## 🚀 What's New in v2.12.0 (March 6, 2026)
 
-**AI Audio Generation, AI Lip Sync, FLUX Klein Editing, Modular Architecture, CI/CD & Type Safety**
+**AI Face Animation (LivePortrait), MMAudio In-Process, MCP Progressive Disclosure, LaMa Safetensors**
 
-*   **✨ AI Object Removal & Editing (FLUX Klein 4B)**: New `auto_mask:effect=remove` and `auto_mask:effect=edit` powered by [FLUX Klein 4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) (Apache 2.0). AI-powered per-frame object removal replaces LaMa with higher-quality results. New `edit` effect enables text-guided video changes (e.g. "change hair to red", "replace background with beach"). Reference-image conditioning, 4-step inference, temporal smoothing, ~8–13 GB VRAM.
+*   **🎭 AI Face Animation (`animate_portrait`)**: New skill powered by [LivePortrait](https://github.com/KlingAIResearch/LivePortrait) — transfers facial motion from a driving video onto a source portrait. Supports images and video as source, per-frame face detection, affine crop/paste-back with elliptical Gaussian-blurred blending, relative motion mode, and configurable driving multiplier. In-process inference with automatic GPU↔CPU offloading. 7 aliases (`live_portrait`, `face_animate`, `motion_transfer`, etc.). Mirror-hosted safetensors on `AEmotionStudio/liveportrait-models` (~497 MB).
+*   **🎭 Animate Portrait No-LLM Mode**: New `animate_portrait` option in the `no_llm_mode` dropdown — animate a face directly without any LLM. Source from `video_path`/`images_a`, driving video from `video_a`.
+*   **🔊 MMAudio In-Process**: Migrated MMAudio from subprocess to in-process execution with GPU↔CPU offloading. New `generate_audio` no-LLM mode.
+*   **🔌 MCP Progressive Disclosure**: MCP tool discovery uses progressive disclosure (`list_tools` → `get_tool_details`), plus new `validate_skill_params` and `cleanup_vision_frames` tools. *(PR #144)*
+*   **✨ FLUX Klein In-Process**: Migrated FLUX Klein 4B to in-process inference with mask drawing UI and model output caching. *(PR #140)*
+*   **🔒 LaMa Safetensors**: Converted `big-lama.pt` to `big-lama.safetensors` — eliminates pickle warnings and HuggingFace security flags.
+*   **⚡ Path Caching**: FFmpeg/FFprobe binary resolution and CLI binary lookups cached with `@functools.cache`. *(PRs #139, #143)*
+*   **♿ Accessibility**: Focus ring improvements across point selector and interactive widgets. *(PRs #138, #142)*
+*   **🧪 939 Tests**: Test suite expanded from 799 → **939 tests**, 0 failures.
+*   **🐛 Fixes**: MediaPipe `mp.solutions` crash, LivePortrait RGB/BGR mismatch, paste-back affine math, lip sync filter composition, FLUX Klein memory leaks, MCP dispatch errors.
 
-*   **🔊 AI Audio Generation (`generate_audio`)**: New skill powered by [MMAudio](https://github.com/hkchengrex/MMAudio) — synthesizes synchronized audio/foley from video and/or text descriptions. Supports video-to-audio, text-to-audio, and automatic long video chunking with crossfade. 11 natural language aliases (`foley`, `sound_effects`, `v2a`, etc.).
-*   **👄 AI Lip Sync (`lip_sync`)**: New skill powered by [MuseTalk](https://github.com/TMElyralab/MuseTalk) V15 — synchronizes lip movements to match provided audio. Video+audio and image+audio inputs, multi-face support, batch inference. Zero new pip dependencies. 7 aliases (`lipsync`, `dub`, `dubbing`, `sync_lips`, `talking_head`, `lip_dub`, `voice_sync`). Subprocess isolation for CUDA memory safety.
-*   **🏗️ Modular Node Architecture**: Broke up monolithic `agent_node.py` into 6 focused modules — `input_resolver`, `execution_engine`, `output_handler`, `batch_processor`, `nollm_modes`, and `pipeline_assembler`. Agent node is now a thin orchestrator.
-*   **🔒 Pyright Type Checking**: Added `pyrightconfig.json` with type stubs for ComfyUI modules. Fixed 78 type errors across `core/`, `skills/`, `mcp/`.
-*   **🧱 Platform Abstraction (`core/platform.py`)**: All ComfyUI boundary interactions extracted into a single adapter module. Core logic no longer imports ComfyUI directly.
-*   **📋 Structured Logging (`core/logging.py`)**: `JSONFormatter` for machine-readable logs, `get_logger()` convenience function, and `LogTimer` context manager. Enable via `FFMPEGA_LOG_JSON=1`.
-*   **🧪 CI Workflow & 799 Tests**: New `.github/workflows/ci.yml` with Pytest + Pyright on every PR/push. 12 new integration tests running real FFmpeg pipelines. Test suite expanded from 656 → **799 tests**, 0 failures.
-*   **📖 CONTRIBUTING.md & Pre-commit**: New contributor docs with architecture overview and PR guidelines. Pre-commit hooks with Ruff lint/format and Pyright.
-*   **🧠 Subprocess Isolation**: Audio generation runs in a subprocess to prevent CUDA memory leaks — same proven pattern as SAM3. Falls back to in-process with VRAM offloading.
-*   **⚡ Native Safetensors & Memory-Efficient Loading**: Uses `comfy.utils.load_torch_file` for direct `.safetensors` loading, plus `accelerate`'s zero-copy model init — no 3× memory spike during model loading.
-*   **🪞 Model Mirror Repositories**: MMAudio on `AEmotionStudio/mmaudio-models` (fp16, ~5.5 GB). MuseTalk UNet on `AEmotionStudio/musetalk-models` (fp16 1.6 GB / fp32 3.2 GB). Mirror-first download with upstream HuggingFace fallback.
-*   **🔗 Mask Points Chaining**: `SaveVideoNode` and `LoadVideoPathNode` now pass `mask_points` data through the node chain — upstream segmentation points propagate to downstream processing.
-*   **♿ Point Selector Accessibility**: ARIA roles, `aria-modal`, `aria-live` regions, and hidden decorative emojis for screen reader support.
-*   **🔧 Bug Fixes**: LaMa cache false-negative, log propagation leak, token usage display, platform import robustness.
+<details>
+<summary><b>Previous: v2.9.1 — AI Audio, Lip Sync, FLUX Klein Editing, Modular Architecture & CI/CD</b></summary>
+
+*   **✨ AI Object Removal & Editing (FLUX Klein 4B)**: `auto_mask:effect=remove` and `auto_mask:effect=edit` powered by FLUX Klein 4B. AI-powered per-frame object removal and text-guided editing.
+*   **🔊 AI Audio Generation (`generate_audio`)**: Powered by MMAudio — synthesizes audio/foley from video and/or text. 11 aliases.
+*   **👄 AI Lip Sync (`lip_sync`)**: Powered by MuseTalk V15 — synchronizes lip movements to audio. 7 aliases.
+*   **🏗️ Modular Node Architecture**: Broke up `agent_node.py` into 6 focused modules. Pyright type checking with 78 errors fixed.
+*   **🧱 Platform Abstraction**: All ComfyUI boundary interactions extracted into `core/platform.py`.
+*   **📋 Structured Logging & CI**: `JSONFormatter`, `LogTimer`, CI workflow with Pytest + Pyright, pre-commit hooks.
+*   **🪞 Model Mirrors**: MMAudio, MuseTalk, and LaMa weights hosted on AEmotionStudio HuggingFace repos.
+
+</details>
 
 <details>
 <summary><b>Previous: v2.8.0 — Effects Builder, Manual Mode, SAM3 Hardening & 15+ Bug Fixes</b></summary>
@@ -180,7 +187,7 @@ Works with **Ollama** (local, free), **OpenAI**, **Anthropic**, **Google Gemini*
 <td width="50%">
 
 ### 🎨 200+ Skills
-200+ video editing skills across visual effects, audio processing, spatial transforms, temporal edits, encoding, cinematic presets, vintage looks, social media, creative effects, text animations, editing & composition, audio visualization, multi-input operations, transitions, concat, split screen, and AI-powered skills (Whisper transcription, SAM3 masking, MMAudio generation, MuseTalk lip sync).
+200+ video editing skills across visual effects, audio processing, spatial transforms, temporal edits, encoding, cinematic presets, vintage looks, social media, creative effects, text animations, editing & composition, audio visualization, multi-input operations, transitions, concat, split screen, and AI-powered skills (Whisper transcription, SAM3 masking, MMAudio generation, MuseTalk lip sync, LivePortrait face animation).
 
 </td>
 </tr>
@@ -592,10 +599,11 @@ All models are mirrored to first-party [AEmotionStudio](https://huggingface.co/A
 | **Whisper** small | ~500 MB | `ComfyUI/models/whisper/` | Same as above (set `whisper_model` to `small`) | Same as above |
 | **Whisper** base | ~150 MB | `ComfyUI/models/whisper/` | Same as above (set `whisper_model` to `base`) | Same as above |
 | **Whisper** tiny | ~75 MB | `ComfyUI/models/whisper/` | Same as above (set `whisper_model` to `tiny`) | Same as above |
-| **LaMa** (Large Mask Inpainting) | ~200 MB | `~/.cache/torch/hub/checkpoints/` | `auto_mask:effect=remove` (legacy fallback) | [AEmotionStudio/lama-inpainting](https://huggingface.co/AEmotionStudio/lama-inpainting) — download `big-lama.pt` |
+| **LaMa** (Large Mask Inpainting) | ~195 MB | `~/.cache/torch/hub/checkpoints/` | `auto_mask:effect=remove` (legacy fallback) | [AEmotionStudio/lama-inpainting](https://huggingface.co/AEmotionStudio/lama-inpainting) — download `big-lama.safetensors` |
 | **FLUX Klein 4B** (Editing/Removal) | ~15 GB (bf16) | `ComfyUI/models/flux_klein/` | `auto_mask:effect=remove`, `auto_mask:effect=edit` | [AEmotionStudio/flux-klein](https://huggingface.co/AEmotionStudio/flux-klein) |
 | **MMAudio** (Video-to-Audio) | ~5.5 GB | `ComfyUI/models/mmaudio/` | `generate_audio` skill | [AEmotionStudio/mmaudio-models](https://huggingface.co/AEmotionStudio/mmaudio-models) |
 | **MuseTalk** (Lip Sync) | ~1.6 GB (fp16) | `ComfyUI/models/musetalk/` | `lip_sync` skill | [AEmotionStudio/musetalk-models](https://huggingface.co/AEmotionStudio/musetalk-models) |
+| **LivePortrait** (Face Animation) | ~497 MB | `ComfyUI/models/liveportrait/` | `animate_portrait` skill, `animate_portrait` no-LLM mode | [AEmotionStudio/liveportrait-models](https://huggingface.co/AEmotionStudio/liveportrait-models) |
 | **U²-Net** (rembg) | ~170 MB | `~/.u2net/` | `remove_background` skill | Install with `pip install 'comfyui-ffmpega[masking]'` — model auto-fetched by rembg |
 
 > [!NOTE]
@@ -624,7 +632,7 @@ FFMPEGA provides **8 nodes** that work together:
 | `video_path` | STRING | Absolute path to source video. Used as ffmpeg input unless `images_a` is connected. |
 | `prompt` | STRING | Natural language editing instruction (e.g. *"Add cinematic letterbox"*, *"Speed up 2x"*). Not required in `manual` mode. |
 | `llm_model` | DROPDOWN | AI model selection — local Ollama models, CLI tools, or cloud APIs. Select `none` for no-LLM mode. |
-| `no_llm_mode` | DROPDOWN | Mode when `llm_model` is `none`: `manual` (Effects Builder, default), `sam3_masking`, `transcribe`, `karaoke_subtitles`. |
+| `no_llm_mode` | DROPDOWN | Mode when `llm_model` is `none`: `manual` (Effects Builder, default), `sam3_masking`, `transcribe`, `karaoke_subtitles`, `generate_audio`, `lip_sync`, `animate_portrait`. |
 | `quality_preset` | DROPDOWN | Output quality: `draft`, `standard`, `high`, `lossless`. |
 | `seed` | INT | Change to force re-execution with the same prompt. Supports randomize control. |
 
