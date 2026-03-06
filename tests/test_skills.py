@@ -901,14 +901,17 @@ class TestSkillComposer:
         import unittest.mock as mock
         import tempfile, os
 
-        fake_rembg, fake_cv2 = self._make_rembg_mocks()
+        fake_rembg, fake_cv2, fake_pil = self._make_rembg_mocks()
 
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
             fake_video = f.name
 
         meta = {}
         try:
-            with mock.patch.dict(sys.modules, {"rembg": fake_rembg, "cv2": fake_cv2}):
+            with mock.patch.dict(sys.modules, {
+                "rembg": fake_rembg, "cv2": fake_cv2,
+                "PIL": fake_pil, "PIL.Image": fake_pil.Image,
+            }):
                 from skills.handlers.visual import _f_remove_background
 
                 result = _f_remove_background({
@@ -931,21 +934,38 @@ class TestSkillComposer:
                 os.unlink(meta["_mask_video_path"])
 
     def _make_rembg_mocks(self):
-        """Shared helper: create fake rembg + cv2 modules for remove_background tests."""
+        """Shared helper: create fake rembg + cv2 + PIL modules for remove_background tests.
+
+        PIL (Pillow) is NOT a CI test dependency, so we mock it entirely.
+        The handler calls ``np.array(result)`` on the rembg output, so
+        returning a raw numpy RGBA array works (``np.array(np_arr)`` is a
+        no-op).
+        """
         import types
         import unittest.mock as mock
         import numpy as np
-        from PIL import Image as PILImage
 
+        # -- Fake PIL module (handler does ``from PIL import Image``) --
+        fake_pil = types.ModuleType("PIL")
+        fake_pil_image = types.ModuleType("PIL.Image")
+        fake_pil_image.fromarray = mock.MagicMock(
+            side_effect=lambda arr, **kw: arr,  # pass-through
+        )
+        fake_pil.Image = fake_pil_image
+
+        # -- Fake rembg module --
         fake_rembg = types.ModuleType("rembg")
         fake_session = mock.MagicMock()
         fake_rembg.new_session = mock.MagicMock(return_value=fake_session)
-        fake_rgba = PILImage.fromarray(np.zeros((4, 4, 4), dtype=np.uint8), mode="RGBA")
+        # Return a 4×4 RGBA numpy array; np.array() on this is a no-op.
+        fake_rgba = np.zeros((4, 4, 4), dtype=np.uint8)
         fake_rembg.remove = mock.MagicMock(return_value=fake_rgba)
 
+        # -- Fake cv2 module --
         fake_cv2 = types.ModuleType("cv2")
         mock_cap = mock.MagicMock()
         mock_cap.isOpened.return_value = True
+        # Keys are OpenCV property IDs: 3=WIDTH, 4=HEIGHT, 5=FPS, 7=FRAME_COUNT
         mock_cap.get.side_effect = lambda prop: {
             3: 4.0, 4: 4.0, 5: 24.0, 7: 2,
         }.get(prop, 0)
@@ -968,7 +988,7 @@ class TestSkillComposer:
         fake_cv2.VideoWriter = mock.MagicMock(return_value=mock_writer)
         fake_cv2.VideoWriter_fourcc = mock.MagicMock(return_value=0)
 
-        return fake_rembg, fake_cv2
+        return fake_rembg, fake_cv2, fake_pil
 
     def test_remove_background_green_with_mocked_rembg(self):
         """remove_background:background=green should produce maskedmerge + greenscreen fill."""
@@ -976,14 +996,17 @@ class TestSkillComposer:
         import unittest.mock as mock
         import tempfile, os
 
-        fake_rembg, fake_cv2 = self._make_rembg_mocks()
+        fake_rembg, fake_cv2, fake_pil = self._make_rembg_mocks()
 
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
             fake_video = f.name
 
         meta = {}
         try:
-            with mock.patch.dict(sys.modules, {"rembg": fake_rembg, "cv2": fake_cv2}):
+            with mock.patch.dict(sys.modules, {
+                "rembg": fake_rembg, "cv2": fake_cv2,
+                "PIL": fake_pil, "PIL.Image": fake_pil.Image,
+            }):
                 from skills.handlers.visual import _f_remove_background
 
                 result = _f_remove_background({
@@ -1007,14 +1030,17 @@ class TestSkillComposer:
         import unittest.mock as mock
         import tempfile, os
 
-        fake_rembg, fake_cv2 = self._make_rembg_mocks()
+        fake_rembg, fake_cv2, fake_pil = self._make_rembg_mocks()
 
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
             fake_video = f.name
 
         meta = {}
         try:
-            with mock.patch.dict(sys.modules, {"rembg": fake_rembg, "cv2": fake_cv2}):
+            with mock.patch.dict(sys.modules, {
+                "rembg": fake_rembg, "cv2": fake_cv2,
+                "PIL": fake_pil, "PIL.Image": fake_pil.Image,
+            }):
                 from skills.handlers.visual import _f_remove_background
 
                 result = _f_remove_background({
