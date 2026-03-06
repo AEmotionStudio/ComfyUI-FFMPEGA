@@ -353,7 +353,8 @@ Remove green/blue color spill from chroma-keyed footage.
 Remove background using AI (requires `rembg` optional dependency).
 | Parameter | Type | Default | Choices |
 |-----------|------|---------|---------|
-| `model` | string | silueta | silueta, u2net, isnet |
+| `model` | choice | bria-rmbg | bria-rmbg, birefnet-general, birefnet-general-lite, isnet-general-use, u2net, silueta |
+| `background` | string | transparent | "transparent" or any color name/hex |
 
 > [!NOTE]
 > Requires `pip install 'comfyui-ffmpega[masking]'` for the `rembg` dependency.
@@ -361,6 +362,7 @@ Remove background using AI (requires `rembg` optional dependency).
 **Example prompts:**
 - "Remove the background automatically"
 - "Cut out the subject from the background"
+- "Remove background and replace with green screen"
 
 ---
 

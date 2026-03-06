@@ -889,11 +889,174 @@ class TestSkillComposer:
         """remove_background should not crash when rembg is not installed."""
         composer = SkillComposer()
         pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
-        pipeline.add_step("remove_background", {"model": "silueta"})
+        pipeline.add_step("remove_background", {"model": "bria-rmbg"})
 
         # Should compose without error (skill simply does nothing)
         command = composer.compose(pipeline)
         assert command is not None
+
+    def test_remove_background_transparent_with_mocked_rembg(self):
+        """remove_background should produce alphamerge + WebM output when rembg is available."""
+        import sys
+        import unittest.mock as mock
+        import tempfile, os
+
+        fake_rembg, fake_cv2, fake_pil = self._make_rembg_mocks()
+
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            fake_video = f.name
+
+        meta = {}
+        try:
+            with mock.patch.dict(sys.modules, {
+                "rembg": fake_rembg, "cv2": fake_cv2,
+                "PIL": fake_pil, "PIL.Image": fake_pil.Image,
+            }):
+                from skills.handlers.visual import _f_remove_background
+
+                result = _f_remove_background({
+                    "model": "bria-rmbg",
+                    "background": "transparent",
+                    "_input_path": fake_video,
+                    "_metadata_ref": meta,
+                })
+
+                fc = result.filter_complex
+                assert "alphamerge" in fc, f"Expected alphamerge in fc: {fc}"
+                assert "format=yuva420p" in fc, f"Expected yuva420p in fc: {fc}"
+
+                opts = result.output_options
+                assert "-c:v" in opts, f"Expected -c:v in opts: {opts}"
+                assert "libvpx-vp9" in opts, f"Expected libvpx-vp9 in opts: {opts}"
+        finally:
+            os.unlink(fake_video)
+            if meta.get("_mask_video_path") and os.path.isfile(meta["_mask_video_path"]):
+                os.unlink(meta["_mask_video_path"])
+
+    def _make_rembg_mocks(self):
+        """Shared helper: create fake rembg + cv2 + PIL modules for remove_background tests.
+
+        PIL (Pillow) is NOT a CI test dependency, so we mock it entirely.
+        The handler calls ``np.array(result)`` on the rembg output, so
+        returning a raw numpy RGBA array works (``np.array(np_arr)`` is a
+        no-op).
+        """
+        import types
+        import unittest.mock as mock
+        import numpy as np
+
+        # -- Fake PIL module (handler does ``from PIL import Image``) --
+        fake_pil = types.ModuleType("PIL")
+        fake_pil_image = types.ModuleType("PIL.Image")
+        fake_pil_image.fromarray = mock.MagicMock(
+            side_effect=lambda arr, **kw: arr,  # pass-through
+        )
+        fake_pil.Image = fake_pil_image
+
+        # -- Fake rembg module --
+        fake_rembg = types.ModuleType("rembg")
+        fake_session = mock.MagicMock()
+        fake_rembg.new_session = mock.MagicMock(return_value=fake_session)
+        # Return a 4×4 RGBA numpy array; np.array() on this is a no-op.
+        fake_rgba = np.zeros((4, 4, 4), dtype=np.uint8)
+        fake_rembg.remove = mock.MagicMock(return_value=fake_rgba)
+
+        # -- Fake cv2 module --
+        fake_cv2 = types.ModuleType("cv2")
+        mock_cap = mock.MagicMock()
+        mock_cap.isOpened.return_value = True
+        # Keys are OpenCV property IDs: 3=WIDTH, 4=HEIGHT, 5=FPS, 7=FRAME_COUNT
+        mock_cap.get.side_effect = lambda prop: {
+            3: 4.0, 4: 4.0, 5: 24.0, 7: 2,
+        }.get(prop, 0)
+        mock_cap.read.side_effect = [
+            (True, np.zeros((4, 4, 3), dtype=np.uint8)),
+            (True, np.zeros((4, 4, 3), dtype=np.uint8)),
+            (False, None),
+        ]
+        fake_cv2.VideoCapture = mock.MagicMock(return_value=mock_cap)
+        fake_cv2.CAP_PROP_FPS = 5
+        fake_cv2.CAP_PROP_FRAME_WIDTH = 3
+        fake_cv2.CAP_PROP_FRAME_HEIGHT = 4
+        fake_cv2.CAP_PROP_FRAME_COUNT = 7
+        fake_cv2.COLOR_BGR2RGB = 4
+        fake_cv2.COLOR_RGB2GRAY = 7
+        fake_cv2.cvtColor = mock.MagicMock(side_effect=lambda img, code: img)
+
+        mock_writer = mock.MagicMock()
+        mock_writer.isOpened.return_value = True
+        fake_cv2.VideoWriter = mock.MagicMock(return_value=mock_writer)
+        fake_cv2.VideoWriter_fourcc = mock.MagicMock(return_value=0)
+
+        return fake_rembg, fake_cv2, fake_pil
+
+    def test_remove_background_green_with_mocked_rembg(self):
+        """remove_background:background=green should produce maskedmerge + greenscreen fill."""
+        import sys
+        import unittest.mock as mock
+        import tempfile, os
+
+        fake_rembg, fake_cv2, fake_pil = self._make_rembg_mocks()
+
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            fake_video = f.name
+
+        meta = {}
+        try:
+            with mock.patch.dict(sys.modules, {
+                "rembg": fake_rembg, "cv2": fake_cv2,
+                "PIL": fake_pil, "PIL.Image": fake_pil.Image,
+            }):
+                from skills.handlers.visual import _f_remove_background
+
+                result = _f_remove_background({
+                    "model": "bria-rmbg",
+                    "background": "green",
+                    "_input_path": fake_video,
+                    "_metadata_ref": meta,
+                })
+
+                fc = result.filter_complex
+                assert "maskedmerge" in fc, f"Expected maskedmerge in fc: {fc}"
+                assert "00FF00" in fc, f"Expected green fill (#00FF00) in fc: {fc}"
+        finally:
+            os.unlink(fake_video)
+            if meta.get("_mask_video_path") and os.path.isfile(meta["_mask_video_path"]):
+                os.unlink(meta["_mask_video_path"])
+
+    def test_remove_background_white_with_mocked_rembg(self):
+        """remove_background:background=white should produce maskedmerge + drawbox fill."""
+        import sys
+        import unittest.mock as mock
+        import tempfile, os
+
+        fake_rembg, fake_cv2, fake_pil = self._make_rembg_mocks()
+
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            fake_video = f.name
+
+        meta = {}
+        try:
+            with mock.patch.dict(sys.modules, {
+                "rembg": fake_rembg, "cv2": fake_cv2,
+                "PIL": fake_pil, "PIL.Image": fake_pil.Image,
+            }):
+                from skills.handlers.visual import _f_remove_background
+
+                result = _f_remove_background({
+                    "model": "bria-rmbg",
+                    "background": "white",
+                    "_input_path": fake_video,
+                    "_metadata_ref": meta,
+                })
+
+                fc = result.filter_complex
+                assert "maskedmerge" in fc, f"Expected maskedmerge in fc: {fc}"
+                assert "drawbox=c=white" in fc, f"Expected drawbox=c=white in fc: {fc}"
+        finally:
+            os.unlink(fake_video)
+            if meta.get("_mask_video_path") and os.path.isfile(meta["_mask_video_path"]):
+                os.unlink(meta["_mask_video_path"])
 
     def test_colorkey_alias_resolves(self):
         """color_key alias should resolve to colorkey in both aliases and dispatch."""

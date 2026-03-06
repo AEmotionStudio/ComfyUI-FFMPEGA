@@ -1455,8 +1455,11 @@ def register_skills(registry: SkillRegistry) -> None:
                 type=ParameterType.CHOICE,
                 description="AI model for background removal",
                 required=False,
-                default="silueta",
-                choices=["silueta", "u2net", "birefnet-general"],
+                default="bria-rmbg",
+                choices=[
+                    "bria-rmbg", "birefnet-general", "birefnet-general-lite",
+                    "isnet-general-use", "u2net", "silueta",
+                ],
             ),
             SkillParameter(
                 name="background",
@@ -1467,9 +1470,10 @@ def register_skills(registry: SkillRegistry) -> None:
             ),
         ],
         examples=[
-            "remove_background - Remove background (fast silueta model)",
-            "remove_background:model=birefnet-general - High quality background removal",
-            "remove_background:background=white - Replace background with white",
+            "remove_background - Remove background (bria-rmbg, SotA quality)",
+            "remove_background:model=birefnet-general - BiRefNet high quality",
+            "remove_background:model=silueta - Fast lightweight model",
+            "remove_background:background=green - Green screen output",
         ],
         tags=["remove", "background", "mask", "ai", "rembg", "segment", "cutout", "transparent"],
     ))

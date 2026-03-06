@@ -604,7 +604,7 @@ All models are mirrored to first-party [AEmotionStudio](https://huggingface.co/A
 | **MMAudio** (Video-to-Audio) | ~5.5 GB | `ComfyUI/models/mmaudio/` | `generate_audio` skill | [AEmotionStudio/mmaudio-models](https://huggingface.co/AEmotionStudio/mmaudio-models) |
 | **MuseTalk** (Lip Sync) | ~1.6 GB (fp16) | `ComfyUI/models/musetalk/` | `lip_sync` skill | [AEmotionStudio/musetalk-models](https://huggingface.co/AEmotionStudio/musetalk-models) |
 | **LivePortrait** (Face Animation) | ~497 MB | `ComfyUI/models/liveportrait/` | `animate_portrait` skill, `animate_portrait` no-LLM mode | [AEmotionStudio/liveportrait-models](https://huggingface.co/AEmotionStudio/liveportrait-models) |
-| **U²-Net** (rembg) | ~170 MB | `~/.u2net/` | `remove_background` skill | Install with `pip install 'comfyui-ffmpega[masking]'` — model auto-fetched by rembg |
+| **BRIA RMBG** (rembg) | ~270 MB | `~/.u2net/` | `remove_background` skill | Install with `pip install 'comfyui-ffmpega[masking]'` — model auto-fetched by rembg |
 
 > [!NOTE]
 > Models are only downloaded when you use the corresponding skill for the first time. Core FFmpeg editing skills (200+ of them) require **zero model downloads**.
