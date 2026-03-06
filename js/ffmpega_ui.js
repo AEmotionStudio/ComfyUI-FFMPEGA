@@ -2954,9 +2954,12 @@ app.registerExtension({
             const btnBar = document.createElement("div");
             btnBar.style.cssText = "display:flex;gap:12px;margin-top:12px;";
 
-            const makeBtn = (label, bg) => {
+            const makeBtn = (htmlLabel, ariaLabel, bg) => {
                 const b = document.createElement("button");
-                b.textContent = label;
+                b.innerHTML = htmlLabel;
+                if (ariaLabel) {
+                    b.setAttribute("aria-label", ariaLabel);
+                }
                 b.style.cssText = `
                     padding:8px 24px;border:none;border-radius:6px;
                     font-size:14px;cursor:pointer;color:#fff;
@@ -2978,10 +2981,10 @@ app.registerExtension({
                 b.onblur = () => { isFocused = false; update(); };
                 return b;
             };
-            const modeToggle = makeBtn("🖌 Draw", "#3a5a8a");
-            const clearBtn = makeBtn("Clear All", "#555");
-            const applyBtn = makeBtn("✓ Apply", "#2a7a2a");
-            const cancelBtn = makeBtn("Cancel", "#7a2a2a");
+            const modeToggle = makeBtn(`<span aria-hidden="true">🖌</span> Draw`, "Draw Mode", "#3a5a8a");
+            const clearBtn = makeBtn("Clear All", "Clear All", "#555");
+            const applyBtn = makeBtn(`<span aria-hidden="true">✓</span> Apply`, "Apply", "#2a7a2a");
+            const cancelBtn = makeBtn("Cancel", "Cancel", "#7a2a2a");
             btnBar.appendChild(modeToggle);
             btnBar.appendChild(clearBtn);
             btnBar.appendChild(applyBtn);
@@ -3007,12 +3010,14 @@ app.registerExtension({
             // ── Mode toggle ──
             const updateModeUI = () => {
                 if (mode === "points") {
-                    modeToggle.textContent = "🖌 Draw";
+                    modeToggle.innerHTML = `<span aria-hidden="true">🖌</span> Draw`;
+                    modeToggle.setAttribute("aria-label", "Draw Mode");
                     modeToggle.style.background = "#3a5a8a";
                     canvas.style.cursor = "crosshair";
                     sliderWrap.style.display = "none";
                 } else {
-                    modeToggle.textContent = "🎯 Points";
+                    modeToggle.innerHTML = `<span aria-hidden="true">🎯</span> Points`;
+                    modeToggle.setAttribute("aria-label", "Point Mode");
                     modeToggle.style.background = "#5a3a8a";
                     canvas.style.cursor = "none"; // custom brush cursor
                     sliderWrap.style.display = "flex";
