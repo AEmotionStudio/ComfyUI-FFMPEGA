@@ -78,6 +78,11 @@ def _get_model_dir() -> str:
     if env_dir and os.path.isdir(env_dir):
         return env_dir
 
+    # ext_dir is the extension root (e.g. ComfyUI-FFMPEGA).
+    # When running inside ComfyUI, ext_dir.name starts with "ComfyUI",
+    # so we prefer the standard ComfyUI models/ path.  When running
+    # standalone (tests, scripts), the name won't match, so we fall
+    # through to the extension-local models/ directory.
     ext_dir = Path(__file__).resolve().parent.parent
     comfy_root = ext_dir.parent.parent
     comfy_models = comfy_root / "models" / "liveportrait"

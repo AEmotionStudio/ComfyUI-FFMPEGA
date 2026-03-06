@@ -114,6 +114,12 @@ def get_face_bbox(
 ) -> List[BBox]:
     """Detect faces using FaceLandmarker and return bounding boxes.
 
+    .. deprecated:: 0.9
+        The old ``face_mesh`` and ``face_index`` parameters were removed
+        when migrating from FaceMesh to FaceLandmarker (Tasks API).
+        Multi-face filtering is now handled by the caller (e.g.,
+        ``get_landmarks_and_bboxes``).
+
     Args:
         image: BGR numpy image.
         bbox_shift: Vertical shift for bbox (positive = down).

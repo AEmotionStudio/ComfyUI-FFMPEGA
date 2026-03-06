@@ -135,10 +135,13 @@ def load_model():
         try:
             from safetensors.torch import load_file
             safe_sd = load_file(safetensors_path, device="cpu")
-            _lama_model.model.load_state_dict(safe_sd)
+            _lama_model.model.load_state_dict(safe_sd, strict=True)
             log.info("LaMa weights loaded from safetensors (pickle-free)")
         except Exception as e:
-            log.warning("Failed to load safetensors weights: %s", e)
+            log.warning(
+                "Failed to load safetensors weights (falling back to "
+                "JIT-loaded weights which may use pickle): %s", e
+            )
 
     # Force float32 on the JIT model parameters
     if hasattr(_lama_model, "model"):

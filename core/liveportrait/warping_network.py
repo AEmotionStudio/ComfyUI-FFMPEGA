@@ -72,10 +72,22 @@ class WarpingNetwork(nn.Module):
             if self.flag_use_occlusion_map and (occlusion_map is not None):
                 out = out * occlusion_map
 
-        ret_dct = {
-            'occlusion_map': occlusion_map,
-            'deformation': deformation,
-            'out': out,
-        }
+            ret_dct = {
+                'occlusion_map': occlusion_map,
+                'deformation': deformation,
+                'out': out,
+            }
+        else:
+            # No dense motion network — pass feature through unchanged.
+            # Collapse the depth dimension to match the expected 4D output.
+            bs, c, d, h, w = feature_3d.shape
+            out = feature_3d.view(bs, c * d, h, w)
+            out = self.third(out)
+            out = self.fourth(out)
+            ret_dct = {
+                'occlusion_map': None,
+                'deformation': None,
+                'out': out,
+            }
 
         return ret_dct

@@ -272,7 +272,10 @@ def _free_vram():
         return
     _freeing_vram = True
     try:
-        from .platform import free_comfyui_vram
+        try:
+            from .platform import free_comfyui_vram
+        except ImportError:
+            from core.platform import free_comfyui_vram  # type: ignore
         free_comfyui_vram()
 
         # Free MMAudio if loaded
