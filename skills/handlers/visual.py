@@ -1,5 +1,7 @@
 """FFMPEGA Visual skill handlers."""
 
+import re
+
 try:
     from ...core.sanitize import sanitize_text_param, validate_path, ALLOWED_LUT_EXTENSIONS
 except ImportError:
@@ -291,6 +293,40 @@ _THERMAL_PSEUDOCOLOR = (
 def _f_thermal_enhanced(p):
     """Real thermal/heat vision using pseudocolor."""
     return make_result(vf=[_THERMAL_PSEUDOCOLOR])
+
+
+# ── Edit-fallback keyword → FFmpeg filter maps ──────────────────────
+# Used by _edit_ffmpeg_fallback() when FLUX Klein is disabled.
+# Hoisted to module level so they're built once, not per-call.
+
+# colorbalance options: rs/gs/bs (shadows), rm/gm/bm (midtones), rh/gh/bh (highlights)
+_EDIT_COLOR_MAP = {
+    "red":    "colorbalance=rs=0.6:rm=0.6:rh=0.6",
+    "blue":   "colorbalance=bs=0.6:bm=0.6:bh=0.6",
+    "green":  "colorbalance=gs=0.6:gm=0.6:gh=0.6",
+    "yellow": "colorbalance=rs=0.4:gs=0.4:rm=0.4:gm=0.4:rh=0.4:gh=0.4",
+    "orange": "colorbalance=rs=0.5:gs=0.2:rm=0.5:gm=0.2:rh=0.5:gh=0.2",
+    "purple": "colorbalance=rs=0.4:bs=0.4:rm=0.4:bm=0.4:rh=0.4:bh=0.4",
+    "pink":   "colorbalance=rs=0.5:bs=0.2:rm=0.5:bm=0.2:rh=0.5:bh=0.2",
+    "blonde": "colorbalance=rs=0.3:gs=0.2:rm=0.3:gm=0.2:rh=0.3:gh=0.2",
+    "white":  "eq=brightness=0.4:saturation=0.1",
+    "black":  "eq=brightness=-0.4:saturation=0.1",
+    "chrome": "eq=brightness=0.15:saturation=0.0:contrast=1.3",
+    "gold":   "colorbalance=rs=0.4:gs=0.3:rm=0.4:gm=0.3:rh=0.3:gh=0.2",
+}
+
+_EDIT_TONE_MAP = {
+    "bright":    "eq=brightness=0.2:saturation=1.1",
+    "dark":      "eq=brightness=-0.2:saturation=0.9",
+    "warm":      "colortemperature=temperature=6500",
+    "cool":      "colortemperature=temperature=3500",
+    "vibrant":   "eq=saturation=2.0",
+    "cinematic": "eq=saturation=0.7:contrast=1.2:brightness=-0.05",
+    "vintage":   "eq=saturation=0.6:contrast=1.1,colorbalance=rs=0.15:gs=0.05:bs=-0.1",
+    "sepia":     "colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131",
+    "neon":      "eq=saturation=3.0:brightness=0.1",
+    "thermal":   _THERMAL_PSEUDOCOLOR,
+}
 
 
 def _f_comic_book_enhanced(p):
@@ -700,13 +736,18 @@ def _f_auto_mask(p):
     )
     _cache_key = str(p.get("edit_prompt", effect))
 
+    # Whether FLUX Klein is enabled (off by default to save VRAM)
+    _enable_flux_klein = bool(p.get("_enable_flux_klein", False))
+
     mask_path = None  # will be set by cache hit or SAM3 generation
 
     if _cached_mask and os.path.isfile(_cached_mask):
         log.info("auto_mask: reusing cached mask from previous run: %s", _cached_mask)
         # FLUX Klein outputs (remove/edit) are self-contained videos
+        # Only reuse cached FLUX output when the toggle is still ON —
+        # otherwise the user explicitly asked for the lightweight fallback.
         _cached_flux = _flux_cache.get(_cache_key)
-        if effect in ("remove", "edit") and _cached_flux and os.path.isfile(_cached_flux):
+        if effect in ("remove", "edit") and _enable_flux_klein and _cached_flux and os.path.isfile(_cached_flux):
             log.info("auto_mask: reusing cached FLUX Klein output: %s", _cached_flux)
             escaped = _escape_filter_path(_cached_flux)
             fc = f"movie={escaped}[inp];[inp]format=yuv420p[_vout]"
@@ -799,37 +840,59 @@ def _f_auto_mask(p):
     if smoothing not in ("none", "gaussian", "adaptive"):
         smoothing = "none"
 
-    # Special handling for "remove" — use FLUX Klein AI inpainting
+    # Special handling for "remove" — use FLUX Klein AI inpainting (if enabled)
+    # or fall back to LaMa inpainting
     if effect == "remove":
-        try:
-            try:
-                from ...core.flux_klein_editor import remove_object
-            except ImportError:
-                from core.flux_klein_editor import remove_object
-            inpainted_path = remove_object(
-                video_path=video_path,
-                mask_video_path=mask_path,
-                smoothing=smoothing,
-            )
-            log.info("FLUX Klein removal complete: %s", inpainted_path)
-            if _metadata_ref is not None and isinstance(_metadata_ref, dict):
-                _metadata_ref.setdefault("_flux_klein_outputs", {})[_cache_key] = inpainted_path
-            escaped = _escape_filter_path(inpainted_path)
-            fc = f"movie={escaped}[inp];[inp]format=yuv420p[_vout]"
-            return make_result(fc=fc)
-        except Exception as e:
-            log.error("FLUX Klein removal failed: %s", e)
+        if _enable_flux_klein:
             try:
                 try:
-                    from ...core.flux_klein_editor import cleanup as _fk_cleanup
+                    from ...core.flux_klein_editor import remove_object
                 except ImportError:
-                    from core.flux_klein_editor import cleanup as _fk_cleanup
-                _fk_cleanup()
-            except Exception:
-                pass
-            raise
+                    from core.flux_klein_editor import remove_object
+                inpainted_path = remove_object(
+                    video_path=video_path,
+                    mask_video_path=mask_path,
+                    smoothing=smoothing,
+                )
+                log.info("FLUX Klein removal complete: %s", inpainted_path)
+                if _metadata_ref is not None and isinstance(_metadata_ref, dict):
+                    _metadata_ref.setdefault("_flux_klein_outputs", {})[_cache_key] = inpainted_path
+                escaped = _escape_filter_path(inpainted_path)
+                fc = f"movie={escaped}[inp];[inp]format=yuv420p[_vout]"
+                return make_result(fc=fc)
+            except Exception as e:
+                log.error("FLUX Klein removal failed: %s", e)
+                try:
+                    try:
+                        from ...core.flux_klein_editor import cleanup as _fk_cleanup
+                    except ImportError:
+                        from core.flux_klein_editor import cleanup as _fk_cleanup
+                    _fk_cleanup()
+                except Exception:
+                    pass
+                raise
+        else:
+            # FLUX Klein disabled — fall back to LaMa inpainting
+            log.info("FLUX Klein disabled — using LaMa for object removal")
+            try:
+                try:
+                    from ...core.lama_inpainter import remove_object as lama_remove
+                except ImportError:
+                    from core.lama_inpainter import remove_object as lama_remove
+                inpainted_path = lama_remove(
+                    video_path=video_path,
+                    mask_video_path=mask_path,
+                )
+                log.info("LaMa removal complete: %s", inpainted_path)
+                escaped = _escape_filter_path(inpainted_path)
+                fc = f"movie={escaped}[inp];[inp]format=yuv420p[_vout]"
+                return make_result(fc=fc)
+            except Exception as e:
+                log.error("LaMa removal failed: %s — falling back to black fill", e)
+                return _build_mask_fc(mask_path, "remove", strength, invert)
 
-    # Special handling for "edit" — use FLUX Klein text-guided editing
+    # Special handling for "edit" — use FLUX Klein text-guided editing (if enabled)
+    # or fall back to FFmpeg filter approximation
     if effect == "edit":
         edit_prompt = str(p.get("edit_prompt", ""))
         if not edit_prompt:
@@ -837,37 +900,91 @@ def _f_auto_mask(p):
                 "auto_mask effect='edit' requires an 'edit_prompt' parameter "
                 "describing the desired change (e.g. 'change hair to blonde')"
             )
-        try:
-            try:
-                from ...core.flux_klein_editor import edit_video
-            except ImportError:
-                from core.flux_klein_editor import edit_video
-            edited_path = edit_video(
-                video_path=video_path,
-                mask_video_path=mask_path,
-                prompt=edit_prompt,
-                smoothing=smoothing,
-            )
-            log.info("FLUX Klein edit complete: %s", edited_path)
-            if _metadata_ref is not None and isinstance(_metadata_ref, dict):
-                _metadata_ref.setdefault("_flux_klein_outputs", {})[_cache_key] = edited_path
-            escaped = _escape_filter_path(edited_path)
-            fc = f"movie={escaped}[inp];[inp]format=yuv420p[_vout]"
-            return make_result(fc=fc)
-        except Exception as e:
-            log.error("FLUX Klein edit failed: %s", e)
+        if _enable_flux_klein:
             try:
                 try:
-                    from ...core.flux_klein_editor import cleanup as _fk_cleanup
+                    from ...core.flux_klein_editor import edit_video
                 except ImportError:
-                    from core.flux_klein_editor import cleanup as _fk_cleanup
-                _fk_cleanup()
-            except Exception:
-                pass
-            raise
+                    from core.flux_klein_editor import edit_video
+                edited_path = edit_video(
+                    video_path=video_path,
+                    mask_video_path=mask_path,
+                    prompt=edit_prompt,
+                    smoothing=smoothing,
+                )
+                log.info("FLUX Klein edit complete: %s", edited_path)
+                if _metadata_ref is not None and isinstance(_metadata_ref, dict):
+                    _metadata_ref.setdefault("_flux_klein_outputs", {})[_cache_key] = edited_path
+                escaped = _escape_filter_path(edited_path)
+                fc = f"movie={escaped}[inp];[inp]format=yuv420p[_vout]"
+                return make_result(fc=fc)
+            except Exception as e:
+                log.error("FLUX Klein edit failed: %s", e)
+                try:
+                    try:
+                        from ...core.flux_klein_editor import cleanup as _fk_cleanup
+                    except ImportError:
+                        from core.flux_klein_editor import cleanup as _fk_cleanup
+                    _fk_cleanup()
+                except Exception:
+                    pass
+                raise
+        else:
+            # FLUX Klein disabled — fall back to FFmpeg filter approximation
+            log.info(
+                "FLUX Klein disabled — using FFmpeg filter fallback for edit: %s",
+                edit_prompt,
+            )
+            return _edit_ffmpeg_fallback(edit_prompt, strength, mask_path, invert)
 
     # Build FFmpeg filter_complex that uses the mask
     return _build_mask_fc(mask_path, effect, strength, invert)
+
+
+def _edit_ffmpeg_fallback(edit_prompt: str, strength: int, mask_path: str, invert: bool):
+    """Lightweight FFmpeg filter fallback for auto_mask effect='edit'.
+
+    Maps keywords in the edit prompt to FFmpeg color/brightness/saturation
+    filters applied to the masked region.  Not AI-quality, but functional
+    for simple color fills, tinting, and brightness adjustments — and uses
+    zero VRAM.
+
+    Called when use_flux_klein is OFF (the default).
+    """
+    import logging
+    log = logging.getLogger("ffmpega")
+
+    prompt_lower = edit_prompt.lower()
+
+    # Find matching filter from prompt keywords (word-boundary match
+    # to avoid false positives like "sacred" matching "red").
+    fx_filter = None
+
+    # Check color keywords first (more specific)
+    for keyword, filt in _EDIT_COLOR_MAP.items():
+        if re.search(r'\b' + re.escape(keyword) + r'\b', prompt_lower):
+            fx_filter = filt
+            log.info("edit fallback: matched color keyword '%s' → %s", keyword, filt)
+            break
+
+    # Then check tonal keywords
+    if fx_filter is None:
+        for keyword, filt in _EDIT_TONE_MAP.items():
+            if re.search(r'\b' + re.escape(keyword) + r'\b', prompt_lower):
+                fx_filter = filt
+                log.info("edit fallback: matched tone keyword '%s' → %s", keyword, filt)
+                break
+
+    # Default: boost saturation + slight warm tint (generic "editing" look)
+    if fx_filter is None:
+        fx_filter = "eq=saturation=1.3:brightness=0.05"
+        log.warning(
+            "edit fallback: no keyword match for '%s' — using default "
+            "saturation/brightness boost. Enable FLUX Klein for AI-quality edits.",
+            edit_prompt,
+        )
+
+    return _build_mask_fc(mask_path, fx_filter, strength, invert)
 
 
 def _effect_filter_map(strength: int) -> dict:

@@ -135,6 +135,7 @@ Command_log.md
 
 # PRD
 PRD.md
+PRD-VideoEditor.md
 
 # Custom skills (user-defined, not shipped)
 custom_skills/*.yaml

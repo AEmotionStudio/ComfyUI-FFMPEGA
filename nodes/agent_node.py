@@ -231,13 +231,13 @@ class FFMPEGAgentNode:
 
                 # ── LLM Behavior (always visible) ─────────────────────────
                 "use_vision": ("BOOLEAN", {
-                    "default": True,
+                    "default": False,
                     "label_on": "Vision On",
                     "label_off": "Vision Off",
                     "tooltip": "When On, embeds video frames as images for vision-capable models (uses more tokens). When Off, uses numeric color analysis instead (cheaper, works with all models).",
                 }),
                 "verify_output": ("BOOLEAN", {
-                    "default": True,
+                    "default": False,
                     "label_on": "Verify On",
                     "label_off": "Verify Off",
                     "tooltip": "When On, the agent inspects the output video after rendering and auto-corrects if it doesn't match intent. Adds one extra LLM call (more tokens/time). Best for complex edits like overlays, color grading, or animations.",
@@ -308,6 +308,12 @@ class FFMPEGAgentNode:
                 }),
 
                 # ── Advanced: FLUX Klein ──────────────────────────────────
+                "use_flux_klein": ("BOOLEAN", {
+                    "default": False,
+                    "label_on": "FLUX On",
+                    "label_off": "FLUX Off",
+                    "tooltip": "Enable FLUX Klein 4B for AI-powered object removal (auto_mask:effect=remove) and text-guided editing (auto_mask:effect=edit). OFF by default to avoid high VRAM usage (~8–15 GB). When OFF, removal falls back to LaMa (~200 MB) and editing uses lightweight FFmpeg filter approximations.",
+                }),
                 "flux_smoothing": (["none", "gaussian", "adaptive"], {
                     "default": "none",
                     "tooltip": "Temporal smoothing for FLUX Klein effects (remove/edit). 'none' = no smoothing (fastest, least VRAM). 'gaussian' = Gaussian blur across time (reduces flicker, +700 MiB RAM). 'adaptive' = per-pixel deviation check, only smooths outlier frames (+700 MiB RAM).",
@@ -795,15 +801,16 @@ class FFMPEGAgentNode:
         custom_model: str = "",
         crf: int = -1,
         encoding_preset: str = "auto",
-        use_vision: bool = True,
+        use_vision: bool = False,
         ptc_mode: str = "off",
-        verify_output: bool = True,
+        verify_output: bool = False,
         whisper_device: str = "cpu",
         whisper_model: str = "large-v3",
         sam3_device: str = "gpu",
         sam3_max_objects: int = 5,
         sam3_det_threshold: float = 0.7,
         mask_points: str = "",
+        use_flux_klein: bool = False,
         flux_smoothing: str = "none",
         mmaudio_mode: str = "replace",
         batch_mode: bool = False,
@@ -869,6 +876,7 @@ class FFMPEGAgentNode:
                 sam3_max_objects=sam3_max_objects,
                 sam3_det_threshold=sam3_det_threshold,
                 mask_points=mask_points,
+                use_flux_klein=use_flux_klein,
                 flux_smoothing=flux_smoothing,
                 pipeline_json=pipeline_json,
             )
@@ -928,6 +936,7 @@ class FFMPEGAgentNode:
                     sam3_max_objects=sam3_max_objects,
                     sam3_det_threshold=sam3_det_threshold,
                     mask_points=mask_points,
+                    use_flux_klein=use_flux_klein,
                     flux_smoothing=flux_smoothing,
                     temp_video_from_images=temp_video_from_images,
                     temp_video_with_audio=temp_video_with_audio,
@@ -1074,6 +1083,7 @@ class FFMPEGAgentNode:
                     sam3_max_objects=sam3_max_objects,
                     sam3_det_threshold=sam3_det_threshold,
                     mask_points=mask_points,
+                    use_flux_klein=use_flux_klein,
                     flux_smoothing=flux_smoothing,
                     temp_video_from_images=temp_video_from_images,
                     temp_video_with_audio=temp_video_with_audio,
@@ -1147,6 +1157,7 @@ class FFMPEGAgentNode:
             sam3_max_objects=sam3_max_objects,
             sam3_det_threshold=sam3_det_threshold,
             mask_points=mask_points,
+            use_flux_klein=use_flux_klein,
             flux_smoothing=flux_smoothing,
             mmaudio_mode=mmaudio_mode,
             composer=self.composer,
@@ -1327,7 +1338,7 @@ class FFMPEGAgentNode:
 
         return prompt + "\n".join(hint_lines)
 
-    async def _process_effects_pipeline(self, pipeline_json, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, whisper_device="cpu", whisper_model="large-v3", sam3_device="gpu", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", flux_smoothing="none", temp_video_from_images=None, temp_video_with_audio=None, image_a=None, audio_a=None, _all_video_paths=None, _all_image_paths=None, _all_text_inputs=None, **kwargs):
+    async def _process_effects_pipeline(self, pipeline_json, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, whisper_device="cpu", whisper_model="large-v3", sam3_device="gpu", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", use_flux_klein=False, flux_smoothing="none", temp_video_from_images=None, temp_video_with_audio=None, image_a=None, audio_a=None, _all_video_paths=None, _all_image_paths=None, _all_text_inputs=None, **kwargs):
         """Delegate to nollm_modes module."""
         return await _nollm.process_effects_pipeline(
             composer=self.composer, process_manager=self.process_manager,
@@ -1341,6 +1352,7 @@ class FFMPEGAgentNode:
             whisper_device=whisper_device, whisper_model=whisper_model,
             sam3_device=sam3_device, sam3_max_objects=sam3_max_objects,
             sam3_det_threshold=sam3_det_threshold, mask_points=mask_points,
+            use_flux_klein=use_flux_klein,
             flux_smoothing=flux_smoothing,
             temp_video_from_images=temp_video_from_images,
             temp_video_with_audio=temp_video_with_audio,
@@ -1482,7 +1494,7 @@ class FFMPEGAgentNode:
         """Delegate to output_handler module."""
         return _oh.strip_api_key_from_metadata(api_key, prompt, extra_pnginfo)
 
-    async def _process_batch(self, video_folder, file_pattern, prompt, llm_model, quality_preset, ollama_url, api_key, custom_model, crf, encoding_preset, max_concurrent, save_output, output_path, use_vision=True, verify_output=False, ptc_mode="off", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", pipeline_json="", flux_smoothing="none"):
+    async def _process_batch(self, video_folder, file_pattern, prompt, llm_model, quality_preset, ollama_url, api_key, custom_model, crf, encoding_preset, max_concurrent, save_output, output_path, use_vision=False, verify_output=False, ptc_mode="off", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", pipeline_json="", use_flux_klein=False, flux_smoothing="none"):
         """Delegate to batch_processor module."""
         return await _bp.process_batch(
             analyzer=self.analyzer, composer=self.composer,
@@ -1500,6 +1512,7 @@ class FFMPEGAgentNode:
             sam3_max_objects=sam3_max_objects,
             sam3_det_threshold=sam3_det_threshold,
             mask_points=mask_points, pipeline_json=pipeline_json,
+            use_flux_klein=use_flux_klein,
             flux_smoothing=flux_smoothing,
         )
     @classmethod

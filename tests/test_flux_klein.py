@@ -212,6 +212,7 @@ class TestFluxKleinOOMCleanup:
             "target": "hair",
             "effect": "edit",
             "edit_prompt": "blonde hair",
+            "_enable_flux_klein": True,
             "_metadata_ref": {"_mask_video_path": "/tmp/mask.mp4"},
         }
 
