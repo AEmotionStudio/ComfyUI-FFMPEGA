@@ -318,6 +318,16 @@ def _free_vram():
         except Exception:
             pass
 
+        # Free MuseTalk if loaded
+        try:
+            try:
+                from . import musetalk_synthesizer
+            except ImportError:
+                from core import musetalk_synthesizer  # type: ignore
+            musetalk_synthesizer.cleanup()
+        except Exception:
+            pass
+
         # Free FLUX Klein if loaded
         try:
             try:
@@ -325,6 +335,16 @@ def _free_vram():
             except ImportError:
                 from core import flux_klein_editor  # type: ignore
             flux_klein_editor.cleanup()
+        except Exception:
+            pass
+
+        # Free LivePortrait if loaded
+        try:
+            try:
+                from . import liveportrait_synthesizer
+            except ImportError:
+                from core import liveportrait_synthesizer  # type: ignore
+            liveportrait_synthesizer.cleanup()
         except Exception:
             pass
 

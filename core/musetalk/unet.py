@@ -82,3 +82,10 @@ class UNet:
 
         self.model.to(self.device)
         self.model.eval()
+
+    def to(self, device):
+        """Move UNet model to a device and update internal device tracking."""
+        device = torch.device(device) if isinstance(device, str) else device
+        self.device = device
+        self.model.to(device)
+        return self

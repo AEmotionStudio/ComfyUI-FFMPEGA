@@ -51,8 +51,8 @@ _MODEL_INFO: dict[str, dict] = {
         "size": "~200 MB",
         "url": "https://huggingface.co/AEmotionStudio/lama-inpainting",
         "mirror_repo": "AEmotionStudio/lama-inpainting",
-        "mirror_filename": "big-lama.pt",
-        "manual": "Download big-lama.pt from "
+        "mirror_filename": "big-lama.safetensors",
+        "manual": "Download big-lama.safetensors from "
                   "https://huggingface.co/AEmotionStudio/lama-inpainting "
                   "and place it in ~/.cache/torch/hub/checkpoints/",
     },
@@ -95,6 +95,16 @@ _MODEL_INFO: dict[str, dict] = {
         "manual": "Download model files from "
                   "https://huggingface.co/AEmotionStudio/flux-klein "
                   "and place them in ComfyUI/models/flux_klein/.",
+    },
+    "liveportrait": {
+        "name": "LivePortrait (Portrait Animation)",
+        "size": "~497 MB (5 model components)",
+        "url": "https://huggingface.co/AEmotionStudio/liveportrait-models",
+        "mirror_repo": "AEmotionStudio/liveportrait-models",
+        "license": "MIT (code), see upstream for weights",
+        "manual": "Download model files from "
+                  "https://huggingface.co/AEmotionStudio/liveportrait-models "
+                  "and place them in ComfyUI/models/liveportrait/.",
     },
 }
 

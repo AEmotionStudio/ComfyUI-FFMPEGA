@@ -1,7 +1,7 @@
 """FFMPEGA Lip Sync skill handler.
 
 Uses MuseTalk to synchronize lip movements in video with provided audio.
-Runs in a subprocess to avoid CUDA memory leaks.
+Runs in-process with cached GPU↔CPU model offloading.
 
 License note:
     MuseTalk code: MIT License
@@ -67,9 +67,9 @@ def _f_lip_sync(p):
     # Try to import MuseTalk synthesizer
     try:
         try:
-            from ...core.musetalk_synthesizer import lip_sync_subprocess
+            from ...core.musetalk_synthesizer import lip_sync
         except ImportError:
-            from core.musetalk_synthesizer import lip_sync_subprocess
+            from core.musetalk_synthesizer import lip_sync
         _has_musetalk = True
     except ImportError:
         _has_musetalk = False
@@ -84,9 +84,9 @@ def _f_lip_sync(p):
             _metadata_ref["_skill_degraded"] = True
         return make_result()
 
-    # Generate lip-synced video via subprocess
+    # Generate lip-synced video in-process
     try:
-        output_path = lip_sync_subprocess(
+        output_path = lip_sync(
             video_path=video_path,
             audio_path=audio_path,
             batch_size=batch_size,

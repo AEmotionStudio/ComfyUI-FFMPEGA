@@ -653,6 +653,8 @@ app.registerExtension({
                 const trackTokensWidget = this.widgets?.find(w => w.name === "track_tokens");
                 const logUsageWidget = this.widgets?.find(w => w.name === "log_usage");
                 const allowDownloadsWidget = this.widgets?.find(w => w.name === "allow_model_downloads");
+                const fluxSmoothingWidget = this.widgets?.find(w => w.name === "flux_smoothing");
+                const mmaudioModeWidget = this.widgets?.find(w => w.name === "mmaudio_mode");
 
                 function updateAdvancedVisibility() {
                     const show = advancedWidget?.value ?? false;
@@ -661,9 +663,6 @@ app.registerExtension({
                     if (subtitleWidget) toggleWidget(subtitleWidget, show);
                     if (crfWidget) toggleWidget(crfWidget, show);
                     if (encodingWidget) toggleWidget(encodingWidget, show);
-                    // LLM behavior
-                    if (visionWidget) toggleWidget(visionWidget, show);
-                    if (verifyWidget) toggleWidget(verifyWidget, show);
                     // Whisper
                     if (whisperDevWidget) toggleWidget(whisperDevWidget, show);
                     if (whisperModelWidget) toggleWidget(whisperModelWidget, show);
@@ -671,6 +670,10 @@ app.registerExtension({
                     if (sam3MaxObjWidget) toggleWidget(sam3MaxObjWidget, show);
                     if (sam3ThreshWidget) toggleWidget(sam3ThreshWidget, show);
                     if (maskTypeWidget) toggleWidget(maskTypeWidget, show);
+                    // FLUX Klein
+                    if (fluxSmoothingWidget) toggleWidget(fluxSmoothingWidget, show);
+                    // MMAudio
+                    if (mmaudioModeWidget) toggleWidget(mmaudioModeWidget, show);
                     // Batch
                     if (batchWidget) toggleWidget(batchWidget, show);
                     // Batch sub-widgets only show when BOTH advanced AND batch are on

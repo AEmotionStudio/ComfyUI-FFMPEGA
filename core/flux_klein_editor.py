@@ -203,7 +203,27 @@ def _free_vram() -> None:
         except Exception:
             pass
 
-        # 4. Empty CUDA cache + gc.collect
+        # 4. Free MuseTalk if loaded
+        try:
+            try:
+                from . import musetalk_synthesizer
+            except ImportError:
+                from core import musetalk_synthesizer  # type: ignore
+            musetalk_synthesizer.cleanup()
+        except Exception:
+            pass
+
+        # 5. Free LivePortrait if loaded
+        try:
+            try:
+                from . import liveportrait_synthesizer
+            except ImportError:
+                from core import liveportrait_synthesizer  # type: ignore
+            liveportrait_synthesizer.cleanup()
+        except Exception:
+            pass
+
+        # 6. Empty CUDA cache + gc.collect
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         gc.collect()

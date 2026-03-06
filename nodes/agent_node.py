@@ -135,17 +135,24 @@ class FFMPEGAgentNode:
                     "tooltip": "Absolute path to the source video file. Used as the ffmpeg input unless images are connected.",
                 }),
                 "llm_model": (all_models, {
-                    "default": all_models[0],
-                    "tooltip": "AI model used to interpret your prompt. Select 'none' for no-LLM mode — use 'no_llm_mode' to choose between SAM3 masking, Whisper transcription, or karaoke subtitles. Local Ollama models appear next, followed by cloud API models (require api_key).",
+                    "default": "gemini-cli" if "gemini-cli" in all_models else (ollama_models[0] if ollama_models != cls.FALLBACK_OLLAMA_MODELS else "none"),
+                    "tooltip": "AI model for interpreting your prompt. "
+                               "CLI models (gemini-cli, claude-cli, etc.) use locally installed CLI tools — no API key needed. "
+                               "Ollama models run locally via the Ollama server. "
+                               "Cloud API models (GPT, Claude, Gemini, Qwen) require an api_key. "
+                               "Select 'custom' to type any model name manually. "
+                               "Select 'none' to skip the LLM entirely and use no_llm_mode instead (manual pipeline, SAM3, Whisper, or MMAudio).",
                 }),
-                "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles", "generate_audio"], {
+                "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles", "generate_audio", "lip_sync", "animate_portrait"], {
                     "default": "manual",
                     "tooltip": "What to do when llm_model is 'none'. "
                                "'manual' runs the Effects Builder pipeline directly (no AI). "
                                "'sam3_masking' uses the prompt as a SAM3 text target. "
                                "'transcribe' runs Whisper speech-to-text and burns SRT subtitles. "
                                "'karaoke_subtitles' runs Whisper and burns word-by-word karaoke subtitles. "
-                               "'generate_audio' uses MMAudio to synthesize audio from video/prompt.",
+                               "'generate_audio' uses MMAudio to synthesize audio from video/prompt. "
+                               "'lip_sync' uses MuseTalk to sync lip movements to connected audio_a. "
+                               "'animate_portrait' uses LivePortrait to animate a face — connect driving video to video_a.",
                 }),
                 "quality_preset": (cls.QUALITY_PRESETS, {
                     "default": "standard",
@@ -168,7 +175,7 @@ class FFMPEGAgentNode:
                     "tooltip": "Extra image/video input. Connect additional inputs and more slots appear automatically (image_b, image_c, ...). Used for multi-input skills like grid, slideshow, overlay, concat, and split screen.",
                 }),
                 "audio_a": ("AUDIO", {
-                    "tooltip": "Audio input. Connect additional audio and more slots appear automatically (audio_b, audio_c, ...). Used for muxing audio into video, or for multi-audio skills like concat.",
+                    "tooltip": "Audio input. Connect additional audio and more slots appear automatically (audio_b, audio_c, ...). Used for muxing audio into video, lip sync, or for multi-audio skills like concat.",
                 }),
                 "video_a": ("STRING", {
                     "forceInput": True,
@@ -222,12 +229,26 @@ class FFMPEGAgentNode:
                     "tooltip": "When 'custom' is selected in llm_model, type the exact model name here. Use provider prefixes: gpt-* for OpenAI, claude-* for Anthropic, gemini-* for Google, anything else for Ollama.",
                 }),
 
+                # ── LLM Behavior (always visible) ─────────────────────────
+                "use_vision": ("BOOLEAN", {
+                    "default": True,
+                    "label_on": "Vision On",
+                    "label_off": "Vision Off",
+                    "tooltip": "When On, embeds video frames as images for vision-capable models (uses more tokens). When Off, uses numeric color analysis instead (cheaper, works with all models).",
+                }),
+                "verify_output": ("BOOLEAN", {
+                    "default": True,
+                    "label_on": "Verify On",
+                    "label_off": "Verify Off",
+                    "tooltip": "When On, the agent inspects the output video after rendering and auto-corrects if it doesn't match intent. Adds one extra LLM call (more tokens/time). Best for complex edits like overlays, color grading, or animations.",
+                }),
+
                 # ── Advanced toggle ───────────────────────────────────────
                 "advanced_options": ("BOOLEAN", {
                     "default": False,
                     "label_on": "Advanced",
                     "label_off": "Simple",
-                    "tooltip": "Show advanced options: preview, encoding, vision, verification, SAM3/Whisper tuning, batch processing, and usage tracking.",
+                    "tooltip": "Show advanced options: preview, encoding, SAM3/Whisper tuning, FLUX smoothing, MMAudio mode, batch processing, and usage tracking.",
                 }),
 
                 # ── Advanced: Rendering ───────────────────────────────────
@@ -255,19 +276,6 @@ class FFMPEGAgentNode:
                     "tooltip": "Override x264/x265 encoding speed preset. Slower = better compression. 'auto' uses the quality_preset value.",
                 }),
 
-                # ── Advanced: LLM Behavior ────────────────────────────────
-                "use_vision": ("BOOLEAN", {
-                    "default": True,
-                    "label_on": "Vision On",
-                    "label_off": "Vision Off",
-                    "tooltip": "When On, embeds video frames as images for vision-capable models (uses more tokens). When Off, uses numeric color analysis instead (cheaper, works with all models).",
-                }),
-                "verify_output": ("BOOLEAN", {
-                    "default": True,
-                    "label_on": "Verify On",
-                    "label_off": "Verify Off",
-                    "tooltip": "When On, the agent inspects the output video after rendering and auto-corrects if it doesn't match intent. Adds one extra LLM call (more tokens/time). Best for complex edits like overlays, color grading, or animations.",
-                }),
 
                 # ── Advanced: Whisper ─────────────────────────────────────
                 "whisper_device": (["cpu", "gpu"], {
@@ -281,7 +289,7 @@ class FFMPEGAgentNode:
 
                 # ── Advanced: SAM3 ────────────────────────────────────────
                 "sam3_max_objects": ("INT", {
-                    "default": 5,
+                    "default": 2,
                     "min": 1,
                     "max": 20,
                     "step": 1,
@@ -711,6 +719,21 @@ class FFMPEGAgentNode:
                 temp_audio_files.append(audio_wav_path)
                 logger.info("Transcription will use connected audio_a input: %s", audio_wav_path)
 
+        # --- Lip sync audio input path ---
+        _LIP_SYNC_SKILLS = {
+            "lip_sync", "lipsync", "dub", "dubbing",
+            "sync_lips", "talking_head", "lip_dub", "voice_sync",
+        }
+        has_lip_sync_skill = any(s.skill_name in _LIP_SYNC_SKILLS for s in pipeline.steps)
+        if has_lip_sync_skill and audio_a is not None:
+            audio_wav_path = self._audio_dict_to_wav(audio_a)
+            if audio_wav_path:
+                for step in pipeline.steps:
+                    if step.skill_name in _LIP_SYNC_SKILLS:
+                        step.params["audio_path"] = audio_wav_path
+                temp_audio_files.append(audio_wav_path)
+                logger.info("Lip sync will use connected audio_a input: %s", audio_wav_path)
+
         return (
             effective_video_path,
             temp_multi_videos,
@@ -874,8 +897,8 @@ class FFMPEGAgentNode:
         images_a = None
 
         if not prompt.strip():
-            # manual + whisper modes don't need a prompt
-            if llm_model != "none" or no_llm_mode not in ("manual", "transcribe", "karaoke_subtitles", "generate_audio"):
+            # manual + whisper + lip_sync modes don't need a prompt
+            if llm_model != "none" or no_llm_mode not in ("manual", "transcribe", "karaoke_subtitles", "generate_audio", "lip_sync", "animate_portrait"):
                 raise ValueError("Prompt cannot be empty")
 
         # --- Analyze input video ---
@@ -970,6 +993,40 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
+            # Lip sync mode (MuseTalk from connected audio_a)
+            if no_llm_mode == "lip_sync":
+                return await self._process_lip_sync_only(
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
+                    audio_a=audio_a,
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    **kwargs,
+                )
+            # Animate portrait mode (LivePortrait from connected video_a)
+            if no_llm_mode == "animate_portrait":
+                # video_a is the driving video
+                driving_video = _all_video_paths[0] if _all_video_paths else ""
+                return await self._process_animate_portrait_only(
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
+                    driving_video=driving_video,
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    **kwargs,
+                )
             # Text inputs connected → build a text overlay pipeline
             if _all_text_inputs:
                 # Auto-generate a pipeline from text inputs
@@ -1032,7 +1089,7 @@ class FFMPEGAgentNode:
                 "No-LLM 'manual' mode requires an Effects Builder node or "
                 "FFMPEGA Text node. Connect one to the pipeline_json or "
                 "text_a input, or switch no_llm_mode to 'sam3_masking', "
-                "'transcribe', 'karaoke_subtitles', or 'generate_audio'."
+                "'transcribe', 'karaoke_subtitles', 'generate_audio', or 'lip_sync'."
             )
         # --- Build connected-inputs context string ---
         connected_inputs_str = self._build_connected_inputs_summary(
@@ -1346,6 +1403,44 @@ class FFMPEGAgentNode:
             output_path=output_path, preview_mode=preview_mode,
             quality_preset=quality_preset, crf=crf,
             encoding_preset=encoding_preset,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
+        )
+
+    # ------------------------------------------------------------------ #
+    #  Lip sync mode (no LLM)                                             #
+    # ------------------------------------------------------------------ #
+
+    async def _process_lip_sync_only(self, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, audio_a=None, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+        """Delegate to nollm_modes module."""
+        return await _nollm.process_lip_sync_only(
+            media_converter=self.media_converter,
+            effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            audio_a=audio_a,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
+        )
+
+    # ------------------------------------------------------------------ #
+    #  Animate portrait mode (no LLM)                                     #
+    # ------------------------------------------------------------------ #
+
+    async def _process_animate_portrait_only(self, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, driving_video="", temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+        """Delegate to nollm_modes module."""
+        return await _nollm.process_animate_portrait_only(
+            media_converter=self.media_converter,
+            effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            driving_video=driving_video,
             temp_video_from_images=temp_video_from_images,
             temp_video_with_audio=temp_video_with_audio,
             **kwargs,
