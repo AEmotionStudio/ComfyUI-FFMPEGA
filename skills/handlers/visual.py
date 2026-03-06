@@ -1,5 +1,7 @@
 """FFMPEGA Visual skill handlers."""
 
+import re
+
 try:
     from ...core.sanitize import sanitize_text_param, validate_path, ALLOWED_LUT_EXTENSIONS
 except ImportError:
@@ -734,13 +736,18 @@ def _f_auto_mask(p):
     )
     _cache_key = str(p.get("edit_prompt", effect))
 
+    # Whether FLUX Klein is enabled (off by default to save VRAM)
+    _enable_flux_klein = bool(p.get("_enable_flux_klein", False))
+
     mask_path = None  # will be set by cache hit or SAM3 generation
 
     if _cached_mask and os.path.isfile(_cached_mask):
         log.info("auto_mask: reusing cached mask from previous run: %s", _cached_mask)
         # FLUX Klein outputs (remove/edit) are self-contained videos
+        # Only reuse cached FLUX output when the toggle is still ON —
+        # otherwise the user explicitly asked for the lightweight fallback.
         _cached_flux = _flux_cache.get(_cache_key)
-        if effect in ("remove", "edit") and _cached_flux and os.path.isfile(_cached_flux):
+        if effect in ("remove", "edit") and _enable_flux_klein and _cached_flux and os.path.isfile(_cached_flux):
             log.info("auto_mask: reusing cached FLUX Klein output: %s", _cached_flux)
             escaped = _escape_filter_path(_cached_flux)
             fc = f"movie={escaped}[inp];[inp]format=yuv420p[_vout]"
@@ -827,9 +834,6 @@ def _f_auto_mask(p):
     _metadata_ref = p.get("_metadata_ref")
     if _metadata_ref is not None and isinstance(_metadata_ref, dict):
         _metadata_ref["_mask_video_path"] = mask_path
-
-    # Whether FLUX Klein is enabled (off by default to save VRAM)
-    _enable_flux_klein = bool(p.get("_enable_flux_klein", False))
 
     # Temporal smoothing mode for FLUX Klein effects (node-level toggle)
     smoothing = str(p.get("_flux_smoothing", p.get("smoothing", "none")))
@@ -948,7 +952,6 @@ def _edit_ffmpeg_fallback(edit_prompt: str, strength: int, mask_path: str, inver
     Called when use_flux_klein is OFF (the default).
     """
     import logging
-    import re
     log = logging.getLogger("ffmpega")
 
     prompt_lower = edit_prompt.lower()

@@ -731,6 +731,8 @@ class SkillComposer:
                 step.params["_mask_points"] = pipeline.metadata["_mask_points"]
             if "_flux_smoothing" in pipeline.metadata:
                 step.params["_flux_smoothing"] = pipeline.metadata["_flux_smoothing"]
+            if "_enable_flux_klein" in pipeline.metadata:
+                step.params["_enable_flux_klein"] = pipeline.metadata["_enable_flux_klein"]
             if "_mmaudio_mode" in pipeline.metadata:
                 step.params["_mmaudio_mode"] = pipeline.metadata["_mmaudio_mode"]
             # Provide mutable reference so handlers can write back metadata

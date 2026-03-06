@@ -474,6 +474,7 @@ class TestFluxKleinPlusVideoFilters:
                 metadata={
                     "_mask_video_path": edited_path,
                     "_flux_klein_outputs": {"make it cinematic": edited_path},
+                    "_enable_flux_klein": True,
                 },
             )
 
@@ -541,6 +542,7 @@ class TestFluxKleinPlusVideoFilters:
                 metadata={
                     "_mask_video_path": edited_path,
                     "_flux_klein_outputs": {"make it thermal": edited_path},
+                    "_enable_flux_klein": True,
                 },
             )
 
@@ -588,6 +590,7 @@ class TestFluxKleinPlusVideoFilters:
                 metadata={
                     "_mask_video_path": edited_path,
                     "_flux_klein_outputs": {"chrome skin": edited_path},
+                    "_enable_flux_klein": True,
                 },
             )
 
