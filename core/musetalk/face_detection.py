@@ -7,6 +7,8 @@ producing unusable output.
 
 import logging
 import os
+import threading
+import warnings
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -27,8 +29,9 @@ _FACE_LANDMARKER_URL = (
     "face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
 )
 
-# Cached detector
+# Cached detector (guarded by _landmarker_lock for thread safety)
 _landmarker = None
+_landmarker_lock = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +62,17 @@ def _get_model_path() -> str:
     if model_path.is_file():
         return str(model_path)
 
+    # Gate download behind the same allow_model_downloads check
+    # used by all other model download paths in the project.
+    try:
+        try:
+            from ..model_manager import require_downloads_allowed
+        except ImportError:
+            from core.model_manager import require_downloads_allowed  # type: ignore
+        require_downloads_allowed("musetalk")
+    except ImportError:
+        pass  # model_manager not available (e.g. standalone test) — allow
+
     log.info("[MuseTalk] Downloading FaceLandmarker model (~4MB)...")
     try:
         import urllib.request
@@ -74,32 +88,37 @@ def _get_model_path() -> str:
 
 
 def _get_landmarker():
-    """Get or create FaceLandmarker singleton."""
+    """Get or create FaceLandmarker singleton (thread-safe)."""
     global _landmarker
     if _landmarker is not None:
         return _landmarker
 
-    import mediapipe as mp
+    with _landmarker_lock:
+        # Double-check after acquiring lock
+        if _landmarker is not None:
+            return _landmarker
 
-    if not (hasattr(mp, "tasks") and hasattr(mp.tasks, "vision")):
-        raise RuntimeError(
-            "MediaPipe tasks API not available. "
-            "Please install mediapipe >= 0.10.x"
+        import mediapipe as mp
+
+        if not (hasattr(mp, "tasks") and hasattr(mp.tasks, "vision")):
+            raise RuntimeError(
+                "MediaPipe tasks API not available. "
+                "Please install mediapipe >= 0.10.x"
+            )
+
+        model_path = _get_model_path()
+        base_options = mp.tasks.BaseOptions(model_asset_path=model_path)
+        options = mp.tasks.vision.FaceLandmarkerOptions(
+            base_options=base_options,
+            running_mode=mp.tasks.vision.RunningMode.IMAGE,
+            num_faces=10,
+            min_face_detection_confidence=0.5,
+            min_face_presence_confidence=0.5,
+            output_face_blendshapes=False,
+            output_facial_transformation_matrixes=False,
         )
-
-    model_path = _get_model_path()
-    base_options = mp.tasks.BaseOptions(model_asset_path=model_path)
-    options = mp.tasks.vision.FaceLandmarkerOptions(
-        base_options=base_options,
-        running_mode=mp.tasks.vision.RunningMode.IMAGE,
-        num_faces=10,
-        min_face_detection_confidence=0.5,
-        min_face_presence_confidence=0.5,
-        output_face_blendshapes=False,
-        output_facial_transformation_matrixes=False,
-    )
-    _landmarker = mp.tasks.vision.FaceLandmarker.create_from_options(options)
-    return _landmarker
+        _landmarker = mp.tasks.vision.FaceLandmarker.create_from_options(options)
+        return _landmarker
 
 
 # ---------------------------------------------------------------------------
@@ -111,13 +130,15 @@ def get_face_bbox(
     image: np.ndarray,
     bbox_shift: int = 0,
     extra_margin: int = 10,
+    **kwargs,
 ) -> List[BBox]:
     """Detect faces using FaceLandmarker and return bounding boxes.
 
-    .. deprecated:: 0.9
-        The old ``face_mesh`` and ``face_index`` parameters were removed
+    .. versionchanged:: 0.9
+        The ``face_mesh`` and ``face_index`` parameters were removed
         when migrating from FaceMesh to FaceLandmarker (Tasks API).
-        Multi-face filtering is now handled by the caller (e.g.,
+        The detector is now managed internally as a singleton.
+        Multi-face filtering is handled by the caller (e.g.,
         ``get_landmarks_and_bboxes``).
 
     Args:
@@ -128,6 +149,21 @@ def get_face_bbox(
     Returns:
         List of ``(x1, y1, x2, y2)`` bounding boxes.
     """
+    # Catch removed parameters and emit clear migration message
+    _removed = {"face_mesh", "face_index"}
+    for key in _removed & set(kwargs):
+        warnings.warn(
+            f"get_face_bbox() parameter '{key}' was removed in v0.9 — "
+            "FaceLandmarker is now managed internally. "
+            "Remove the parameter from your call.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+    _unknown = set(kwargs) - _removed
+    if _unknown:
+        raise TypeError(
+            f"get_face_bbox() got unexpected keyword argument(s): {_unknown}"
+        )
     import mediapipe as mp
 
     h, w = image.shape[:2]

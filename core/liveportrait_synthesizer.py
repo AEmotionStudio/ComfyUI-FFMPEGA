@@ -556,6 +556,10 @@ def cleanup() -> None:
 #  Face detection (MediaPipe)
 # ---------------------------------------------------------------------------
 
+# Re-detect driving face every N frames (bbox doesn't change drastically
+# between consecutive frames, so skipping saves ~90% of detection cost).
+_DRV_DETECT_INTERVAL = 10
+
 
 def _detect_face_bbox(image: np.ndarray) -> Optional[tuple]:
     """Detect the largest face bounding box using MediaPipe.
@@ -944,6 +948,7 @@ def animate_portrait(
         # ── Process driving frames ──
         result_frames = []
         driving_kp_0 = None  # First frame keypoints for relative motion
+        _last_drv_bbox = None  # Cached driving bbox for temporal stability
 
         frame_idx = 0
         while True:
@@ -951,8 +956,18 @@ def animate_portrait(
             if not ret:
                 break
 
-            # Detect face in driving frame
-            drv_bbox = _detect_face_bbox(drv_frame)
+            # Detect face in driving frame — only every N frames.
+            # Between detection intervals we reuse _last_drv_bbox for temporal
+            # stability; it is only cleared when a detection frame finds no face.
+            if frame_idx % _DRV_DETECT_INTERVAL == 0 or _last_drv_bbox is None:
+                drv_bbox = _detect_face_bbox(drv_frame)
+                if drv_bbox is not None:
+                    _last_drv_bbox = drv_bbox
+                else:
+                    _last_drv_bbox = None  # face lost — don't reuse stale bbox
+            else:
+                drv_bbox = _last_drv_bbox
+
             if drv_bbox is None:
                 # No face in this driving frame — use source as-is
                 result_frames.append(source_frame.copy())
