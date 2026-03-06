@@ -497,24 +497,160 @@ def _f_despill(p):
 
 
 def _f_remove_background(p):
-    """Remove background using rembg (optional dependency)."""
+    """Remove background using rembg (optional dependency).
+
+    Pipeline:
+    1. Extract frames from the input video via cv2
+    2. Run rembg per-frame to produce alpha masks
+    3. Write masks to a temp grayscale video (lossless FFV1)
+    4. Return FFmpeg filter_complex that composites via maskedmerge
+       or alphamerge (transparent mode)
+    """
+    import logging
+    log = logging.getLogger("ffmpega")
+
     try:
-        from rembg import remove as _rembg_remove  # noqa: F401
+        from rembg import remove as rembg_remove, new_session  # noqa: F401
     except ImportError:
-        import logging
-        logging.getLogger("ffmpega").error(
+        log.error(
             "rembg is not installed. Install with: "
             "pip install 'comfyui-ffmpega[masking]'"
         )
         return make_result()
 
-    import logging
-    logging.getLogger("ffmpega").info(
-        "remove_background skill requested (model=%s) — "
-        "full frame pipeline coming in a follow-up PR",
-        p.get("model", "silueta"),
-    )
-    return make_result()
+    model_name = str(p.get("model", "bria-rmbg"))
+    background = sanitize_text_param(str(p.get("background", "transparent")).lower())
+    video_path = p.get("_input_path", "")
+
+    if not video_path:
+        log.error("remove_background: no _input_path provided")
+        return make_result()
+
+    import os
+    if not os.path.isfile(video_path):
+        log.error("remove_background: input file not found: %s", video_path)
+        return make_result()
+
+    # ── Generate mask video ──────────────────────────────────────
+    try:
+        import cv2
+        import numpy as np
+        import tempfile
+        from PIL import Image
+
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            log.error("remove_background: cannot open video: %s", video_path)
+            return make_result()
+
+        fps = cap.get(cv2.CAP_PROP_FPS) or 24.0
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+        log.info(
+            "remove_background: processing %d frames (%dx%d @ %.1f fps) "
+            "with model=%s",
+            total_frames, width, height, fps, model_name,
+        )
+
+        # Create session once for efficiency (avoids re-loading model)
+        session = new_session(model_name)
+
+        # Write mask to a temp file (lossless FFV1 in MKV container)
+        mask_fd = tempfile.NamedTemporaryFile(
+            suffix="_rembg_mask.mkv", delete=False,
+        )
+        mask_path = mask_fd.name
+        mask_fd.close()
+
+        fourcc = cv2.VideoWriter_fourcc(*"FFV1")
+        writer = cv2.VideoWriter(mask_path, fourcc, fps, (width, height), False)
+        if not writer.isOpened():
+            log.error("remove_background: cannot create mask writer")
+            cap.release()
+            return make_result()
+
+        frame_idx = 0
+        try:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                # Convert BGR → RGB → PIL
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                pil_img = Image.fromarray(rgb)
+
+                # Run rembg — returns RGBA PIL image
+                result = rembg_remove(pil_img, session=session)
+
+                # Extract alpha channel as grayscale mask
+                result_np = np.array(result)
+                if result_np.shape[2] == 4:
+                    alpha = result_np[:, :, 3]
+                else:
+                    # Fallback: convert to grayscale if no alpha
+                    alpha = cv2.cvtColor(result_np, cv2.COLOR_RGB2GRAY)
+
+                writer.write(alpha)
+                frame_idx += 1
+
+                if frame_idx % 30 == 0:
+                    log.info(
+                        "remove_background: %d/%d frames processed",
+                        frame_idx, total_frames,
+                    )
+        finally:
+            cap.release()
+            writer.release()
+
+        log.info(
+            "remove_background: mask video complete (%d frames): %s",
+            frame_idx, mask_path,
+        )
+
+    except Exception as e:
+        log.error("remove_background: frame processing failed: %s", e)
+        # Clean up orphaned temp mask file on failure
+        try:
+            import os as _os
+            if mask_path and _os.path.isfile(mask_path):
+                _os.unlink(mask_path)
+        except Exception:
+            pass
+        return make_result()
+
+    # Store mask path in metadata for downstream cleanup (consistent
+    # with auto_mask handler).  The mask file must survive until ffmpeg
+    # finishes encoding, so we can't delete it eagerly here.
+    _metadata_ref = p.get("_metadata_ref")
+    if isinstance(_metadata_ref, dict):
+        _metadata_ref["_mask_video_path"] = mask_path
+
+    # ── Build FFmpeg composite ───────────────────────────────────
+    if background == "transparent":
+        escaped = _escape_filter_path(mask_path)
+        fc = (
+            f"movie={escaped},format=gray[alpha];"
+            f"[0:v][alpha]alphamerge,format=yuva420p"
+        )
+        return make_result(
+            fc=fc,
+            opts=[
+                "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p",
+                "-auto-alt-ref", "0", "-f", "webm",
+            ],
+        )
+
+    # Solid color background — map to the appropriate effect
+    if background == "green":
+        effect = "greenscreen"
+    else:
+        # Arbitrary solid color: inject a custom drawbox fill into the
+        # effect map so _build_mask_fc composites it correctly.
+        effect = f"drawbox=c={background}:t=fill"
+    return _build_mask_fc(mask_path, effect, 50, True)
 
 
 # ── SAM3 Auto-Mask handler ────────────────────────────────────────── #
@@ -802,7 +938,15 @@ def _build_mask_fc(mask_path: str, effect: str, strength: int, invert: bool):
 
     # --- Standard effects (including greenscreen) ---
     effect_map = _effect_filter_map(strength)
-    fx_filter = effect_map.get(effect, effect_map["blur"])
+    # If effect is a raw FFmpeg filter string (contains '='), use it
+    # directly.  This supports arbitrary solid-color fills from
+    # remove_background (e.g. "drawbox=c=white:t=fill").
+    if effect in effect_map:
+        fx_filter = effect_map[effect]
+    elif "=" in effect:
+        fx_filter = effect
+    else:
+        fx_filter = effect_map["blur"]
 
     # Build the filter graph
     if invert:
