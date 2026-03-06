@@ -309,6 +309,7 @@ class FrameExtractNode:
                 capture_output=True,
                 text=True,
                 timeout=10,
+                check=True,
             )
             import json
             data = json.loads(result.stdout)
@@ -452,6 +453,7 @@ class FrameExtractNode:
                 cmd,
                 capture_output=True,
                 timeout=30,
+                check=True,
             )
 
             if os.path.isfile(preview_path):
