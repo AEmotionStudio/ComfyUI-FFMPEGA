@@ -98,6 +98,7 @@ async def process_effects_pipeline(
     sam3_max_objects: int = 5,
     sam3_det_threshold: float = 0.7,
     mask_points: str = "",
+    use_flux_klein: bool = False,
     flux_smoothing: str = "none",
     temp_video_from_images: Optional[str] = None,
     temp_video_with_audio: Optional[str] = None,
@@ -170,6 +171,7 @@ async def process_effects_pipeline(
     pipeline.metadata["_sam3_det_threshold"] = sam3_det_threshold
     if mask_points and mask_points.strip():
         pipeline.metadata["_mask_points"] = mask_points.strip()
+    pipeline.metadata["_enable_flux_klein"] = use_flux_klein
     if flux_smoothing and flux_smoothing != "none":
         pipeline.metadata["_flux_smoothing"] = flux_smoothing
 

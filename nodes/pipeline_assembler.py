@@ -89,6 +89,7 @@ def assemble_pipeline(
     sam3_max_objects: int,
     sam3_det_threshold: float,
     mask_points: str,
+    use_flux_klein: bool,
     flux_smoothing: str,
     mmaudio_mode: str,
     composer,
@@ -194,6 +195,7 @@ def assemble_pipeline(
     pipeline.metadata["_sam3_det_threshold"] = sam3_det_threshold
     if mask_points and mask_points.strip():
         pipeline.metadata["_mask_points"] = mask_points.strip()
+    pipeline.metadata["_enable_flux_klein"] = use_flux_klein
     if flux_smoothing and flux_smoothing != "none":
         pipeline.metadata["_flux_smoothing"] = flux_smoothing
     if mmaudio_mode and mmaudio_mode != "replace":

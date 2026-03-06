@@ -39,13 +39,14 @@ async def process_batch(
     max_concurrent: int,
     save_output: bool,
     output_path: str,
-    use_vision: bool = True,
+    use_vision: bool = False,
     verify_output: bool = False,
     ptc_mode: str = "off",
     sam3_max_objects: int = 5,
     sam3_det_threshold: float = 0.7,
     mask_points: str = "",
     pipeline_json: str = "",
+    use_flux_klein: bool = False,
     flux_smoothing: str = "none",
 ) -> tuple[torch.Tensor, dict, str, str, str, str]:
     """Process all matching videos in a folder with the same pipeline.
@@ -156,6 +157,7 @@ async def process_batch(
             pipeline.metadata["_sam3_det_threshold"] = sam3_det_threshold
             if mask_points and mask_points.strip():
                 pipeline.metadata["_mask_points"] = mask_points.strip()
+            pipeline.metadata["_enable_flux_klein"] = use_flux_klein
             if flux_smoothing and flux_smoothing != "none":
                 pipeline.metadata["_flux_smoothing"] = flux_smoothing
             for step in pipeline_steps:
