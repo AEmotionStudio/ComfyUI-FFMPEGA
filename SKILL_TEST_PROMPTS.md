@@ -1454,3 +1454,66 @@ Add karaoke lyrics with yellow fill and white base text at 48px
 Auto-transcribe with progressive word highlight in pink
 ```
 
+---
+
+## 🎭 AI Face & Audio
+
+### animate_portrait
+```
+Animate this portrait with the driving video's facial expressions
+```
+
+```
+Transfer the head movements from the driving video onto this face
+```
+
+### generate_audio
+```
+Generate matching sound effects for this video
+```
+
+```
+Add the sound of rain and thunder to this footage
+```
+
+### lip_sync
+```
+Lip sync this video to the provided audio
+```
+
+```
+Make the person's lips match the speech recording
+```
+
+---
+
+## 🎆 Film Effects
+
+### golden_glow
+```
+Add a warm golden glow
+```
+
+```
+Give it a cozy golden hour sunset feel
+```
+
+### warm_glow
+```
+Apply a warm glow filter
+```
+
+### burn_effect
+```
+Add a film burn effect
+```
+
+```
+Apply a light leak overlay
+```
+
+### light_leak
+```
+Give it an analog light leak look
+```
+

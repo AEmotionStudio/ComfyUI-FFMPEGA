@@ -2445,3 +2445,85 @@ Word-by-word progressive-fill karaoke effect using Whisper word-level timestamps
 - "Karaoke captions with large pink fill on a white base"
 - "Auto-transcribe with progressive word highlight"
 
+---
+
+### animate_portrait
+AI-animate a portrait: transfer head pose, facial expressions, eye gaze, and lip movements from a driving video to a source face image or video using LivePortrait.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `driving_video` | string | *(required)* | path to the driving video whose motion is transferred |
+| `driving_multiplier` | float | 1.0 | 0.1 to 3.0 (motion intensity scale) |
+| `relative_motion` | bool | true | use relative motion (recommended) |
+
+**Example prompts:**
+- "Animate this portrait with the driving video's expressions"
+- "Transfer the head movements from this video onto the photo"
+- "Make this face image talk like the person in the driving video"
+
+**Aliases:** `live_portrait`, `face_animate`, `motion_transfer`, `face_reenactment`, `portrait_animate`, `puppet`, `face_puppet`
+
+> [!NOTE]
+> **First run** downloads LivePortrait models (~497 MB) to `ComfyUI/models/liveportrait/`.
+> **VRAM:** ~3–4 GB. Uses in-process inference with automatic GPU↔CPU offloading.
+> **License:** MIT (code), Apache 2.0 (model weights).
+
+---
+
+### generate_audio
+AI-generate synchronized audio/sound effects from video content or text description using MMAudio.
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `prompt` | string | *(empty)* | text to guide audio generation (e.g. "ocean waves crashing") |
+| `negative_prompt` | string | *(empty)* | what to avoid (e.g. "music, speech") |
+| `mode` | choice | replace | replace, mix |
+| `seed` | int | 42 | 0 to 999999 |
+| `cfg_strength` | float | 4.5 | 1.0 to 15.0 (guidance strength) |
+
+**Example prompts:**
+- "Generate matching sound effects for this video"
+- "Add the sound of rain and thunder"
+- "Create ocean wave sounds for this beach footage"
+- "Generate foley audio to match the action"
+
+**Aliases:** `synthesize_audio`, `foley`, `sound_effects`, `v2a`, `video_to_audio`, `create_audio`, `make_audio`, `sfx`, `add_sound`, `sound_design`, `audio_generate`
+
+> [!NOTE]
+> **First run** downloads MMAudio models (~5.5 GB) to `ComfyUI/models/mmaudio/`.
+> **VRAM:** ~6–8 GB. Uses in-process inference with automatic GPU↔CPU offloading.
+
+> [!WARNING]
+> MMAudio model weights are licensed **CC-BY-NC 4.0** (non-commercial use only). By downloading and using them you accept the [CC-BY-NC 4.0 license](https://creativecommons.org/licenses/by-nc/4.0/).
+
+---
+
+## 🎆 Film Effects
+
+### golden_glow
+Add a warm golden glow by boosting warm tones and softening highlights.
+| Parameter | Type | Default | Range |
+|-----------|------|---------|-------|
+| `intensity` | float | 0.5 | 0.0 to 1.0 |
+
+**Example prompts:**
+- "Add a warm golden glow"
+- "Give it a cozy sunset feel"
+- "Apply a golden hour warmth"
+
+**Aliases:** `warm_filter`, `warm_glow`
+
+---
+
+### burn_effect
+Simulate a film burn / light leak by boosting exposure and adding warm color shift.
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `intensity` | float | 0.5 | 0.1 to 1.0 |
+| `color` | choice | warm | warm, cool, neutral |
+
+**Example prompts:**
+- "Add a film burn effect"
+- "Apply a light leak overlay"
+- "Give it an analog film burn look"
+
+**Aliases:** `film_burn`, `light_leak`
+

@@ -30,7 +30,6 @@
 *   🎛️ **FLUX Klein Toggle** — enable/disable FLUX Klein 4B per-run with a single checkbox for zero-VRAM editing
 *   🎬 **Edit FFmpeg Fallback** — when FLUX Klein is off, masked edits use lightweight FFmpeg color/tone filters instead
 *   ⚡ **Smarter Defaults** — `use_vision` and `verify_output` now default to off, cutting token usage and VRAM pressure
-*   🧪 **952 Tests**, 0 failures
 
 <details>
 <summary><b>📋 Previous Releases</b></summary>
@@ -42,7 +41,7 @@
 | **v2.10.0** | FLUX Klein in-process migration, interactive mask drawing UI, model output caching |
 | **v2.9.1** | AI object removal & editing (FLUX Klein 4B), AI audio generation (MMAudio), AI lip sync (MuseTalk), modular architecture refactor |
 | **v2.8.0** | Effects Builder node, manual no-LLM mode, text node presets, SAM3 subprocess isolation, 15+ bug fixes |
-| **v2.7.0** | SAM3 auto-mask & greenscreen, LaMa inpainting, programmatic tool calling (PTC), 656 tests |
+| **v2.7.0** | SAM3 auto-mask & greenscreen, LaMa inpainting, programmatic tool calling (PTC) |
 | **v2.6.5** | Whisper auto-transcription, karaoke subtitles, whisper model/device controls |
 | **v2.6.0** | HandlerResult contract, compose decomposition, TextInput node, PiP audio mixing, CLI retry |
 | **v2.5.0** | PiP borders, Ollama VL auto-embedding, overlay animation delegation |
@@ -743,14 +742,14 @@ Bridge node between Load Video nodes (which output IMAGE tensors) and FFMPEGA Ag
 
 ## 🎯 Skill System
 
-FFMPEGA includes a comprehensive skill system with **200+ operations** organized into categories. Use them in two ways: let the **AI agent** select skills from your prompt, or pick them yourself with the **Effects Builder** — no LLM needed.
+FFMPEGA includes a comprehensive skill system with **212 operations** organized into categories. Use them in two ways: let the **AI agent** select skills from your prompt, or pick them yourself with the **Effects Builder** — no LLM needed.
 
 > 📄 **See [SKILLS_REFERENCE.md](SKILLS_REFERENCE.md) for the complete skill reference with all parameters and example prompts.**
 >
 > 🧪 **See [SKILL_TEST_PROMPTS.md](SKILL_TEST_PROMPTS.md) for ready-to-use copy-and-paste test prompts for every skill.**
 
 <details>
-<summary><b>🎨 Visual Effects (30 skills)</b></summary>
+<summary><b>🎨 Visual Effects (33 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -784,6 +783,9 @@ FFMPEGA includes a comprehensive skill system with **200+ operations** organized
 | `deflicker` | Remove fluorescent/timelapse flicker |
 | `unsharp_mask` | Fine-grained luma/chroma sharpening |
 | `remove_background` | Remove backgrounds using AI (rembg) |
+| `golden_glow` | Warm golden glow effect (aliases: `warm_filter`, `warm_glow`) |
+| `selective_color` | Isolate and adjust specific color ranges |
+| `warm_filter` | Warm golden tone filter |
 
 </details>
 
@@ -933,7 +935,7 @@ FFMPEGA includes a comprehensive skill system with **200+ operations** organized
 </details>
 
 <details>
-<summary><b>✨ Creative Effects (14 skills)</b></summary>
+<summary><b>✨ Creative Effects (17 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -951,6 +953,9 @@ FFMPEGA includes a comprehensive skill system with **200+ operations** organized
 | `thermal` | Thermal / heat vision camera |
 | `posterize` | Reduce color palette / screen-print |
 | `emboss` | Emboss / relief surface effect |
+| `burn_effect` | Film burn / light leak overlay (aliases: `film_burn`, `light_leak`) |
+| `film_burn` | Film burn simulation |
+| `light_leak` | Analog light leak effect |
 
 </details>
 
@@ -1095,7 +1100,7 @@ FFMPEGA includes a comprehensive skill system with **200+ operations** organized
 </details>
 
 <details>
-<summary><b>🤖 AI-Powered (4 skills)</b></summary>
+<summary><b>🤖 AI-Powered (7 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -1103,6 +1108,9 @@ FFMPEGA includes a comprehensive skill system with **200+ operations** organized
 | `karaoke_subtitles` | Word-by-word karaoke subtitles with progressive color fill (Whisper) |
 | `auto_mask` | SAM3-powered object segmentation from text prompts |
 | `generate_audio` | AI-generate synchronized audio/foley from video + text (MMAudio) |
+| `lip_sync` | AI lip sync with MuseTalk — synchronize lip movements to audio |
+| `animate_portrait` | AI face animation with LivePortrait — transfer expressions from driving video |
+| `remove_background` | AI background removal with BRIA RMBG — 6 model choices |
 
 > ⚠️ **License Notice:** The `generate_audio` skill uses [MMAudio](https://github.com/hkchengrex/MMAudio) model weights which are licensed under **CC-BY-NC 4.0** (non-commercial use only). Model weights are downloaded on first use — by downloading them you accept the [CC-BY-NC 4.0 license](https://creativecommons.org/licenses/by-nc/4.0/). The FFMPEGA code itself remains GPL-3.0.
 
