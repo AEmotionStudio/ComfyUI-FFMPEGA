@@ -15,6 +15,7 @@ class SkillCategory(str, Enum):
     SPATIAL = "spatial"
     VISUAL = "visual"
     AUDIO = "audio"
+    AI_VISUAL = "ai_visual"
     ENCODING = "encoding"
     OUTCOME = "outcome"
     CUSTOM = "custom"
@@ -620,7 +621,7 @@ def get_registry() -> SkillRegistry:
 
 def _register_default_skills(registry: SkillRegistry) -> None:
     """Register all default skills."""
-    from .category import temporal, spatial, visual, audio, encoding
+    from .category import temporal, spatial, visual, audio, encoding, ai_visual
     from .outcome import cinematic, vintage, social, effects, creative, transitions, motion, delivery
 
     # Register category skills
@@ -628,6 +629,7 @@ def _register_default_skills(registry: SkillRegistry) -> None:
     spatial.register_skills(registry)
     visual.register_skills(registry)
     audio.register_skills(registry)
+    ai_visual.register_skills(registry)
     encoding.register_skills(registry)
 
     # Register outcome skills

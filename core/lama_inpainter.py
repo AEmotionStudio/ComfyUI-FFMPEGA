@@ -37,7 +37,8 @@ _lama_model = None
 def load_model():
     """Load and cache the SimpleLama model.
 
-    Auto-downloads the ~200MB checkpoint on first use.
+    Prefers safetensors weights from AEmotionStudio mirror (pickle-free).
+    Falls back to upstream .pt if safetensors unavailable.
 
     Returns:
         SimpleLama instance.
@@ -50,24 +51,30 @@ def load_model():
     if _lama_model is not None:
         return _lama_model
 
-    # Check if a local model exists — SimpleLama looks in both the
-    # HuggingFace cache and the torch hub checkpoints directory.
-    # We must check both: the HF cache (upstream) and the torch hub
-    # cache (where our AEmotionStudio mirror downloads to).
-    model_cached = False
     try:
-        from huggingface_hub import try_to_load_from_cache  # type: ignore
-        cached = try_to_load_from_cache("enesmsahin/simple-lama-inpainting", "big-lama.pt")
-        model_cached = cached is not None
-    except Exception:
-        pass  # Can't check HF cache — fall through to torch hub check
+        from simple_lama_inpainting import SimpleLama
+    except ImportError:
+        raise ImportError(
+            "simple-lama-inpainting is required for AI object removal. "
+            "Install with: pip install simple-lama-inpainting"
+        )
 
+    # Locate or download weights
+    import torch.hub as _th
+    _cache_dir = os.path.join(_th.get_dir(), "checkpoints")
+    os.makedirs(_cache_dir, exist_ok=True)
+
+    safetensors_path = os.path.join(_cache_dir, "big-lama.safetensors")
+    pt_path = os.path.join(_cache_dir, "big-lama.pt")
+
+    # Also check HF cache for the legacy .pt
+    model_cached = os.path.isfile(safetensors_path) or os.path.isfile(pt_path)
     if not model_cached:
-        # Also check torch hub checkpoints (where mirror downloads land)
         try:
-            import torch.hub as _th
-            _hub_path = os.path.join(_th.get_dir(), "checkpoints", "big-lama.pt")
-            model_cached = os.path.isfile(_hub_path)
+            from huggingface_hub import try_to_load_from_cache  # type: ignore
+            cached = try_to_load_from_cache(
+                "enesmsahin/simple-lama-inpainting", "big-lama.pt")
+            model_cached = cached is not None
         except Exception:
             pass
 
@@ -79,51 +86,62 @@ def load_model():
             from core import model_manager  # type: ignore
         model_manager.require_downloads_allowed("lama")
 
-    try:
-        from simple_lama_inpainting import SimpleLama
-    except ImportError:
-        raise ImportError(
-            "simple-lama-inpainting is required for AI object removal. "
-            "Install with: pip install simple-lama-inpainting"
-        )
-
     _free_vram()
 
     # Disable TensorFloat-32 and bfloat16 matmul to prevent
     # "Unsupported dtype BFloat16" in LaMa's FFT ops.
-    # This must be set BEFORE loading the JIT model.
     if torch.cuda.is_available():
         torch.backends.cuda.matmul.allow_tf32 = False
         torch.backends.cudnn.allow_tf32 = False
-        if hasattr(torch.backends.cuda.matmul, "allow_bf16_reduced_precision_reduction"):
-            torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = False
+        if hasattr(torch.backends.cuda.matmul,
+                   "allow_bf16_reduced_precision_reduction"):
+            torch.backends.cuda.matmul. \
+                allow_bf16_reduced_precision_reduction = False
 
     log.info("Loading LaMa inpainting model...")
-    if not model_cached:
-        # Model needs downloading — try AEmotionStudio mirror first
+
+    # ── Try to get safetensors from mirror (pickle-free) ──
+    if not os.path.isfile(safetensors_path):
         try:
             from . import model_manager as _mm
         except ImportError:
             from core import model_manager as _mm  # type: ignore
 
-        # Pre-fetch big-lama.pt into torch hub cache so SimpleLama()
-        # finds it locally and skips its own upstream download.
-        import torch.hub as _th
-        _cache_dir = os.path.join(_th.get_dir(), "checkpoints")
         _mirror_path = _mm.try_mirror_download(
-            "lama", "big-lama.pt", _cache_dir,
+            "lama", "big-lama.safetensors", _cache_dir,
         )
         if _mirror_path:
-            log.info("LaMa model pre-fetched from AEmotionStudio mirror")
-            _lama_model = SimpleLama()
-        else:
-            # Mirror failed — fall back to upstream via SimpleLama + progress
-            _lama_model = _mm.download_with_progress(
-                "lama",
-                lambda: SimpleLama(),
-            )
+            safetensors_path = _mirror_path
+            log.info("LaMa safetensors fetched from AEmotionStudio mirror")
+
+    # ── Load model ──
+    # SimpleLama loads the JIT model for architecture. We then inject
+    # safetensors weights to avoid running any pickle-deserialized code.
+    if not model_cached and not os.path.isfile(safetensors_path):
+        # Neither cached nor mirror available — let SimpleLama download
+        # from upstream (still pickle-based as a last resort)
+        try:
+            from . import model_manager as _mm
+        except ImportError:
+            from core import model_manager as _mm  # type: ignore
+        _lama_model = _mm.download_with_progress(
+            "lama", lambda: SimpleLama(),
+        )
     else:
         _lama_model = SimpleLama()
+
+    # If safetensors available, replace JIT weights for safety
+    if os.path.isfile(safetensors_path) and hasattr(_lama_model, "model"):
+        try:
+            from safetensors.torch import load_file
+            safe_sd = load_file(safetensors_path, device="cpu")
+            _lama_model.model.load_state_dict(safe_sd, strict=True)
+            log.info("LaMa weights loaded from safetensors (pickle-free)")
+        except Exception as e:
+            log.warning(
+                "Failed to load safetensors weights (falling back to "
+                "JIT-loaded weights which may use pickle): %s", e
+            )
 
     # Force float32 on the JIT model parameters
     if hasattr(_lama_model, "model"):

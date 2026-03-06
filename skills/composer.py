@@ -160,6 +160,14 @@ class SkillComposer:
         "talking_head": "lip_sync",
         "lip_dub": "lip_sync",
         "voice_sync": "lip_sync",
+        # LivePortrait — Portrait Animation
+        "portrait_animation": "animate_portrait",
+        "face_animation": "animate_portrait",
+        "face_reenactment": "animate_portrait",
+        "liveportrait": "animate_portrait",
+        "face_puppet": "animate_portrait",
+        "puppet": "animate_portrait",
+        "face_swap_motion": "animate_portrait",
     }
 
     def __init__(self, registry: Optional[SkillRegistry] = None):
@@ -455,6 +463,47 @@ class SkillComposer:
             af_chain = ",".join(audio_filters)
             fc_graph += f";[0:a]{af_chain}"
             audio_filters = []
+
+        # When a handler emits a custom audio output label that is
+        # being -map'd (e.g. lip_sync's [_lipsync_a]), -af cannot
+        # coexist with -filter_complex.  Fold audio filters into the
+        # graph by chaining from the mapped audio label.
+        if audio_filters and "-map" in output_options:
+            # Collect all -map'd labels that exist in the filter graph
+            _mapped_labels_in_fc = []
+            for oi, o in enumerate(output_options):
+                if (
+                    o == "-map"
+                    and oi + 1 < len(output_options)
+                    and output_options[oi + 1].startswith("[")
+                    and output_options[oi + 1].endswith("]")
+                    and output_options[oi + 1] in fc_graph
+                ):
+                    _mapped_labels_in_fc.append(output_options[oi + 1])
+
+            # If there are mapped labels, the audio label is the one
+            # that is NOT a known video label (heuristic: doesn't end
+            # with _v], _v_f], _v_pre], _vout], _vfinal]).
+            _video_suffixes = ("_v]", "_v_f]", "_v_pre]", "_vout]", "_vfinal]")
+            _mapped_audio_label = None
+            for lbl in _mapped_labels_in_fc:
+                if not lbl.endswith(_video_suffixes):
+                    _mapped_audio_label = lbl
+                    break
+
+            if _mapped_audio_label:
+                af_chain = ",".join(audio_filters)
+                _a_pre = _mapped_audio_label.replace("]", "_pre]")
+                _a_new = _mapped_audio_label.replace("]", "_f]")
+                fc_graph = fc_graph.replace(
+                    _mapped_audio_label, _a_pre
+                )
+                fc_graph += f";{_a_pre}{af_chain}{_a_new}"
+                output_options = [
+                    _a_new if x == _mapped_audio_label else x
+                    for x in output_options
+                ]
+                audio_filters = []
 
         if "[_vout]" in fc_graph and "-map" not in output_options:
             output_options.extend(["-map", "[_vout]", "-map", "0:a?"])
@@ -784,6 +833,54 @@ class SkillComposer:
                     deduped_fc.append(fc)
             complex_filters = deduped_fc
 
+            # Pre-merge: when a handler (e.g. lip_sync) emits a self-
+            # contained fc block with custom -map'd output labels, the
+            # standard _chain_filter_complex pipe-label chaining breaks
+            # because it appends [_pipe_N] to the block's last output
+            # (which may be an audio pad, not video).
+            #
+            # Instead, fold subsequent fc blocks into the handler's
+            # graph by replacing [0:v] with the handler's video output
+            # label, producing a single merged fc block.
+            if len(complex_filters) > 1 and "-map" in output_options:
+                _handler_video_label = None
+                for oi, o in enumerate(output_options):
+                    if (
+                        o == "-map"
+                        and oi + 1 < len(output_options)
+                        and output_options[oi + 1].startswith("[")
+                        and output_options[oi + 1].endswith("]")
+                        and output_options[oi + 1] in complex_filters[0]
+                    ):
+                        candidate = output_options[oi + 1]
+                        _video_suffixes = (
+                            "_v]", "_v_f]", "_v_pre]", "_vout]", "_vfinal]",
+                        )
+                        if candidate.endswith(_video_suffixes):
+                            _handler_video_label = candidate
+                            break
+
+                if _handler_video_label:
+                    # Merge subsequent fc blocks into the first by
+                    # replacing [0:v] with the handler's video output.
+                    # Add an output label [_merged_v] to the last
+                    # merged block so video filters can chain from it,
+                    # and update the -map flag accordingly.
+                    merged = complex_filters[0]
+                    _merged_label = "[_merged_v]"
+                    for subsequent_fc in complex_filters[1:]:
+                        rewired = subsequent_fc.replace(
+                            "[0:v]", _handler_video_label
+                        )
+                        merged = merged + ";" + rewired + _merged_label
+                    complex_filters = [merged]
+                    # Point -map from handler's video label to the
+                    # merged output so downstream chaining works.
+                    output_options = [
+                        _merged_label if x == _handler_video_label else x
+                        for x in output_options
+                    ]
+
             fc_graph, _fc_audio_label, output_options = self._chain_filter_complex(
                 complex_filters, output_options, audio_in_fc,
             )
@@ -862,9 +959,42 @@ class SkillComposer:
                     # so we can chain from it, then apply the filters.
                     fc_graph += f"[_vout_pre];[_vout_pre]{vf_chain}[_vout]"
                 else:
-                    # Graph doesn't use [0:v] (e.g. grid/slideshow) —
-                    # apply video filters as a separate unlabeled chain
-                    fc_graph += f";[0:v]{vf_chain}"
+                    # Check if a handler (e.g. lip_sync) emitted a custom
+                    # video output label that is being -map'd.  If so,
+                    # chain video filters through that label instead of
+                    # creating a disconnected [0:v] chain.
+                    _mapped_video_label = None
+                    for oi, o in enumerate(output_options):
+                        if (
+                            o == "-map"
+                            and oi + 1 < len(output_options)
+                            and output_options[oi + 1].startswith("[")
+                            and output_options[oi + 1].endswith("]")
+                            and ":a" not in output_options[oi + 1]
+                            and "audio" not in output_options[oi + 1].lower()
+                            and output_options[oi + 1] in fc_graph
+                        ):
+                            _mapped_video_label = output_options[oi + 1]
+                            break
+
+                    if _mapped_video_label:
+                        # Rename the handler's video output, chain filters
+                        # through it, then remap to the new output label.
+                        _pre_label = _mapped_video_label.replace("]", "_pre]")
+                        _new_label = _mapped_video_label.replace("]", "_f]")
+                        fc_graph = fc_graph.replace(
+                            _mapped_video_label, _pre_label
+                        )
+                        fc_graph += f";{_pre_label}{vf_chain}{_new_label}"
+                        # Update -map to point to the filtered output
+                        output_options = [
+                            _new_label if x == _mapped_video_label else x
+                            for x in output_options
+                        ]
+                    else:
+                        # Graph doesn't use [0:v] (e.g. grid/slideshow) —
+                        # apply video filters as a separate unlabeled chain
+                        fc_graph += f";[0:v]{vf_chain}"
 
             if post_filters:
                 # Append fade filters after the final video output label
@@ -1271,6 +1401,8 @@ def _get_dispatch() -> dict:
         _f_generate_audio,
         # lip sync (MuseTalk)
         _f_lip_sync,
+        # portrait animation (LivePortrait)
+        _f_animate_portrait,
         # presets
         _f_fade_to_black, _f_fade_to_white, _f_flash,
         _f_spin, _f_shake, _f_pulse, _f_bounce, _f_drift,
@@ -1459,6 +1591,15 @@ def _get_dispatch() -> dict:
         "talking_head": _f_lip_sync,
         "lip_dub": _f_lip_sync,
         "voice_sync": _f_lip_sync,
+        # LivePortrait — Portrait Animation
+        "animate_portrait": _f_animate_portrait,
+        "portrait_animation": _f_animate_portrait,
+        "face_animation": _f_animate_portrait,
+        "face_reenactment": _f_animate_portrait,
+        "liveportrait": _f_animate_portrait,
+        "face_puppet": _f_animate_portrait,
+        "puppet": _f_animate_portrait,
+        "face_swap_motion": _f_animate_portrait,
         # Presets / Transitions
         "fade_to_black": _f_fade_to_black,
         "fade_to_white": _f_fade_to_white,

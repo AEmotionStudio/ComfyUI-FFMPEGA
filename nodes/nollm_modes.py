@@ -1,8 +1,10 @@
 """No-LLM mode handlers extracted from FFMPEGAgentNode.
 
 Provides ``inject_effects_hints()``, ``process_effects_pipeline()``,
-``process_sam3_only()``, ``process_whisper_only()``, and
-``process_mmaudio_only()`` — all the codepaths that run without an LLM.
+``process_sam3_only()``, ``process_whisper_only()``,
+``process_mmaudio_only()``, ``process_lip_sync_only()``, and
+``process_animate_portrait_only()`` — all the codepaths that run
+without an LLM.
 """
 
 import atexit
@@ -861,6 +863,309 @@ async def process_mmaudio_only(
         if audio_file and os.path.exists(audio_file):
             try:
                 os.remove(audio_file)
+            except OSError:
+                pass
+        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+            if not os.listdir(temp_render_dir):
+                shutil.rmtree(temp_render_dir, ignore_errors=True)
+
+
+async def process_lip_sync_only(
+    # dependencies
+    media_converter,
+    # parameters
+    effective_video_path: str,
+    video_metadata,
+    save_output: bool,
+    output_path: str,
+    preview_mode: bool,
+    quality_preset: str,
+    crf: int,
+    encoding_preset: str,
+    audio_a=None,
+    temp_video_from_images: Optional[str] = None,
+    temp_video_with_audio: Optional[str] = None,
+    **kwargs,
+) -> tuple[torch.Tensor, dict, str, str, str, str]:
+    """Run MuseTalk lip sync directly without any LLM involvement.
+
+    Converts the connected audio_a input to a WAV file and runs
+    MuseTalk lip_sync in-process to synchronize lip movements.
+
+    Requires audio_a to be connected — raises RuntimeError if missing.
+
+    Returns the standard 6-tuple:
+        (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
+    """
+    logger.info("Lip sync mode: starting MuseTalk lip sync")
+
+    if audio_a is None:
+        raise RuntimeError(
+            "Lip sync mode requires an audio input. "
+            "Connect an audio source to the audio_a input."
+        )
+
+    # --- Convert audio_a to WAV ---
+    from .output_handler import audio_dict_to_wav
+    audio_wav_path = audio_dict_to_wav(audio_a)
+    if not audio_wav_path:
+        raise RuntimeError(
+            "Lip sync mode: failed to convert audio_a to WAV. "
+            "Check that the audio input is valid."
+        )
+
+    # --- Import MuseTalk ---
+    try:
+        try:
+            from ..core.musetalk_synthesizer import lip_sync
+        except ImportError:
+            from core.musetalk_synthesizer import lip_sync  # type: ignore
+    except ImportError:
+        raise RuntimeError(
+            "MuseTalk lip sync is not available. "
+            "All dependencies should be built into ComfyUI — "
+            "check that core/musetalk_synthesizer.py exists."
+        )
+
+    # --- Build output path ---
+    output_path, temp_render_dir = build_output_path(
+        effective_video_path=effective_video_path,
+        save_output=save_output,
+        output_path=output_path,
+        preview_mode=preview_mode,
+    )
+
+    # --- Run MuseTalk lip sync (in-process) ---
+    lip_synced_video = None
+    try:
+        lip_synced_video = lip_sync(
+            video_path=effective_video_path,
+            audio_path=audio_wav_path,
+            batch_size=8,
+            face_index=-1,
+        )
+    except Exception as e:
+        logger.error("Lip sync mode: MuseTalk failed: %s", e)
+        raise RuntimeError(f"MuseTalk lip sync failed: {e}") from e
+
+    # --- Re-encode to output path ---
+    _ffmpeg = _get_ffmpeg_bin()
+    effective_crf = crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23)
+    effective_preset = encoding_preset if encoding_preset != "auto" else _PRESET_MAP.get(quality_preset, "medium")
+
+    ffmpeg_cmd = [
+        _ffmpeg, "-y",
+        "-i", lip_synced_video,
+        "-c:v", "libx264",
+        "-crf", str(effective_crf),
+        "-preset", effective_preset,
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "192k",
+    ]
+
+    if preview_mode:
+        ffmpeg_cmd.extend(["-vf", "scale=480:trunc(ow/a/2)*2", "-t", "10"])
+
+    ffmpeg_cmd.append(output_path)
+
+    logger.debug("Lip sync ffmpeg command: %s", " ".join(ffmpeg_cmd))
+    try:
+        proc = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"Lip sync mode: ffmpeg encoding failed:\n{proc.stderr[-500:]}"
+            )
+
+        # --- Collect frame/audio output ---
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=False,
+        )
+
+        # --- Build analysis string ---
+        cmd_log = " ".join(ffmpeg_cmd)
+        analysis = (
+            f"Lip Sync Mode (no LLM)\n"
+            f"Audio source: connected audio_a\n"
+            f"Audio WAV: {audio_wav_path}\n"
+            f"Lip-synced video: {lip_synced_video}\n\n"
+            f"Output: {output_path}"
+        )
+
+        return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
+    finally:
+        # --- Cleanup temp files (always runs, even on error) ---
+        for tmp_path in [temp_video_from_images, temp_video_with_audio, audio_wav_path]:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        # Clean up MuseTalk temp output
+        if lip_synced_video and os.path.exists(lip_synced_video):
+            try:
+                os.remove(lip_synced_video)
+            except OSError:
+                pass
+        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+            if not os.listdir(temp_render_dir):
+                shutil.rmtree(temp_render_dir, ignore_errors=True)
+
+
+async def process_animate_portrait_only(
+    # dependencies
+    media_converter,
+    # parameters
+    effective_video_path: str,
+    video_metadata,
+    save_output: bool,
+    output_path: str,
+    preview_mode: bool,
+    quality_preset: str,
+    crf: int,
+    encoding_preset: str,
+    driving_video: str = "",
+    driving_multiplier: float = 1.0,
+    relative_motion: bool = True,
+    temp_video_from_images: Optional[str] = None,
+    temp_video_with_audio: Optional[str] = None,
+    **kwargs,
+) -> tuple[torch.Tensor, dict, str, str, str, str]:
+    """Run LivePortrait face animation directly without any LLM involvement.
+
+    Animates the face in the source video/image using motion from a
+    driving video.  The source is ``effective_video_path`` (from
+    ``video_path`` or ``images_a``) and the driving video comes from
+    ``video_a``.
+
+    Requires a driving video — raises RuntimeError if missing.
+
+    Returns the standard 6-tuple:
+        (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
+    """
+    logger.info("Animate portrait mode: starting LivePortrait")
+
+    if not driving_video or not os.path.isfile(driving_video):
+        raise RuntimeError(
+            "Animate portrait mode requires a driving video. "
+            "Connect a driving video to the video_a input."
+        )
+
+    # --- Import LivePortrait ---
+    try:
+        try:
+            from ..core.liveportrait_synthesizer import animate_portrait
+        except ImportError:
+            from core.liveportrait_synthesizer import animate_portrait  # type: ignore
+    except ImportError:
+        raise RuntimeError(
+            "LivePortrait is not available. "
+            "Ensure all dependencies are installed and "
+            "core/liveportrait_synthesizer.py exists."
+        )
+
+    # --- Build output path ---
+    output_path, temp_render_dir = build_output_path(
+        effective_video_path=effective_video_path,
+        save_output=save_output,
+        output_path=output_path,
+        preview_mode=preview_mode,
+    )
+
+    # --- Run LivePortrait (in-process with offloading) ---
+    animated_video = None
+    try:
+        animated_video = animate_portrait(
+            source_path=effective_video_path,
+            driving_path=driving_video,
+            driving_multiplier=driving_multiplier,
+            relative_motion=relative_motion,
+        )
+    except Exception as e:
+        logger.error("Animate portrait mode: LivePortrait failed: %s", e)
+        # Free VRAM on failure
+        try:
+            try:
+                from ..core.liveportrait_synthesizer import cleanup as _lp_cleanup
+            except ImportError:
+                from core.liveportrait_synthesizer import cleanup as _lp_cleanup  # type: ignore
+            _lp_cleanup()
+        except Exception:
+            pass
+        raise RuntimeError(f"LivePortrait animation failed: {e}") from e
+
+    # --- Re-encode to output path ---
+    _ffmpeg = _get_ffmpeg_bin()
+    effective_crf = crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23)
+    effective_preset = encoding_preset if encoding_preset != "auto" else _PRESET_MAP.get(quality_preset, "medium")
+
+    ffmpeg_cmd = [
+        _ffmpeg, "-y",
+        "-i", animated_video,
+        "-c:v", "libx264",
+        "-crf", str(effective_crf),
+        "-preset", effective_preset,
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "192k",
+    ]
+
+    if preview_mode:
+        ffmpeg_cmd.extend(["-vf", "scale=480:trunc(ow/a/2)*2", "-t", "10"])
+
+    ffmpeg_cmd.append(output_path)
+
+    logger.debug("Animate portrait ffmpeg command: %s", " ".join(ffmpeg_cmd))
+    try:
+        proc = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"Animate portrait mode: ffmpeg encoding failed:\n"
+                f"{proc.stderr[-500:]}"
+            )
+
+        # --- Collect frame/audio output ---
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=False,
+        )
+
+        # --- Build analysis string ---
+        cmd_log = " ".join(ffmpeg_cmd)
+        analysis = (
+            f"Animate Portrait Mode (no LLM)\n"
+            f"Source: {effective_video_path}\n"
+            f"Driving video: {driving_video}\n"
+            f"Motion multiplier: {driving_multiplier}\n"
+            f"Relative motion: {relative_motion}\n\n"
+            f"Animated video: {animated_video}\n"
+            f"Output: {output_path}"
+        )
+
+        return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
+    finally:
+        # --- Cleanup temp files (always runs, even on error) ---
+        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        # Clean up LivePortrait temp output
+        if animated_video and os.path.exists(animated_video):
+            try:
+                os.remove(animated_video)
             except OSError:
                 pass
         if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):

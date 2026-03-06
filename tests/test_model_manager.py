@@ -33,7 +33,7 @@ class TestModelInfoRegistry(unittest.TestCase):
         """LaMa should specify its mirror filename."""
         self.assertEqual(
             _MODEL_INFO["lama"]["mirror_filename"],
-            "big-lama.pt",
+            "big-lama.safetensors",
         )
 
     def test_urls_point_to_aemotionstudio(self):

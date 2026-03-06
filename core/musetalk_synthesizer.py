@@ -19,6 +19,7 @@ Based on: https://github.com/TMElyralab/MuseTalk
 """
 
 import copy
+import gc
 import json
 import logging
 import math
@@ -187,7 +188,10 @@ def _get_vae_path() -> str:
         return str(comfy_vae)
 
     # Download from HuggingFace
-    from ..model_manager import require_downloads_allowed, download_with_progress
+    try:
+        from .model_manager import require_downloads_allowed, download_with_progress
+    except ImportError:
+        from core.model_manager import require_downloads_allowed, download_with_progress  # type: ignore[no-redef]
 
     require_downloads_allowed("musetalk")
 
@@ -225,7 +229,10 @@ def _get_whisper_path() -> str:
         pass
 
     # Download explicitly
-    from ..model_manager import require_downloads_allowed, download_with_progress
+    try:
+        from .model_manager import require_downloads_allowed, download_with_progress
+    except ImportError:
+        from core.model_manager import require_downloads_allowed, download_with_progress  # type: ignore[no-redef]
 
     require_downloads_allowed("musetalk")
 
@@ -245,12 +252,77 @@ def _get_whisper_path() -> str:
 #  VRAM management
 # ---------------------------------------------------------------------------
 
+_freeing_vram = False
+
 
 def _free_vram():
-    """Free ComfyUI VRAM before loading MuseTalk models."""
-    from .platform import free_comfyui_vram
-    free_comfyui_vram()
-    torch.cuda.empty_cache() if torch.cuda.is_available() else None
+    """Free all GPU VRAM before loading MuseTalk models.
+
+    Follows the MMAudio/WanVideo pattern:
+    1. Tell ComfyUI to unload ALL cached models from GPU
+    2. Free MMAudio models if loaded
+    3. Free SAM3 models if loaded
+    4. Free FLUX Klein pipeline if loaded
+    5. Empty CUDA cache + gc.collect
+
+    Uses a re-entrancy guard to prevent infinite recursion.
+    """
+    global _freeing_vram
+    if _freeing_vram:
+        return
+    _freeing_vram = True
+    try:
+        try:
+            from .platform import free_comfyui_vram
+        except ImportError:
+            from core.platform import free_comfyui_vram  # type: ignore
+        free_comfyui_vram()
+
+        # Free MMAudio if loaded
+        try:
+            try:
+                from . import mmaudio_synthesizer
+            except ImportError:
+                from core import mmaudio_synthesizer  # type: ignore
+            mmaudio_synthesizer.cleanup()
+        except Exception:
+            pass
+
+        # Free SAM3 if loaded
+        try:
+            try:
+                from . import sam3_masker
+            except ImportError:
+                from core import sam3_masker  # type: ignore
+            sam3_masker.cleanup()
+        except Exception:
+            pass
+
+        # Free FLUX Klein if loaded
+        try:
+            try:
+                from . import flux_klein_editor
+            except ImportError:
+                from core import flux_klein_editor  # type: ignore
+            flux_klein_editor.cleanup()
+        except Exception:
+            pass
+
+        # Free LivePortrait if loaded
+        try:
+            try:
+                from . import liveportrait_synthesizer
+            except ImportError:
+                from core import liveportrait_synthesizer  # type: ignore
+            liveportrait_synthesizer.cleanup()
+        except Exception:
+            pass
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+    finally:
+        _freeing_vram = False
 
 
 def _get_device() -> torch.device:
@@ -258,6 +330,147 @@ def _get_device() -> torch.device:
     if torch.cuda.is_available():
         return torch.device("cuda")
     return torch.device("cpu")
+
+
+def _get_offload_device():
+    """Get the ComfyUI offload device (CPU), or fallback to 'cpu'."""
+    try:
+        import comfy.model_management as mm  # type: ignore[import-not-found]
+        return mm.unet_offload_device()
+    except ImportError:
+        return torch.device("cpu")
+
+
+# ---------------------------------------------------------------------------
+#  Cached model state (in-process offloading)
+# ---------------------------------------------------------------------------
+
+_models: Optional[dict] = None
+
+
+def load_models() -> dict:
+    """Load and cache all MuseTalk models.
+
+    On first call, downloads models if needed, frees VRAM from other
+    AI models (ComfyUI, MMAudio, SAM3, FLUX Klein), and loads all 4
+    components (VAE, UNet, PositionalEncoding, Whisper) into a cached dict.
+
+    Subsequent calls return the cached models immediately.
+
+    Returns:
+        Dict with keys: vae, unet, pe, whisper, audio_processor,
+        device, offload_device.
+    """
+    global _models
+    if _models is not None:
+        return _models
+
+    try:
+        from .musetalk.vae import VAE
+        from .musetalk.unet import UNet, PositionalEncoding
+        from .musetalk.audio_processor import AudioProcessor
+    except ImportError:
+        from core.musetalk.vae import VAE
+        from core.musetalk.unet import UNet, PositionalEncoding
+        from core.musetalk.audio_processor import AudioProcessor
+
+    from transformers import WhisperModel
+
+    use_float16 = True
+    device = _get_device()
+    offload_device = _get_offload_device()
+    weight_dtype = torch.float16 if use_float16 else torch.float32
+
+    # Resolve model paths (downloads if needed)
+    vae_path = _get_vae_path()
+    unet_path = _find_or_download_model("unet", use_float16=use_float16)
+    unet_config_path = _find_or_download_model("unet_config")
+    whisper_path = _get_whisper_path()
+
+    # Free VRAM from other models
+    _free_vram()
+
+    log.info("[MuseTalk] Loading models (offload_device=%s)...", offload_device)
+
+    # Load VAE → offload device
+    vae = VAE(
+        model_path=vae_path,
+        use_float16=use_float16,
+        device=offload_device,
+    )
+
+    # Load UNet → offload device
+    unet = UNet(
+        unet_config=unet_config_path,
+        model_path=unet_path,
+        use_float16=use_float16,
+        device=offload_device,
+    )
+
+    # Load PositionalEncoding → offload device
+    pe = PositionalEncoding(d_model=384)
+    if use_float16:
+        pe = pe.half()
+    pe = pe.to(offload_device)
+
+    # Load Whisper → offload device
+    whisper = WhisperModel.from_pretrained(whisper_path)
+    whisper = whisper.to(device=offload_device, dtype=weight_dtype).eval()
+    whisper.requires_grad_(False)
+
+    audio_processor = AudioProcessor(feature_extractor_path=whisper_path)  # pyright: ignore[reportCallIssue]
+
+    log.info("[MuseTalk] All models loaded and cached (offloaded to %s)", offload_device)
+
+    _models = {
+        "vae": vae,
+        "unet": unet,
+        "pe": pe,
+        "whisper": whisper,
+        "audio_processor": audio_processor,
+        "device": device,
+        "offload_device": offload_device,
+        "use_float16": use_float16,
+    }
+    return _models
+
+
+def cleanup() -> None:
+    """Free GPU memory and clear cached MuseTalk models.
+
+    Moves models to CPU offload device, clears the cache, empties
+    CUDA cache, and runs garbage collection.
+    """
+    global _models
+    if _models is None:
+        return
+
+    # Capture and clear the global ref first so gc.collect() can reclaim
+    models = _models
+    _models = None
+
+    try:
+        offload = models["offload_device"]
+        for key in ("vae", "unet", "pe", "whisper"):
+            obj = models.get(key)
+            if obj is not None and hasattr(obj, "to"):
+                try:
+                    obj.to(offload)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    del models
+
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()
+    try:
+        import comfy.model_management as mm  # type: ignore[import-not-found]
+        mm.soft_empty_cache()
+    except (ImportError, AttributeError):
+        pass
+    log.info("[MuseTalk] Models unloaded")
 
 
 # ---------------------------------------------------------------------------
@@ -307,6 +520,10 @@ def lip_sync(
 ) -> str:
     """Generate a lip-synced video from an input video/image and audio.
 
+    Uses cached in-process models with GPU↔CPU offloading.
+    Models are loaded on first call and cached for reuse.
+    After inference, models are offloaded back to CPU.
+
     Args:
         video_path: Path to input video or image.
         audio_path: Path to audio file for lip sync.
@@ -321,9 +538,6 @@ def lip_sync(
         Path to the output lip-synced video file.
     """
     try:
-        from .musetalk.vae import VAE
-        from .musetalk.unet import UNet, PositionalEncoding
-        from .musetalk.audio_processor import AudioProcessor
         from .musetalk.face_detection import (
             get_landmarks_and_bboxes,
             read_frames_from_video,
@@ -332,9 +546,6 @@ def lip_sync(
         )
         from .musetalk.blending import blend_face
     except ImportError:
-        from core.musetalk.vae import VAE
-        from core.musetalk.unet import UNet, PositionalEncoding
-        from core.musetalk.audio_processor import AudioProcessor
         from core.musetalk.face_detection import (
             get_landmarks_and_bboxes,
             read_frames_from_video,
@@ -342,9 +553,6 @@ def lip_sync(
             COORD_PLACEHOLDER,
         )
         from core.musetalk.blending import blend_face
-
-    device = _get_device()
-    _free_vram()
 
     # ── Determine output path ──
     if output_dir is None:
@@ -355,209 +563,205 @@ def lip_sync(
     audio_base = os.path.splitext(os.path.basename(audio_path))[0]
     output_path = os.path.join(output_dir, f"{base}_{audio_base}_lipsync.mp4")
 
-    # ── Load models ──
-    log.info("[MuseTalk] Loading models...")
+    # ── Load or reuse cached models ──
+    models = load_models()
+    vae = models["vae"]
+    unet = models["unet"]
+    pe = models["pe"]
+    whisper = models["whisper"]
+    audio_processor = models["audio_processor"]
+    device = models["device"]
+    offload_device = models["offload_device"]
+    weight_dtype = torch.float16 if models["use_float16"] else torch.float32
 
-    vae_path = _get_vae_path()
-    unet_path = _find_or_download_model("unet", use_float16=use_float16)
-    unet_config_path = _find_or_download_model("unet_config")
-    whisper_path = _get_whisper_path()
+    # Move models to GPU for inference
+    log.info("[MuseTalk] Moving models to %s for inference", device)
+    vae.to(device)
+    unet.to(device)
+    pe.to(device)
+    whisper.to(device)
 
-    vae = VAE(
-        model_path=vae_path,
-        use_float16=use_float16,
-        device=device,
-    )
+    try:
+        timesteps = torch.tensor([0], device=device)
 
-    unet = UNet(
-        unet_config=unet_config_path,
-        model_path=unet_path,
-        use_float16=use_float16,
-        device=device,
-    )
+        # ── Extract frames ──
+        log.info("[MuseTalk] Reading input frames...")
+        ext = os.path.splitext(video_path)[1].lower()
+        is_image = ext in (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff")
 
-    pe = PositionalEncoding(d_model=384)
-    if use_float16:
-        pe = pe.half()
-    pe = pe.to(device)
+        if is_image:
+            # Get audio duration to determine frame count
+            import librosa
 
-    # Load Whisper model
-    from transformers import WhisperModel
+            audio_data, sr = librosa.load(audio_path, sr=16000)
+            audio_duration = len(audio_data) / sr
+            frame_fps = fps or 25.0
+            num_frames = int(audio_duration * frame_fps)
+            frames, vid_fps = read_image_as_frames(video_path, num_frames)
+            vid_fps = frame_fps
+        else:
+            frames, vid_fps = read_frames_from_video(video_path)
+            if fps:
+                vid_fps = fps
 
-    weight_dtype = torch.float16 if use_float16 else torch.float32
-    whisper = WhisperModel.from_pretrained(whisper_path)
-    whisper = whisper.to(device=device, dtype=weight_dtype).eval()
-    whisper.requires_grad_(False)
+        log.info(f"[MuseTalk] Loaded {len(frames)} frames at {vid_fps} FPS")
 
-    audio_processor = AudioProcessor(feature_extractor_path=whisper_path)  # pyright: ignore[reportCallIssue]
-
-    timesteps = torch.tensor([0], device=device)
-
-    # ── Extract frames ──
-    log.info("[MuseTalk] Reading input frames...")
-    ext = os.path.splitext(video_path)[1].lower()
-    is_image = ext in (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff")
-
-    if is_image:
-        # Get audio duration to determine frame count
-        import librosa
-
-        audio_data, sr = librosa.load(audio_path, sr=16000)
-        audio_duration = len(audio_data) / sr
-        frame_fps = fps or 25.0
-        num_frames = int(audio_duration * frame_fps)
-        frames, vid_fps = read_image_as_frames(video_path, num_frames)
-        vid_fps = frame_fps
-    else:
-        frames, vid_fps = read_frames_from_video(video_path)
-        if fps:
-            vid_fps = fps
-
-    log.info(f"[MuseTalk] Loaded {len(frames)} frames at {vid_fps} FPS")
-
-    # ── Detect faces ──
-    log.info("[MuseTalk] Detecting faces...")
-    bbox_lists, frames = get_landmarks_and_bboxes(
-        frames,
-        bbox_shift=0,
-        extra_margin=extra_margin,
-        face_index=face_index,
-    )
-
-    # ── Extract audio features ──
-    log.info("[MuseTalk] Extracting audio features...")
-    whisper_features, librosa_length = audio_processor.get_audio_feature(
-        audio_path, weight_dtype=weight_dtype
-    )
-    whisper_chunks = audio_processor.get_whisper_chunks(
-        whisper_features,
-        device,
-        weight_dtype,
-        whisper,
-        librosa_length,
-        fps=int(vid_fps),
-    )
-
-    # ── Process faces ──
-    # For multi-face: process each face independently
-    num_faces = max(len(bboxes) for bboxes in bbox_lists)
-    log.info(f"[MuseTalk] Processing {num_faces} face(s)...")
-
-    # Start with copies of the original frames as output
-    result_frames = [frame.copy() for frame in frames]
-
-    for face_idx in range(num_faces):
-        # Collect bboxes and latents for this face across all frames
-        face_bboxes = []
-        face_latents = []
-
-        for frame_idx, (bboxes, frame) in enumerate(zip(bbox_lists, frames)):
-            if face_idx < len(bboxes) and bboxes[face_idx] != COORD_PLACEHOLDER:
-                bbox = bboxes[face_idx]
-            elif len(bboxes) > 0 and bboxes[0] != COORD_PLACEHOLDER:
-                bbox = bboxes[0]  # fallback to first face
-            else:
-                bbox = COORD_PLACEHOLDER
-
-            face_bboxes.append(bbox)
-
-            if bbox != COORD_PLACEHOLDER:
-                x1, y1, x2, y2 = bbox
-                crop = frame[y1:y2, x1:x2]
-                crop = cv2.resize(
-                    crop, (256, 256), interpolation=cv2.INTER_LANCZOS4
-                )
-                latent = vae.get_latents_for_unet(crop)
-                face_latents.append(latent)
-
-        if not face_latents:
-            log.warning(f"[MuseTalk] No face detected for face index {face_idx}")
-            continue
-
-        # Create cycled lists for looping
-        face_latents_cycle = face_latents + face_latents[::-1]
-        face_bboxes_cycle = face_bboxes + face_bboxes[::-1]
-
-        # ── Batch inference ──
-        video_num = len(whisper_chunks)
-        gen = _datagen(
-            whisper_chunks=whisper_chunks,
-            vae_latents=face_latents_cycle,
-            batch_size=batch_size,
-            device=str(device),
+        # ── Detect faces ──
+        log.info("[MuseTalk] Detecting faces...")
+        bbox_lists, frames = get_landmarks_and_bboxes(
+            frames,
+            bbox_shift=0,
+            extra_margin=extra_margin,
+            face_index=face_index,
         )
 
-        gen_faces = []
-        total_batches = int(np.ceil(float(video_num) / batch_size))
+        # ── Extract audio features ──
+        log.info("[MuseTalk] Extracting audio features...")
+        whisper_features, librosa_length = audio_processor.get_audio_feature(
+            audio_path, weight_dtype=weight_dtype
+        )
+        whisper_chunks = audio_processor.get_whisper_chunks(
+            whisper_features,
+            device,
+            weight_dtype,
+            whisper,
+            librosa_length,
+            fps=int(vid_fps),
+        )
 
-        for whisper_batch, latent_batch in tqdm(
-            gen, total=total_batches, desc=f"[MuseTalk] Face {face_idx}"
-        ):
-            audio_features = pe(whisper_batch)
-            latent_batch = latent_batch.to(dtype=unet.model.dtype)
+        # ── Process faces ──
+        # For multi-face: process each face independently
+        num_faces = max(len(bboxes) for bboxes in bbox_lists)
+        log.info(f"[MuseTalk] Processing {num_faces} face(s)...")
 
-            pred = unet.model(
-                latent_batch,
-                timesteps,
-                encoder_hidden_states=audio_features,
-            ).sample
+        # Start with copies of the original frames as output
+        result_frames = [frame.copy() for frame in frames]
 
-            decoded = vae.decode_latents(pred)
-            for face_img in decoded:
-                gen_faces.append(face_img)
+        for face_idx in range(num_faces):
+            # Collect bboxes and latents for this face across all frames
+            face_bboxes = []
+            face_latents = []
 
-        # ── Blend generated faces back ──
-        for i, gen_face in enumerate(gen_faces):
-            if i >= len(result_frames):
-                break
+            for frame_idx, (bboxes, frame) in enumerate(zip(bbox_lists, frames)):
+                if face_idx < len(bboxes) and bboxes[face_idx] != COORD_PLACEHOLDER:
+                    bbox = bboxes[face_idx]
+                elif len(bboxes) > 0 and bboxes[0] != COORD_PLACEHOLDER:
+                    bbox = bboxes[0]  # fallback to first face
+                else:
+                    bbox = COORD_PLACEHOLDER
 
-            bbox = face_bboxes_cycle[i % len(face_bboxes_cycle)]
-            if bbox == COORD_PLACEHOLDER:
+                face_bboxes.append(bbox)
+
+                if bbox != COORD_PLACEHOLDER:
+                    x1, y1, x2, y2 = bbox
+                    crop = frame[y1:y2, x1:x2]
+                    crop = cv2.resize(
+                        crop, (256, 256), interpolation=cv2.INTER_LANCZOS4
+                    )
+                    latent = vae.get_latents_for_unet(crop)
+                    face_latents.append(latent)
+
+            if not face_latents:
+                log.warning(f"[MuseTalk] No face detected for face index {face_idx}")
                 continue
 
-            result_frames[i] = blend_face(
-                result_frames[i],
-                gen_face,
-                bbox,
+            # Create cycled lists for looping
+            face_latents_cycle = face_latents + face_latents[::-1]
+            face_bboxes_cycle = face_bboxes + face_bboxes[::-1]
+
+            # ── Batch inference ──
+            video_num = len(whisper_chunks)
+            gen = _datagen(
+                whisper_chunks=whisper_chunks,
+                vae_latents=face_latents_cycle,
+                batch_size=batch_size,
+                device=str(device),
             )
 
-    # ── Write output video ──
-    log.info("[MuseTalk] Writing output video...")
-    temp_video = os.path.join(output_dir, "_temp_lipsync.mp4")
+            gen_faces = []
+            total_batches = int(np.ceil(float(video_num) / batch_size))
 
-    h, w = result_frames[0].shape[:2]
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
-    writer = cv2.VideoWriter(temp_video, fourcc, vid_fps, (w, h))
+            for whisper_batch, latent_batch in tqdm(
+                gen, total=total_batches, desc=f"[MuseTalk] Face {face_idx}"
+            ):
+                audio_features = pe(whisper_batch)
+                latent_batch = latent_batch.to(dtype=unet.model.dtype)
 
-    for frame in result_frames:
-        writer.write(frame)
-    writer.release()
+                pred = unet.model(
+                    latent_batch,
+                    timesteps,
+                    encoder_hidden_states=audio_features,
+                ).sample
 
-    # Mux with audio using ffmpeg
-    cmd = [
-        "ffmpeg", "-y", "-v", "warning",
-        "-i", temp_video,
-        "-i", audio_path,
-        "-c:v", "libx264",
-        "-crf", "18",
-        "-pix_fmt", "yuv420p",
-        "-c:a", "aac",
-        "-shortest",
-        output_path,
-    ]
-    subprocess.run(cmd, check=True)
+                decoded = vae.decode_latents(pred)
+                for face_img in decoded:
+                    gen_faces.append(face_img)
 
-    # Clean up temp
-    if os.path.isfile(temp_video):
-        os.remove(temp_video)
+            # ── Blend generated faces back ──
+            for i, gen_face in enumerate(gen_faces):
+                if i >= len(result_frames):
+                    break
 
-    log.info(f"[MuseTalk] Lip-synced video saved to {output_path}")
+                bbox = face_bboxes_cycle[i % len(face_bboxes_cycle)]
+                if bbox == COORD_PLACEHOLDER:
+                    continue
 
-    # ── Cleanup GPU memory ──
-    del vae, unet, pe, whisper, audio_processor
-    torch.cuda.empty_cache() if torch.cuda.is_available() else None
+                result_frames[i] = blend_face(
+                    result_frames[i],
+                    gen_face,
+                    bbox,
+                )
 
-    return output_path
+        # ── Write output video ──
+        log.info("[MuseTalk] Writing output video...")
+        temp_video = os.path.join(output_dir, "_temp_lipsync.mp4")
+
+        h, w = result_frames[0].shape[:2]
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
+        writer = cv2.VideoWriter(temp_video, fourcc, vid_fps, (w, h))
+
+        for frame in result_frames:
+            writer.write(frame)
+        writer.release()
+
+        # Mux with audio using ffmpeg
+        cmd = [
+            "ffmpeg", "-y", "-v", "warning",
+            "-i", temp_video,
+            "-i", audio_path,
+            "-c:v", "libx264",
+            "-crf", "18",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-shortest",
+            output_path,
+        ]
+        subprocess.run(cmd, check=True)
+
+        # Clean up temp
+        if os.path.isfile(temp_video):
+            os.remove(temp_video)
+
+        log.info(f"[MuseTalk] Lip-synced video saved to {output_path}")
+
+        return output_path
+    finally:
+        # ── Offload models back to CPU ──
+        log.info("[MuseTalk] Offloading models to %s", offload_device)
+        try:
+            vae.to(offload_device)
+            unet.to(offload_device)
+            pe.to(offload_device)
+            whisper.to(offload_device)
+        except Exception:
+            pass
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        try:
+            import comfy.model_management as mm  # type: ignore[import-not-found]
+            mm.soft_empty_cache()
+        except (ImportError, AttributeError):
+            pass
 
 
 # ---------------------------------------------------------------------------

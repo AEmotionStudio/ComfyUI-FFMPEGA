@@ -42,6 +42,13 @@ class VAE:
         self._resized_img = resized_img
         self._mask_tensor = self._get_mask_tensor()
 
+    def to(self, device):
+        """Move VAE model to a device and update internal device tracking."""
+        device = torch.device(device) if isinstance(device, str) else device
+        self.device = device
+        self.vae.to(device)
+        return self
+
     # ------------------------------------------------------------------
     #  Internal helpers
     # ------------------------------------------------------------------

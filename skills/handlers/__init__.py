@@ -19,6 +19,10 @@ from .lip_sync import (  # noqa: F401
     _f_lip_sync,
 )
 
+from .animate_portrait import (  # noqa: F401
+    _f_animate_portrait,
+)
+
 from .multi_input import (  # noqa: F401
     _f_grid,
     _f_slideshow,
