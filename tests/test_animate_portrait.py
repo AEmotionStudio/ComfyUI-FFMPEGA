@@ -4,6 +4,8 @@ Covers skill registration, handler unit tests (with LivePortrait mocked),
 dispatch table wiring, alias resolution, and model manager integration.
 """
 
+import sys
+
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -117,10 +119,17 @@ class TestAnimatePortraitHandler:
         output = tempfile.mktemp(suffix=".mp4")
 
         try:
-            with patch(
-                "core.liveportrait_synthesizer.animate_portrait"
-            ) as mock_fn:
-                mock_fn.return_value = output
+            # Use sys.modules injection instead of patch() because
+            # core.liveportrait_synthesizer requires torch/cv2 at import
+            # time, which may not be available in CI.
+            mock_animate = MagicMock(return_value=output)
+            mock_module = MagicMock()
+            mock_module.animate_portrait = mock_animate
+
+            with patch.dict(
+                sys.modules,
+                {"core.liveportrait_synthesizer": mock_module},
+            ):
                 # Create a fake output file
                 with open(output, "wb") as f:
                     f.write(b"\x00" * 100)
@@ -138,8 +147,8 @@ class TestAnimatePortraitHandler:
                 assert result["movie"] == output
 
                 # Check the mock was called with right params
-                mock_fn.assert_called_once()
-                call_kwargs = mock_fn.call_args
+                mock_animate.assert_called_once()
+                call_kwargs = mock_animate.call_args
                 assert call_kwargs[1]["driving_multiplier"] == 1.5
                 assert call_kwargs[1]["relative_motion"] is True
         finally:
@@ -238,12 +247,16 @@ class TestLivePortraitVRAMCoordination:
     """Verify LivePortrait cleanup is called by other synthesizers."""
 
     def test_liveportrait_has_cleanup(self):
+        torch = pytest.importorskip("torch")
+        cv2 = pytest.importorskip("cv2")
         from core import liveportrait_synthesizer
         assert hasattr(liveportrait_synthesizer, "cleanup")
         assert callable(liveportrait_synthesizer.cleanup)
 
     def test_liveportrait_cleanup_is_safe_when_not_loaded(self):
         """cleanup() should succeed even if models never loaded."""
+        torch = pytest.importorskip("torch")
+        cv2 = pytest.importorskip("cv2")
         from core import liveportrait_synthesizer
         liveportrait_synthesizer.cleanup()  # Should not raise
 
@@ -252,34 +265,48 @@ class TestLivePortraitVRAMCoordination:
 
 
 class TestLivePortraitModuleImports:
-    """Verify all vendored LivePortrait modules can be imported."""
+    """Verify all vendored LivePortrait modules can be imported.
+
+    Requires torch and cv2 — skipped in lightweight CI environments.
+    """
 
     def test_import_init(self):
+        pytest.importorskip("torch")
         from core import liveportrait
 
     def test_import_util(self):
+        pytest.importorskip("torch")
         from core.liveportrait import util
 
     def test_import_convnextv2(self):
+        pytest.importorskip("torch")
         from core.liveportrait import convnextv2
 
     def test_import_dense_motion(self):
+        pytest.importorskip("torch")
         from core.liveportrait import dense_motion
 
     def test_import_appearance_feature_extractor(self):
+        pytest.importorskip("torch")
         from core.liveportrait import appearance_feature_extractor
 
     def test_import_motion_extractor(self):
+        pytest.importorskip("torch")
         from core.liveportrait import motion_extractor
 
     def test_import_warping_network(self):
+        pytest.importorskip("torch")
         from core.liveportrait import warping_network
 
     def test_import_spade_generator(self):
+        pytest.importorskip("torch")
         from core.liveportrait import spade_generator
 
     def test_import_stitching_retargeting_network(self):
+        pytest.importorskip("torch")
         from core.liveportrait import stitching_retargeting_network
 
     def test_import_synthesizer(self):
+        pytest.importorskip("torch")
+        pytest.importorskip("cv2")
         from core import liveportrait_synthesizer

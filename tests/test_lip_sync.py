@@ -112,14 +112,20 @@ class TestLipSyncHandler:
     # With valid inputs and mocked MuseTalk, handler should return filter_complex.
     @patch("skills.handlers.lip_sync.validate_video_path", side_effect=lambda x: x)
     def test_success_with_mocked_musetalk(self, mock_validate):
+        import sys
         from skills.handlers.lip_sync import _f_lip_sync
 
-        mock_lip_sync = MagicMock(return_value="/tmp/output_lipsync.mp4")
+        mock_lip_sync_fn = MagicMock(return_value="/tmp/output_lipsync.mp4")
 
-        with patch(
-            "core.musetalk_synthesizer.lip_sync",
-            mock_lip_sync,
-            create=True,
+        # Use sys.modules injection instead of patch() because
+        # core.musetalk_synthesizer requires torch/cv2 at import
+        # time, which may not be available in CI.
+        mock_module = MagicMock()
+        mock_module.lip_sync = mock_lip_sync_fn
+
+        with patch.dict(
+            sys.modules,
+            {"core.musetalk_synthesizer": mock_module},
         ):
             metadata = {}
             result = _f_lip_sync({
@@ -226,15 +232,21 @@ class TestMuseTalkModelCaching:
 
     def test_load_models_exists(self):
         """load_models function should be importable."""
+        pytest.importorskip("torch")
+        pytest.importorskip("cv2")
         from core.musetalk_synthesizer import load_models
         assert callable(load_models)
 
     def test_cleanup_exists(self):
         """cleanup function should be importable."""
+        pytest.importorskip("torch")
+        pytest.importorskip("cv2")
         from core.musetalk_synthesizer import cleanup
         assert callable(cleanup)
 
     def test_lip_sync_subprocess_still_exists(self):
         """lip_sync_subprocess should still exist as legacy fallback."""
+        pytest.importorskip("torch")
+        pytest.importorskip("cv2")
         from core.musetalk_synthesizer import lip_sync_subprocess
         assert callable(lip_sync_subprocess)
