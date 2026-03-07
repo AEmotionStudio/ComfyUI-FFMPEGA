@@ -173,7 +173,14 @@ class LoadLastImage:
         if source_folder and source_folder.strip():
             custom = source_folder.strip()
             real_path = os.path.realpath(custom)
-            if os.path.isdir(real_path):
+            # Validate path is within ComfyUI's allowed directories
+            from .load_last_video import _is_path_sandboxed
+            if not _is_path_sandboxed(real_path):
+                logger.warning(
+                    "[LoadLast] source_folder '%s' is outside allowed directories, ignoring",
+                    custom,
+                )
+            elif os.path.isdir(real_path):
                 scan_dirs = [real_path]
             else:
                 logger.warning("[LoadLast] source_folder does not exist: %s", custom)

@@ -43,13 +43,14 @@ def compute_pixel_hash(tensor: torch.Tensor, sample_points: int = 64) -> int:
     row_step = max(1, h // n_rows)
     col_step = max(1, w // n_cols)
 
-    # Sample pixels and quantize to 8-bit
-    values = []
-    for r in range(0, min(h, n_rows * row_step), row_step):
-        for c in range(0, min(w, n_cols * col_step), col_step):
-            pixel = tensor[r, c, :3]  # Take RGB channels only
-            quantized = (pixel * 255).to(torch.uint8)
-            values.extend(quantized.tolist())
+    # Vectorized sampling: generate index arrays and gather pixels in one op
+    row_indices = torch.arange(0, min(h, n_rows * row_step), row_step)
+    col_indices = torch.arange(0, min(w, n_cols * col_step), col_step)
+
+    # Use advanced indexing to sample all pixels at once
+    sampled = tensor[row_indices[:, None], col_indices[None, :], :3]  # [R, C, 3]
+    quantized = (sampled * 255).to(torch.uint8)
+    values = quantized.reshape(-1).tolist()
 
     return hash(tuple(values))
 

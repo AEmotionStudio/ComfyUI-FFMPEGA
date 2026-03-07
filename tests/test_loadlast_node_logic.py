@@ -34,7 +34,7 @@ def _make_node():
     sys.modules.setdefault("comfy", mock_mm)
     sys.modules.setdefault("comfy.model_management", mock_mm_inner)
 
-    from load_last_video import LoadLastVideo
+    from loadlast.load_last_video import LoadLastVideo
     return LoadLastVideo()
 
 
@@ -174,13 +174,17 @@ def test_save_selected_frames():
     # Create temp dir and patch folder_paths
     temp_dir = tempfile.mkdtemp()
     import types
+    import importlib
     mock_fp = types.ModuleType("folder_paths")
     mock_fp.get_output_directory = lambda: temp_dir
     mock_fp.get_temp_directory = lambda: temp_dir
     mock_fp.get_input_directory = lambda: temp_dir
     sys.modules["folder_paths"] = mock_fp
 
-    from load_last_video import LoadLastVideo
+    # Reload so module-level `folder_paths` picks up the mock
+    import loadlast.load_last_video as llv_mod
+    importlib.reload(llv_mod)
+    LoadLastVideo = llv_mod.LoadLastVideo
 
     # Create 3 dummy frames (H=32, W=32, C=3)
     frames = torch.rand(3, 32, 32, 3)

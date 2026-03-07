@@ -49,6 +49,7 @@ class ImageExecutionCache:
         self._image_history: deque[CacheEntry] = deque(maxlen=max_history)
         self._max_history = max_history
         self._iteration_counter = 0
+        self._last_prompt_id: Optional[str] = None  # Track per-execution increments
         self._pinned_image: Optional[CacheEntry] = None
         self._pinned_index: int = 0
         self._last_executed_images: list[dict] = []  # UI image info from last execution
@@ -90,6 +91,9 @@ class ImageExecutionCache:
 
         Captures image output info from 'executed' events. The data dict
         has the structure: {"node": node_id, "output": {"images": [...]}, ...}
+
+        Only increments the iteration counter once per unique prompt_id,
+        so workflows with multiple SaveImage nodes don't over-count.
         """
         try:
             output = data.get("output")
@@ -97,6 +101,7 @@ class ImageExecutionCache:
                 return
 
             node_id = data.get("node", "unknown")
+            prompt_id = data.get("prompt_id", "")
             images = output.get("images", [])
             if not images:
                 return
@@ -105,7 +110,13 @@ class ImageExecutionCache:
                 self._last_executed_images.extend(
                     {"node_id": node_id, **img_info} for img_info in images
                 )
-                self._iteration_counter += 1
+                # Only increment counter once per execution (new prompt_id)
+                if prompt_id and prompt_id != self._last_prompt_id:
+                    self._iteration_counter += 1
+                    self._last_prompt_id = prompt_id
+                elif not prompt_id:
+                    # Fallback: no prompt_id available, increment every time
+                    self._iteration_counter += 1
 
             logger.debug(
                 "[LoadLast] Captured %d image(s) from node %s (iteration %d)",
@@ -192,5 +203,6 @@ class ImageExecutionCache:
             self._image_history.clear()
             self._last_executed_images.clear()
             self._iteration_counter = 0
+            self._last_prompt_id = None
             self._pinned_image = None
             self._pinned_index = 0

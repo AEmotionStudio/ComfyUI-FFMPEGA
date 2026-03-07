@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -291,16 +292,5 @@ def concat_segments(
         return output_path
 
     finally:
-        # Clean up temp segment files
-        for sf in segment_files:
-            try:
-                os.unlink(sf)
-            except OSError:
-                pass
-        try:
-            list_path_local = os.path.join(tmp_dir, "concat.txt")
-            if os.path.exists(list_path_local):
-                os.unlink(list_path_local)
-            os.rmdir(tmp_dir)
-        except OSError:
-            pass
+        # Clean up temp segment files reliably
+        shutil.rmtree(tmp_dir, ignore_errors=True)

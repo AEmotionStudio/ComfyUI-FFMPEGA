@@ -21,15 +21,23 @@ import json
 import logging
 import os
 import shutil
+import subprocess
 import tempfile
 import time
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 
-import folder_paths
+try:
+    import folder_paths
+except ImportError:
+    folder_paths = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
+
+# Maximum file size (bytes) to copy into temp for preview (500 MB)
+_MAX_COPY_SIZE = 500 * 1024 * 1024
 
 # Auto-select mode options
 FRAME_SELECT_MODES = [
@@ -94,6 +102,8 @@ except (ImportError, AttributeError):
 
 def _get_video_directories() -> list[str]:
     """Return ComfyUI's output and temp directories."""
+    if folder_paths is None:
+        return []
     dirs = []
     try:
         dirs.append(folder_paths.get_output_directory())
@@ -104,6 +114,35 @@ def _get_video_directories() -> list[str]:
     except Exception:
         pass
     return dirs
+
+
+def _get_allowed_directories() -> list[str]:
+    """Return the set of directories users are allowed to access."""
+    if folder_paths is None:
+        return []
+    dirs = []
+    for getter in (
+        folder_paths.get_output_directory,
+        folder_paths.get_temp_directory,
+        folder_paths.get_input_directory,
+    ):
+        try:
+            dirs.append(os.path.realpath(getter()))
+        except Exception:
+            pass
+    return dirs
+
+
+def _is_path_sandboxed(path: str) -> bool:
+    """Check if a path is within ComfyUI's allowed directories."""
+    real = os.path.realpath(path)
+    for allowed in _get_allowed_directories():
+        try:
+            if os.path.commonpath([allowed, real]) == allowed:
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def _find_latest_video_info(directories: list[str], prefix: str = "") -> dict | None:
@@ -159,6 +198,8 @@ def _scan_video_entries(directories: list[str], prefix: str = "") -> list[tuple]
 
 def _resolve_view_info(full_path: str, parent_dir: str) -> dict | None:
     """Resolve a video file to {filename, subfolder, type, format} for /view."""
+    if folder_paths is None:
+        return None
     output_dir = folder_paths.get_output_directory()
     temp_dir = folder_paths.get_temp_directory()
     filename = os.path.basename(full_path)
@@ -170,6 +211,17 @@ def _resolve_view_info(full_path: str, parent_dir: str) -> dict | None:
         subfolder = os.path.relpath(parent_dir, temp_dir)
         view_type = "temp"
     else:
+        # Cap file size before copying into temp for preview
+        try:
+            file_size = os.path.getsize(full_path)
+        except OSError:
+            file_size = 0
+        if file_size > _MAX_COPY_SIZE:
+            logger.warning(
+                "[LoadLast] Skipping copy of %s (%.0f MB exceeds %.0f MB cap)",
+                filename, file_size / 1024 / 1024, _MAX_COPY_SIZE / 1024 / 1024,
+            )
+            return None
         os.makedirs(temp_dir, exist_ok=True)
         dest = os.path.join(temp_dir, filename)
         if not os.path.exists(dest) or os.path.getmtime(full_path) > os.path.getmtime(dest):
@@ -338,7 +390,6 @@ class LoadLastVideo:
 
         if images is not None:
             # Input override: IMAGE tensor → convert to temp video
-            from .processing.video_decode import VideoDecoder as VD
             try:
                 temp_dir = folder_paths.get_temp_directory()
                 os.makedirs(temp_dir, exist_ok=True)
@@ -352,7 +403,11 @@ class LoadLastVideo:
         if resolved_path is None and video_path and video_path.strip():
             # Input override: video_path STRING
             vp = video_path.strip()
-            if os.path.isfile(vp):
+            if not _is_path_sandboxed(vp):
+                logger.warning(
+                    "[LoadLast] video_path '%s' is outside allowed directories, ignoring", vp
+                )
+            elif os.path.isfile(vp):
                 resolved_path = vp
                 parent = os.path.dirname(vp)
                 info = _resolve_view_info(resolved_path, parent)
@@ -364,7 +419,12 @@ class LoadLastVideo:
             scan_dirs = _get_video_directories()
             if source_folder and source_folder.strip():
                 real_path = os.path.realpath(source_folder.strip())
-                if os.path.isdir(real_path):
+                if not _is_path_sandboxed(real_path):
+                    logger.warning(
+                        "[LoadLast] source_folder '%s' is outside allowed directories, ignoring",
+                        source_folder,
+                    )
+                elif os.path.isdir(real_path):
                     scan_dirs = [real_path]
                 else:
                     logger.warning("[LoadLast] source_folder does not exist: %s", source_folder)
@@ -462,6 +522,7 @@ class LoadLastVideo:
         # --- Extract selected frames at specific timestamps ---
         selected_frames = self._extract_selected_frames(
             resolved_path, json.dumps(timestamps), frames,
+            duration=duration,
         )
 
         # --- Save selected frames as PNGs → image_paths ---
@@ -586,12 +647,15 @@ class LoadLastVideo:
         video_path: str,
         timestamps_json: str,
         all_frames: torch.Tensor,
+        duration: float = 0.0,
     ) -> torch.Tensor:
         """Extract frames at specific timestamps.
 
         If timestamps_json is empty or '[]', returns the first frame of all_frames
         as a single-frame batch (1, H, W, 3).
         Otherwise, seeks to each timestamp and extracts a frame.
+        Always returns the same number of frames as timestamps (falls back
+        to nearest pre-decoded frame on seek failure).
         """
         try:
             timestamps = json.loads(timestamps_json)
@@ -603,33 +667,86 @@ class LoadLastVideo:
 
         timestamps = sorted(set(float(t) for t in timestamps))
 
+        # Probe native video dimensions for accurate raw frame parsing
+        native_w, native_h = self._probe_video_dimensions(video_path)
+
         selected = []
         for ts in timestamps:
-            frame = self._seek_frame_ffmpeg(video_path, ts, all_frames)
-            if frame is not None:
-                selected.append(frame)
-
-        if not selected:
-            return all_frames[:1]
+            frame = self._seek_frame_ffmpeg(
+                video_path, ts, all_frames, native_w, native_h,
+                duration=duration,
+            )
+            # Always guaranteed to return a frame (fallback inside)
+            selected.append(frame)
 
         return torch.stack(selected, dim=0)
+
+    @staticmethod
+    def _probe_video_dimensions(video_path: str) -> tuple[int, int]:
+        """Probe native video width and height via ffprobe.
+
+        Returns (width, height) or (0, 0) if probing fails.
+        """
+        try:
+            cmd = [
+                "ffprobe", "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=width,height",
+                "-print_format", "csv=p=0:s=x",
+                video_path,
+            ]
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode == 0 and "x" in result.stdout:
+                parts = result.stdout.strip().split("x")
+                return int(parts[0]), int(parts[1])
+        except Exception:
+            pass
+        return 0, 0
+
+    @staticmethod
+    def _nearest_frame_fallback(
+        timestamp: float, all_frames: torch.Tensor, duration: float = 0.0,
+    ) -> torch.Tensor:
+        """Return the nearest frame in all_frames for a given timestamp.
+
+        Converts timestamp (seconds) to a frame index using the video duration.
+        Falls back to clamped rounding if duration is unavailable.
+        """
+        n = all_frames.shape[0]
+        if n <= 1:
+            return all_frames[0]
+        if duration > 0:
+            # Map timestamp to [0, n-1] proportionally
+            idx = min(n - 1, max(0, round(timestamp * (n - 1) / duration)))
+        else:
+            # No duration info — clamp timestamp as raw index (best effort)
+            idx = min(n - 1, max(0, round(timestamp)))
+        return all_frames[idx]
 
     def _seek_frame_ffmpeg(
         self,
         video_path: str,
         timestamp: float,
         all_frames: torch.Tensor,
-    ) -> torch.Tensor | None:
+        native_w: int = 0,
+        native_h: int = 0,
+        duration: float = 0.0,
+    ) -> torch.Tensor:
         """Seek to a specific timestamp and extract a single frame.
 
+        Uses native video dimensions (from ffprobe) for raw byte parsing.
         Falls back to nearest frame in all_frames if ffmpeg fails.
         """
-        import subprocess
-        import numpy as np
-
         try:
+            # Use native dimensions if available, otherwise fall back to all_frames
+            w = native_w if native_w > 0 else all_frames.shape[2]
+            h = native_h if native_h > 0 else all_frames.shape[1]
+
             cmd = [
-                "ffmpeg", "-ss", str(timestamp),
+                "ffmpeg", "-noautorotate",
+                "-ss", str(timestamp),
                 "-i", video_path,
                 "-vframes", "1",
                 "-f", "rawvideo",
@@ -643,17 +760,26 @@ class LoadLastVideo:
             if result.returncode != 0 or not result.stdout:
                 raise RuntimeError("ffmpeg seek failed")
 
-            # Determine dimensions from all_frames
-            h, w = all_frames.shape[1], all_frames.shape[2]
             expected_bytes = h * w * 3
             raw = result.stdout[:expected_bytes]
             if len(raw) < expected_bytes:
                 raise RuntimeError("Incomplete frame data")
 
             arr = np.frombuffer(raw, dtype=np.uint8).reshape(h, w, 3)
-            return torch.from_numpy(arr.copy()).float() / 255.0
+            frame = torch.from_numpy(arr.copy()).float() / 255.0
+
+            # If native dims differ from all_frames, resize to match
+            target_h, target_w = all_frames.shape[1], all_frames.shape[2]
+            if h != target_h or w != target_w:
+                frame_nchw = frame.permute(2, 0, 1).unsqueeze(0)
+                frame_nchw = F.interpolate(
+                    frame_nchw, size=(target_h, target_w),
+                    mode='bilinear', align_corners=False,
+                )
+                frame = frame_nchw.squeeze(0).permute(1, 2, 0)
+
+            return frame
 
         except Exception as e:
             logger.debug("[LoadLast] ffmpeg seek to %.2fs failed: %s", timestamp, e)
-            # Fallback: nearest frame by timestamp in all_frames
-            return None
+            return self._nearest_frame_fallback(timestamp, all_frames, duration)
