@@ -2727,6 +2727,7 @@ app.registerExtension({
                 // Replace if same name exists
                 const idx = _customPresets.findIndex(p => p.name === preset.name);
                 if (idx >= 0) {
+                    if (!confirm(`Overwrite existing preset "${preset.name}"?`)) return;
                     _customPresets[idx] = preset;
                 } else {
                     _customPresets.push(preset);
@@ -2746,6 +2747,7 @@ app.registerExtension({
             };
 
             const deleteCustomPreset = async (node, presetName) => {
+                if (!confirm(`Delete preset "${presetName}"?`)) return;
                 const idx = _customPresets.findIndex(p => p.name === presetName);
                 if (idx < 0) return;
                 _customPresets.splice(idx, 1);
