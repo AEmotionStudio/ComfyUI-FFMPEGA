@@ -33,6 +33,20 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FFMPEGAEffects": "FFMPEGA Effects Builder",
 }
 
+# --- LoadLast nodes (merged from ComfyUI-LoadLast) ---
+try:
+    from ..loadlast import LoadLastImage, LoadLastVideo
+
+    NODE_CLASS_MAPPINGS["LoadLastImage"] = LoadLastImage
+    NODE_CLASS_MAPPINGS["LoadLastVideo"] = LoadLastVideo
+    NODE_DISPLAY_NAME_MAPPINGS["LoadLastImage"] = "Load Last Image 🔄"
+    NODE_DISPLAY_NAME_MAPPINGS["LoadLastVideo"] = "Load Last Video 🎬"
+except ImportError:
+    import logging
+    logging.getLogger("FFMPEGA").debug(
+        "[FFMPEGA] LoadLast nodes not available (import error)", exc_info=True
+    )
+
 __all__ = [
     "FFMPEGAgentNode",
     "FrameExtractNode",
@@ -42,7 +56,8 @@ __all__ = [
     "VideoToPathNode",
     "TextInputNode",
     "FFMPEGAEffectsNode",
+    "LoadLastImage",
+    "LoadLastVideo",
     "NODE_CLASS_MAPPINGS",
     "NODE_DISPLAY_NAME_MAPPINGS",
 ]
-
