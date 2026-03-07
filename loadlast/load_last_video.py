@@ -75,7 +75,7 @@ try:
         source = request.query.get("source", "")
         prefix = request.query.get("prefix", "")
 
-        if source and os.path.isdir(source):
+        if source and os.path.isdir(source) and _is_path_sandboxed(source):
             scan_dirs = [source]
         else:
             scan_dirs = _get_video_directories()
@@ -93,7 +93,7 @@ try:
         prefix = request.query.get("prefix", "")
         limit = min(int(request.query.get("limit", "20")), 50)
 
-        if source and os.path.isdir(source):
+        if source and os.path.isdir(source) and _is_path_sandboxed(source):
             scan_dirs = [source]
         else:
             scan_dirs = _get_video_directories()
@@ -245,9 +245,15 @@ def _resolve_view_info(full_path: str, parent_dir: str) -> dict | None:
             )
             return None
         os.makedirs(temp_dir, exist_ok=True)
-        dest = os.path.join(temp_dir, filename)
+        # Use content-hashed prefix to avoid collisions from different source paths
+        path_hash = hashlib.sha256(full_path.encode()).hexdigest()[:12]
+        safe_name = f"{path_hash}_{filename}"
+        dest = os.path.join(temp_dir, safe_name)
         if not os.path.exists(dest) or os.path.getmtime(full_path) > os.path.getmtime(dest):
-            shutil.copy2(full_path, dest)
+            tmp_dest = dest + ".tmp"
+            shutil.copy2(full_path, tmp_dest)
+            os.replace(tmp_dest, dest)
+        filename = safe_name
         subfolder = ""
         view_type = "temp"
 
@@ -625,7 +631,6 @@ class LoadLastVideo:
         images: torch.Tensor, output_path: str, fps: int = 24,
     ) -> None:
         """Convert an IMAGE tensor batch to a temp video file."""
-        import subprocess
 
         n, h, w, c = images.shape
         cmd = [

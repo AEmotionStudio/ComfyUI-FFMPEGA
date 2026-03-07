@@ -304,8 +304,12 @@ class VideoDecoder:
                 metadata["height"] = int(video_stream.get("height", 0))
                 metadata["codec"] = video_stream.get("codec_name", "")
 
+                # Store raw frame rate strings for VFR detection
+                metadata["r_frame_rate"] = video_stream.get("r_frame_rate", "")
+                metadata["avg_frame_rate"] = video_stream.get("avg_frame_rate", "")
+
                 # Parse FPS from r_frame_rate (e.g., "30/1" or "30000/1001")
-                fps_str = video_stream.get("r_frame_rate", "24/1")
+                fps_str = metadata["r_frame_rate"] or "24/1"
                 try:
                     num, den = fps_str.split("/")
                     metadata["fps"] = round(int(num) / int(den))
@@ -358,7 +362,12 @@ class VideoDecoder:
     def _decode_frames_ffmpeg(
         self, path: str, indices: list[int], metadata: dict
     ) -> list[torch.Tensor]:
-        """Decode specific frame indices from a video file using ffmpeg."""
+        """Decode specific frame indices from a video file using ffmpeg.
+
+        Uses two strategies:
+        - Dense sampling (span <= 4x frame count): decode the entire range and pick.
+        - Sparse sampling: seek to each frame individually to avoid OOM.
+        """
         w, h = metadata.get("width", 0), metadata.get("height", 0)
 
         if w == 0 or h == 0:
@@ -368,9 +377,27 @@ class VideoDecoder:
             if w == 0 or h == 0:
                 raise RuntimeError(f"Cannot determine video dimensions for {path}")
 
-        # For simplicity and reliability, decode all frames in range and pick indices
         min_idx = min(indices)
         max_idx = max(indices)
+        span = max_idx - min_idx + 1
+
+        # Use per-frame seeking when range is sparse to avoid decoding
+        # huge numbers of frames into memory (OOM prevention).
+        # Skip for VFR content where timestamp = idx/fps is unreliable.
+        is_vfr = metadata.get("r_frame_rate", "") != metadata.get("avg_frame_rate", "") and metadata.get("avg_frame_rate", "")
+        if span > len(indices) * 4 and len(indices) < span:
+            if is_vfr:
+                logger.debug(
+                    "[LoadLast] Skipping sparse seek for VFR content "
+                    "(r_frame_rate=%s, avg_frame_rate=%s)",
+                    metadata.get("r_frame_rate", "?"),
+                    metadata.get("avg_frame_rate", "?"),
+                )
+            else:
+                result = self._decode_frames_by_seeking(path, indices, w, h, metadata)
+                if result is not None:
+                    return result
+                # Sparse seek failed or dropped too many frames — fall through to dense decode
 
         # Use ffmpeg to decode frame range to raw RGB
         # -noautorotate: output coded dimensions, consistent with _seek_frame_ffmpeg
@@ -418,6 +445,84 @@ class VideoDecoder:
             if 0 <= relative_idx < len(all_decoded):
                 frames.append(all_decoded[relative_idx])
 
+        return frames
+
+    def _decode_frames_by_seeking(
+        self, path: str, indices: list[int], w: int, h: int, metadata: dict,
+    ) -> list[torch.Tensor] | None:
+        """Decode specific frame indices by seeking to each one individually.
+
+        Used for sparse sampling to avoid buffering the entire frame range.
+        Converts frame indices to timestamps and seeks with ffmpeg.
+
+        Returns a list with the same length as *indices* — failed seeks are
+        filled with the nearest successfully-decoded frame to maintain 1:1
+        index↔frame correspondence.
+
+        Note: timestamp conversion assumes constant frame rate (CFR).
+        For VFR content, seek positions may be slightly inaccurate.
+        """
+        fps = metadata.get("fps", 24)
+        frame_size = w * h * 3
+        # Store (position, tensor) so we can backfill gaps
+        decoded: dict[int, torch.Tensor] = {}
+
+        for pos, idx in enumerate(indices):
+            timestamp = idx / fps if fps > 0 else 0.0
+            cmd = [
+                "ffmpeg", "-noautorotate",
+                "-ss", str(timestamp),
+                "-i", path,
+                "-vframes", "1",
+                "-f", "rawvideo",
+                "-pix_fmt", "rgb24",
+                "-v", "quiet",
+                "-y", "pipe:1",
+            ]
+            try:
+                result = subprocess.run(cmd, capture_output=True, timeout=10)
+                if result.returncode != 0 or len(result.stdout) < frame_size:
+                    logger.debug(
+                        "[LoadLast] Seek to frame %d (%.2fs) failed, skipping", idx, timestamp,
+                    )
+                    continue
+                raw = result.stdout[:frame_size]
+                arr = np.frombuffer(raw, dtype=np.uint8).reshape(h, w, 3)
+                decoded[pos] = torch.from_numpy(arr.copy()).float() / 255.0
+            except Exception as e:
+                logger.debug("[LoadLast] Seek to frame %d failed: %s", idx, e)
+                continue
+
+        dropped = len(indices) - len(decoded)
+        if not decoded:
+            logger.warning(
+                "[LoadLast] Sparse seek decoded 0/%d frames from %s, "
+                "falling back to dense decode",
+                len(indices), path,
+            )
+            return None  # Signal caller to fall back to dense path
+        elif dropped > len(indices) // 4:
+            logger.warning(
+                "[LoadLast] Sparse seek dropped %d/%d frames from %s, "
+                "falling back to dense decode",
+                dropped, len(indices), path,
+            )
+            return None  # Signal caller to fall back to dense path
+        elif dropped > 0:
+            logger.warning(
+                "[LoadLast] Sparse seek dropped %d/%d frames from %s",
+                dropped, len(indices), path,
+            )
+
+        # Build output with 1:1 correspondence — fill gaps with nearest decoded frame
+        frames: list[torch.Tensor] = []
+        for pos in range(len(indices)):
+            if pos in decoded:
+                frames.append(decoded[pos])
+            else:
+                # Find nearest successfully-decoded position
+                nearest = min(decoded.keys(), key=lambda p: abs(p - pos))
+                frames.append(decoded[nearest])
         return frames
 
     @staticmethod

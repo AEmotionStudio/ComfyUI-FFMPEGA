@@ -50,6 +50,7 @@ class ImageExecutionCache:
         self._max_history = max_history
         self._iteration_counter = 0
         self._last_prompt_id: Optional[str] = None  # Track per-execution increments
+        self._last_increment_time: float = float("-inf")  # For prompt_id-less fallback grouping
         self._pinned_image: Optional[CacheEntry] = None
         self._pinned_index: int = 0
         self._last_executed_images: list[dict] = []  # UI image info from last execution
@@ -115,8 +116,13 @@ class ImageExecutionCache:
                     self._iteration_counter += 1
                     self._last_prompt_id = prompt_id
                 elif not prompt_id:
-                    # Fallback: no prompt_id available, increment every time
-                    self._iteration_counter += 1
+                    # Fallback: no prompt_id available. Use a 1-second window
+                    # to group rapid 'executed' events from the same workflow,
+                    # preventing multi-SaveImage workflows from over-counting.
+                    now = time.monotonic()
+                    if now - self._last_increment_time > 1.0:
+                        self._iteration_counter += 1
+                    self._last_increment_time = now
 
             logger.debug(
                 "[LoadLast] Captured %d image(s) from node %s (iteration %d)",
@@ -204,5 +210,6 @@ class ImageExecutionCache:
             self._last_executed_images.clear()
             self._iteration_counter = 0
             self._last_prompt_id = None
+            self._last_increment_time = float("-inf")
             self._pinned_image = None
             self._pinned_index = 0

@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import logging
 import subprocess
-import struct
 from typing import Optional
 
 import numpy as np
 import torch
+
+from .video_decode import VideoDecoder
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ class AudioExtractor:
             ComfyUI AUDIO dict {"waveform": Tensor [B, channels, samples], "sample_rate": int}
             or None if no audio track / ffmpeg unavailable.
         """
-        if not self._check_ffmpeg():
+        if not VideoDecoder.check_ffmpeg():
             return None
 
         if not self.has_audio(path):
@@ -133,9 +134,3 @@ class AudioExtractor:
         except Exception:
             pass
         return 2  # Default to stereo
-
-    @staticmethod
-    def _check_ffmpeg() -> bool:
-        """Check if ffmpeg/ffprobe are available."""
-        import shutil
-        return shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None
