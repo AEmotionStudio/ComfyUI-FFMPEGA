@@ -153,24 +153,3 @@ class FilesystemScanner:
             raise
 
 
-def get_default_directories() -> list[str]:
-    """
-    Get ComfyUI's default output and temp directories.
-
-    Returns:
-        List of directory paths to scan
-    """
-    dirs = []
-    try:
-        import folder_paths
-        output_dir = folder_paths.get_output_directory()
-        if output_dir and os.path.isdir(output_dir):
-            dirs.append(output_dir)
-
-        temp_dir = folder_paths.get_temp_directory()
-        if temp_dir and os.path.isdir(temp_dir):
-            dirs.append(temp_dir)
-    except ImportError:
-        logger.debug("[LoadLast] folder_paths not available, using fallback paths")
-
-    return dirs

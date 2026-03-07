@@ -32,9 +32,9 @@ class VideoDecoder:
         if cls._ffmpeg_available is None:
             cls._ffmpeg_available = shutil.which("ffmpeg") is not None
             if cls._ffmpeg_available:
-                logger.info("[LoadLast] ffmpeg found in PATH")
+                logger.debug("[LoadLast] ffmpeg found in PATH")
             else:
-                logger.info("[LoadLast] ffmpeg not found — MP4/WebM decoding unavailable")
+                logger.debug("[LoadLast] ffmpeg not found — MP4/WebM decoding unavailable")
         return cls._ffmpeg_available
 
     def decode_file(
@@ -311,7 +311,7 @@ class VideoDecoder:
                 fps_str = metadata["r_frame_rate"] or "24/1"
                 try:
                     num, den = fps_str.split("/")
-                    metadata["fps"] = round(int(num) / int(den))
+                    metadata["fps"] = round(int(num) / int(den), 2)
                 except (ValueError, ZeroDivisionError):
                     pass
 

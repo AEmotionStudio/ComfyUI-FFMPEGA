@@ -18,7 +18,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from .discovery.filesystem import FilesystemScanner, get_default_directories
+from .discovery.filesystem import FilesystemScanner
 from .discovery.execution_hook import ImageExecutionCache
 from .processing.captions import format_caption, render_caption, render_captions_on_grid
 from .processing.dedup import compute_pixel_hash, is_duplicate
@@ -169,13 +169,14 @@ class LoadLastImage:
         scanner = FilesystemScanner()
 
         # --- Determine which directories to scan ---
-        scan_dirs = get_default_directories()
+        from .discovery.path_utils import get_scan_directories
+        scan_dirs = get_scan_directories()
         if source_folder and source_folder.strip():
             custom = source_folder.strip()
             real_path = os.path.realpath(custom)
             # Validate path is within ComfyUI's allowed directories
-            from .load_last_video import _is_path_sandboxed
-            if not _is_path_sandboxed(real_path):
+            from .discovery.path_utils import is_path_sandboxed
+            if not is_path_sandboxed(real_path):
                 logger.warning(
                     "[LoadLast] source_folder '%s' is outside allowed directories, ignoring",
                     custom,

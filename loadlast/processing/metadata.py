@@ -65,33 +65,59 @@ def extract_png_metadata(path: str) -> dict:
     return result
 
 
+_NEGATIVE_PROMPT_PREFIXES = (
+    "bad", "worst", "low quality", "ugly", "blurry", "deformed",
+    "disfigured", "mutated", "extra", "missing", "poorly",
+    "nsfw", "watermark", "signature",
+)
+
+# Minimum comma count to consider text a keyword-list (negative prompt style)
+_MIN_NEGATIVE_COMMAS = 3
+
+
 def _extract_positive_prompt(prompt_json: str) -> str:
     """
     Extract the positive prompt text from ComfyUI's prompt JSON.
 
     ComfyUI stores all node inputs as a JSON dict. We look for
-    CLIPTextEncode nodes and extract their 'text' input.
+    CLIPTextEncode nodes and extract their 'text' input, preferring
+    nodes whose text does NOT look like a negative prompt.
     """
     try:
         prompt_data = json.loads(prompt_json)
         if not isinstance(prompt_data, dict):
             return prompt_json
 
-        # Look for positive prompt in common node types
+        candidates: list[str] = []
+
         for node_id, node_data in prompt_data.items():
             if not isinstance(node_data, dict):
                 continue
             class_type = node_data.get('class_type', '')
             inputs = node_data.get('inputs', {})
 
-            # CLIPTextEncode is the standard text prompt node
             if class_type == 'CLIPTextEncode' and 'text' in inputs:
                 text = inputs['text']
                 if isinstance(text, str) and text.strip():
-                    return text
+                    candidates.append(text)
 
-        # If no CLIPTextEncode found, return the raw JSON
-        return prompt_json
+        if not candidates:
+            return prompt_json
+
+        # Prefer candidates that don't look like negative prompts.
+        # Require BOTH a known prefix AND a comma-heavy keyword-list structure
+        # to avoid misclassifying natural-language prompts like "bad boy portrait".
+        for text in candidates:
+            lower = text.strip().lower()
+            looks_negative = (
+                any(lower.startswith(p) for p in _NEGATIVE_PROMPT_PREFIXES)
+                and lower.count(",") >= _MIN_NEGATIVE_COMMAS
+            )
+            if not looks_negative:
+                return text
+
+        # All candidates look negative — return the first anyway
+        return candidates[0]
 
     except (json.JSONDecodeError, TypeError):
         return prompt_json

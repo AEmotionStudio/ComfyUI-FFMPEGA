@@ -107,65 +107,26 @@ except (ImportError, AttributeError):
 
 def _get_video_directories() -> list[str]:
     """Return ComfyUI's output and temp directories."""
-    if folder_paths is None:
-        return []
-    dirs = []
-    try:
-        dirs.append(folder_paths.get_output_directory())
-    except Exception:
-        pass
-    try:
-        dirs.append(folder_paths.get_temp_directory())
-    except Exception:
-        pass
-    return dirs
+    from .discovery.path_utils import get_scan_directories
+    return get_scan_directories()
 
 
 def _get_allowed_directories() -> list[str]:
     """Return the set of directories users are allowed to access."""
-    if folder_paths is None:
-        return []
-    dirs = []
-    for getter in (
-        folder_paths.get_output_directory,
-        folder_paths.get_temp_directory,
-        folder_paths.get_input_directory,
-    ):
-        try:
-            dirs.append(os.path.realpath(getter()))
-        except Exception:
-            pass
-    return dirs
+    from .discovery.path_utils import get_allowed_directories
+    return get_allowed_directories()
 
 
 def _is_path_sandboxed(path: str) -> bool:
     """Check if a path is within ComfyUI's allowed directories."""
-    real = os.path.realpath(path)
-    for allowed in _get_allowed_directories():
-        try:
-            if os.path.commonpath([allowed, real]) == allowed:
-                return True
-        except ValueError:
-            continue
-    return False
+    from .discovery.path_utils import is_path_sandboxed
+    return is_path_sandboxed(path)
 
 
 def _resolve_scan_dirs(source: str) -> list[str]:
-    """Return scan directories for a user-supplied source path.
-
-    If *source* is a valid, sandboxed directory, return it as the sole entry.
-    Otherwise fall back to the default ComfyUI output/temp directories.
-    """
-    s = source.strip() if source else ""
-    if s:
-        s = os.path.realpath(s)
-        if not os.path.isdir(s):
-            logger.warning("[LoadLast] source '%s' is not a directory, using defaults", s)
-        elif not _is_path_sandboxed(s):
-            logger.warning("[LoadLast] source '%s' is outside allowed directories, using defaults", s)
-        else:
-            return [s]
-    return _get_video_directories()
+    """Return scan directories for a user-supplied source path."""
+    from .discovery.path_utils import resolve_scan_dirs
+    return resolve_scan_dirs(source)
 
 
 def _find_latest_video_info(directories: list[str], prefix: str = "") -> dict | None:
@@ -645,6 +606,10 @@ class LoadLastVideo:
         """Convert an IMAGE tensor batch to a temp video file."""
 
         n, h, w, c = images.shape
+        # Ensure exactly 3 channels (drop alpha if RGBA)
+        if c != 3:
+            images = images[..., :3]
+            c = 3
         cmd = [
             "ffmpeg", "-y",
             "-f", "rawvideo", "-pix_fmt", "rgb24",
