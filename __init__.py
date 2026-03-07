@@ -22,7 +22,7 @@ except ImportError:
     NODE_DISPLAY_NAME_MAPPINGS = {}
 
 # Web directory for custom JavaScript (relative to this module)
-WEB_DIRECTORY = "./web"
+WEB_DIRECTORY = "./js"
 
 # Register custom API routes (video preview, metadata endpoints)
 try:
@@ -53,38 +53,28 @@ def check_dependencies():
     return issues
 
 
-def _bootstrap():
-    """Run all init-time side effects in one place."""
+# Run dependency check on import
+_dependency_issues = check_dependencies()
+if _dependency_issues:
+    print("=" * 50)
+    print("FFMPEGA: Missing dependencies detected")
+    print("=" * 50)
+    for issue in _dependency_issues:
+        print(f"  - {issue}")
+    print("=" * 50)
 
-    # 1. Dependency check
-    dep_issues = check_dependencies()
-    if dep_issues:
-        print("=" * 50)
-        print("FFMPEGA: Missing dependencies detected")
-        print("=" * 50)
-        for issue in dep_issues:
-            print(f"  - {issue}")
-        print("=" * 50)
+# Clean up any leftover vision frames from prior crashes / early terminations
+try:
+    from .mcp.tools import cleanup_vision_frames as _cleanup_frames
 
-    # 2. Clean up leftover vision frames from prior crashes / early terminations
-    try:
-        from .mcp.tools import cleanup_vision_frames
-        cleanup_vision_frames()
-    except Exception:
-        pass
+    _cleanup_frames()
+    del _cleanup_frames
+except Exception:
+    pass
 
-    # 3. LoadLast execution hook (intercepts IMAGE outputs for auto-discovery)
-    try:
-        from server import PromptServer
-        from .loadlast.discovery.execution_hook import ImageExecutionCache
-        ImageExecutionCache.setup(PromptServer.instance)
-    except Exception:
-        import logging
-        logging.getLogger("FFMPEGA").debug(
-            "[FFMPEGA] Could not set up LoadLast execution hook", exc_info=True
-        )
 
-    # 4. Optional AI dependency notices
+def _check_optional_deps():
+    """Log notices for missing optional AI features."""
     missing = []
     try:
         import sam3  # noqa: F401
@@ -99,4 +89,4 @@ def _bootstrap():
             print(f"  → {m}")
 
 
-_bootstrap()
+_check_optional_deps()
