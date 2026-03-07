@@ -195,7 +195,7 @@ async function saveCustomPreset(
             (ww: ComfyWidget) => ww.name === key,
         ) as TextWidget | undefined;
         if (w) {
-            preset[key] = typeof w.getValue === "function" ? w.getValue() : w.value;
+            (preset as Record<string, unknown>)[key] = typeof w.getValue === "function" ? w.getValue() : w.value;
         }
     }
 

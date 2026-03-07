@@ -54,6 +54,12 @@ DEFAULT_MAX_FRAMES = 128
 # Maximum values for integer parameters
 BIGMAX = 2**31 - 1
 
+# Cap on auto-generated timestamps to prevent spawning too many subprocesses
+_MAX_AUTO_TIMESTAMPS = 256
+
+# Fallback FPS guess when neither duration nor fps is available
+_FALLBACK_FPS_GUESS = 30
+
 
 # ─── API Route ──────────────────────────────────────────────────────────
 # Returns JSON with the latest video's filename, subfolder, and type
@@ -172,28 +178,44 @@ def _find_all_videos(directories: list[str], prefix: str = "", limit: int = 20) 
 
 
 def _scan_video_entries(directories: list[str], prefix: str = "") -> list[tuple]:
-    """Scan directories for video files. Returns [(full_path, parent_dir, mtime), ...]."""
-    entries = []
+    """Scan directories recursively for video files.
+
+    Returns [(full_path, parent_dir, mtime), ...].
+    """
+    entries: list[tuple] = []
     for dir_path in directories:
         if not os.path.isdir(dir_path):
             continue
-        try:
-            for entry in os.scandir(dir_path):
-                if not entry.is_file():
-                    continue
-                ext = entry.name.rsplit(".", 1)[-1].lower() if "." in entry.name else ""
-                if ext not in VIDEO_EXTENSIONS:
-                    continue
-                if prefix and not entry.name.startswith(prefix):
-                    continue
-                try:
-                    mtime = entry.stat().st_mtime
-                except OSError:
-                    continue
-                entries.append((entry.path, dir_path, mtime))
-        except PermissionError:
-            continue
+        _scan_video_dir(dir_path, prefix, entries)
     return entries
+
+
+def _scan_video_dir(
+    directory: str, prefix: str, entries: list[tuple], max_depth: int = 5,
+) -> None:
+    """Recursively collect video files from a directory."""
+    if max_depth <= 0:
+        return
+    try:
+        for entry in os.scandir(directory):
+            try:
+                if entry.is_file(follow_symlinks=False):
+                    ext = entry.name.rsplit(".", 1)[-1].lower() if "." in entry.name else ""
+                    if ext not in VIDEO_EXTENSIONS:
+                        continue
+                    if prefix and not entry.name.startswith(prefix):
+                        continue
+                    try:
+                        mtime = entry.stat().st_mtime
+                    except OSError:
+                        continue
+                    entries.append((entry.path, directory, mtime))
+                elif entry.is_dir(follow_symlinks=False):
+                    _scan_video_dir(entry.path, prefix, entries, max_depth - 1)
+            except (PermissionError, OSError):
+                continue
+    except PermissionError:
+        pass
 
 
 def _resolve_view_info(full_path: str, parent_dir: str) -> dict | None:
@@ -522,7 +544,7 @@ class LoadLastVideo:
         # --- Extract selected frames at specific timestamps ---
         selected_frames = self._extract_selected_frames(
             resolved_path, json.dumps(timestamps), frames,
-            duration=duration,
+            duration=duration, fps=fps,
         )
 
         # --- Save selected frames as PNGs → image_paths ---
@@ -590,6 +612,10 @@ class LoadLastVideo:
             except ValueError:
                 logger.warning("[LoadLast] Invalid auto_timestamps: %s", auto_ts_str)
 
+        if len(auto) > _MAX_AUTO_TIMESTAMPS:
+            step = max(1, len(auto) // _MAX_AUTO_TIMESTAMPS)
+            auto = auto[::step][:_MAX_AUTO_TIMESTAMPS]
+
         # Merge and deduplicate
         all_ts = sorted(set(manual + auto))
         return all_ts
@@ -648,6 +674,7 @@ class LoadLastVideo:
         timestamps_json: str,
         all_frames: torch.Tensor,
         duration: float = 0.0,
+        fps: float = 0.0,
     ) -> torch.Tensor:
         """Extract frames at specific timestamps.
 
@@ -674,7 +701,7 @@ class LoadLastVideo:
         for ts in timestamps:
             frame = self._seek_frame_ffmpeg(
                 video_path, ts, all_frames, native_w, native_h,
-                duration=duration,
+                duration=duration, fps=fps,
             )
             # Always guaranteed to return a frame (fallback inside)
             selected.append(frame)
@@ -685,6 +712,7 @@ class LoadLastVideo:
     def _probe_video_dimensions(video_path: str) -> tuple[int, int]:
         """Probe native video width and height via ffprobe.
 
+        Returns coded (non-rotated) dimensions — matches -noautorotate output.
         Returns (width, height) or (0, 0) if probing fails.
         """
         try:
@@ -707,12 +735,13 @@ class LoadLastVideo:
 
     @staticmethod
     def _nearest_frame_fallback(
-        timestamp: float, all_frames: torch.Tensor, duration: float = 0.0,
+        timestamp: float, all_frames: torch.Tensor,
+        duration: float = 0.0, fps: float = 0.0,
     ) -> torch.Tensor:
         """Return the nearest frame in all_frames for a given timestamp.
 
-        Converts timestamp (seconds) to a frame index using the video duration.
-        Falls back to clamped rounding if duration is unavailable.
+        Converts timestamp (seconds) to a frame index using the video duration
+        or fps. Falls back to proportional estimate if neither is available.
         """
         n = all_frames.shape[0]
         if n <= 1:
@@ -720,9 +749,12 @@ class LoadLastVideo:
         if duration > 0:
             # Map timestamp to [0, n-1] proportionally
             idx = min(n - 1, max(0, round(timestamp * (n - 1) / duration)))
+        elif fps > 0:
+            # Use fps to convert timestamp (seconds) to frame index
+            idx = min(n - 1, max(0, round(timestamp * fps)))
         else:
-            # No duration info — clamp timestamp as raw index (best effort)
-            idx = min(n - 1, max(0, round(timestamp)))
+            # No duration or fps — proportional guess
+            idx = min(n - 1, max(0, round(timestamp * _FALLBACK_FPS_GUESS)))
         return all_frames[idx]
 
     def _seek_frame_ffmpeg(
@@ -733,6 +765,7 @@ class LoadLastVideo:
         native_w: int = 0,
         native_h: int = 0,
         duration: float = 0.0,
+        fps: float = 0.0,
     ) -> torch.Tensor:
         """Seek to a specific timestamp and extract a single frame.
 
@@ -782,4 +815,4 @@ class LoadLastVideo:
 
         except Exception as e:
             logger.debug("[LoadLast] ffmpeg seek to %.2fs failed: %s", timestamp, e)
-            return self._nearest_frame_fallback(timestamp, all_frames, duration)
+            return self._nearest_frame_fallback(timestamp, all_frames, duration, fps)

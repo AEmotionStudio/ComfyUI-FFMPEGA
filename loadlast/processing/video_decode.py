@@ -373,8 +373,9 @@ class VideoDecoder:
         max_idx = max(indices)
 
         # Use ffmpeg to decode frame range to raw RGB
+        # -noautorotate: output coded dimensions, consistent with _seek_frame_ffmpeg
         cmd = [
-            "ffmpeg", "-v", "error",
+            "ffmpeg", "-noautorotate", "-v", "error",
             "-i", path,
             "-vf", f"select='between(n\\,{min_idx}\\,{max_idx})',setpts=N/FRAME_RATE/TB",
             "-vsync", "vfr",

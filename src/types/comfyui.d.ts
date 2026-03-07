@@ -35,8 +35,8 @@ export interface ComfyNodeType {
 export interface ComfyNodePrototype {
     onNodeCreated?: () => unknown;
     onExecuted?: (data: any) => void;
-    getExtraMenuOptions?: (canvas: ComfyCanvas, options: ComfyMenuOption[]) => void;
-    _ffmpegaOrigGetExtraMenu?: (canvas: ComfyCanvas, options: ComfyMenuOption[]) => void;
+    getExtraMenuOptions?: (canvas: unknown, options: ComfyMenuOption[]) => void;
+    _ffmpegaOrigGetExtraMenu?: (canvas: unknown, options: ComfyMenuOption[]) => void;
     color?: string;
     bgcolor?: string;
     [key: string]: unknown;
@@ -130,7 +130,7 @@ export interface ComfyNode {
     setSize(size: [number, number]): void;
     setDirtyCanvas(fg: boolean, bg: boolean): void;
     computeSize(size?: [number, number]): [number, number];
-    getExtraMenuOptions?: (canvas: ComfyCanvas, options: ComfyMenuOption[]) => void;
+    getExtraMenuOptions?: (canvas: unknown, options: ComfyMenuOption[]) => void;
     onConnectionsChange?: (
         type: number,
         slotIndex: number,
@@ -154,7 +154,7 @@ export interface ComfyWidget {
     step?: number;
     element?: HTMLElement;
     hidden?: boolean;
-    callback?: (...args: unknown[]) => void;
+    callback?: (...args: any[]) => void;
     computeSize?: (width: number) => [number, number];
     draw?: (ctx: CanvasRenderingContext2D, node: ComfyNode, width: number, y: number, height: number) => void;
     getValue?: () => unknown;

@@ -249,7 +249,7 @@ export function addVideoPreviewMenu(
         _canvas: unknown,
         options: (ComfyMenuOption | null)[],
     ): void {
-        currentGetExtra?.apply(this, arguments as unknown as [unknown, (ComfyMenuOption | null)[]]);
+        currentGetExtra?.apply(this, arguments as unknown as [unknown, ComfyMenuOption[]]);
 
         const optNew: (ComfyMenuOption | null)[] = [];
         const url = getVideoUrl();
