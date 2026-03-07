@@ -22,7 +22,6 @@ import logging
 import os
 import shutil
 import subprocess
-import tempfile
 import time
 
 import numpy as np
@@ -60,6 +59,9 @@ _MAX_AUTO_TIMESTAMPS = 256
 # Fallback FPS guess when neither duration nor fps is available
 _FALLBACK_FPS_GUESS = 30
 
+# Time-to-live (seconds) for selected-frame PNGs before cleanup
+_STALE_FRAME_TTL = 60
+
 
 # ─── API Route ──────────────────────────────────────────────────────────
 # Returns JSON with the latest video's filename, subfolder, and type
@@ -75,10 +77,7 @@ try:
         source = request.query.get("source", "")
         prefix = request.query.get("prefix", "")
 
-        if source and os.path.isdir(source) and _is_path_sandboxed(source):
-            scan_dirs = [source]
-        else:
-            scan_dirs = _get_video_directories()
+        scan_dirs = _resolve_scan_dirs(source)
 
         result = _find_latest_video_info(scan_dirs, prefix)
         if result is None:
@@ -91,12 +90,12 @@ try:
         """Return list of all recent videos, sorted newest first."""
         source = request.query.get("source", "")
         prefix = request.query.get("prefix", "")
-        limit = min(int(request.query.get("limit", "20")), 50)
+        try:
+            limit = min(int(request.query.get("limit", "20")), 50)
+        except (ValueError, TypeError):
+            limit = 20
 
-        if source and os.path.isdir(source) and _is_path_sandboxed(source):
-            scan_dirs = [source]
-        else:
-            scan_dirs = _get_video_directories()
+        scan_dirs = _resolve_scan_dirs(source)
 
         videos = _find_all_videos(scan_dirs, prefix, limit)
         return web.json_response({"videos": videos})
@@ -149,6 +148,24 @@ def _is_path_sandboxed(path: str) -> bool:
         except ValueError:
             continue
     return False
+
+
+def _resolve_scan_dirs(source: str) -> list[str]:
+    """Return scan directories for a user-supplied source path.
+
+    If *source* is a valid, sandboxed directory, return it as the sole entry.
+    Otherwise fall back to the default ComfyUI output/temp directories.
+    """
+    s = source.strip() if source else ""
+    if s:
+        s = os.path.realpath(s)
+        if not os.path.isdir(s):
+            logger.warning("[LoadLast] source '%s' is not a directory, using defaults", s)
+        elif not _is_path_sandboxed(s):
+            logger.warning("[LoadLast] source '%s' is outside allowed directories, using defaults", s)
+        else:
+            return [s]
+    return _get_video_directories()
 
 
 def _find_latest_video_info(directories: list[str], prefix: str = "") -> dict | None:
@@ -226,10 +243,19 @@ def _resolve_view_info(full_path: str, parent_dir: str) -> dict | None:
     temp_dir = folder_paths.get_temp_directory()
     filename = os.path.basename(full_path)
 
-    if os.path.commonpath([output_dir, parent_dir]) == output_dir:
+    try:
+        is_output = os.path.commonpath([output_dir, parent_dir]) == output_dir
+    except ValueError:
+        is_output = False
+    try:
+        is_temp = os.path.commonpath([temp_dir, parent_dir]) == temp_dir
+    except ValueError:
+        is_temp = False
+
+    if is_output:
         subfolder = os.path.relpath(parent_dir, output_dir)
         view_type = "output"
-    elif os.path.commonpath([temp_dir, parent_dir]) == temp_dir:
+    elif is_temp:
         subfolder = os.path.relpath(parent_dir, temp_dir)
         view_type = "temp"
     else:
@@ -371,10 +397,7 @@ class LoadLastVideo:
         source = kwargs.get("source_folder", "")
         prefix = kwargs.get("filename_filter", "")
 
-        if source and source.strip() and os.path.isdir(source.strip()):
-            scan_dirs = [source.strip()]
-        else:
-            scan_dirs = _get_video_directories()
+        scan_dirs = _resolve_scan_dirs(source)
 
         info = _find_latest_video_info(scan_dirs, prefix)
         if info is None:
@@ -444,18 +467,7 @@ class LoadLastVideo:
 
         if resolved_path is None:
             # Auto-discover latest video (default behavior)
-            scan_dirs = _get_video_directories()
-            if source_folder and source_folder.strip():
-                real_path = os.path.realpath(source_folder.strip())
-                if not _is_path_sandboxed(real_path):
-                    logger.warning(
-                        "[LoadLast] source_folder '%s' is outside allowed directories, ignoring",
-                        source_folder,
-                    )
-                elif os.path.isdir(real_path):
-                    scan_dirs = [real_path]
-                else:
-                    logger.warning("[LoadLast] source_folder does not exist: %s", source_folder)
+            scan_dirs = _resolve_scan_dirs(source_folder)
 
             latest = _find_latest_video_info(scan_dirs, filename_filter)
             if latest is None:
@@ -661,6 +673,17 @@ class LoadLastVideo:
         temp_dir = folder_paths.get_temp_directory()
         sel_dir = os.path.join(temp_dir, "loadlast_selected")
         os.makedirs(sel_dir, exist_ok=True)
+
+        # Clean up stale selected frames to prevent unbounded growth
+        # Use a time threshold so concurrent executions don't clobber each other
+        now = time.time()
+        with os.scandir(sel_dir) as it:
+            for entry in it:
+                try:
+                    if entry.stat().st_mtime < now - _STALE_FRAME_TTL:
+                        os.remove(entry.path)
+                except OSError:
+                    pass
 
         paths = []
         for i in range(min(frames.shape[0], len(timestamps))):
