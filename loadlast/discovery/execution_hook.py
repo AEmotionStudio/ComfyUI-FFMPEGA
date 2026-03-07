@@ -52,8 +52,6 @@ class ImageExecutionCache:
         self._iteration_counter = 0
         self._last_prompt_id: Optional[str] = None  # Track per-execution increments
         self._last_increment_time: float = float("-inf")  # For prompt_id-less fallback grouping
-        self._pinned_image: Optional[CacheEntry] = None
-        self._pinned_index: int = 0
         self._data_lock = Lock()
 
     @classmethod
@@ -203,5 +201,3 @@ class ImageExecutionCache:
             self._iteration_counter = 0
             self._last_prompt_id = None
             self._last_increment_time = float("-inf")
-            self._pinned_image = None
-            self._pinned_index = 0

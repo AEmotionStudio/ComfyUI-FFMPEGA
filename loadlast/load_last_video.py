@@ -187,6 +187,8 @@ def _scan_video_dir(
                     if prefix and not entry.name.startswith(prefix):
                         continue
                     try:
+                        # stat() follows symlinks — intentional: mtime of the
+                        # actual file matters for "most recent" ordering.
                         mtime = entry.stat().st_mtime
                     except OSError:
                         continue
@@ -606,10 +608,12 @@ class LoadLastVideo:
             auto = [0.0, max(0.0, duration - 0.01)]
         elif mode == "every_2nd" and fps > 0 and duration > 0:
             step = 2.0 / fps
-            auto = [i * step for i in range(int(duration / step) + 1) if i * step <= duration]
+            cap = min(int(duration / step) + 1, _MAX_AUTO_TIMESTAMPS + 1)
+            auto = [i * step for i in range(cap) if i * step <= duration]
         elif mode == "every_5th" and fps > 0 and duration > 0:
             step = 5.0 / fps
-            auto = [i * step for i in range(int(duration / step) + 1) if i * step <= duration]
+            cap = min(int(duration / step) + 1, _MAX_AUTO_TIMESTAMPS + 1)
+            auto = [i * step for i in range(cap) if i * step <= duration]
         elif mode == "timestamps" and auto_ts_str.strip():
             try:
                 auto = [float(t.strip()) for t in auto_ts_str.split(",") if t.strip()]

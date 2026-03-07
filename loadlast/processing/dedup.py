@@ -56,9 +56,8 @@ def compute_pixel_hash(tensor: torch.Tensor, sample_points: int = 64) -> int:
     # Use advanced indexing to sample all pixels at once
     sampled = tensor[row_indices[:, None], col_indices[None, :], :3]  # [R, C, 3]
     quantized = (sampled * 255).to(torch.uint8)
-    values = quantized.reshape(-1).tolist()
 
-    return hash(tuple(values))
+    return hash(quantized.reshape(-1).numpy().tobytes())
 
 
 def is_duplicate(hash_a: int, hash_b: int) -> bool:
