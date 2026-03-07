@@ -203,7 +203,9 @@ class VideoDecoder:
                 if target_size is None:
                     target_size = img.size  # (W, H)
                 elif img.size != target_size:
-                    img = img.resize(target_size, Image.BILINEAR)
+                    # Image.BILINEAR is deprecated in Pillow 10+
+                    _resample = getattr(Image, 'Resampling', Image).BILINEAR
+                    img = img.resize(target_size, _resample)
 
                 arr = np.array(img).astype(np.float32) / 255.0
                 frames.append(torch.from_numpy(arr))

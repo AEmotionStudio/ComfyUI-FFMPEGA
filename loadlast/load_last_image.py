@@ -169,22 +169,10 @@ class LoadLastImage:
         scanner = FilesystemScanner()
 
         # --- Determine which directories to scan ---
-        from .discovery.path_utils import get_scan_directories
-        scan_dirs = get_scan_directories()
-        if source_folder and source_folder.strip():
-            custom = source_folder.strip()
-            real_path = os.path.realpath(custom)
-            # Validate path is within ComfyUI's allowed directories
-            from .discovery.path_utils import is_path_sandboxed
-            if not is_path_sandboxed(real_path):
-                logger.warning(
-                    "[LoadLast] source_folder '%s' is outside allowed directories, ignoring",
-                    custom,
-                )
-            elif os.path.isdir(real_path):
-                scan_dirs = [real_path]
-            else:
-                logger.warning("[LoadLast] source_folder does not exist: %s", custom)
+        # Uses resolve_scan_dirs() which handles sandboxing validation,
+        # realpath resolution, and fallback to defaults.
+        from .discovery.path_utils import resolve_scan_dirs
+        scan_dirs = resolve_scan_dirs(source_folder)
 
         # --- Handle pinned image ---
         if pin_index > 0:

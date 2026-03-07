@@ -95,6 +95,13 @@ class ImageExecutionCache:
 
         Only increments the iteration counter once per unique prompt_id,
         so workflows with multiple SaveImage nodes don't over-count.
+
+        Note on iteration counter: This method and push() both increment
+        _iteration_counter. This method tracks execution events (UI metadata
+        only — filenames/subfolders for filesystem discovery). push() creates
+        actual CacheEntry objects in the deque. Both share the counter so the
+        monotonic ordering stays consistent regardless of discovery source.
+        Only entries created by push() are retrievable via get_pinned().
         """
         try:
             output = data.get("output")
@@ -192,7 +199,14 @@ class ImageExecutionCache:
             return None
 
     def get_last_executed_images(self) -> list[dict]:
-        """Get and clear the list of images from the last execution."""
+        """Get and clear the list of images from the last execution.
+
+        WARNING: Destructive read — the internal list is cleared after
+        returning. This is intentionally single-consumer: if two callers
+        invoke this method, the second receives an empty list. This is
+        safe for the current architecture where only LoadLastImage.load()
+        consumes these entries.
+        """
         with self._data_lock:
             images = list(self._last_executed_images)
             self._last_executed_images.clear()

@@ -62,6 +62,9 @@ _FALLBACK_FPS_GUESS = 30
 # Time-to-live (seconds) for selected-frame PNGs before cleanup
 _STALE_FRAME_TTL = 60
 
+# Module-level timestamp for rate-limiting stale-frame cleanup
+_last_cleanup_time: float = 0.0
+
 
 # ─── API Route ──────────────────────────────────────────────────────────
 # Returns JSON with the latest video's filename, subfolder, and type
@@ -639,16 +642,20 @@ class LoadLastVideo:
         sel_dir = os.path.join(temp_dir, "loadlast_selected")
         os.makedirs(sel_dir, exist_ok=True)
 
-        # Clean up stale selected frames to prevent unbounded growth
-        # Use a time threshold so concurrent executions don't clobber each other
+        # Clean up stale selected frames to prevent unbounded growth.
+        # Rate-limited: scan at most once per _STALE_FRAME_TTL seconds
+        # to avoid unnecessary I/O on rapid successive calls.
+        global _last_cleanup_time
         now = time.time()
-        with os.scandir(sel_dir) as it:
-            for entry in it:
-                try:
-                    if entry.stat().st_mtime < now - _STALE_FRAME_TTL:
-                        os.remove(entry.path)
-                except OSError:
-                    pass
+        if now - _last_cleanup_time > _STALE_FRAME_TTL:
+            _last_cleanup_time = now
+            with os.scandir(sel_dir) as it:
+                for entry in it:
+                    try:
+                        if entry.stat().st_mtime < now - _STALE_FRAME_TTL:
+                            os.remove(entry.path)
+                    except OSError:
+                        pass
 
         paths = []
         for i in range(min(frames.shape[0], len(timestamps))):
