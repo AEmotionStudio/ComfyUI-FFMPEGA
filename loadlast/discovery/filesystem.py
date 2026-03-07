@@ -53,7 +53,7 @@ class FilesystemScanner:
                 continue
 
             try:
-                self._collect_files(directory, candidates, filename_filter, recursive)
+                self._collect_files(directory, candidates, filename_filter, recursive, max_depth=5)
             except PermissionError:
                 logger.warning("[LoadLast] Permission denied scanning: %s", directory)
             except Exception:
@@ -70,6 +70,7 @@ class FilesystemScanner:
         candidates: list[tuple[float, str]],
         filename_filter: str,
         recursive: bool,
+        max_depth: int = 5,
     ):
         """Collect image files from a directory into the candidates list."""
         try:
@@ -103,8 +104,8 @@ class FilesystemScanner:
 
                     candidates.append((stat.st_mtime, real_path))
 
-                elif entry.is_dir(follow_symlinks=False) and recursive:
-                    self._collect_files(entry.path, candidates, filename_filter, recursive)
+                elif entry.is_dir(follow_symlinks=False) and recursive and max_depth > 1:
+                    self._collect_files(entry.path, candidates, filename_filter, recursive, max_depth - 1)
 
             except (PermissionError, OSError):
                 continue

@@ -60,11 +60,8 @@ def is_path_sandboxed(path: str) -> bool:
     """Check if a path is within ComfyUI's allowed directories."""
     real = os.path.realpath(path)
     for allowed in get_allowed_directories():
-        try:
-            if os.path.commonpath([allowed, real]) == allowed:
-                return True
-        except ValueError:
-            continue
+        if real == allowed or real.startswith(allowed + os.sep):
+            return True
     return False
 
 

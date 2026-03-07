@@ -20,6 +20,12 @@ def compute_pixel_hash(tensor: torch.Tensor, sample_points: int = 64) -> int:
 
     Returns:
         Integer hash value. Two identical images will produce the same hash.
+
+    Note:
+        Hashes are resolution-dependent — the same image at different
+        resolutions will produce different hashes because the sampled
+        grid positions map differently. This is fine for the current
+        use case where dedup runs before any resizing.
     """
     if tensor.ndim != 3:
         raise ValueError(f"Expected 3D tensor [H, W, C], got shape {tensor.shape}")

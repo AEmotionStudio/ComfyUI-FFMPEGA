@@ -34,9 +34,9 @@ class LoadLastImage:
     """
     Automatically load the most recently generated image(s).
 
-    Uses a dual discovery strategy:
-    1. Execution hook (intercepts IMAGE outputs from the pipeline)
-    2. Filesystem fallback (scans output/temp directories by mtime)
+    Discovers images via filesystem scanning (output/temp directories by mtime).
+    The execution hook (ImageExecutionCache) provides the iteration counter
+    for change detection, while actual image loading is mtime-based.
     """
 
     CATEGORY = "image"

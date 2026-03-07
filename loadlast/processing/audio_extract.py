@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
+from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
@@ -17,6 +18,14 @@ import torch
 from .video_decode import VideoDecoder
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _AudioProbeResult:
+    """Result from a single ffprobe invocation for audio stream info."""
+    has_audio: bool
+    channels: int = 2        # default stereo
+    sample_rate: int = 44100  # default 44.1 kHz
 
 
 class AudioExtractor:
@@ -33,18 +42,20 @@ class AudioExtractor:
         if not VideoDecoder.check_ffmpeg():
             return None
 
-        if not self.has_audio(path):
+        probe = self._probe_audio(path)
+        if not probe.has_audio:
             return None
 
         try:
-            # Extract audio as raw PCM f32le
-            sample_rate = 44100
+            sample_rate = probe.sample_rate
+            channels = probe.channels
+            # Extract audio as raw PCM f32le at the probed sample rate
             cmd = [
                 "ffmpeg", "-v", "error",
                 "-i", path,
                 "-vn",                    # No video
                 "-acodec", "pcm_f32le",   # Float32 little-endian
-                "-ar", str(sample_rate),  # Resample to standard rate
+                "-ar", str(sample_rate),  # Explicit rate to match probe
                 "-f", "f32le",            # Raw format
                 "-"
             ]
@@ -63,9 +74,6 @@ class AudioExtractor:
                 return None
 
             # Parse raw PCM data
-            # Detect channels by probing
-            channels = self._get_audio_channels(path)
-
             samples_per_channel = len(raw_bytes) // (4 * channels)
             if samples_per_channel == 0:
                 return None
@@ -101,36 +109,53 @@ class AudioExtractor:
 
     def has_audio(self, path: str) -> bool:
         """Quick probe: does the video contain an audio stream?"""
-        try:
-            cmd = [
-                "ffprobe", "-v", "error",
-                "-select_streams", "a:0",
-                "-show_entries", "stream=codec_type",
-                "-print_format", "csv=p=0",
-                path
-            ]
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=5
-            )
-            return result.returncode == 0 and "audio" in result.stdout.lower()
-        except Exception:
-            return False
+        return self._probe_audio(path).has_audio
 
-    def _get_audio_channels(self, path: str) -> int:
-        """Detect number of audio channels."""
+    @staticmethod
+    def _probe_audio(path: str) -> _AudioProbeResult:
+        """Probe audio stream properties in a single ffprobe call.
+
+        Returns codec_type, channels, and sample_rate from one invocation
+        instead of three separate subprocess calls.
+        """
         try:
             cmd = [
                 "ffprobe", "-v", "error",
                 "-select_streams", "a:0",
-                "-show_entries", "stream=channels",
+                "-show_entries", "stream=codec_type,channels,sample_rate",
                 "-print_format", "csv=p=0",
-                path
+                path,
             ]
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=5
+                cmd, capture_output=True, text=True, timeout=5,
             )
-            if result.returncode == 0 and result.stdout.strip():
-                return int(result.stdout.strip())
+            if result.returncode != 0 or not result.stdout.strip():
+                return _AudioProbeResult(has_audio=False)
+
+            # Output format: "audio,2,44100" (codec_type,channels,sample_rate)
+            parts = result.stdout.strip().split(",")
+            if not parts or "audio" not in parts[0].lower():
+                return _AudioProbeResult(has_audio=False)
+
+            channels = 2
+            sample_rate = 44100
+            if len(parts) >= 2 and parts[1].strip():
+                try:
+                    channels = int(parts[1].strip())
+                except ValueError:
+                    pass
+            if len(parts) >= 3 and parts[2].strip():
+                try:
+                    rate = int(parts[2].strip())
+                    if rate > 0:
+                        sample_rate = rate
+                except ValueError:
+                    pass
+
+            return _AudioProbeResult(
+                has_audio=True,
+                channels=channels,
+                sample_rate=sample_rate,
+            )
         except Exception:
-            pass
-        return 2  # Default to stereo
+            return _AudioProbeResult(has_audio=False)

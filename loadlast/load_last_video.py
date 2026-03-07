@@ -22,6 +22,7 @@ import logging
 import os
 import shutil
 import subprocess
+import tempfile
 import time
 
 import numpy as np
@@ -48,7 +49,7 @@ FRAME_SELECT_MODES = [
 VIDEO_EXTENSIONS = {"mp4", "webm", "gif", "mkv", "mov"}
 
 # Default max frames to decode (prevents OOM on long videos)
-DEFAULT_MAX_FRAMES = 128
+from .constants import DEFAULT_MAX_FRAMES
 
 # Maximum values for integer parameters
 BIGMAX = 2**31 - 1
@@ -62,8 +63,10 @@ _FALLBACK_FPS_GUESS = 30
 # Time-to-live (seconds) for selected-frame PNGs before cleanup
 _STALE_FRAME_TTL = 60
 
-# Module-level timestamp for rate-limiting stale-frame cleanup
-_last_cleanup_time: float = 0.0
+# Module-level timestamps for rate-limiting stale-frame cleanup.
+# Each cleanup site tracks its own timestamp so they run independently.
+_last_preview_cleanup_time: float = 0.0
+_last_selected_cleanup_time: float = 0.0
 
 
 # ─── API Route ──────────────────────────────────────────────────────────
@@ -108,10 +111,7 @@ except (ImportError, AttributeError):
     pass
 
 
-def _get_video_directories() -> list[str]:
-    """Return ComfyUI's output and temp directories."""
-    from .discovery.path_utils import get_scan_directories
-    return get_scan_directories()
+
 
 
 def _get_allowed_directories() -> list[str]:
@@ -190,7 +190,9 @@ def _scan_video_dir(
                         mtime = entry.stat().st_mtime
                     except OSError:
                         continue
-                    entries.append((entry.path, directory, mtime))
+                    # realpath resolves symlinked *files*; symlinked dirs are
+                    # already excluded by is_dir(follow_symlinks=False) above.
+                    entries.append((os.path.realpath(entry.path), directory, mtime))
                 elif entry.is_dir(follow_symlinks=False):
                     _scan_video_dir(entry.path, prefix, entries, max_depth - 1)
             except (PermissionError, OSError):
@@ -207,14 +209,13 @@ def _resolve_view_info(full_path: str, parent_dir: str) -> dict | None:
     temp_dir = folder_paths.get_temp_directory()
     filename = os.path.basename(full_path)
 
-    try:
-        is_output = os.path.commonpath([output_dir, parent_dir]) == output_dir
-    except ValueError:
-        is_output = False
-    try:
-        is_temp = os.path.commonpath([temp_dir, parent_dir]) == temp_dir
-    except ValueError:
-        is_temp = False
+    # Use startswith for reliable containment check (commonpath has edge cases)
+    real_output = os.path.realpath(output_dir)
+    real_temp = os.path.realpath(temp_dir)
+    real_parent = os.path.realpath(parent_dir)
+
+    is_output = real_parent == real_output or real_parent.startswith(real_output + os.sep)
+    is_temp = real_parent == real_temp or real_parent.startswith(real_temp + os.sep)
 
     if is_output:
         subfolder = os.path.relpath(parent_dir, output_dir)
@@ -234,17 +235,35 @@ def _resolve_view_info(full_path: str, parent_dir: str) -> dict | None:
                 filename, file_size / 1024 / 1024, _MAX_COPY_SIZE / 1024 / 1024,
             )
             return None
-        os.makedirs(temp_dir, exist_ok=True)
+        preview_dir = os.path.join(temp_dir, "loadlast_previews")
+        os.makedirs(preview_dir, exist_ok=True)
+
+        # TTL-based cleanup of stale preview copies
+        global _last_preview_cleanup_time
+        now = time.time()
+        if now - _last_preview_cleanup_time > _STALE_FRAME_TTL:
+            _last_preview_cleanup_time = now
+            try:
+                with os.scandir(preview_dir) as it:
+                    for entry in it:
+                        try:
+                            if entry.stat().st_mtime < now - _STALE_FRAME_TTL:
+                                os.remove(entry.path)
+                        except OSError:
+                            pass
+            except OSError:
+                pass
+
         # Use content-hashed prefix to avoid collisions from different source paths
         path_hash = hashlib.sha256(full_path.encode()).hexdigest()[:12]
         safe_name = f"{path_hash}_{filename}"
-        dest = os.path.join(temp_dir, safe_name)
+        dest = os.path.join(preview_dir, safe_name)
         if not os.path.exists(dest) or os.path.getmtime(full_path) > os.path.getmtime(dest):
             tmp_dest = dest + ".tmp"
             shutil.copy2(full_path, tmp_dest)
             os.replace(tmp_dest, dest)
         filename = safe_name
-        subfolder = ""
+        subfolder = "loadlast_previews"
         view_type = "temp"
 
     if subfolder == ".":
@@ -408,7 +427,10 @@ class LoadLastVideo:
             try:
                 temp_dir = folder_paths.get_temp_directory()
                 os.makedirs(temp_dir, exist_ok=True)
-                temp_video_from_images = os.path.join(temp_dir, "loadlast_input_override.mp4")
+                _fd, temp_video_from_images = tempfile.mkstemp(
+                    prefix="loadlast_override_", suffix=".mp4", dir=temp_dir,
+                )
+                os.close(_fd)
                 self._images_to_video(images, temp_video_from_images)
                 resolved_path = temp_video_from_images
                 info = _resolve_view_info(resolved_path, temp_dir)
@@ -606,7 +628,11 @@ class LoadLastVideo:
     def _images_to_video(
         images: torch.Tensor, output_path: str, fps: int = 24,
     ) -> None:
-        """Convert an IMAGE tensor batch to a temp video file."""
+        """Convert an IMAGE tensor batch to a temp video file.
+
+        Streams frames to ffmpeg via stdin to avoid materializing the
+        entire raw buffer in memory at once.
+        """
 
         n, h, w, c = images.shape
         # Ensure exactly 3 channels (drop alpha if RGBA)
@@ -623,10 +649,34 @@ class LoadLastVideo:
             "-v", "quiet",
             output_path,
         ]
-        raw = (images.cpu().numpy() * 255).astype(np.uint8).tobytes()
-        result = subprocess.run(cmd, input=raw, capture_output=True, timeout=60)
-        if result.returncode != 0:
-            raise RuntimeError(f"ffmpeg encode failed: {result.stderr.decode()[:200]}")
+        proc = subprocess.Popen(
+            cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        try:
+            # Deadline for entire write loop + drain to prevent indefinite hangs
+            # Scale with frame count so large batches don't get killed prematurely
+            deadline = time.monotonic() + max(60, n * 0.1)
+            for i in range(n):
+                if proc.poll() is not None:
+                    raise RuntimeError("ffmpeg exited unexpectedly during encoding")
+                if time.monotonic() > deadline:
+                    raise RuntimeError("ffmpeg encode timed out during frame writes")
+                frame_bytes = (images[i].cpu().numpy() * 255).astype(np.uint8).tobytes()
+                proc.stdin.write(frame_bytes)
+            proc.stdin.close()
+            remaining = max(1, deadline - time.monotonic())
+            _, stderr = proc.communicate(timeout=remaining)
+            if proc.returncode != 0:
+                raise RuntimeError(f"ffmpeg encode failed: {stderr.decode()[:200]}")
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
+            raise RuntimeError("ffmpeg encode timed out")
+        except Exception:
+            proc.kill()
+            proc.wait(timeout=5)
+            raise
 
     @staticmethod
     def _save_selected_frames_as_png(
@@ -645,10 +695,10 @@ class LoadLastVideo:
         # Clean up stale selected frames to prevent unbounded growth.
         # Rate-limited: scan at most once per _STALE_FRAME_TTL seconds
         # to avoid unnecessary I/O on rapid successive calls.
-        global _last_cleanup_time
+        global _last_selected_cleanup_time
         now = time.time()
-        if now - _last_cleanup_time > _STALE_FRAME_TTL:
-            _last_cleanup_time = now
+        if now - _last_selected_cleanup_time > _STALE_FRAME_TTL:
+            _last_selected_cleanup_time = now
             with os.scandir(sel_dir) as it:
                 for entry in it:
                     try:

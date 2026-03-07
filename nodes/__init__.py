@@ -56,8 +56,10 @@ __all__ = [
     "VideoToPathNode",
     "TextInputNode",
     "FFMPEGAEffectsNode",
-    "LoadLastImage",
-    "LoadLastVideo",
     "NODE_CLASS_MAPPINGS",
     "NODE_DISPLAY_NAME_MAPPINGS",
 ]
+
+# Add LoadLast names only if they were successfully imported
+if "LoadLastImage" in NODE_CLASS_MAPPINGS:
+    __all__.extend(["LoadLastImage", "LoadLastVideo"])

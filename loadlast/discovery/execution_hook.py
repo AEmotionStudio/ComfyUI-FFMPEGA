@@ -35,11 +35,12 @@ class ImageExecutionCache:
     Singleton cache that captures IMAGE outputs from ComfyUI executions.
 
     Strategy: Monkey-patch PromptServer.send_sync to intercept 'executed' events.
-    When an 'executed' event carries image output data (e.g., from SaveImage or
-    PreviewImage nodes), we record the UI output info so the filesystem scanner
-    can find those images.
+    When an 'executed' event fires, we increment the iteration counter so
+    LoadLastImage can detect that new images are available.
 
-    Additionally, we track iteration count for the monotonic counter output.
+    Image discovery itself is handled by FilesystemScanner (mtime-based).
+    This cache additionally stores tensors pushed explicitly via push()
+    for the pin/lock feature.
     """
 
     _instance: Optional[ImageExecutionCache] = None
@@ -53,7 +54,6 @@ class ImageExecutionCache:
         self._last_increment_time: float = float("-inf")  # For prompt_id-less fallback grouping
         self._pinned_image: Optional[CacheEntry] = None
         self._pinned_index: int = 0
-        self._last_executed_images: list[dict] = []  # UI image info from last execution
         self._data_lock = Lock()
 
     @classmethod
@@ -90,18 +90,14 @@ class ImageExecutionCache:
         """
         Called when a node finishes execution.
 
-        Captures image output info from 'executed' events. The data dict
-        has the structure: {"node": node_id, "output": {"images": [...]}, ...}
-
-        Only increments the iteration counter once per unique prompt_id,
+        Increments the iteration counter so LoadLastImage can detect new
+        images via IS_CHANGED. Only increments once per unique prompt_id,
         so workflows with multiple SaveImage nodes don't over-count.
 
         Note on iteration counter: This method and push() both increment
-        _iteration_counter. This method tracks execution events (UI metadata
-        only — filenames/subfolders for filesystem discovery). push() creates
-        actual CacheEntry objects in the deque. Both share the counter so the
-        monotonic ordering stays consistent regardless of discovery source.
-        Only entries created by push() are retrievable via get_pinned().
+        _iteration_counter. Both share the counter so the monotonic ordering
+        stays consistent regardless of discovery source. Only entries created
+        by push() are retrievable via get_pinned().
         """
         try:
             output = data.get("output")
@@ -115,9 +111,6 @@ class ImageExecutionCache:
                 return
 
             with self._data_lock:
-                self._last_executed_images.extend(
-                    {"node_id": node_id, **img_info} for img_info in images
-                )
                 # Only increment counter once per execution (new prompt_id)
                 if prompt_id and prompt_id != self._last_prompt_id:
                     self._iteration_counter += 1
@@ -132,8 +125,8 @@ class ImageExecutionCache:
                     self._last_increment_time = now
 
             logger.debug(
-                "[LoadLast] Captured %d image(s) from node %s (iteration %d)",
-                len(images), node_id, self._iteration_counter
+                "[LoadLast] Execution event from node %s (iteration %d)",
+                node_id, self._iteration_counter
             )
         except Exception:
             logger.debug("[LoadLast] Error processing executed event", exc_info=True)
@@ -198,20 +191,6 @@ class ImageExecutionCache:
                     return entry
             return None
 
-    def get_last_executed_images(self) -> list[dict]:
-        """Get and clear the list of images from the last execution.
-
-        WARNING: Destructive read — the internal list is cleared after
-        returning. This is intentionally single-consumer: if two callers
-        invoke this method, the second receives an empty list. This is
-        safe for the current architecture where only LoadLastImage.load()
-        consumes these entries.
-        """
-        with self._data_lock:
-            images = list(self._last_executed_images)
-            self._last_executed_images.clear()
-            return images
-
     @property
     def iteration_counter(self) -> int:
         """Current iteration count."""
@@ -221,7 +200,6 @@ class ImageExecutionCache:
         """Clear all cached data."""
         with self._data_lock:
             self._image_history.clear()
-            self._last_executed_images.clear()
             self._iteration_counter = 0
             self._last_prompt_id = None
             self._last_increment_time = float("-inf")

@@ -20,6 +20,8 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
+from ..constants import DEFAULT_MAX_FRAMES as _FALLBACK_FRAME_CAP
+
 
 class VideoDecoder:
     """Decodes video files and image sequences into frame tensors."""
@@ -70,9 +72,22 @@ class VideoDecoder:
         total_frames = metadata.get("frame_count", 0)
         fps = metadata.get("fps", 24)
 
+        # Note: if total_frames is still 0, _probe_video() already
+        # estimates from duration × fps.  When both nb_frames and
+        # duration are absent (piped/streaming input), use a safe
+        # cap and let ffmpeg naturally EOF — the dense decode path
+        # handles getting fewer frames than requested.
         if total_frames == 0:
-            # If probe failed to get frame count, decode all and count
-            total_frames = self._count_frames(path)
+            # Use max_frames if set, otherwise DEFAULT_MAX_FRAMES as a cap.
+            # Import at module level isn't possible (circular), so use the
+            # constant from load_last_video or a local default.
+            safe_cap = max_frames if max_frames > 0 else _FALLBACK_FRAME_CAP
+            logger.warning(
+                "[LoadLast] Could not determine frame count for %s "
+                "(no nb_frames or duration from ffprobe) — "
+                "will decode up to %d frames", path, safe_cap,
+            )
+            total_frames = safe_cap
 
         # Resolve frame range
         start, end = self._resolve_range(start_frame, end_frame, total_frames)
@@ -341,24 +356,6 @@ class VideoDecoder:
             logger.debug("[LoadLast] ffprobe failed for %s: %s", path, e)
 
         return metadata
-
-    def _count_frames(self, path: str) -> int:
-        """Count frames in a video using ffprobe."""
-        try:
-            cmd = [
-                "ffprobe", "-v", "error",
-                "-count_frames",
-                "-select_streams", "v:0",
-                "-show_entries", "stream=nb_read_frames",
-                "-print_format", "csv=p=0",
-                path
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            if result.returncode == 0 and result.stdout.strip():
-                return int(result.stdout.strip())
-        except Exception:
-            pass
-        return 0
 
     def _decode_frames_ffmpeg(
         self, path: str, indices: list[int], metadata: dict
