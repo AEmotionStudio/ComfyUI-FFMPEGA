@@ -1,0 +1,196 @@
+"""
+Execution hook for intercepting IMAGE outputs from ComfyUI's execution pipeline.
+
+Hooks into PromptServer's send_sync to capture 'executed' events that contain
+image data, and maintains an in-memory cache of recent image tensors.
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+from collections import deque
+from dataclasses import dataclass, field
+from threading import Lock
+from typing import Optional
+
+import torch
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class CacheEntry:
+    """A single cached image from execution history."""
+    tensor: torch.Tensor            # [H, W, 3] single image
+    timestamp: float                # time.time() when captured
+    source_node_id: str             # ComfyUI node ID that produced this image
+    iteration: int                  # monotonic counter
+    pixel_hash: int = 0             # lightweight perceptual hash for dedup
+    metadata: dict = field(default_factory=dict)  # extracted metadata if available
+
+
+class ImageExecutionCache:
+    """
+    Singleton cache that captures IMAGE outputs from ComfyUI executions.
+
+    Strategy: Monkey-patch PromptServer.send_sync to intercept 'executed' events.
+    When an 'executed' event carries image output data (e.g., from SaveImage or
+    PreviewImage nodes), we record the UI output info so the filesystem scanner
+    can find those images.
+
+    Additionally, we track iteration count for the monotonic counter output.
+    """
+
+    _instance: Optional[ImageExecutionCache] = None
+    _lock = Lock()
+
+    def __init__(self, max_history: int = 100):
+        self._image_history: deque[CacheEntry] = deque(maxlen=max_history)
+        self._max_history = max_history
+        self._iteration_counter = 0
+        self._pinned_image: Optional[CacheEntry] = None
+        self._pinned_index: int = 0
+        self._last_executed_images: list[dict] = []  # UI image info from last execution
+        self._data_lock = Lock()
+
+    @classmethod
+    def get_instance(cls, max_history: int = 100) -> ImageExecutionCache:
+        """Thread-safe singleton accessor."""
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = cls(max_history)
+        return cls._instance
+
+    @classmethod
+    def setup(cls, prompt_server) -> ImageExecutionCache:
+        """
+        Register the execution hook with PromptServer.
+
+        Wraps send_sync to intercept 'executed' events and track which
+        images were produced during execution.
+        """
+        instance = cls.get_instance()
+
+        original_send_sync = prompt_server.send_sync
+
+        def hooked_send_sync(event, data, sid=None):
+            if event == "executed":
+                instance._on_executed(data)
+            original_send_sync(event, data, sid)
+
+        prompt_server.send_sync = hooked_send_sync
+        logger.info("[LoadLast] Execution hook registered with PromptServer")
+        return instance
+
+    def _on_executed(self, data: dict):
+        """
+        Called when a node finishes execution.
+
+        Captures image output info from 'executed' events. The data dict
+        has the structure: {"node": node_id, "output": {"images": [...]}, ...}
+        """
+        try:
+            output = data.get("output")
+            if not output:
+                return
+
+            node_id = data.get("node", "unknown")
+            images = output.get("images", [])
+            if not images:
+                return
+
+            with self._data_lock:
+                self._last_executed_images.extend(
+                    {"node_id": node_id, **img_info} for img_info in images
+                )
+                self._iteration_counter += 1
+
+            logger.debug(
+                "[LoadLast] Captured %d image(s) from node %s (iteration %d)",
+                len(images), node_id, self._iteration_counter
+            )
+        except Exception:
+            logger.debug("[LoadLast] Error processing executed event", exc_info=True)
+
+    def push(self, tensor: torch.Tensor, node_id: str = "manual",
+             metadata: dict | None = None) -> CacheEntry:
+        """
+        Manually push an image tensor into the cache.
+
+        Args:
+            tensor: [H, W, 3] float32 image tensor in [0, 1] range
+            node_id: source node ID
+            metadata: optional metadata dict
+
+        Returns:
+            The created CacheEntry
+        """
+        from ..processing.dedup import compute_pixel_hash
+
+        with self._data_lock:
+            self._iteration_counter += 1
+            entry = CacheEntry(
+                tensor=tensor,
+                timestamp=time.time(),
+                source_node_id=node_id,
+                iteration=self._iteration_counter,
+                pixel_hash=compute_pixel_hash(tensor),
+                metadata=metadata or {},
+            )
+            self._image_history.appendleft(entry)
+            return entry
+
+    def get_last_n(self, n: int, skip_dupes: bool = False) -> list[CacheEntry]:
+        """
+        Return the last N cache entries, newest first.
+
+        Args:
+            n: number of entries to return
+            skip_dupes: if True, skip entries with duplicate pixel hashes
+        """
+        with self._data_lock:
+            if not skip_dupes:
+                return list(self._image_history)[:n]
+
+            result = []
+            seen_hashes = set()
+            for entry in self._image_history:
+                if entry.pixel_hash not in seen_hashes:
+                    seen_hashes.add(entry.pixel_hash)
+                    result.append(entry)
+                    if len(result) >= n:
+                        break
+            return result
+
+    def get_pinned(self, pin_index: int) -> Optional[CacheEntry]:
+        """Return the cache entry at the given iteration index, or None."""
+        if pin_index <= 0:
+            return None
+        with self._data_lock:
+            for entry in self._image_history:
+                if entry.iteration == pin_index:
+                    return entry
+            return None
+
+    def get_last_executed_images(self) -> list[dict]:
+        """Get and clear the list of images from the last execution."""
+        with self._data_lock:
+            images = list(self._last_executed_images)
+            self._last_executed_images.clear()
+            return images
+
+    @property
+    def iteration_counter(self) -> int:
+        """Current iteration count."""
+        return self._iteration_counter
+
+    def clear(self):
+        """Clear all cached data."""
+        with self._data_lock:
+            self._image_history.clear()
+            self._last_executed_images.clear()
+            self._iteration_counter = 0
+            self._pinned_image = None
+            self._pinned_index = 0

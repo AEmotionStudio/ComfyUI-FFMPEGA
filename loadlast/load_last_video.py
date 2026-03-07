@@ -1,0 +1,659 @@
+"""
+Load Last Video node for ComfyUI — enhanced with FFMPEGA-inspired patterns.
+
+Auto-discovers the most recently saved video in ComfyUI's output/temp
+directories, decodes frames (capped) to an IMAGE batch, extracts audio,
+and outputs rich metadata — all with an inline preview that loads
+*immediately* before any queue run.
+
+Architecture:
+  - Python registers /loadlast/latest_video and /loadlast/video_list API routes
+  - JS polls those routes to always show the last video on the node
+  - On execution, frames are decoded (with capping) via VideoDecoder
+  - Audio extracted via AudioExtractor
+  - Metadata output via ffprobe
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import os
+import shutil
+import tempfile
+import time
+
+import numpy as np
+import torch
+
+import folder_paths
+
+logger = logging.getLogger(__name__)
+
+# Auto-select mode options
+FRAME_SELECT_MODES = [
+    "manual", "uniform_5", "uniform_10", "first_last",
+    "every_2nd", "every_5th", "timestamps",
+]
+
+# Supported video extensions (lowercase, no dot)
+VIDEO_EXTENSIONS = {"mp4", "webm", "gif", "mkv", "mov"}
+
+# Default max frames to decode (prevents OOM on long videos)
+DEFAULT_MAX_FRAMES = 128
+
+# Maximum values for integer parameters
+BIGMAX = 2**31 - 1
+
+
+# ─── API Route ──────────────────────────────────────────────────────────
+# Returns JSON with the latest video's filename, subfolder, and type
+# so the JS widget can immediately load a preview via /view.
+
+try:
+    from aiohttp import web
+    from server import PromptServer
+
+    @PromptServer.instance.routes.get("/loadlast/latest_video")
+    async def _api_latest_video(request):
+        """Find the most recently modified video in output/temp."""
+        source = request.query.get("source", "")
+        prefix = request.query.get("prefix", "")
+
+        if source and os.path.isdir(source):
+            scan_dirs = [source]
+        else:
+            scan_dirs = _get_video_directories()
+
+        result = _find_latest_video_info(scan_dirs, prefix)
+        if result is None:
+            return web.json_response({"found": False})
+
+        return web.json_response({"found": True, **result})
+
+    @PromptServer.instance.routes.get("/loadlast/video_list")
+    async def _api_video_list(request):
+        """Return list of all recent videos, sorted newest first."""
+        source = request.query.get("source", "")
+        prefix = request.query.get("prefix", "")
+        limit = min(int(request.query.get("limit", "20")), 50)
+
+        if source and os.path.isdir(source):
+            scan_dirs = [source]
+        else:
+            scan_dirs = _get_video_directories()
+
+        videos = _find_all_videos(scan_dirs, prefix, limit)
+        return web.json_response({"videos": videos})
+
+except (ImportError, AttributeError):
+    # Running outside ComfyUI (e.g. pytest) — skip route registration
+    pass
+
+
+def _get_video_directories() -> list[str]:
+    """Return ComfyUI's output and temp directories."""
+    dirs = []
+    try:
+        dirs.append(folder_paths.get_output_directory())
+    except Exception:
+        pass
+    try:
+        dirs.append(folder_paths.get_temp_directory())
+    except Exception:
+        pass
+    return dirs
+
+
+def _find_latest_video_info(directories: list[str], prefix: str = "") -> dict | None:
+    """Find latest video and return {filename, subfolder, type, format, mtime}."""
+    all_entries = _scan_video_entries(directories, prefix)
+    if not all_entries:
+        return None
+    # Sort by mtime descending, take the newest
+    all_entries.sort(key=lambda x: x[2], reverse=True)
+    info = _resolve_view_info(*all_entries[0][:2])
+    if info:
+        info["mtime"] = all_entries[0][2]
+    return info
+
+
+def _find_all_videos(directories: list[str], prefix: str = "", limit: int = 20) -> list[dict]:
+    """Find all recent videos, sorted newest first, up to limit."""
+    all_entries = _scan_video_entries(directories, prefix)
+    all_entries.sort(key=lambda x: x[2], reverse=True)
+    results = []
+    for full_path, parent_dir, mtime in all_entries[:limit]:
+        info = _resolve_view_info(full_path, parent_dir)
+        if info:
+            info["mtime"] = mtime
+            results.append(info)
+    return results
+
+
+def _scan_video_entries(directories: list[str], prefix: str = "") -> list[tuple]:
+    """Scan directories for video files. Returns [(full_path, parent_dir, mtime), ...]."""
+    entries = []
+    for dir_path in directories:
+        if not os.path.isdir(dir_path):
+            continue
+        try:
+            for entry in os.scandir(dir_path):
+                if not entry.is_file():
+                    continue
+                ext = entry.name.rsplit(".", 1)[-1].lower() if "." in entry.name else ""
+                if ext not in VIDEO_EXTENSIONS:
+                    continue
+                if prefix and not entry.name.startswith(prefix):
+                    continue
+                try:
+                    mtime = entry.stat().st_mtime
+                except OSError:
+                    continue
+                entries.append((entry.path, dir_path, mtime))
+        except PermissionError:
+            continue
+    return entries
+
+
+def _resolve_view_info(full_path: str, parent_dir: str) -> dict | None:
+    """Resolve a video file to {filename, subfolder, type, format} for /view."""
+    output_dir = folder_paths.get_output_directory()
+    temp_dir = folder_paths.get_temp_directory()
+    filename = os.path.basename(full_path)
+
+    if os.path.commonpath([output_dir, parent_dir]) == output_dir:
+        subfolder = os.path.relpath(parent_dir, output_dir)
+        view_type = "output"
+    elif os.path.commonpath([temp_dir, parent_dir]) == temp_dir:
+        subfolder = os.path.relpath(parent_dir, temp_dir)
+        view_type = "temp"
+    else:
+        os.makedirs(temp_dir, exist_ok=True)
+        dest = os.path.join(temp_dir, filename)
+        if not os.path.exists(dest) or os.path.getmtime(full_path) > os.path.getmtime(dest):
+            shutil.copy2(full_path, dest)
+        subfolder = ""
+        view_type = "temp"
+
+    if subfolder == ".":
+        subfolder = ""
+
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "mp4"
+    fmt_map = {"mp4": "mp4", "webm": "webm", "gif": "gif", "mkv": "x-matroska", "mov": "quicktime"}
+
+    return {
+        "filename": filename,
+        "subfolder": subfolder,
+        "type": view_type,
+        "format": f"video/{fmt_map.get(ext, 'mp4')}",
+    }
+
+
+# ─── Node Class ─────────────────────────────────────────────────────────
+
+class LoadLastVideo:
+    """
+    Automatically load the most recently saved video.
+
+    Scans ComfyUI's output and temp directories for the newest video file,
+    decodes it into an IMAGE tensor batch (with frame capping to prevent OOM),
+    extracts audio, and outputs rich metadata. Shows an inline preview
+    that loads *immediately* when the node is placed (no queue needed).
+    """
+
+    CATEGORY = "video"
+    FUNCTION = "load"
+    OUTPUT_NODE = True
+
+    RETURN_TYPES = ("IMAGE", "IMAGE", "AUDIO", "STRING", "STRING", "INT", "FLOAT", "FLOAT")
+    RETURN_NAMES = ("IMAGE", "SELECTED_FRAMES", "AUDIO", "video_path", "image_paths", "frame_count", "fps", "duration")
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "refresh_mode": (["auto", "manual"], {
+                    "default": "auto",
+                    "tooltip": "auto: reload when latest video changes. manual: only on input change.",
+                }),
+            },
+            "optional": {
+                "source_folder": ("STRING", {
+                    "default": "",
+                    "tooltip": "Custom folder to scan. Empty = default output/temp directories.",
+                }),
+                "filename_filter": ("STRING", {
+                    "default": "",
+                    "tooltip": "Only load files starting with this prefix.",
+                }),
+                "max_frames": ("INT", {
+                    "default": DEFAULT_MAX_FRAMES,
+                    "min": 0,
+                    "max": BIGMAX,
+                    "step": 1,
+                    "tooltip": (
+                        "Max frames to decode into the IMAGE tensor (0 = all). "
+                        "Caps memory usage for long videos. Frames are evenly "
+                        "sampled to preserve temporal coverage."
+                    ),
+                }),
+                "images": ("IMAGE", {
+                    "tooltip": "Override: video frames as IMAGE tensor. Overrides auto-discovery.",
+                }),
+                "audio": ("AUDIO", {
+                    "tooltip": "Override: provide audio directly. Overrides audio extracted from video.",
+                }),
+                "video_path": ("STRING", {
+                    "default": "",
+                    "forceInput": True,
+                    "tooltip": "Override: path to a video file. Overrides auto-discovery.",
+                }),
+                "frame_select_mode": (FRAME_SELECT_MODES, {
+                    "default": "manual",
+                    "tooltip": (
+                        "How to select frames. 'manual' = user clicks in preview. "
+                        "Other modes auto-select frames based on the chosen strategy."
+                    ),
+                }),
+                "auto_timestamps": ("STRING", {
+                    "default": "",
+                    "tooltip": "Comma-separated timestamps for 'timestamps' mode (e.g., '0.5,1.0,2.5').",
+                }),
+                "pause_for_selection": ("BOOLEAN", {
+                    "default": False,
+                    "label_on": "pause",
+                    "label_off": "run",
+                    "tooltip": (
+                        "When ON and frame_select_mode is 'manual', blocks execution "
+                        "if no frames are selected. Select frames, then re-queue."
+                    ),
+                }),
+            },
+            "hidden": {
+                "_selected_timestamps": ("STRING", {"default": "[]"}),
+            },
+        }
+
+    @classmethod
+    def IS_CHANGED(cls, refresh_mode="auto", **kwargs):
+        """Content-aware change detection.
+
+        In auto mode, returns a hash based on the latest video's filename
+        and mtime so the node only re-runs when a new video is generated.
+        In manual mode, returns a constant so it never auto-reruns.
+        """
+        if refresh_mode == "manual":
+            return ""
+
+        # Find the latest video and use its identity as the hash
+        source = kwargs.get("source_folder", "")
+        prefix = kwargs.get("filename_filter", "")
+
+        if source and source.strip() and os.path.isdir(source.strip()):
+            scan_dirs = [source.strip()]
+        else:
+            scan_dirs = _get_video_directories()
+
+        info = _find_latest_video_info(scan_dirs, prefix)
+        if info is None:
+            return ""
+
+        # Hash filename + mtime — changes when a new video appears
+        m = hashlib.sha256()
+        m.update(info["filename"].encode())
+        m.update(str(info.get("mtime", 0)).encode())
+        m.update(str(kwargs.get("max_frames", DEFAULT_MAX_FRAMES)).encode())
+        m.update(str(kwargs.get("_selected_timestamps", "[]")).encode())
+        m.update(str(kwargs.get("frame_select_mode", "manual")).encode())
+        m.update(str(kwargs.get("auto_timestamps", "")).encode())
+        return m.hexdigest()
+
+    def load(
+        self,
+        refresh_mode: str = "auto",
+        source_folder: str = "",
+        filename_filter: str = "",
+        max_frames: int = DEFAULT_MAX_FRAMES,
+        images=None,
+        audio=None,
+        video_path: str = "",
+        frame_select_mode: str = "manual",
+        auto_timestamps: str = "",
+        pause_for_selection: bool = False,
+        _selected_timestamps: str = "[]",
+    ):
+        from .processing.video_decode import VideoDecoder
+        from .processing.audio_extract import AudioExtractor
+
+        empty_frames = torch.zeros(1, 512, 512, 3)
+        silent_audio = {"waveform": torch.zeros(1, 1, 1), "sample_rate": 44100}
+        empty_result = (empty_frames, empty_frames, silent_audio, "", "", 0, 0.0, 0.0)
+
+        # --- Resolve video source (priority: images > video_path > auto) ---
+        resolved_path = None
+        info = None
+        temp_video_from_images = None
+
+        if images is not None:
+            # Input override: IMAGE tensor → convert to temp video
+            from .processing.video_decode import VideoDecoder as VD
+            try:
+                temp_dir = folder_paths.get_temp_directory()
+                os.makedirs(temp_dir, exist_ok=True)
+                temp_video_from_images = os.path.join(temp_dir, "loadlast_input_override.mp4")
+                self._images_to_video(images, temp_video_from_images)
+                resolved_path = temp_video_from_images
+                info = _resolve_view_info(resolved_path, temp_dir)
+            except Exception as e:
+                logger.warning("[LoadLast] Failed to convert images to video: %s", e)
+
+        if resolved_path is None and video_path and video_path.strip():
+            # Input override: video_path STRING
+            vp = video_path.strip()
+            if os.path.isfile(vp):
+                resolved_path = vp
+                parent = os.path.dirname(vp)
+                info = _resolve_view_info(resolved_path, parent)
+            else:
+                logger.warning("[LoadLast] video_path does not exist: %s", vp)
+
+        if resolved_path is None:
+            # Auto-discover latest video (default behavior)
+            scan_dirs = _get_video_directories()
+            if source_folder and source_folder.strip():
+                real_path = os.path.realpath(source_folder.strip())
+                if os.path.isdir(real_path):
+                    scan_dirs = [real_path]
+                else:
+                    logger.warning("[LoadLast] source_folder does not exist: %s", source_folder)
+
+            latest = _find_latest_video_info(scan_dirs, filename_filter)
+            if latest is None:
+                logger.warning("[LoadLast] No videos found")
+                return {"ui": {"video": [], "gifs": []}, "result": empty_result}
+
+            info = latest
+            if info["type"] == "output":
+                base = folder_paths.get_output_directory()
+            else:
+                base = folder_paths.get_temp_directory()
+            resolved_path = (
+                os.path.join(base, info["subfolder"], info["filename"])
+                if info["subfolder"]
+                else os.path.join(base, info["filename"])
+            )
+
+        if resolved_path is None or info is None:
+            return {"ui": {"video": [], "gifs": []}, "result": empty_result}
+
+        logger.info("[LoadLast] Loading video: %s", resolved_path)
+
+        # --- Decode frames via VideoDecoder ---
+        decoder = VideoDecoder()
+        ext = os.path.splitext(resolved_path)[1].lower()
+
+        try:
+            if ext == ".gif":
+                frames, metadata = decoder.decode_gif(resolved_path, max_frames=max_frames)
+            else:
+                frames, metadata = decoder.decode_file(resolved_path, max_frames=max_frames)
+        except Exception as e:
+            logger.warning("[LoadLast] Failed to decode video: %s — %s", resolved_path, e)
+            return {
+                "ui": {"video": [], "gifs": []},
+                "result": (empty_frames, empty_frames, silent_audio, resolved_path, "", 0, 0.0, 0.0),
+            }
+
+        if frames is None or frames.shape[0] == 0:
+            logger.warning("[LoadLast] No frames decoded from: %s", resolved_path)
+            return {
+                "ui": {"video": [], "gifs": []},
+                "result": (empty_frames, empty_frames, silent_audio, resolved_path, "", 0, 0.0, 0.0),
+            }
+
+        # --- Extract audio (input override wins) ---
+        if audio is not None:
+            pass  # Use the provided audio directly
+        else:
+            audio_extractor = AudioExtractor()
+            audio = audio_extractor.extract(resolved_path)
+            if audio is None:
+                audio = silent_audio
+
+        # --- Extract metadata ---
+        frame_count = frames.shape[0]
+        fps = float(metadata.get("fps", 24.0))
+        duration = float(metadata.get("duration", 0.0))
+
+        # --- Resolve timestamps (manual + auto-select) ---
+        timestamps = self._resolve_timestamps(
+            _selected_timestamps, frame_select_mode,
+            auto_timestamps, duration, fps,
+        )
+
+        # --- Pause for selection (ExecutionBlocker) ---
+        if (
+            pause_for_selection
+            and frame_select_mode == "manual"
+            and not timestamps
+        ):
+            try:
+                from comfy_execution.graph import ExecutionBlocker
+                blocked = ExecutionBlocker(None)
+                preview = {
+                    "filename": info["filename"],
+                    "subfolder": info.get("subfolder", ""),
+                    "type": info.get("type", "temp"),
+                    "format": info.get("format", "video/mp4"),
+                }
+                logger.info("[LoadLast] Paused — waiting for frame selection")
+                return {
+                    "ui": {"video": [preview], "gifs": [preview]},
+                    "result": tuple(blocked for _ in range(8)),
+                }
+            except ImportError:
+                logger.warning(
+                    "[LoadLast] ExecutionBlocker not available — "
+                    "pause_for_selection requires ComfyUI 0.1.3+. Continuing."
+                )
+
+        # --- Extract selected frames at specific timestamps ---
+        selected_frames = self._extract_selected_frames(
+            resolved_path, json.dumps(timestamps), frames,
+        )
+
+        # --- Save selected frames as PNGs → image_paths ---
+        image_paths_str = self._save_selected_frames_as_png(
+            selected_frames, timestamps,
+        )
+
+        logger.info(
+            "[LoadLast] Decoded %d frames (of %d total) | %.1f fps | %.1fs | "
+            "%d selected | %s",
+            frames.shape[0], frame_count, fps, duration,
+            selected_frames.shape[0], resolved_path,
+        )
+
+        # --- Return frames + preview metadata + new outputs ---
+        preview = {
+            "filename": info["filename"],
+            "subfolder": info.get("subfolder", ""),
+            "type": info.get("type", "temp"),
+            "format": info.get("format", "video/mp4"),
+        }
+
+        return {
+            "ui": {"video": [preview], "gifs": [preview]},
+            "result": (
+                frames, selected_frames, audio,
+                resolved_path, image_paths_str,
+                frame_count, fps, duration,
+            ),
+        }
+
+    def _resolve_timestamps(
+        self,
+        manual_json: str,
+        mode: str,
+        auto_ts_str: str,
+        duration: float,
+        fps: float,
+    ) -> list[float]:
+        """Merge manual selections with auto-select timestamps."""
+        # Parse manual selections
+        try:
+            manual = json.loads(manual_json)
+        except (json.JSONDecodeError, TypeError):
+            manual = []
+        manual = [float(t) for t in manual]
+
+        # Generate auto-select timestamps based on mode
+        auto: list[float] = []
+        if mode == "uniform_5" and duration > 0:
+            auto = [duration * i / 4 for i in range(5)]
+        elif mode == "uniform_10" and duration > 0:
+            auto = [duration * i / 9 for i in range(10)]
+        elif mode == "first_last" and duration > 0:
+            auto = [0.0, max(0.0, duration - 0.01)]
+        elif mode == "every_2nd" and fps > 0 and duration > 0:
+            step = 2.0 / fps
+            auto = [i * step for i in range(int(duration / step) + 1) if i * step <= duration]
+        elif mode == "every_5th" and fps > 0 and duration > 0:
+            step = 5.0 / fps
+            auto = [i * step for i in range(int(duration / step) + 1) if i * step <= duration]
+        elif mode == "timestamps" and auto_ts_str.strip():
+            try:
+                auto = [float(t.strip()) for t in auto_ts_str.split(",") if t.strip()]
+            except ValueError:
+                logger.warning("[LoadLast] Invalid auto_timestamps: %s", auto_ts_str)
+
+        # Merge and deduplicate
+        all_ts = sorted(set(manual + auto))
+        return all_ts
+
+    @staticmethod
+    def _images_to_video(
+        images: torch.Tensor, output_path: str, fps: int = 24,
+    ) -> None:
+        """Convert an IMAGE tensor batch to a temp video file."""
+        import subprocess
+
+        n, h, w, c = images.shape
+        cmd = [
+            "ffmpeg", "-y",
+            "-f", "rawvideo", "-pix_fmt", "rgb24",
+            "-s", f"{w}x{h}", "-r", str(fps),
+            "-i", "pipe:0",
+            "-c:v", "libx264", "-preset", "ultrafast",
+            "-pix_fmt", "yuv420p",
+            "-v", "quiet",
+            output_path,
+        ]
+        raw = (images.cpu().numpy() * 255).astype(np.uint8).tobytes()
+        result = subprocess.run(cmd, input=raw, capture_output=True, timeout=60)
+        if result.returncode != 0:
+            raise RuntimeError(f"ffmpeg encode failed: {result.stderr.decode()[:200]}")
+
+    @staticmethod
+    def _save_selected_frames_as_png(
+        frames: torch.Tensor, timestamps: list[float],
+    ) -> str:
+        """Save selected frames as PNGs in temp dir, return comma-separated paths."""
+        from PIL import Image
+
+        if not timestamps or frames.shape[0] == 0:
+            return ""
+
+        temp_dir = folder_paths.get_temp_directory()
+        sel_dir = os.path.join(temp_dir, "loadlast_selected")
+        os.makedirs(sel_dir, exist_ok=True)
+
+        paths = []
+        for i in range(min(frames.shape[0], len(timestamps))):
+            arr = (frames[i].cpu().numpy() * 255).astype(np.uint8)
+            img = Image.fromarray(arr)
+            fname = f"loadlast_sel_{i:04d}_{timestamps[i]:.3f}s.png"
+            fpath = os.path.join(sel_dir, fname)
+            img.save(fpath, "PNG")
+            paths.append(fpath)
+
+        return ",".join(paths)
+
+    def _extract_selected_frames(
+        self,
+        video_path: str,
+        timestamps_json: str,
+        all_frames: torch.Tensor,
+    ) -> torch.Tensor:
+        """Extract frames at specific timestamps.
+
+        If timestamps_json is empty or '[]', returns the first frame of all_frames
+        as a single-frame batch (1, H, W, 3).
+        Otherwise, seeks to each timestamp and extracts a frame.
+        """
+        try:
+            timestamps = json.loads(timestamps_json)
+        except (json.JSONDecodeError, TypeError):
+            timestamps = []
+
+        if not timestamps:
+            return all_frames[:1]
+
+        timestamps = sorted(set(float(t) for t in timestamps))
+
+        selected = []
+        for ts in timestamps:
+            frame = self._seek_frame_ffmpeg(video_path, ts, all_frames)
+            if frame is not None:
+                selected.append(frame)
+
+        if not selected:
+            return all_frames[:1]
+
+        return torch.stack(selected, dim=0)
+
+    def _seek_frame_ffmpeg(
+        self,
+        video_path: str,
+        timestamp: float,
+        all_frames: torch.Tensor,
+    ) -> torch.Tensor | None:
+        """Seek to a specific timestamp and extract a single frame.
+
+        Falls back to nearest frame in all_frames if ffmpeg fails.
+        """
+        import subprocess
+        import numpy as np
+
+        try:
+            cmd = [
+                "ffmpeg", "-ss", str(timestamp),
+                "-i", video_path,
+                "-vframes", "1",
+                "-f", "rawvideo",
+                "-pix_fmt", "rgb24",
+                "-v", "quiet",
+                "-y", "pipe:1",
+            ]
+            result = subprocess.run(
+                cmd, capture_output=True, timeout=10,
+            )
+            if result.returncode != 0 or not result.stdout:
+                raise RuntimeError("ffmpeg seek failed")
+
+            # Determine dimensions from all_frames
+            h, w = all_frames.shape[1], all_frames.shape[2]
+            expected_bytes = h * w * 3
+            raw = result.stdout[:expected_bytes]
+            if len(raw) < expected_bytes:
+                raise RuntimeError("Incomplete frame data")
+
+            arr = np.frombuffer(raw, dtype=np.uint8).reshape(h, w, 3)
+            return torch.from_numpy(arr.copy()).float() / 255.0
+
+        except Exception as e:
+            logger.debug("[LoadLast] ffmpeg seek to %.2fs failed: %s", timestamp, e)
+            # Fallback: nearest frame by timestamp in all_frames
+            return None

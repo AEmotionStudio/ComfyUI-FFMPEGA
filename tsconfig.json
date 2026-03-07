@@ -1,0 +1,44 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "lib": [
+            "ES2022",
+            "DOM",
+            "DOM.Iterable"
+        ],
+        "strict": true,
+        "noEmit": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "resolveJsonModule": true,
+        "isolatedModules": true,
+        "allowSyntheticDefaultImports": true,
+        "declaration": true,
+        "declarationMap": true,
+        "sourceMap": true,
+        "baseUrl": ".",
+        "paths": {
+            "@ffmpega/*": [
+                "src/*"
+            ],
+            "comfyui/app": [
+                "src/types/comfy-scripts.d.ts"
+            ],
+            "comfyui/api": [
+                "src/types/comfy-scripts.d.ts"
+            ]
+        }
+    },
+    "include": [
+        "src/**/*.ts",
+        "src/**/*.d.ts"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist",
+        "web"
+    ]
+}
