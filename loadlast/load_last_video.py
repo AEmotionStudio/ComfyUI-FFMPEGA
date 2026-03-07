@@ -601,19 +601,19 @@ class LoadLastVideo:
         # Generate auto-select timestamps based on mode
         auto: list[float] = []
         if mode == "uniform_5" and duration > 0:
-            auto = [duration * i / 4 for i in range(5)]
+            auto = [min(duration * i / 4, duration - 0.01) for i in range(5)]
         elif mode == "uniform_10" and duration > 0:
-            auto = [duration * i / 9 for i in range(10)]
+            auto = [min(duration * i / 9, duration - 0.01) for i in range(10)]
         elif mode == "first_last" and duration > 0:
             auto = [0.0, max(0.0, duration - 0.01)]
         elif mode == "every_2nd" and fps > 0 and duration > 0:
             step = 2.0 / fps
             cap = min(int(duration / step) + 1, _MAX_AUTO_TIMESTAMPS + 1)
-            auto = [i * step for i in range(cap) if i * step <= duration]
+            auto = [i * step for i in range(cap) if i * step < duration]
         elif mode == "every_5th" and fps > 0 and duration > 0:
             step = 5.0 / fps
             cap = min(int(duration / step) + 1, _MAX_AUTO_TIMESTAMPS + 1)
-            auto = [i * step for i in range(cap) if i * step <= duration]
+            auto = [i * step for i in range(cap) if i * step < duration]
         elif mode == "timestamps" and auto_ts_str.strip():
             try:
                 auto = [float(t.strip()) for t in auto_ts_str.split(",") if t.strip()]
@@ -703,13 +703,16 @@ class LoadLastVideo:
         now = time.time()
         if now - _last_selected_cleanup_time > _STALE_FRAME_TTL:
             _last_selected_cleanup_time = now
-            with os.scandir(sel_dir) as it:
-                for entry in it:
-                    try:
-                        if entry.stat().st_mtime < now - _STALE_FRAME_TTL:
-                            os.remove(entry.path)
-                    except OSError:
-                        pass
+            try:
+                with os.scandir(sel_dir) as it:
+                    for entry in it:
+                        try:
+                            if entry.stat().st_mtime < now - _STALE_FRAME_TTL:
+                                os.remove(entry.path)
+                        except OSError:
+                            pass
+            except OSError:
+                pass
 
         paths = []
         for i in range(min(frames.shape[0], len(timestamps))):

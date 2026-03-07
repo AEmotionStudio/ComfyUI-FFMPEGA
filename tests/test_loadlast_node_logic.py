@@ -72,7 +72,7 @@ def test_resolve_uniform_5():
     ts = node._resolve_timestamps('[]', "uniform_5", "", 10.0, 24.0)
     assert len(ts) == 5, f"Expected 5 timestamps, got {len(ts)}"
     assert ts[0] == 0.0, f"First should be 0.0, got {ts[0]}"
-    assert ts[-1] == 10.0, f"Last should be 10.0, got {ts[-1]}"
+    assert ts[-1] == 9.99, f"Last should be 9.99 (duration-0.01), got {ts[-1]}"
     # Check spacing
     assert abs(ts[1] - 2.5) < 0.001, f"Second should be 2.5, got {ts[1]}"
     print("  ✓ uniform_5 passed")
@@ -85,7 +85,7 @@ def test_resolve_uniform_10():
     ts = node._resolve_timestamps('[]', "uniform_10", "", 9.0, 30.0)
     assert len(ts) == 10, f"Expected 10 timestamps, got {len(ts)}"
     assert ts[0] == 0.0
-    assert ts[-1] == 9.0
+    assert ts[-1] == 8.99, f"Last should be 8.99 (duration-0.01), got {ts[-1]}"
     print("  ✓ uniform_10 passed")
 
 
@@ -105,10 +105,10 @@ def test_resolve_every_2nd():
     print("Testing resolve_timestamps — every_2nd...")
     node = _make_node()
     ts = node._resolve_timestamps('[]', "every_2nd", "", 1.0, 10.0)
-    # step = 2/10 = 0.2s → 0, 0.2, 0.4, 0.6, 0.8, 1.0
-    assert len(ts) == 6, f"Expected 6 timestamps, got {len(ts)}: {ts}"
+    # step = 2/10 = 0.2s → 0, 0.2, 0.4, 0.6, 0.8 (1.0 excluded: < duration)
+    assert len(ts) == 5, f"Expected 5 timestamps, got {len(ts)}: {ts}"
     assert abs(ts[0]) < 0.001
-    assert abs(ts[-1] - 1.0) < 0.001
+    assert abs(ts[-1] - 0.8) < 0.001
     print("  ✓ every_2nd passed")
 
 
@@ -117,8 +117,8 @@ def test_resolve_every_5th():
     print("Testing resolve_timestamps — every_5th...")
     node = _make_node()
     ts = node._resolve_timestamps('[]', "every_5th", "", 1.0, 10.0)
-    # step = 5/10 = 0.5s → 0, 0.5, 1.0
-    assert len(ts) == 3, f"Expected 3 timestamps, got {len(ts)}: {ts}"
+    # step = 5/10 = 0.5s → 0, 0.5 (1.0 excluded: < duration)
+    assert len(ts) == 2, f"Expected 2 timestamps, got {len(ts)}: {ts}"
     print("  ✓ every_5th passed")
 
 

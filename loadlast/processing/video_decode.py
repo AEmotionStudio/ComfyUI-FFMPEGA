@@ -122,45 +122,62 @@ class VideoDecoder:
         """
         Decode GIF using PIL. Extracts frame durations for FPS estimation.
 
+        Only decodes frames that will actually be used (after range/subsample
+        selection) to avoid materializing all N PIL images for large GIFs.
+
         Returns:
             (frames [N, H, W, 3] float32, metadata dict)
         """
         img = Image.open(path)
         total_frames = getattr(img, 'n_frames', 1)
 
-        # Collect frame durations for FPS estimation
+        if total_frames == 0:
+            raise RuntimeError(f"GIF has 0 frames: {path}")
+
+        # Resolve frame range first so we know which frames to keep
+        start, end = self._resolve_range(start_frame, end_frame, total_frames)
+        range_length = end - start + 1
+
+        # Compute subsample indices (relative to range) before loading
+        if max_frames > 0 and range_length > max_frames:
+            keep_relative = set(self.subsample_indices(range_length, max_frames))
+        else:
+            keep_relative = set(range(range_length))
+
+        # Convert to absolute frame indices
+        keep_absolute = {i + start for i in keep_relative}
+
+        # Iterate all frames (required by PIL's sequential seek), but only
+        # decode and store the ones we need
         durations = []
-        all_frames_pil = []
+        selected_pil = []
+        first_size = None
 
         for i in range(total_frames):
             img.seek(i)
-            frame = img.convert('RGB')
-            all_frames_pil.append(frame.copy())
             duration = img.info.get('duration', 100)  # ms, default 100ms = 10fps
             durations.append(duration)
+
+            if first_size is None:
+                first_size = img.size  # (W, H)
+
+            if i in keep_absolute:
+                frame = img.convert('RGB')
+                selected_pil.append(frame.copy())
 
         # Estimate FPS from average duration
         avg_duration = sum(durations) / len(durations) if durations else 100
         fps = round(1000 / avg_duration) if avg_duration > 0 else 10
 
-        # Resolve frame range
-        start, end = self._resolve_range(start_frame, end_frame, total_frames)
-        selected_frames = all_frames_pil[start:end + 1]
-
-        # Subsample if needed
-        if max_frames > 0 and len(selected_frames) > max_frames:
-            indices = self.subsample_indices(len(selected_frames), max_frames)
-            selected_frames = [selected_frames[i] for i in indices]
-
         # Convert to tensors
         frames = []
-        for frame_pil in selected_frames:
+        for frame_pil in selected_pil:
             arr = np.array(frame_pil).astype(np.float32) / 255.0
             frames.append(torch.from_numpy(arr))
 
         frame_tensor = torch.stack(frames, dim=0)
 
-        w, h = all_frames_pil[0].size
+        w, h = first_size if first_size else (0, 0)
         metadata = {
             "fps": fps,
             "duration": total_frames * avg_duration / 1000.0,
