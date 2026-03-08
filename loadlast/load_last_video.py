@@ -294,7 +294,7 @@ class LoadLastVideo:
     that loads *immediately* when the node is placed (no queue needed).
     """
 
-    CATEGORY = "video"
+    CATEGORY = "FFMPEGA"
     FUNCTION = "load"
     OUTPUT_NODE = True
 
@@ -634,53 +634,10 @@ class LoadLastVideo:
     ) -> None:
         """Convert an IMAGE tensor batch to a temp video file.
 
-        Streams frames to ffmpeg via stdin to avoid materializing the
-        entire raw buffer in memory at once.
+        Delegates to ``core.images_to_video`` shared utility.
         """
-
-        n, h, w, c = images.shape
-        # Ensure exactly 3 channels (drop alpha if RGBA)
-        if c != 3:
-            images = images[..., :3]
-            c = 3
-        cmd = [
-            "ffmpeg", "-y",
-            "-f", "rawvideo", "-pix_fmt", "rgb24",
-            "-s", f"{w}x{h}", "-r", str(fps),
-            "-i", "pipe:0",
-            "-c:v", "libx264", "-preset", "ultrafast",
-            "-pix_fmt", "yuv420p",
-            "-v", "quiet",
-            output_path,
-        ]
-        proc = subprocess.Popen(
-            cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        try:
-            # Deadline for entire write loop + drain to prevent indefinite hangs
-            # Scale with frame count so large batches don't get killed prematurely
-            deadline = time.monotonic() + max(60, n * 0.1)
-            for i in range(n):
-                if proc.poll() is not None:
-                    raise RuntimeError("ffmpeg exited unexpectedly during encoding")
-                if time.monotonic() > deadline:
-                    raise RuntimeError("ffmpeg encode timed out during frame writes")
-                frame_bytes = (images[i].cpu().numpy() * 255).astype(np.uint8).tobytes()
-                proc.stdin.write(frame_bytes)
-            proc.stdin.close()
-            remaining = max(1, deadline - time.monotonic())
-            _, stderr = proc.communicate(timeout=remaining)
-            if proc.returncode != 0:
-                raise RuntimeError(f"ffmpeg encode failed: {stderr.decode()[:200]}")
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait(timeout=5)
-            raise RuntimeError("ffmpeg encode timed out")
-        except Exception:
-            proc.kill()
-            proc.wait(timeout=5)
-            raise
+        from ..core.images_to_video import images_to_video
+        images_to_video(images, output_path, fps=fps)
 
     @staticmethod
     def _save_selected_frames_as_png(
@@ -773,8 +730,10 @@ class LoadLastVideo:
         Returns (width, height) or (0, 0) if probing fails.
         """
         try:
+            from ..core.bin_paths import get_ffprobe_bin
+            ffprobe = get_ffprobe_bin()
             cmd = [
-                "ffprobe", "-v", "error",
+                ffprobe, "-v", "error",
                 "-select_streams", "v:0",
                 "-show_entries", "stream=width,height",
                 "-print_format", "csv=p=0:s=x",
@@ -834,8 +793,10 @@ class LoadLastVideo:
             w = native_w if native_w > 0 else all_frames.shape[2]
             h = native_h if native_h > 0 else all_frames.shape[1]
 
+            from ..core.bin_paths import get_ffmpeg_bin
+            ffmpeg = get_ffmpeg_bin()
             cmd = [
-                "ffmpeg", "-noautorotate",
+                ffmpeg, "-noautorotate",
                 "-ss", str(timestamp),
                 "-i", video_path,
                 "-vframes", "1",

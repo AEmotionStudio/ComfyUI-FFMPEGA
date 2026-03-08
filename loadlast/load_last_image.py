@@ -39,7 +39,7 @@ class LoadLastImage:
     for change detection, while actual image loading is mtime-based.
     """
 
-    CATEGORY = "image"
+    CATEGORY = "FFMPEGA"
     FUNCTION = "load"
     OUTPUT_NODE = False
 

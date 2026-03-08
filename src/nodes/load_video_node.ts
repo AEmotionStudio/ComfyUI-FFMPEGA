@@ -9,7 +9,8 @@
  */
 
 import { api } from "comfyui/api";
-import { addDownloadOverlay, addVideoPreviewMenu, flashNode } from "@ffmpega/shared/ui_helpers";
+import { addDownloadOverlay, addVideoPreviewMenu, createUploadButton, flashNode } from "@ffmpega/shared/ui_helpers";
+import type { UploadButtonElement } from "@ffmpega/shared/ui_helpers";
 import type { ComfyNodeType, ComfyNodeData, ComfyNode, ComfyWidget } from "@ffmpega/types/comfyui";
 
 // ---- Type definitions ----
@@ -49,13 +50,7 @@ interface VideoMeta {
     frames: number;
 }
 
-/** Button with drag-drop transient state */
-interface UploadButtonElement extends HTMLButtonElement {
-    _originalInnerHTML?: string;
-    _originalBorder?: string;
-    _originalAriaLabel?: string | null;
-    _dragTimeout?: ReturnType<typeof setTimeout>;
-}
+
 
 /** Video widget with combo dropdown options */
 interface VideoDropdownWidget extends ComfyWidget {
@@ -172,7 +167,13 @@ export function registerLoadVideoNode(
             requestAnimationFrame(_syncDynamicOutputs);
         };
 
-        // --- Video preview DOM widget ---
+        // Upload button (created early to appear above preview)
+        const { fileInput, uploadBtn, updateBtnStyle: updateBtn } = createUploadButton(VIDEO_ACCEPT);
+        document.body.append(fileInput);
+
+        this.addDOMWidget("upload_button", "btn", uploadBtn, {
+            serialize: false,
+        });
         const previewContainer = document.createElement("div") as PreviewContainerElement;
         previewContainer.className = "ffmpega_preview";
         previewContainer.style.cssText =
@@ -444,7 +445,7 @@ export function registerLoadVideoNode(
             infoEl.textContent = "Loading...";
         };
 
-        // --- Upload widget ---
+        // --- Upload/error helpers ---
         const showError = (msg: string): void => {
             flashNode(node, "#7a4a4a");
             infoEl.textContent = msg;
@@ -460,14 +461,6 @@ export function registerLoadVideoNode(
             (w: ComfyWidget) => w.name === "video",
         ) as VideoDropdownWidget | undefined;
 
-        const fileInput = document.createElement("input");
-        Object.assign(fileInput, {
-            type: "file",
-            accept: VIDEO_ACCEPT,
-            style: "display: none",
-        });
-        document.body.append(fileInput);
-
         // Cleanup
         const origOnRemoved = this.onRemoved;
         this.onRemoved = function (): void {
@@ -475,43 +468,6 @@ export function registerLoadVideoNode(
             fileInput?.remove();
             origOnRemoved?.apply(this, arguments as unknown as []);
         };
-
-        const uploadBtn = document.createElement("button") as UploadButtonElement;
-        uploadBtn.innerHTML = "Upload Video...";
-        uploadBtn.setAttribute("aria-label", "Upload Video");
-        uploadBtn.style.cssText = `
-            width: 100%;
-            margin-top: 4px;
-            background-color: #222;
-            color: #ccc;
-            border: 1px solid #333;
-            border-radius: 4px;
-            padding: 6px;
-            cursor: pointer;
-            font-family: monospace;
-            font-size: 12px;
-            transition: background-color 0.2s;
-        `;
-
-        let isHovered = false;
-        let isFocused = false;
-        const updateBtn = (): void => {
-            if (uploadBtn.disabled) return;
-            const active = isHovered || isFocused;
-            uploadBtn.style.backgroundColor = active ? "#333" : "#222";
-            uploadBtn.style.outline = isFocused ? "2px solid #4a6a8a" : "none";
-            uploadBtn.style.outlineOffset = isFocused ? "2px" : "0px";
-        };
-        uploadBtn.onmouseenter = (): void => { isHovered = true; updateBtn(); };
-        uploadBtn.onmouseleave = (): void => { isHovered = false; updateBtn(); };
-        uploadBtn.onfocus = (): void => { isFocused = true; updateBtn(); };
-        uploadBtn.onblur = (): void => { isFocused = false; updateBtn(); };
-        uploadBtn.onclick = (): void => { fileInput.click(); };
-        uploadBtn.onpointerdown = (e: PointerEvent): void => { e.stopPropagation(); };
-
-        this.addDOMWidget("upload_button", "btn", uploadBtn, {
-            serialize: false,
-        });
 
         const setUploadState = (isUploading: boolean, filename = ""): void => {
             if (isUploading) {

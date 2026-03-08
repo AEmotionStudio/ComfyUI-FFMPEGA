@@ -28,6 +28,71 @@ interface OverlayButton extends HTMLButtonElement {
     _timeout?: ReturnType<typeof setTimeout> | null;
 }
 
+/** Upload button with drag-drop transient state */
+export interface UploadButtonElement extends HTMLButtonElement {
+    _originalInnerHTML?: string;
+    _originalBorder?: string;
+    _originalAriaLabel?: string | null;
+    _dragTimeout?: ReturnType<typeof setTimeout>;
+}
+
+// --- Upload button factory ---
+
+/**
+ * Create a styled upload button + hidden file input.
+ *
+ * Returns both elements; caller is responsible for appending fileInput to
+ * the DOM and registering the upload button as a DOM widget.
+ *
+ * @param acceptTypes - MIME types for the file input (e.g. "video/mp4,video/webm")
+ */
+export function createUploadButton(acceptTypes: string): {
+    fileInput: HTMLInputElement;
+    uploadBtn: UploadButtonElement;
+    updateBtnStyle: () => void;
+} {
+    const fileInput = document.createElement("input");
+    Object.assign(fileInput, {
+        type: "file",
+        accept: acceptTypes,
+        style: "display: none",
+    });
+
+    const uploadBtn = document.createElement("button") as UploadButtonElement;
+    uploadBtn.innerHTML = "Upload Video...";
+    uploadBtn.setAttribute("aria-label", "Upload Video");
+    uploadBtn.style.cssText = `
+        width: 100%;
+        background-color: #222;
+        color: #ccc;
+        border: 1px solid #333;
+        border-radius: 4px;
+        padding: 6px;
+        cursor: pointer;
+        font-family: monospace;
+        font-size: 12px;
+        transition: background-color 0.2s;
+    `;
+
+    let isHovered = false;
+    let isFocused = false;
+    const updateBtnStyle = (): void => {
+        if (uploadBtn.disabled) return;
+        const active = isHovered || isFocused;
+        uploadBtn.style.backgroundColor = active ? "#333" : "#222";
+        uploadBtn.style.outline = isFocused ? "2px solid #4a6a8a" : "none";
+        uploadBtn.style.outlineOffset = isFocused ? "2px" : "0px";
+    };
+    uploadBtn.onmouseenter = (): void => { isHovered = true; updateBtnStyle(); };
+    uploadBtn.onmouseleave = (): void => { isHovered = false; updateBtnStyle(); };
+    uploadBtn.onfocus = (): void => { isFocused = true; updateBtnStyle(); };
+    uploadBtn.onblur = (): void => { isFocused = false; updateBtnStyle(); };
+    uploadBtn.onclick = (): void => { fileInput.click(); };
+    uploadBtn.onpointerdown = (e: PointerEvent): void => { e.stopPropagation(); };
+
+    return { fileInput, uploadBtn, updateBtnStyle };
+}
+
 // --- Constants ---
 
 /** Alphabet for dynamic slot naming (image_a, image_b, etc.) */
