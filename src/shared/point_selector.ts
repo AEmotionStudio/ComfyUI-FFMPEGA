@@ -185,6 +185,10 @@ export function openPointSelector(
     overlay.appendChild(btnBar);
     document.body.appendChild(overlay);
 
+    // Manage focus for screen readers and keyboard navigation
+    overlay.tabIndex = -1;
+    overlay.focus();
+
     // ── State ──
     let pts: number[][] = existing.points ? [...existing.points] : [];
     let lbls: number[] = existing.labels ? [...existing.labels] : [];
