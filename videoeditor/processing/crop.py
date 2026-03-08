@@ -10,14 +10,7 @@ import json
 import logging
 import subprocess
 
-try:
-    from ...core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin
-except (ImportError, ValueError):
-    import shutil
-    def get_ffmpeg_bin() -> str:
-        return shutil.which("ffmpeg") or "ffmpeg"
-    def get_ffprobe_bin() -> str:
-        return shutil.which("ffprobe") or "ffprobe"
+from ._bin import get_ffmpeg_bin, get_ffprobe_bin
 
 log = logging.getLogger("ffmpega.videoeditor")
 

@@ -11,9 +11,6 @@ import logging
 
 log = logging.getLogger("ffmpega.videoeditor")
 
-# Default font — system sans-serif fallback
-_DEFAULT_FONT = "/usr/share/fonts/TTF/DejaVuSans.ttf"
-
 
 def build_drawtext_filters(overlays_json: str) -> list[str]:
     """Parse text overlay config and return a list of drawtext filter strings.
@@ -71,10 +68,15 @@ def _parse_overlays(overlays_json: str) -> list[dict]:
 
 
 def _escape_drawtext(text: str) -> str:
-    """Escape special characters for FFmpeg drawtext."""
-    # FFmpeg drawtext requires escaping: \, ', :, %
+    """Escape special characters for FFmpeg drawtext.
+
+    FFmpeg drawtext text values inside single quotes require escaping
+    backslashes, single quotes, colons, and percent signs.  The correct
+    way to embed a literal single quote is to end the quoted context,
+    insert an escaped quote, and re-open the quoted context: ``'\\''``.
+    """
     text = text.replace("\\", "\\\\")
-    text = text.replace("'", "'\\\\\\''")
+    text = text.replace("'", "'\\''")
     text = text.replace(":", "\\:")
     text = text.replace("%", "%%")
     return text
@@ -127,7 +129,7 @@ def _build_single_drawtext(ov: dict) -> str | None:
     escaped = _escape_drawtext(text)
     font_size = max(8, int(ov.get("font_size", 48)))
     color = ov.get("color", "white")
-    font = ov.get("font") or _DEFAULT_FONT
+    font = ov.get("font")  # user-provided font path, or None
 
     x_expr = _resolve_position(ov.get("x", "center"), "x")
     y_expr = _resolve_position(ov.get("y", "bottom"), "y")
@@ -140,8 +142,9 @@ def _build_single_drawtext(ov: dict) -> str | None:
         f"y={y_expr}",
     ]
 
-    # Optional font file
-    if font and font != _DEFAULT_FONT:
+    # Optional font file — only when user specifies a custom path.
+    # When omitted, FFmpeg uses its own cross-platform default font.
+    if font:
         parts.append(f"fontfile='{font}'")
 
     # Time range (enable between start and end)

@@ -320,13 +320,18 @@ class VideoEditorNode:
 
     @staticmethod
     def _tensor_content_hash(images: torch.Tensor) -> str:
-        """Compute a lightweight hash of tensor shape + sampled content."""
+        """Compute a lightweight hash of tensor shape + sampled content.
+
+        Slices a small patch from each frame *before* ``.cpu()`` to avoid
+        transferring the entire frame from GPU, which would waste ~24MB
+        per 4K frame for just 1KB of hash data.
+        """
         m = hashlib.sha256()
         m.update(str(images.shape).encode())
-        # Sample first and last frame to detect content changes
-        m.update(images[0].cpu().numpy().tobytes()[:1024])
+        # Sample a small patch from first and last frame
+        m.update(images[0, :4, :4, :].cpu().numpy().tobytes())
         if images.shape[0] > 1:
-            m.update(images[-1].cpu().numpy().tobytes()[:1024])
+            m.update(images[-1, :4, :4, :].cpu().numpy().tobytes())
         return m.hexdigest()
 
     @staticmethod

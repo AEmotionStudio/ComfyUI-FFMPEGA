@@ -16,12 +16,7 @@ import os
 import subprocess
 import tempfile
 
-try:
-    from ...core.bin_paths import get_ffmpeg_bin
-except (ImportError, ValueError):
-    import shutil
-    def get_ffmpeg_bin() -> str:
-        return shutil.which("ffmpeg") or "ffmpeg"
+from ._bin import get_ffmpeg_bin
 
 log = logging.getLogger("ffmpega.videoeditor")
 

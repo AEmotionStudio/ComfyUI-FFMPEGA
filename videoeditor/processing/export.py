@@ -15,18 +15,13 @@ import subprocess
 import tempfile
 import threading
 
-try:
-    from ...core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin
-except (ImportError, ValueError):
-    def get_ffmpeg_bin() -> str:
-        return shutil.which("ffmpeg") or "ffmpeg"
-    def get_ffprobe_bin() -> str:
-        return shutil.which("ffprobe") or "ffprobe"
-from .audio import get_audio_args
+from ._bin import get_ffmpeg_bin, get_ffprobe_bin
+from .audio import build_audio_filter, get_audio_args
 from .crop import apply_crop
 from .speed import build_speed_filters
 from .text_overlay import build_drawtext_filters
 from .transitions import apply_transitions, parse_transitions
+from .trim import _parse_segments
 
 log = logging.getLogger("ffmpega.videoeditor")
 
@@ -153,12 +148,20 @@ def render_edits(
         )
         if needs_audio_pass:
             audio_src = None
+            video_duration = None
             if used_transitions:
                 # Build a matching audio track from the segment files
                 audio_concat = os.path.join(tmp_dir, "audio_concat.mp4")
                 audio_src = _concat_segments(seg_files, audio_concat)
+                # Probe xfade'd video duration so we can truncate audio to
+                # match — xfade shortens the total by transition overlap.
+                from .transitions import _get_duration
+                video_duration = _get_duration(current) or None
             audio_path = os.path.join(tmp_dir, "audio_adj.mp4")
-            current = _apply_audio(current, volume, audio_path, audio_src)
+            current = _apply_audio(
+                current, volume, audio_path, audio_src,
+                match_duration=video_duration,
+            )
 
         # --- Step 6: Move final to output ---
         if current != output_path:
@@ -285,6 +288,7 @@ def _apply_audio(
     volume: float,
     output_path: str,
     audio_source: str | None = None,
+    match_duration: float | None = None,
 ) -> str:
     """Apply audio volume adjustment.
 
@@ -299,22 +303,61 @@ def _apply_audio(
     audio_source:
         If provided, mux audio from this file instead of *source_path*.
         Used after ``apply_transitions`` which strips audio (``-an``).
+    match_duration:
+        If provided, truncate the audio to this duration (seconds) to
+        prevent A/V desync after xfade shortens the video.
     """
     ffmpeg = get_ffmpeg_bin()
-    audio_args = get_audio_args(volume)
+    filt, muted = build_audio_filter(volume)
 
     if audio_source:
-        # Mux: take video from source_path, audio from audio_source
-        cmd = [
-            ffmpeg, "-y",
-            "-i", source_path,
-            "-i", audio_source,
-            "-map", "0:v",
-            "-map", "1:a?",  # "?" = don't fail if source has no audio
-            "-c:v", "copy",
-            "-shortest",
-        ] + audio_args + ["-v", "warning", output_path]
+        # Mux: take video from source_path, audio from audio_source.
+        # Use filter_complex with explicit stream labels to avoid
+        # ambiguous -af stream selection.
+        audio_input_args = ["-i", audio_source]
+        if match_duration is not None and match_duration > 0:
+            # Truncate audio input to match the xfade'd video length
+            audio_input_args = [
+                "-t", f"{match_duration:.3f}",
+            ] + audio_input_args
+
+        if muted:
+            cmd = [
+                ffmpeg, "-y",
+                "-i", source_path,
+            ] + audio_input_args + [
+                "-map", "0:v",
+                "-c:v", "copy",
+                "-an",
+                "-v", "warning", output_path,
+            ]
+        elif filt:
+            # Volume change — use filter_complex to target stream 1 audio
+            cmd = [
+                ffmpeg, "-y",
+                "-i", source_path,
+            ] + audio_input_args + [
+                "-filter_complex", f"[1:a]{filt}[aout]",
+                "-map", "0:v",
+                "-map", "[aout]",
+                "-c:v", "copy",
+                "-c:a", "aac", "-b:a", "192k",
+                "-v", "warning", output_path,
+            ]
+        else:
+            # No volume change — just mux
+            cmd = [
+                ffmpeg, "-y",
+                "-i", source_path,
+            ] + audio_input_args + [
+                "-map", "0:v",
+                "-map", "1:a?",
+                "-c:v", "copy",
+                "-c:a", "copy",
+                "-v", "warning", output_path,
+            ]
     else:
+        audio_args = get_audio_args(volume)
         cmd = [
             ffmpeg, "-y",
             "-i", source_path,
@@ -331,10 +374,6 @@ def _apply_audio(
         )
 
     return output_path
-
-
-# Re-use shared parsing helpers — avoid duplication with trim.py
-from .trim import _parse_segments  # noqa: E402
 
 
 def _has_speed_changes(speed_map_json: str) -> bool:

@@ -9,17 +9,10 @@ from __future__ import annotations
 import json
 import logging
 import os
-import shutil
 import subprocess
 import tempfile
 
-try:
-    from ...core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin
-except (ImportError, ValueError):
-    def get_ffmpeg_bin() -> str:
-        return shutil.which("ffmpeg") or "ffmpeg"
-    def get_ffprobe_bin() -> str:
-        return shutil.which("ffprobe") or "ffprobe"
+from ._bin import get_ffmpeg_bin, get_ffprobe_bin
 
 log = logging.getLogger("ffmpega.videoeditor")
 
@@ -153,10 +146,10 @@ def apply_transitions(
         t_info = transition_map.get(i)
 
         if t_info is None:
-            # No transition — just concat (handled differently)
-            # For simplicity, use a very short crossfade (0.01s)
+            # No transition — use a micro-fade (0.01s) as a concat proxy.
+            # t_dur must match the filter duration so the offset stays in sync.
             t_type = "fade"
-            t_dur = 0.0
+            t_dur = 0.01
         else:
             t_type = TRANSITION_TYPES.get(t_info["type"], "fade")
             t_dur = t_info["duration"]

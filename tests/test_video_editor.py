@@ -294,3 +294,78 @@ class TestExportHelpers:
         result = _error("test error")
         assert not result["success"]
         assert result["error"] == "test error"
+
+
+# ── text_overlay.py (escaping edge cases) ───────────────────────────
+
+
+class TestDrawtextEscaping:
+    """Test drawtext special character escaping."""
+
+    def test_apostrophe_escaping(self):
+        from videoeditor.processing.text_overlay import _escape_drawtext
+
+        result = _escape_drawtext("it's a test")
+        # FFmpeg expects: end quote, escaped quote, re-open quote
+        assert "'\\''" in result
+        # Should NOT contain double-backslashes in the quote escape
+        assert "'\\\\\\''" not in result
+
+    def test_colon_escaping(self):
+        from videoeditor.processing.text_overlay import _escape_drawtext
+
+        result = _escape_drawtext("time: 12:00")
+        assert "\\:" in result
+        assert result.count("\\:") == 2
+
+    def test_percent_escaping(self):
+        from videoeditor.processing.text_overlay import _escape_drawtext
+
+        result = _escape_drawtext("100% done")
+        assert "%%" in result
+
+    def test_backslash_escaping(self):
+        from videoeditor.processing.text_overlay import _escape_drawtext
+
+        result = _escape_drawtext("back\\slash")
+        assert "\\\\" in result
+
+    def test_combined_special_chars(self):
+        from videoeditor.processing.text_overlay import _escape_drawtext
+
+        result = _escape_drawtext("it's 100%: done\\ok")
+        # All specials should be escaped
+        assert "'\\''" in result
+        assert "%%" in result
+        assert "\\:" in result
+        assert "\\\\" in result
+
+
+# ── speed.py (atempo chaining edge cases) ───────────────────────────
+
+
+class TestAtempoChaining:
+    """Test deep atempo filter chaining for extreme speeds."""
+
+    def test_8th_speed_chains_three(self):
+        from videoeditor.processing.speed import _build_atempo_chain
+
+        # 0.125x = 0.5 * 0.5 * 0.5 → 3 chained atempo=0.5
+        result = _build_atempo_chain(0.125)
+        assert result.count("atempo=") == 3
+
+    def test_16x_speed_chains_four(self):
+        from videoeditor.processing.speed import _build_atempo_chain
+
+        # 16x = 2.0 * 2.0 * 2.0 * 2.0 → 4 chained atempo=2.0
+        result = _build_atempo_chain(16.0)
+        assert result.count("atempo=") == 4
+
+    def test_normal_speed_single(self):
+        from videoeditor.processing.speed import _build_atempo_chain
+
+        # 1.5x is within [0.5, 2.0] → single atempo
+        result = _build_atempo_chain(1.5)
+        assert "atempo=1.5" in result
+        assert result.count("atempo=") == 1
+
