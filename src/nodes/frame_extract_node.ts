@@ -9,7 +9,8 @@
  */
 
 import { api } from "comfyui/api";
-import { addDownloadOverlay, addVideoPreviewMenu, flashNode } from "@ffmpega/shared/ui_helpers";
+import { addDownloadOverlay, addVideoPreviewMenu, createUploadButton, flashNode } from "@ffmpega/shared/ui_helpers";
+import type { UploadButtonElement } from "@ffmpega/shared/ui_helpers";
 import type { ComfyNodeType, ComfyNodeData, ComfyNode, ComfyWidget } from "@ffmpega/types/comfyui";
 
 // ---- Type definitions ----
@@ -39,13 +40,7 @@ interface VideoInfoResponse {
     frames?: number;
 }
 
-/** Button element with drag-drop transient state */
-interface UploadButtonElement extends HTMLButtonElement {
-    _originalInnerHTML?: string;
-    _originalBorder?: string;
-    _originalAriaLabel?: string | null;
-    _dragTimeout?: ReturnType<typeof setTimeout>;
-}
+
 
 interface PreviewContainerElement extends HTMLDivElement {
     value?: unknown;
@@ -98,6 +93,14 @@ export function registerFrameExtractNode(
 
         this.color = "#2a4a5a";
         this.bgcolor = "#1a3a4a";
+
+        // --- Upload button (registered early to appear above preview) ---
+        const { fileInput, uploadBtn, updateBtnStyle: updateUploadBtn } = createUploadButton(VIDEO_ACCEPT);
+        document.body.append(fileInput);
+
+        this.addDOMWidget("upload_button", "btn", uploadBtn, {
+            serialize: false,
+        });
 
         // --- Video preview DOM widget ---
         const previewContainer = document.createElement("div") as PreviewContainerElement;
@@ -206,7 +209,6 @@ export function registerFrameExtractNode(
             const params = new URLSearchParams({
                 path: videoPath,
                 start_time: String(startTime),
-                _t: String(Date.now()),
             });
             if (duration > 0) {
                 params.set("duration", String(duration));
@@ -301,14 +303,7 @@ export function registerFrameExtractNode(
             }
         };
 
-        // --- Upload button + drag-drop ---
-        const fileInput = document.createElement("input");
-        Object.assign(fileInput, {
-            type: "file",
-            accept: VIDEO_ACCEPT,
-            style: "display: none",
-        });
-        document.body.append(fileInput);
+        // --- Upload/error helpers (button already registered above) ---
 
         // Clean up on node removal
         const origOnRemoved = this.onRemoved;
@@ -328,43 +323,6 @@ export function registerFrameExtractNode(
             ]);
             node?.graph?.setDirtyCanvas(true);
         };
-
-        const uploadBtn = document.createElement("button") as UploadButtonElement;
-        uploadBtn.innerHTML = "Upload Video...";
-        uploadBtn.setAttribute("aria-label", "Upload Video");
-        uploadBtn.style.cssText = `
-            width: 100%;
-            margin-top: 4px;
-            background-color: #222;
-            color: #ccc;
-            border: 1px solid #333;
-            border-radius: 4px;
-            padding: 6px;
-            cursor: pointer;
-            font-family: monospace;
-            font-size: 12px;
-            transition: background-color 0.2s;
-        `;
-
-        let isHovered = false;
-        let isFocused = false;
-        const updateUploadBtn = (): void => {
-            if (uploadBtn.disabled) return;
-            const active = isHovered || isFocused;
-            uploadBtn.style.backgroundColor = active ? "#333" : "#222";
-            uploadBtn.style.outline = isFocused ? "2px solid #4a6a8a" : "none";
-            uploadBtn.style.outlineOffset = isFocused ? "2px" : "0px";
-        };
-        uploadBtn.onmouseenter = (): void => { isHovered = true; updateUploadBtn(); };
-        uploadBtn.onmouseleave = (): void => { isHovered = false; updateUploadBtn(); };
-        uploadBtn.onfocus = (): void => { isFocused = true; updateUploadBtn(); };
-        uploadBtn.onblur = (): void => { isFocused = false; updateUploadBtn(); };
-        uploadBtn.onclick = (): void => { fileInput.click(); };
-        uploadBtn.onpointerdown = (e: PointerEvent): void => { e.stopPropagation(); };
-
-        this.addDOMWidget("upload_button", "btn", uploadBtn, {
-            serialize: false,
-        });
 
         const setUploadState = (uploading: boolean, filename = ""): void => {
             if (uploading) {

@@ -10,6 +10,7 @@ export default defineConfig({
                 'ffmpega_effects_ui': resolve(__dirname, 'src/ffmpega_effects_ui.ts'),
                 'video_preview': resolve(__dirname, 'src/loadlast/video_preview.ts'),
                 'contact_sheet': resolve(__dirname, 'src/loadlast/contact_sheet.ts'),
+                'video_editor': resolve(__dirname, 'src/videoeditor/video_editor.ts'),
             },
             formats: ['es'],
             fileName: (_format, entryName) => `${entryName}.js`

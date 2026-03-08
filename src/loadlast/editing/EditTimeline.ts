@@ -17,7 +17,6 @@ const PLAYHEAD_W = 2;
 
 const SEG_COLOR = 'rgba(90, 170, 200, 0.5)';
 const SEG_BORDER = '#5ac';
-const SEG_ACTIVE = 'rgba(90, 170, 200, 0.75)';
 const EXCLUDED_COLOR = 'rgba(30, 30, 30, 0.85)';
 const EXCLUDED_STRIPE = 'rgba(60, 60, 60, 0.6)';
 const HANDLE_COLOR = '#fff';
@@ -36,12 +35,13 @@ export interface EditTimelineCallbacks {
     onPlayheadChanged: (time: number) => void;
     onTrimHandleDrag: (time: number) => void;
     onRequestSplit: () => void;
+    onDragStart?: () => void;
+    onDragEnd?: () => void;
 }
 
 export class EditTimeline {
     private canvas: HTMLCanvasElement;
     private container: HTMLDivElement;
-    private controlsEl: HTMLDivElement;
     private manager: EditManager;
     private callbacks: EditTimelineCallbacks;
 
@@ -49,6 +49,12 @@ export class EditTimeline {
     public playhead: number = 0;
     private hoveredHandle: string | null = null;
     private drag: DragState = { type: 'none' };
+
+    // Bound handlers (stored so destroy() can remove the exact same reference)
+    private _boundMouseDown = this._onMouseDown.bind(this);
+    private _boundMouseMove = this._onMouseMove.bind(this);
+    private _boundMouseUp = this._onMouseUp.bind(this);
+    private _boundDblClick = this._onDoubleClick.bind(this);
 
     constructor(manager: EditManager, callbacks: EditTimelineCallbacks) {
         this.manager = manager;
@@ -63,11 +69,6 @@ export class EditTimeline {
         this.canvas.className = 'll_edit_canvas';
         this.canvas.style.cssText = 'width:100%;cursor:pointer;border-radius:4px;';
         this.container.appendChild(this.canvas);
-
-        // Controls row
-        this.controlsEl = document.createElement('div');
-        this.controlsEl.className = 'll_edit_toolbar';
-        this.container.appendChild(this.controlsEl);
 
         this._bindEvents();
     }
@@ -218,61 +219,13 @@ export class EditTimeline {
             w / 2, trackY + trackH + 14,
         );
 
-        // Render controls
-        this._renderControls();
-    }
-
-    private _renderControls(): void {
-        this.controlsEl.innerHTML = '';
-
-        const makeBtn = (label: string, tip: string, onClick: () => void): HTMLButtonElement => {
-            const btn = document.createElement('button');
-            btn.textContent = label;
-            btn.title = tip;
-            btn.className = 'll_edit_btn';
-            btn.addEventListener('click', (e: Event) => { e.stopPropagation(); onClick(); });
-            return btn;
-        };
-
-        this.controlsEl.appendChild(
-            makeBtn('✂️ Split', 'Split segment at playhead', () => {
-                if (this.manager.splitAt(this.playhead)) {
-                    this.callbacks.onSegmentsChanged();
-                    this.render();
-                }
-            })
-        );
-
-        // Delete: only if >1 segment and playhead is inside one
-        if (this.manager.segments.length > 1) {
-            const hitSeg = this.manager.segments.find(
-                s => this.playhead >= s.start && this.playhead <= s.end
-            );
-            if (hitSeg) {
-                this.controlsEl.appendChild(
-                    makeBtn('🗑️ Delete', 'Delete segment at playhead', () => {
-                        this.manager.removeSegment(hitSeg.id);
-                        this.callbacks.onSegmentsChanged();
-                        this.render();
-                    })
-                );
-            }
-        }
-
-        this.controlsEl.appendChild(
-            makeBtn('↺ Reset', 'Reset to full video', () => {
-                this.manager.reset();
-                this.callbacks.onSegmentsChanged();
-                this.render();
-            })
-        );
     }
 
     private _bindEvents(): void {
-        this.canvas.addEventListener('mousedown', this._onMouseDown.bind(this));
-        this.canvas.addEventListener('mousemove', this._onMouseMove.bind(this));
-        document.addEventListener('mouseup', this._onMouseUp.bind(this));
-        this.canvas.addEventListener('dblclick', this._onDoubleClick.bind(this));
+        this.canvas.addEventListener('mousedown', this._boundMouseDown);
+        this.canvas.addEventListener('mousemove', this._boundMouseMove);
+        document.addEventListener('mouseup', this._boundMouseUp);
+        this.canvas.addEventListener('dblclick', this._boundDblClick);
     }
 
     private _canvasToTrack(clientX: number, clientY: number): { x: number; y: number } {
@@ -337,6 +290,7 @@ export class EditTimeline {
             }
         } else if (hit.type === 'playhead') {
             this.drag = { type: 'playhead', startX: e.clientX, origTime: this.playhead };
+            this.callbacks.onDragStart?.();
         } else if (hit.type === 'track') {
             // Click on track → move playhead
             this.playhead = this._xToTime(x);
@@ -395,6 +349,9 @@ export class EditTimeline {
             if (this.drag.type === 'handle-left' || this.drag.type === 'handle-right') {
                 this.callbacks.onSegmentsChanged();
             }
+            if (this.drag.type === 'playhead') {
+                this.callbacks.onDragEnd?.();
+            }
             this.drag = { type: 'none' };
         }
     }
@@ -416,6 +373,9 @@ export class EditTimeline {
 
     /** Cleanup event listeners */
     destroy(): void {
-        document.removeEventListener('mouseup', this._onMouseUp.bind(this));
+        this.canvas.removeEventListener('mousedown', this._boundMouseDown);
+        this.canvas.removeEventListener('mousemove', this._boundMouseMove);
+        document.removeEventListener('mouseup', this._boundMouseUp);
+        this.canvas.removeEventListener('dblclick', this._boundDblClick);
     }
 }

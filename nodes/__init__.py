@@ -1,5 +1,7 @@
 """ComfyUI node definitions for FFMPEGA."""
 
+import logging
+
 from .agent_node import FFMPEGAgentNode
 from .frame_extract_node import FrameExtractNode
 from .load_image_path_node import LoadImagePathNode
@@ -42,9 +44,21 @@ try:
     NODE_DISPLAY_NAME_MAPPINGS["LoadLastImage"] = "Load Last Image 🔄"
     NODE_DISPLAY_NAME_MAPPINGS["LoadLastVideo"] = "Load Last Video 🎬"
 except ImportError:
-    import logging
     logging.getLogger("FFMPEGA").debug(
         "[FFMPEGA] LoadLast nodes not available (import error)", exc_info=True
+    )
+
+# --- Video Editor node ---
+try:
+    from ..videoeditor import VideoEditorNode
+    if VideoEditorNode is None:
+        raise ImportError("VideoEditorNode failed to load")
+
+    NODE_CLASS_MAPPINGS["FFMPEGAVideoEditor"] = VideoEditorNode
+    NODE_DISPLAY_NAME_MAPPINGS["FFMPEGAVideoEditor"] = "Video Editor (FFMPEGA)"
+except ImportError:
+    logging.getLogger("FFMPEGA").debug(
+        "[FFMPEGA] VideoEditor node not available (import error)", exc_info=True
     )
 
 __all__ = [
@@ -63,3 +77,7 @@ __all__ = [
 # Add LoadLast names only if they were successfully imported
 if "LoadLastImage" in NODE_CLASS_MAPPINGS:
     __all__.extend(["LoadLastImage", "LoadLastVideo"])
+
+# Add VideoEditor name only if successfully imported
+if "FFMPEGAVideoEditor" in NODE_CLASS_MAPPINGS:
+    __all__.append("FFMPEGAVideoEditor")
