@@ -5,7 +5,7 @@
 **The ultimate video editing suite for ComfyUI — edit with natural language or hands-on manual controls.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-2.13.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-2.14.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-2-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 [![Downloads](https://img.shields.io/badge/dynamic/json?color=blueviolet&label=Downloads&query=downloads.smart_count&url=https://raw.githubusercontent.com/AEmotionStudio/ComfyUI-FFMPEGA/refs/heads/badges/traffic_stats.json&style=for-the-badge&logo=github)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
@@ -24,18 +24,19 @@
 
 ---
 
-## 🚀 What's New in v2.13.0
+## 🚀 What's New in v2.14.0
 
-*   🖼️ **AI Background Removal** — remove or replace backgrounds using BRIA RMBG with 6 model choices and solid-color or transparent output
-*   🎛️ **FLUX Klein Toggle** — enable/disable FLUX Klein 4B per-run with a single checkbox for zero-VRAM editing
-*   🎬 **Edit FFmpeg Fallback** — when FLUX Klein is off, masked edits use lightweight FFmpeg color/tone filters instead
-*   ⚡ **Smarter Defaults** — `use_vision` and `verify_output` now default to off, cutting token usage and VRAM pressure
+*   🎬 **Video Editor Node** — full interactive NLE editor inside ComfyUI with timeline, razor tool, crop overlay, transitions, text overlays, speed/volume controls, and keyboard shortcuts
+*   📡 **Seekable MP4 Preview** — new server route with HTTP Range support and LRU caching for instant in-editor video playback
+*   🧰 **Shared Utilities** — extracted `images_to_video` and UI helpers into reusable modules, reducing duplication across nodes
+*   🧪 **1,056 Tests** — expanded test suite with 40+ new tests for the Video Editor processing pipeline
 
 <details>
 <summary><b>📋 Previous Releases</b></summary>
 
 | Version | Highlights |
 | :--- | :--- |
+| **v2.13.0** | AI Background Removal (BRIA RMBG), FLUX Klein toggle, Edit FFmpeg fallback, smarter defaults |
 | **v2.12.0** | AI Face Animation (LivePortrait), MMAudio in-process inference, MCP progressive disclosure, LaMa safetensors conversion |
 | **v2.11.0** | MMAudio in-process migration, `generate_audio` no-LLM mode, MCP tools, CLI binary caching |
 | **v2.10.0** | FLUX Klein in-process migration, interactive mask drawing UI, model output caching |
@@ -513,7 +514,7 @@ All models are mirrored to first-party [AEmotionStudio](https://huggingface.co/A
 
 ## 🎛️ Nodes
 
-FFMPEGA provides **8 nodes** that work together:
+FFMPEGA provides **9 nodes** that work together:
 
 > [!TIP]
 > **One task per run.** Instead of cramming multiple edits into a single prompt, focus each run on one editing task — then feed the output back into FFMPEGA for the next. This keeps context low and model focus high, leading to significantly better results. Chain FFMPEGA Agent → Save Video → Load Video Path → FFMPEGA Agent for multi-step workflows.
@@ -735,6 +736,30 @@ Bridge node between Load Video nodes (which output IMAGE tensors) and FFMPEGA Ag
 | Output | Description |
 | :--- | :--- |
 | `video_path` | File path to the temp video |
+
+</details>
+
+<details>
+<summary><b>Video Editor (FFMPEGA)</b> — Interactive NLE video editor with timeline, crop, transitions, and more.</summary>
+
+A full-featured non-linear editor built into ComfyUI. Open the editor modal from any Video Editor node to trim, split, crop, adjust speed/volume, add text overlays, and apply transitions — all rendered through FFmpeg on export. No LLM required.
+
+**Editing Tools:** Select, Razor (split), Delete, Crop, Speed, Volume, Text Overlay, Transitions.
+
+**Keyboard Shortcuts:** Space (play/pause), J/K/L (shuttle), I/O (in/out), R (razor), V (select), Left/Right (frame step), `?` (shortcut overlay).
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `video_path` | STRING | Path to source video, or connect from upstream. |
+| `images` | IMAGE | *(optional)* Video frames from upstream — auto-converted to a temp video for editing. |
+
+| Output | Description |
+| :--- | :--- |
+| `images` | All frames from the edited output video |
+| `audio` | Audio extracted from the edited output |
+| `video_path` | Path to the rendered output video |
+
+> **Passthrough mode:** When no edits are made, the node passes the input video through unchanged — zero re-encoding overhead.
 
 </details>
 

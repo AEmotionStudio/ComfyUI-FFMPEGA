@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.14.0] - 2026-03-08
+
+### Added
+- **Video Editor Node**: New interactive NLE (Non-Linear Editor) node for hands-on video editing directly inside ComfyUI. Features a full-screen modal with timeline, transport controls, and editing tools — no LLM required. *(PR #155)*
+  - **Timeline Editing**: Visual timeline with drag-to-select, razor tool (split at playhead), and segment deletion. Undo/redo with `Ctrl+Z` / `Ctrl+Shift+Z`.
+  - **Speed Control**: Per-segment speed adjustment (0.25×–4×) with `setpts`/`atempo` filter chaining for values outside FFmpeg's native 0.5–2.0 range.
+  - **Volume & Mute**: Per-segment volume control (0–200%) and mute toggle via `volume` audio filter.
+  - **Crop Tool**: Interactive crop overlay with drag handles and real-time preview. Applies FFmpeg `crop` filter on export.
+  - **Text Overlays**: Add positioned text with configurable font size, color, and timing via FFmpeg `drawtext` filter. Correct escaping for colons, backslashes, and special characters.
+  - **Transitions**: Crossfade and dip-to-black transitions between segments using FFmpeg `xfade`/`acrossfade` filters. Configurable duration per transition.
+  - **Multi-Stage Render Pipeline**: Exports through trim → speed → transitions → text overlay → crop → audio stages, with `cancel_event` threading for clean cancellation of long renders.
+  - **Keyboard Shortcuts**: Space (play/pause), J/K/L (shuttle), I/O (mark in/out), Left/Right (frame step), R (razor), V (select), Delete, and more. `?` opens shortcut overlay.
+- **Seekable MP4 Preview Server**: New `/ffmpega/preview` route with HTTP Range support, `mtime`-based cache keys, and LRU in-memory caching for instant video previews in the editor. *(PR #155)*
+- **Shared `images_to_video` Utility**: New `core/images_to_video.py` extracts the image-tensor-to-video conversion into a reusable function, eliminating duplication across `VideoEditorNode` and `VideoToPathNode`. *(PR #155)*
+- **Shared UI Helpers**: Extracted common upload, drag-and-drop, and UI utility code from `ffmpega_ui.js` into `web/ui_helpers.js` for reuse across nodes. *(PR #155)*
+- **Video Editor Tests**: New `tests/test_video_editor.py` with 40+ tests covering segment parsing, speed filter building, volume filters, text overlay escaping, crop filter generation, transition building, and cache logic. *(PR #155)*
+
+### Changed
+- **TypeScript Migration**: Video Editor frontend built in TypeScript (`src/videoeditor/*.ts`) with Vite build pipeline. Compiled bundles committed to `web/` per ComfyUI extension convention. *(PR #155)*
+- **Node Count**: Updated from 8 to **9 nodes** (added Video Editor).
+- **Test Suite**: Expanded from 952 to **1,056 tests**, 0 failures.
+
+---
+
 ## [2.13.0] - 2026-03-06
 
 ### Added
