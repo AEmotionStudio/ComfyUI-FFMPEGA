@@ -167,3 +167,5 @@ advert/
 index.html
 index.html.bak
 
+# Legacy JS source (superseded by TypeScript → web/)
+js/

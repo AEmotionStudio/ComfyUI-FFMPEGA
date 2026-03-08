@@ -1,0 +1,18 @@
+{
+    "name": "comfyui-ffmpega",
+    "version": "1.0.0",
+    "type": "module",
+    "description": "FFMPEGA — Intelligent FFMPEG Agent for ComfyUI",
+    "scripts": {
+        "dev": "vite build --watch",
+        "build": "vite build",
+        "typecheck": "tsc --noEmit",
+        "test:unit": "vitest run"
+    },
+    "devDependencies": {
+        "happy-dom": "^20.0.11",
+        "typescript": "^5.3.0",
+        "vite": "^5.0.0",
+        "vitest": "^4.0.16"
+    }
+}
