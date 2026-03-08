@@ -3,16 +3,17 @@ import { u as updateDynamicSlots, S as SLOT_LABELS, s as setPrompt, R as RANDOM_
 import { api } from "../../scripts/api.js";
 const NODE_COLORS = {
   "FFMPEGAPreview": ["#3a5a3a", "#2a4a2a"],
-  "FFMPEGAVideoToPath": ["#3a5a5a", "#2a4a4a"],
+  "FFMPEGAVideoToPath": ["#3a5a4a", "#2a4a3a"],
   "FFMPEGABatchProcessor": ["#5a3a3a", "#4a2a2a"],
-  "FFMPEGAVideoInfo": ["#4a4a3a", "#3a3a2a"]
+  "FFMPEGAVideoInfo": ["#4a4a3a", "#3a3a2a"],
+  "LoadLastImage": ["#5a4a3a", "#4a3a2a"]
 };
 function registerNodeStyling(nodeType, nodeData) {
   const colors = NODE_COLORS[nodeData.name];
   if (!colors) return false;
   const [color, bgcolor] = colors;
   const onNodeCreated = nodeType.prototype.onNodeCreated;
-  nodeType.prototype.onNodeCreated = function() {
+  nodeType.prototype.onNodeCreated = function () {
     const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
     this.color = color;
     this.bgcolor = bgcolor;
@@ -285,7 +286,7 @@ function buildPresetMenu(node) {
 function registerAgentNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGAgent") return;
   const onNodeCreated = nodeType.prototype.onNodeCreated;
-  nodeType.prototype.onNodeCreated = function() {
+  nodeType.prototype.onNodeCreated = function () {
     var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D;
     const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
     const node = this;
@@ -301,7 +302,7 @@ function registerAgentNode(nodeType, nodeData) {
     };
     const llmWidget = (_a = this.widgets) == null ? void 0 : _a.find((w) => w.name === "llm_model");
     if (llmWidget) {
-      let updateLlmVisibility = function() {
+      let updateLlmVisibility = function () {
         var _a2;
         const model = llmWidget.value;
         const isNone = model === "none";
@@ -323,7 +324,7 @@ function registerAgentNode(nodeType, nodeData) {
       const ptcWidget = (_g = this.widgets) == null ? void 0 : _g.find((w) => w.name === "ptc_mode");
       updateLlmVisibility();
       const origLlmCb = llmWidget.callback;
-      llmWidget.callback = function(...args) {
+      llmWidget.callback = function (...args) {
         origLlmCb == null ? void 0 : origLlmCb.apply(this, args);
         updateLlmVisibility();
       };
@@ -331,13 +332,13 @@ function registerAgentNode(nodeType, nodeData) {
     const saveWidget = (_h = this.widgets) == null ? void 0 : _h.find((w) => w.name === "save_output");
     const outputPathWidget = (_i = this.widgets) == null ? void 0 : _i.find((w) => w.name === "output_path");
     if (saveWidget && outputPathWidget) {
-      let updateSaveVisibility = function() {
+      let updateSaveVisibility = function () {
         toggleWidget(outputPathWidget, Boolean(saveWidget.value));
         fitHeight();
       };
       updateSaveVisibility();
       const origSaveCb = saveWidget.callback;
-      saveWidget.callback = function(...args) {
+      saveWidget.callback = function (...args) {
         origSaveCb == null ? void 0 : origSaveCb.apply(this, args);
         updateSaveVisibility();
       };
@@ -389,13 +390,13 @@ function registerAgentNode(nodeType, nodeData) {
     if (advancedWidget) {
       updateAdvancedVisibility();
       const origAdvCb = advancedWidget.callback;
-      advancedWidget.callback = function(...args) {
+      advancedWidget.callback = function (...args) {
         origAdvCb == null ? void 0 : origAdvCb.apply(this, args);
         updateAdvancedVisibility();
       };
     }
     if (batchWidget) {
-      let updateBatchVisibility = function() {
+      let updateBatchVisibility = function () {
         const showAdvanced = Boolean((advancedWidget == null ? void 0 : advancedWidget.value) ?? true);
         const show = Boolean(batchWidget.value) && showAdvanced;
         if (folderWidget) toggleWidget(folderWidget, show);
@@ -405,13 +406,13 @@ function registerAgentNode(nodeType, nodeData) {
       };
       updateBatchVisibility();
       const origBatchCb = batchWidget.callback;
-      batchWidget.callback = function(...args) {
+      batchWidget.callback = function (...args) {
         origBatchCb == null ? void 0 : origBatchCb.apply(this, args);
         updateBatchVisibility();
       };
     }
     const origOnConnectionsChange = this.onConnectionsChange;
-    this.onConnectionsChange = function(type, slotIndex, isConnected, link, ioSlot) {
+    this.onConnectionsChange = function (type, slotIndex, isConnected, link, ioSlot) {
       origOnConnectionsChange == null ? void 0 : origOnConnectionsChange.apply(this, arguments);
       if (type === LiteGraph.INPUT) {
         updateDynamicSlots(this, "images_", "IMAGE", []);
@@ -424,7 +425,7 @@ function registerAgentNode(nodeType, nodeData) {
       }
     };
     const origOnConfigure = this.onConfigure;
-    this.onConfigure = function(info) {
+    this.onConfigure = function (info) {
       origOnConfigure == null ? void 0 : origOnConfigure.apply(this, arguments);
       if (info == null ? void 0 : info.inputs) {
         const existingNames = new Set(this.inputs.map((i) => i.name));
@@ -482,7 +483,7 @@ function registerAgentNode(nodeType, nodeData) {
     return result;
   };
   const origGetExtraMenuOptions = nodeType.prototype.getExtraMenuOptions;
-  nodeType.prototype.getExtraMenuOptions = function(_, options) {
+  nodeType.prototype.getExtraMenuOptions = function (_, options) {
     origGetExtraMenuOptions == null ? void 0 : origGetExtraMenuOptions.apply(this, arguments);
     if (this._previousPrompt) {
       options.unshift({
@@ -591,7 +592,7 @@ function formatTime(sec) {
 function registerFrameExtractNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGAFrameExtract") return;
   const onNodeCreated = nodeType.prototype.onNodeCreated;
-  nodeType.prototype.onNodeCreated = function() {
+  nodeType.prototype.onNodeCreated = function () {
     const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
     const node = this;
     this.color = "#2a4a5a";
@@ -666,7 +667,7 @@ function registerFrameExtractNode(nodeType, nodeData) {
       }
     );
     previewWidget.aspectRatio = null;
-    previewWidget.computeSize = function(width) {
+    previewWidget.computeSize = function (width) {
       if (this.aspectRatio && previewContainer.style.display !== "none") {
         const h = (node.size[0] - 20) / this.aspectRatio + 10;
         return [width, Math.max(h, 0) + 30];
@@ -746,7 +747,7 @@ function registerFrameExtractNode(nodeType, nodeData) {
     }, 500);
     setTimeout(updateLivePreview, 300);
     const origOnExecuted = this.onExecuted;
-    this.onExecuted = function(data) {
+    this.onExecuted = function (data) {
       var _a, _b;
       origOnExecuted == null ? void 0 : origOnExecuted.apply(this, arguments);
       if ((_a = data == null ? void 0 : data.video) == null ? void 0 : _a[0]) {
@@ -769,7 +770,7 @@ function registerFrameExtractNode(nodeType, nodeData) {
       }
     };
     const origOnRemoved = this.onRemoved;
-    this.onRemoved = function() {
+    this.onRemoved = function () {
       clearInterval(pollInterval);
       fileInput == null ? void 0 : fileInput.remove();
       origOnRemoved == null ? void 0 : origOnRemoved.apply(this, arguments);
@@ -951,7 +952,7 @@ function formatTimeLV(sec) {
 function registerLoadVideoNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGALoadVideoPath") return;
   const onNodeCreated = nodeType.prototype.onNodeCreated;
-  nodeType.prototype.onNodeCreated = function() {
+  nodeType.prototype.onNodeCreated = function () {
     var _a;
     const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
     const node = this;
@@ -983,7 +984,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
       node.setDirtyCanvas(true, true);
     });
     const origOnCC = this.onConnectionsChange;
-    this.onConnectionsChange = function(type, slotIndex, isConnected, link, ioSlot) {
+    this.onConnectionsChange = function (type, slotIndex, isConnected, link, ioSlot) {
       var _a2, _b;
       origOnCC == null ? void 0 : origOnCC.apply(this, arguments);
       if (type === LiteGraph.INPUT) {
@@ -994,7 +995,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
       }
     };
     const origConfigure = this.onConfigure;
-    this.onConfigure = function(data) {
+    this.onConfigure = function (data) {
       origConfigure == null ? void 0 : origConfigure.apply(this, arguments);
       requestAnimationFrame(_syncDynamicOutputs);
     };
@@ -1205,7 +1206,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
       }
     );
     previewWidget.aspectRatio = null;
-    previewWidget.computeSize = function(width) {
+    previewWidget.computeSize = function (width) {
       if (this.aspectRatio && previewContainer.style.display !== "none") {
         const h = (node.size[0] - 20) / this.aspectRatio + 10;
         return [width, Math.max(h, 0) + 30];
@@ -1243,7 +1244,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
       (w) => w.name === "video"
     );
     const origOnRemoved = this.onRemoved;
-    this.onRemoved = function() {
+    this.onRemoved = function () {
       clearInterval(lvPollInterval);
       fileInput == null ? void 0 : fileInput.remove();
       origOnRemoved == null ? void 0 : origOnRemoved.apply(this, arguments);
@@ -1367,7 +1368,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
     };
     if (videoWidget) {
       const origCallback = videoWidget.callback;
-      videoWidget.callback = function(value) {
+      videoWidget.callback = function (value) {
         origCallback == null ? void 0 : origCallback.apply(this, arguments);
         updatePreview(value);
       };
@@ -1376,7 +1377,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
       }
     }
     const origOnExecuted = this.onExecuted;
-    this.onExecuted = function(data) {
+    this.onExecuted = function (data) {
       var _a2, _b;
       origOnExecuted == null ? void 0 : origOnExecuted.apply(this, arguments);
       if ((_a2 = data == null ? void 0 : data.video) == null ? void 0 : _a2[0]) {
@@ -1410,7 +1411,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
 function registerSaveVideoNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGASaveVideo") return;
   const onNodeCreated = nodeType.prototype.onNodeCreated;
-  nodeType.prototype.onNodeCreated = function() {
+  nodeType.prototype.onNodeCreated = function () {
     const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
     const node = this;
     this.color = "#2a5a3a";
@@ -1494,7 +1495,7 @@ function registerSaveVideoNode(nodeType, nodeData) {
       }
     );
     previewWidget.aspectRatio = null;
-    previewWidget.computeSize = function(width) {
+    previewWidget.computeSize = function (width) {
       if (this.aspectRatio && previewContainer.style.display !== "none") {
         const h = (node.size[0] - 20) / this.aspectRatio + 10;
         return [width, Math.max(h, 0) + 30];
@@ -1502,7 +1503,7 @@ function registerSaveVideoNode(nodeType, nodeData) {
       return [width, -4];
     };
     const origOnExecuted = this.onExecuted;
-    this.onExecuted = function(data) {
+    this.onExecuted = function (data) {
       var _a, _b;
       origOnExecuted == null ? void 0 : origOnExecuted.apply(this, arguments);
       if ((_a = data == null ? void 0 : data.video) == null ? void 0 : _a[0]) {
@@ -2036,7 +2037,7 @@ function openPointSelector(node, imgSrc, _videoSrc) {
 function registerLoadImageNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGALoadImagePath") return;
   const origOnCreatedImg = nodeType.prototype.onNodeCreated;
-  nodeType.prototype.onNodeCreated = function() {
+  nodeType.prototype.onNodeCreated = function () {
     const result = origOnCreatedImg == null ? void 0 : origOnCreatedImg.apply(this, arguments);
     const node = this;
     this.color = "#3a5a5a";
@@ -2060,7 +2061,7 @@ function registerLoadImageNode(nodeType, nodeData) {
       node.setDirtyCanvas(true, true);
     });
     const origOnCCImg = this.onConnectionsChange;
-    this.onConnectionsChange = function(type, slotIndex, isConnected, link, ioSlot) {
+    this.onConnectionsChange = function (type, slotIndex, isConnected, link, ioSlot) {
       var _a, _b;
       origOnCCImg == null ? void 0 : origOnCCImg.apply(this, arguments);
       if (type === LiteGraph.INPUT) {
@@ -2071,12 +2072,12 @@ function registerLoadImageNode(nodeType, nodeData) {
       }
     };
     const origConfigureImg = this.onConfigure;
-    this.onConfigure = function(data) {
+    this.onConfigure = function (data) {
       origConfigureImg == null ? void 0 : origConfigureImg.apply(this, arguments);
       requestAnimationFrame(_syncImagesOutput);
     };
     const origOnExecutedImg = this.onExecuted;
-    this.onExecuted = function(data) {
+    this.onExecuted = function (data) {
       var _a, _b, _c, _d;
       origOnExecutedImg == null ? void 0 : origOnExecutedImg.apply(this, arguments);
       if ((_a = data == null ? void 0 : data.images) == null ? void 0 : _a[0]) {
@@ -2104,7 +2105,7 @@ function registerLoadImageNode(nodeType, nodeData) {
     return result;
   };
   const origGetMenuImg = nodeType.prototype.getExtraMenuOptions;
-  nodeType.prototype.getExtraMenuOptions = function(_, options) {
+  nodeType.prototype.getExtraMenuOptions = function (_, options) {
     origGetMenuImg == null ? void 0 : origGetMenuImg.apply(this, arguments);
     const self = this;
     options.unshift({
@@ -2330,7 +2331,7 @@ async function deleteCustomPreset(node, customPresets, presetName) {
 function registerTextInputNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGATextInput") return;
   const onNodeCreated = nodeType.prototype.onNodeCreated;
-  nodeType.prototype.onNodeCreated = function() {
+  nodeType.prototype.onNodeCreated = function () {
     var _a;
     const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
     const node = this;
@@ -2467,7 +2468,7 @@ function registerTextInputNode(nodeType, nodeData) {
     _customPresets = [];
   });
   const origGetMenuText = nodeType.prototype.getExtraMenuOptions;
-  nodeType.prototype.getExtraMenuOptions = function(_, options) {
+  nodeType.prototype.getExtraMenuOptions = function (_, options) {
     origGetMenuText == null ? void 0 : origGetMenuText.apply(this, arguments);
     const self = this;
     const presetItems = [];
@@ -2587,7 +2588,7 @@ function captureFirstFrameAndOpen(node, videoSrc) {
 function registerPointSelectorHooks(nodeType, nodeData) {
   if (nodeData.name === "FFMPEGALoadVideoPath") {
     const origGetMenuVid = nodeType.prototype.getExtraMenuOptions;
-    nodeType.prototype.getExtraMenuOptions = function(_, options) {
+    nodeType.prototype.getExtraMenuOptions = function (_, options) {
       origGetMenuVid == null ? void 0 : origGetMenuVid.apply(this, arguments);
       const self = this;
       options.unshift({
@@ -2609,7 +2610,7 @@ function registerPointSelectorHooks(nodeType, nodeData) {
   }
   if (nodeData.name === "FFMPEGAFrameExtract") {
     const origGetMenuExtract = nodeType.prototype.getExtraMenuOptions;
-    nodeType.prototype.getExtraMenuOptions = function(_, options) {
+    nodeType.prototype.getExtraMenuOptions = function (_, options) {
       origGetMenuExtract == null ? void 0 : origGetMenuExtract.apply(this, arguments);
       const self = this;
       options.unshift({

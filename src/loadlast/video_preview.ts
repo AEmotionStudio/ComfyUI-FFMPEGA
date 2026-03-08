@@ -75,8 +75,8 @@ app.registerExtension({
             let filmstripPage = 0;
 
             // Style
-            node.color = '#2a4a5a';
-            node.bgcolor = '#1a3a4a';
+            node.color = '#3a3a5a';
+            node.bgcolor = '#2a2a4a';
 
             // ─── Container ────────────────────────────────────────
             const container = document.createElement('div');

@@ -245,7 +245,7 @@ app.registerExtension({
   beforeRegisterNodeDef(nodeType, nodeData, _app) {
     if ((nodeData == null ? void 0 : nodeData.name) !== "LoadLastVideo") return;
     const origCreated = nodeType.prototype.onNodeCreated;
-    nodeType.prototype.onNodeCreated = function() {
+    nodeType.prototype.onNodeCreated = function () {
       var _a;
       origCreated == null ? void 0 : origCreated.apply(this, arguments);
       const node = this;
@@ -266,8 +266,8 @@ app.registerExtension({
       let editBlackOverlay = null;
       let filmstripZoom = 0;
       let filmstripPage = 0;
-      node.color = "#2a4a5a";
-      node.bgcolor = "#1a3a4a";
+      node.color = "#3a3a5a";
+      node.bgcolor = "#2a2a4a";
       const container = document.createElement("div");
       container.className = "ll_container";
       container.tabIndex = 0;
@@ -463,7 +463,7 @@ app.registerExtension({
         }
       });
       previewWidget.aspectRatio = null;
-      previewWidget.computeSize = function(width) {
+      previewWidget.computeSize = function (width) {
         if (container.style.display === "none") return [width, 0];
         let chrome = 32 + 22 + 14 + (allVideos.length > 1 ? 100 : 0);
         if (currentMode === VIEW_MODES.FILMSTRIP) chrome += 50;
@@ -1149,7 +1149,7 @@ app.registerExtension({
         }
       });
       const origGetExtra = node.constructor.prototype.getExtraMenuOptions;
-      node.getExtraMenuOptions = function(_, options) {
+      node.getExtraMenuOptions = function (_, options) {
         origGetExtra == null ? void 0 : origGetExtra.apply(this, arguments);
         const optNew = [];
         const hasVideo = !!videoEl.src && container.style.display !== "none";
@@ -1201,26 +1201,36 @@ app.registerExtension({
             content: "⏱️ Playback Speed",
             submenu: {
               options: [
-                { content: "0.25x", callback: () => {
-                  videoEl.playbackRate = 0.25;
-                  flashBg("#5a5a3a");
-                } },
-                { content: "0.5x", callback: () => {
-                  videoEl.playbackRate = 0.5;
-                  flashBg("#5a5a3a");
-                } },
-                { content: "1x (Normal)", callback: () => {
-                  videoEl.playbackRate = 1;
-                  flashBg("#5a5a3a");
-                } },
-                { content: "1.5x", callback: () => {
-                  videoEl.playbackRate = 1.5;
-                  flashBg("#5a5a3a");
-                } },
-                { content: "2x", callback: () => {
-                  videoEl.playbackRate = 2;
-                  flashBg("#5a5a3a");
-                } }
+                {
+                  content: "0.25x", callback: () => {
+                    videoEl.playbackRate = 0.25;
+                    flashBg("#5a5a3a");
+                  }
+                },
+                {
+                  content: "0.5x", callback: () => {
+                    videoEl.playbackRate = 0.5;
+                    flashBg("#5a5a3a");
+                  }
+                },
+                {
+                  content: "1x (Normal)", callback: () => {
+                    videoEl.playbackRate = 1;
+                    flashBg("#5a5a3a");
+                  }
+                },
+                {
+                  content: "1.5x", callback: () => {
+                    videoEl.playbackRate = 1.5;
+                    flashBg("#5a5a3a");
+                  }
+                },
+                {
+                  content: "2x", callback: () => {
+                    videoEl.playbackRate = 2;
+                    flashBg("#5a5a3a");
+                  }
+                }
               ]
             }
           });
@@ -1355,21 +1365,31 @@ app.registerExtension({
           content: "🎨 View Mode",
           submenu: {
             options: [
-              { content: `${currentMode === VIEW_MODES.PLAYBACK ? "● " : ""}Playback`, callback: () => {
-                switchMode(VIEW_MODES.PLAYBACK);
-              } },
-              { content: `${currentMode === VIEW_MODES.GRID ? "● " : ""}Grid`, callback: () => {
-                switchMode(VIEW_MODES.GRID);
-              } },
-              { content: `${currentMode === VIEW_MODES.SIDE_BY_SIDE ? "● " : ""}Side by Side`, callback: () => {
-                switchMode(VIEW_MODES.SIDE_BY_SIDE);
-              } },
-              { content: `${currentMode === VIEW_MODES.FILMSTRIP ? "● " : ""}Filmstrip`, callback: () => {
-                switchMode(VIEW_MODES.FILMSTRIP);
-              } },
-              { content: `${currentMode === VIEW_MODES.SELECTED ? "● " : ""}Selected`, callback: () => {
-                switchMode(VIEW_MODES.SELECTED);
-              } }
+              {
+                content: `${currentMode === VIEW_MODES.PLAYBACK ? "● " : ""}Playback`, callback: () => {
+                  switchMode(VIEW_MODES.PLAYBACK);
+                }
+              },
+              {
+                content: `${currentMode === VIEW_MODES.GRID ? "● " : ""}Grid`, callback: () => {
+                  switchMode(VIEW_MODES.GRID);
+                }
+              },
+              {
+                content: `${currentMode === VIEW_MODES.SIDE_BY_SIDE ? "● " : ""}Side by Side`, callback: () => {
+                  switchMode(VIEW_MODES.SIDE_BY_SIDE);
+                }
+              },
+              {
+                content: `${currentMode === VIEW_MODES.FILMSTRIP ? "● " : ""}Filmstrip`, callback: () => {
+                  switchMode(VIEW_MODES.FILMSTRIP);
+                }
+              },
+              {
+                content: `${currentMode === VIEW_MODES.SELECTED ? "● " : ""}Selected`, callback: () => {
+                  switchMode(VIEW_MODES.SELECTED);
+                }
+              }
             ]
           }
         });

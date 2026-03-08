@@ -41,8 +41,8 @@ try:
 
     NODE_CLASS_MAPPINGS["LoadLastImage"] = LoadLastImage
     NODE_CLASS_MAPPINGS["LoadLastVideo"] = LoadLastVideo
-    NODE_DISPLAY_NAME_MAPPINGS["LoadLastImage"] = "Load Last Image 🔄"
-    NODE_DISPLAY_NAME_MAPPINGS["LoadLastVideo"] = "Load Last Video 🎬"
+    NODE_DISPLAY_NAME_MAPPINGS["LoadLastImage"] = "Load Last Image (FFMPEGA)"
+    NODE_DISPLAY_NAME_MAPPINGS["LoadLastVideo"] = "Load Last Video (FFMPEGA)"
 except ImportError:
     logging.getLogger("FFMPEGA").debug(
         "[FFMPEGA] LoadLast nodes not available (import error)", exc_info=True

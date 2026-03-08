@@ -4213,7 +4213,7 @@ app.registerExtension({
   beforeRegisterNodeDef(nodeType, nodeData, _app) {
     if (nodeData.name !== NODE_TYPE) return;
     const origCreated = nodeType.prototype.onNodeCreated;
-    nodeType.prototype.onNodeCreated = function() {
+    nodeType.prototype.onNodeCreated = function () {
       const result = origCreated == null ? void 0 : origCreated.apply(this, arguments);
       _setupNode(this);
       return result;
@@ -4222,8 +4222,8 @@ app.registerExtension({
 });
 function _setupNode(node) {
   var _a;
-  node.color = "#2a4a5a";
-  node.bgcolor = "#1a3a4a";
+  node.color = "#2a5a4a";
+  node.bgcolor = "#1a4a3a";
   let videoPath = "";
   let editState = {
     segments: [],
@@ -4382,7 +4382,7 @@ function _setupNode(node) {
     }
   );
   previewWidget.aspectRatio = null;
-  previewWidget.computeSize = function(width) {
+  previewWidget.computeSize = function (width) {
     if (this.aspectRatio && previewContainer.style.display !== "none") {
       const h = (node.size[0] - 20) / this.aspectRatio + 10;
       return [width, Math.max(h, 0) + 30];
@@ -4448,7 +4448,7 @@ function _setupNode(node) {
     return await handleUpload(file);
   };
   const origOnRemoved = node.onRemoved;
-  node.onRemoved = function() {
+  node.onRemoved = function () {
     fileInput == null ? void 0 : fileInput.remove();
     clearInterval(pollInterval);
     origOnRemoved == null ? void 0 : origOnRemoved.apply(this, arguments);
@@ -4462,7 +4462,7 @@ function _setupNode(node) {
     infoEl.textContent = filename;
   }
   const origOnExecuted = node.onExecuted;
-  node.onExecuted = function(data) {
+  node.onExecuted = function (data) {
     var _a2, _b;
     origOnExecuted == null ? void 0 : origOnExecuted.call(node, data);
     if ((_a2 = data == null ? void 0 : data.video_path) == null ? void 0 : _a2[0]) {

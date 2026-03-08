@@ -29,7 +29,6 @@
 *   🎬 **Video Editor Node** — full interactive NLE editor inside ComfyUI with timeline, razor tool, crop overlay, transitions, text overlays, speed/volume controls, and keyboard shortcuts
 *   📡 **Seekable MP4 Preview** — new server route with HTTP Range support and LRU caching for instant in-editor video playback
 *   🧰 **Shared Utilities** — extracted `images_to_video` and UI helpers into reusable modules, reducing duplication across nodes
-*   🧪 **1,056 Tests** — expanded test suite with 40+ new tests for the Video Editor processing pipeline
 
 <details>
 <summary><b>📋 Previous Releases</b></summary>

@@ -81,8 +81,8 @@ app.registerExtension({
 });
 
 function _setupNode(node: EditorNode): void {
-    node.color = '#2a4a5a';
-    node.bgcolor = '#1a3a4a';
+    node.color = '#2a5a4a';
+    node.bgcolor = '#1a4a3a';
 
     // ── Closure-scoped state ──
     let videoPath = '';

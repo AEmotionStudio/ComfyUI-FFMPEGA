@@ -8,9 +8,10 @@
 /** Node name → [color, bgcolor] mapping for styling-only nodes */
 const NODE_COLORS: Record<string, [string, string]> = {
     "FFMPEGAPreview": ["#3a5a3a", "#2a4a2a"],
-    "FFMPEGAVideoToPath": ["#3a5a5a", "#2a4a4a"],
+    "FFMPEGAVideoToPath": ["#3a5a4a", "#2a4a3a"],
     "FFMPEGABatchProcessor": ["#5a3a3a", "#4a2a2a"],
     "FFMPEGAVideoInfo": ["#4a4a3a", "#3a3a2a"],
+    "LoadLastImage": ["#5a4a3a", "#4a3a2a"],
 };
 
 /**
