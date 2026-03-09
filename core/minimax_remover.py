@@ -383,6 +383,10 @@ def _load_mask_frames(mask_video_path: str, num_frames: int):
 def _encode_video(frames: list, output_path: str, fps: float) -> str:
     """Encode PIL frames to a video file.
 
+    Writes frames as PNGs to a temp directory and encodes once with
+    ffmpeg (libx264).  This avoids the previous two-pass approach
+    (cv2.VideoWriter mp4v → ffmpeg re-encode) which wasted encoding time.
+
     Args:
         frames: list of PIL.Image.Image
         output_path: output video file path
@@ -391,25 +395,9 @@ def _encode_video(frames: list, output_path: str, fps: float) -> str:
     Returns:
         Path to the encoded video.
     """
-    import cv2
-    import numpy as np
-
     if not frames:
         raise ValueError("No frames to encode")
 
-    w, h = frames[0].size
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    writer = cv2.VideoWriter(output_path, fourcc, fps, (w, h))
-
-    for frame in frames:
-        arr = np.array(frame)
-        bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
-        writer.write(bgr)
-
-    writer.release()
-
-    # Re-encode with ffmpeg for proper MP4 container
-    final_path = output_path + ".final.mp4"
     try:
         try:
             from .bin_paths import get_ffmpeg_bin
@@ -419,15 +407,35 @@ def _encode_video(frames: list, output_path: str, fps: float) -> str:
     except (ImportError, AttributeError):
         ffmpeg = "ffmpeg"
 
-    subprocess.run(
-        [ffmpeg, "-y", "-i", output_path, "-c:v", "libx264",
-         "-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p",
-         final_path],
-        capture_output=True,
-    )
+    frames_dir = tempfile.mkdtemp(prefix="ffmpega_minimax_enc_")
+    try:
+        for i, frame in enumerate(frames):
+            frame.save(os.path.join(frames_dir, f"{i:06d}.png"))
 
-    if os.path.isfile(final_path):
-        os.replace(final_path, output_path)
+        # Use integer framerate for ffmpeg compatibility
+        fps_str = str(int(round(fps))) if fps == int(fps) else f"{fps:.2f}"
+        cmd = [
+            ffmpeg, "-y",
+            "-framerate", fps_str,
+            "-i", os.path.join(frames_dir, "%06d.png"),
+            "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+            "-c:v", "libx264",
+            "-crf", "18",
+            "-preset", "medium",
+            "-pix_fmt", "yuv420p",
+            output_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            log.error(
+                "[MiniMax] ffmpeg encode failed (exit %d): %s",
+                result.returncode, result.stderr[:500] if result.stderr else "",
+            )
+            raise RuntimeError(
+                f"ffmpeg video encoding failed (exit {result.returncode})"
+            )
+    finally:
+        shutil.rmtree(frames_dir, ignore_errors=True)
 
     return output_path
 

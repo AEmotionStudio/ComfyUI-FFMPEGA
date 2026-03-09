@@ -1524,6 +1524,7 @@ async def process_minimax_remover_only(
 
     # --- Generate mask with SAM3 (if prompt provided) ---
     mask_video_path = None
+    mask_tmpdir = None  # track fallback mask temp dir for cleanup
     if prompt and prompt.strip():
         try:
             try:
@@ -1560,9 +1561,8 @@ async def process_minimax_remover_only(
         n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         cap.release()
 
-        mask_video_path = os.path.join(
-            tempfile.mkdtemp(prefix="ffmpega_mm_mask_"), "mask.mp4"
-        )
+        mask_tmpdir = tempfile.mkdtemp(prefix="ffmpega_mm_mask_")
+        mask_video_path = os.path.join(mask_tmpdir, "mask.mp4")
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         writer = cv2.VideoWriter(mask_video_path, fourcc, fps, (w, h))
         white = np.full((h, w, 3), 255, dtype=np.uint8)
@@ -1671,6 +1671,9 @@ async def process_minimax_remover_only(
                     os.remove(tmp_path)
                 except OSError:
                     pass
+        # Clean up the fallback white-mask temp directory
+        if mask_tmpdir and os.path.isdir(mask_tmpdir):
+            shutil.rmtree(mask_tmpdir, ignore_errors=True)
         if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
             if not os.listdir(temp_render_dir):
                 shutil.rmtree(temp_render_dir, ignore_errors=True)
