@@ -29,6 +29,12 @@ import { hitTestFrame } from '@ffmpega/loadlast/selection/HitTester';
 import { drawSelectionOverlay } from '@ffmpega/loadlast/selection/SelectionOverlay';
 import { EditManager } from '@ffmpega/loadlast/editing/EditManager';
 import { EditTimeline } from '@ffmpega/loadlast/editing/EditTimeline';
+import { TransportBar } from '@ffmpega/videoeditor/TransportBar';
+import { NLETimeline } from '@ffmpega/videoeditor/NLETimeline';
+import { EditToolbar } from '@ffmpega/videoeditor/EditToolbar';
+import { SpeedControl } from '@ffmpega/videoeditor/SpeedControl';
+import { CropOverlay } from '@ffmpega/videoeditor/CropOverlay';
+import { UndoManager, type EditorState } from '@ffmpega/videoeditor/UndoManager';
 import cssText from './loadlast.css?inline';
 
 // ─── Inject stylesheet once ────────────────────────────────────────────
@@ -61,14 +67,15 @@ app.registerExtension({
             // ─── Edit mode state ──────────────────────────────────
             const editMgr = new EditManager();
             editMgr.bind(node);
-            let editTimeline: EditTimeline | null = null;
             let editWrapper: HTMLDivElement | null = null;
-            let editPlaybackRaf: number | null = null;
-            let editPlaying = false;
-            let editOutputTime = 0;
-            let editPlayBtn: HTMLButtonElement | null = null;
-            let editTimeDisplay: HTMLSpanElement | null = null;
             let editBlackOverlay: HTMLDivElement | null = null;
+            let editTransport: TransportBar | null = null;
+            let editNleTimeline: NLETimeline | null = null;
+            let editToolbar: EditToolbar | null = null;
+            let editSpeedCtrl: SpeedControl | null = null;
+            let editCropOverlay: CropOverlay | null = null;
+            let editUndoMgr: UndoManager | null = null;
+            let editCropEnabled = false;
 
             // ─── Filmstrip pagination state ───────────────────────
             let filmstripZoom = 0;
@@ -369,7 +376,7 @@ app.registerExtension({
                     const selInfo = sel.size ? ` │ ${sel.size} selected` : '';
                     infoEl.textContent = buildInfoText() + selInfo;
                 } else if (mode === VIEW_MODES.EDIT) {
-                    // ─── Edit mode: self-contained wrapper ──────────
+                    // ─── Edit mode: rich inline NLE ──────────────────
                     canvasEl.style.display = 'none';
                     canvasEl.height = 0;
                     videoEl.controls = false;
@@ -379,77 +386,196 @@ app.registerExtension({
                     editWrapper = document.createElement('div');
                     editWrapper.className = 'll_edit_wrapper';
 
-                    // Video area with overlay
+                    // Video area with overlays
                     const videoArea = document.createElement('div');
                     videoArea.className = 'll_edit_video_area';
                     videoEl.style.display = 'block';
-                    videoArea.appendChild(videoEl);  // move video into wrapper
+                    videoArea.appendChild(videoEl);
 
                     editBlackOverlay = document.createElement('div');
                     editBlackOverlay.className = 'll_edit_black_overlay';
                     videoArea.appendChild(editBlackOverlay);
+
+                    // ── Crop overlay (hidden by default) ──
+                    editCropOverlay = new CropOverlay({
+                        onCropChanged: (rect) => {
+                            syncEditToWidgets();
+                            pushUndoState();
+                        },
+                    });
+                    videoArea.appendChild(editCropOverlay.canvasElement);
+                    editCropOverlay.canvasElement.style.display = 'none';
+
                     editWrapper.appendChild(videoArea);
 
-                    // Transport bar
-                    const transport = document.createElement('div');
-                    transport.className = 'll_edit_transport';
+                    // ── Timeline callbacks ──
+                    const timelineCallbacks = {
+                        onSegmentsChanged: () => {
+                            editMgr.syncToWidget();
+                            syncEditToWidgets();
+                            updateEditPreview();
+                            updateEditInfo();
+                            if (editNleTimeline) editNleTimeline.render();
+                            pushUndoState();
+                        },
+                        onPlayheadChanged: (time: number) => {
+                            if (editTransport) editTransport.seekTo(time);
+                            if (editBlackOverlay) {
+                                editBlackOverlay.style.display = editMgr.isInGap(time) ? 'block' : 'none';
+                            }
+                        },
+                        onTrimHandleDrag: (time: number) => {
+                            videoEl.currentTime = time;
+                            if (editBlackOverlay) editBlackOverlay.style.display = 'none';
+                        },
+                        onRequestSplit: () => {
+                            editMgr.splitAt(videoEl.currentTime);
+                            editMgr.syncToWidget();
+                            syncEditToWidgets();
+                            updateEditInfo();
+                            if (editNleTimeline) editNleTimeline.render();
+                            pushUndoState();
+                        },
+                        onDragStart: () => { },
+                        onDragEnd: () => {
+                            pushUndoState();
+                        },
+                    };
 
-                    editPlayBtn = document.createElement('button');
-                    editPlayBtn.className = 'll_edit_play_btn';
-                    editPlayBtn.textContent = '▶';
-                    editPlayBtn.title = 'Play edited clip';
-                    editPlayBtn.addEventListener('click', (e: Event) => {
-                        e.stopPropagation();
-                        if (editPlaying) {
-                            stopEditPlayback();
-                        } else {
-                            startEditPlayback();
+                    // ── Transport bar ──
+                    editTransport = new TransportBar({
+                        onTimeUpdate: (time: number) => {
+                            if (editNleTimeline) editNleTimeline.setPlayhead(time);
+                            if (editBlackOverlay) {
+                                editBlackOverlay.style.display = editMgr.isInGap(time) ? 'block' : 'none';
+                            }
+                        },
+                        onPlayStateChange: (_playing: boolean) => { },
+                    });
+                    editTransport.setEditManager(editMgr);
+                    editWrapper.appendChild(editTransport.element);
+
+                    // ── Edit toolbar (Split / Delete / Reset) ──
+                    editToolbar = new EditToolbar({
+                        onToolChanged: (_mode) => { },
+                        onSplitRequested: () => {
+                            editMgr.splitAt(videoEl.currentTime);
+                            editMgr.syncToWidget();
+                            syncEditToWidgets();
+                            updateEditInfo();
+                            if (editNleTimeline) editNleTimeline.render();
+                            pushUndoState();
+                        },
+                        onDeleteRequested: () => {
+                            // Delete the segment under the playhead
+                            const t = videoEl.currentTime;
+                            const seg = editMgr.segments.find(s => t >= s.start && t <= s.end);
+                            if (seg && editMgr.segments.length > 1) {
+                                editMgr.removeSegment(seg.id);
+                                editMgr.syncToWidget();
+                                syncEditToWidgets();
+                                updateEditPreview();
+                                updateEditInfo();
+                                if (editNleTimeline) editNleTimeline.render();
+                                pushUndoState();
+                            }
+                        },
+                        onResetRequested: () => {
+                            editMgr.reset();
+                            editMgr.syncToWidget();
+                            syncEditToWidgets();
+                            if (editSpeedCtrl) editSpeedCtrl.reset();
+                            if (editCropOverlay) editCropOverlay.setRect(null);
+                            editCropEnabled = false;
+                            if (editCropOverlay) editCropOverlay.canvasElement.style.display = 'none';
+                            updateEditPreview();
+                            updateEditInfo();
+                            if (editNleTimeline) editNleTimeline.render();
+                            pushUndoState();
+                        },
+                    });
+                    // Add a crop toggle button to the toolbar
+                    const cropToggle = document.createElement('button');
+                    cropToggle.className = 'veditor-tool-btn';
+                    cropToggle.textContent = '⬒ Crop';
+                    cropToggle.title = 'Toggle crop overlay';
+                    cropToggle.setAttribute('data-tool-id', 'loadlast-crop-toggle');
+                    cropToggle.addEventListener('click', () => {
+                        editCropEnabled = !editCropEnabled;
+                        cropToggle.classList.toggle('active', editCropEnabled);
+                        if (editCropOverlay) {
+                            editCropOverlay.canvasElement.style.display = editCropEnabled ? 'block' : 'none';
+                            if (editCropEnabled) {
+                                editCropOverlay.setVideoDimensions(videoEl.videoWidth, videoEl.videoHeight);
+                                editCropOverlay.render();
+                            }
                         }
                     });
-                    transport.appendChild(editPlayBtn);
+                    editToolbar.element.appendChild(cropToggle);
+                    editWrapper.appendChild(editToolbar.element);
 
-                    editTimeDisplay = document.createElement('span');
-                    editTimeDisplay.className = 'll_edit_time_display';
-                    editTimeDisplay.textContent = '0:00 / 0:00';
-                    transport.appendChild(editTimeDisplay);
-                    editWrapper.appendChild(transport);
+                    // ── Speed control (compact) ──
+                    editSpeedCtrl = new SpeedControl({
+                        onSpeedChanged: (_segIdx, _speed) => {
+                            syncEditToWidgets();
+                            pushUndoState();
+                        },
+                    });
+                    const speedCollapse = document.createElement('details');
+                    speedCollapse.className = 'll_edit_speed_details';
+                    const speedSummary = document.createElement('summary');
+                    speedSummary.className = 'll_edit_speed_summary';
+                    speedSummary.textContent = '⏩ Speed';
+                    speedCollapse.appendChild(speedSummary);
+                    speedCollapse.appendChild(editSpeedCtrl.element);
+                    editWrapper.appendChild(speedCollapse);
 
-                    // Timeline
+                    // ── NLE Timeline ──
                     const dur = videoEl.duration;
                     if (dur && isFinite(dur)) {
                         editMgr.init(dur);
-                        editOutputTime = 0;
-                        updateEditTimeDisplay();
 
-                        editTimeline = new EditTimeline(editMgr, {
-                            onSegmentsChanged: () => {
+                        editNleTimeline = new NLETimeline(editMgr, timelineCallbacks);
+                        editWrapper.appendChild(editNleTimeline.element);
+
+                        // ── Undo Manager ──
+                        editUndoMgr = new UndoManager({
+                            onRestore: (state: EditorState) => {
+                                // Restore segments
+                                editMgr.segments = [];
+                                for (const [start, end] of state.segments) {
+                                    editMgr.addSegment(start, end);
+                                }
                                 editMgr.syncToWidget();
+                                // Restore speed
+                                if (editSpeedCtrl) editSpeedCtrl.loadSpeedMap(state.speedMap);
+                                // Restore crop
+                                if (editCropOverlay) {
+                                    const cropRect = state.cropRect ? JSON.parse(state.cropRect) : null;
+                                    editCropOverlay.setRect(cropRect);
+                                    editCropOverlay.render();
+                                }
+                                syncEditToWidgets();
                                 updateEditPreview();
                                 updateEditInfo();
-                                updateEditTimeDisplay();
+                                if (editNleTimeline) editNleTimeline.render();
                             },
-                            onPlayheadChanged: (time: number) => {
-                                videoEl.currentTime = time;
-                                if (editBlackOverlay) {
-                                    editBlackOverlay.style.display = editMgr.isInGap(time) ? 'block' : 'none';
-                                }
-                                editOutputTime = Math.max(0, editMgr.sourceTimeToOutput(time));
-                                updateEditTimeDisplay();
-                            },
-                            onTrimHandleDrag: (time: number) => {
-                                videoEl.currentTime = time;
-                                if (editBlackOverlay) editBlackOverlay.style.display = 'none';
-                                editOutputTime = Math.max(0, editMgr.sourceTimeToOutput(time));
-                                updateEditTimeDisplay();
-                            },
-                            onRequestSplit: () => { },
                         });
-                        editWrapper.appendChild(editTimeline.element);
+                        // Push initial state
+                        pushUndoState();
+
+                        // Bind transport to video
+                        editTransport!.bindVideo(videoEl);
+
+                        // Set crop dimensions when video metadata loads
+                        if (videoEl.videoWidth > 0) {
+                            editCropOverlay!.setVideoDimensions(videoEl.videoWidth, videoEl.videoHeight);
+                        }
 
                         videoEl.currentTime = editMgr.segments[0]?.start ?? 0;
 
                         requestAnimationFrame(() => {
-                            editTimeline?.render();
+                            editNleTimeline?.render();
                         });
                     }
 
@@ -473,22 +599,22 @@ app.registerExtension({
                 fitNode();
             }
 
-            /** Tear down edit mode: move video back, remove wrapper, restore controls */
+            /** Tear down edit mode: destroy components, move video back */
             function cleanupEditMode(): void {
-                stopEditPlayback();
-                if (editTimeline) {
-                    editTimeline = null;
-                }
+                if (editTransport) { editTransport.destroy(); editTransport = null; }
+                if (editNleTimeline) { editNleTimeline.destroy(); editNleTimeline = null; }
+                if (editToolbar) { editToolbar.destroy(); editToolbar = null; }
+                if (editSpeedCtrl) { editSpeedCtrl.destroy(); editSpeedCtrl = null; }
+                if (editCropOverlay) { editCropOverlay.destroy(); editCropOverlay = null; }
+                if (editUndoMgr) { editUndoMgr.destroy(); editUndoMgr = null; }
+                editCropEnabled = false;
                 if (editWrapper) {
-                    // Move video back to container (before stripWrapper)
                     videoEl.style.display = 'none';
                     videoEl.controls = true;
                     container.insertBefore(videoEl, stripWrapper);
                     editWrapper.remove();
                     editWrapper = null;
                 }
-                editPlayBtn = null;
-                editTimeDisplay = null;
                 editBlackOverlay = null;
             }
 
@@ -498,7 +624,10 @@ app.registerExtension({
                 } else {
                     const outDur = fmtDuration(editMgr.getOutputDuration());
                     const segs = editMgr.segments.length;
-                    infoEl.textContent = `✂️ Edit: ${outDur} output │ ${segs} segment${segs !== 1 ? 's' : ''}`;
+                    const speedInfo = editSpeedCtrl ? Object.keys(editSpeedCtrl.getSpeedMap()).length : 0;
+                    const cropInfo = editCropOverlay?.getRect() ? ' │ Cropped' : '';
+                    const speedStr = speedInfo > 0 ? ` │ ${speedInfo} speed change${speedInfo > 1 ? 's' : ''}` : '';
+                    infoEl.textContent = `✂️ Edit: ${outDur} output │ ${segs} segment${segs !== 1 ? 's' : ''}${speedStr}${cropInfo}`;
                 }
             }
 
@@ -518,61 +647,48 @@ app.registerExtension({
                     }
                     if (editBlackOverlay) editBlackOverlay.style.display = 'none';
                 }
-                editOutputTime = Math.max(0, editMgr.sourceTimeToOutput(videoEl.currentTime));
             }
 
-            /** Update the transport time display */
-            function updateEditTimeDisplay(): void {
-                if (!editTimeDisplay) return;
-                const pos = fmtDuration(editOutputTime);
-                const total = fmtDuration(editMgr.getOutputDuration());
-                editTimeDisplay.textContent = `${pos} / ${total}`;
-            }
-
-            /** Start NLE playback: plays through segments, skipping gaps */
-            function startEditPlayback(): void {
-                if (editPlaying) return;
-                editPlaying = true;
-                if (editPlayBtn) editPlayBtn.textContent = '⏸';
-
-                let lastFrameTime = performance.now();
-
-                function editLoop(now: number): void {
-                    if (!editPlaying) return;
-                    const dt = (now - lastFrameTime) / 1000;
-                    lastFrameTime = now;
-
-                    editOutputTime += dt;
-                    const totalDur = editMgr.getOutputDuration();
-                    if (editOutputTime >= totalDur) {
-                        editOutputTime = 0;
-                    }
-
-                    const srcTime = editMgr.outputTimeToSource(editOutputTime);
-                    videoEl.currentTime = srcTime;
-                    if (editBlackOverlay) editBlackOverlay.style.display = 'none';
-
-                    if (editTimeline) {
-                        editTimeline.playhead = srcTime;
-                        editTimeline.render();
-                    }
-                    updateEditTimeDisplay();
-
-                    editPlaybackRaf = requestAnimationFrame(editLoop);
+            /** Sync edit state to node hidden widgets for backend consumption */
+            function syncEditToWidgets(): void {
+                // Segments synced via editMgr.syncToWidget()
+                // Crop rect
+                const cropRect = editCropOverlay?.getRect();
+                const cropJson = cropRect ? JSON.stringify(cropRect) : '';
+                const cropWidget = node.widgets?.find((w: any) => w.name === '_crop_rect');
+                if (cropWidget) {
+                    cropWidget.value = cropJson;
+                } else {
+                    if (!node.properties) node.properties = {};
+                    node.properties['_crop_rect'] = cropJson;
                 }
-
-                videoEl.pause();
-                editPlaybackRaf = requestAnimationFrame(editLoop);
+                // Speed map
+                const speedMap = editSpeedCtrl?.getSpeedMap() ?? {};
+                const speedJson = JSON.stringify(speedMap);
+                const speedWidget = node.widgets?.find((w: any) => w.name === '_speed_map');
+                if (speedWidget) {
+                    speedWidget.value = speedJson;
+                } else {
+                    if (!node.properties) node.properties = {};
+                    node.properties['_speed_map'] = speedJson;
+                }
             }
 
-            /** Stop NLE playback */
-            function stopEditPlayback(): void {
-                editPlaying = false;
-                if (editPlayBtn) editPlayBtn.textContent = '▶';
-                if (editPlaybackRaf !== null) {
-                    cancelAnimationFrame(editPlaybackRaf);
-                    editPlaybackRaf = null;
-                }
+            /** Get current editor state snapshot for undo */
+            function getEditState(): EditorState {
+                return {
+                    segments: editMgr.toJSON(),
+                    cropRect: editCropOverlay?.getRect() ? JSON.stringify(editCropOverlay.getRect()) : '',
+                    speedMap: editSpeedCtrl?.getSpeedMap() ?? {},
+                    volume: 1.0,
+                    textOverlays: [],
+                    transitions: [],
+                };
+            }
+
+            /** Push current state to undo stack */
+            function pushUndoState(): void {
+                if (editUndoMgr) editUndoMgr.push(getEditState());
             }
             // ─── Keyboard shortcuts ───────────────────────────────
             container.addEventListener('keydown', (e: KeyboardEvent) => {

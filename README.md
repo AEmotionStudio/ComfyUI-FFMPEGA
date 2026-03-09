@@ -35,6 +35,7 @@
 
 | Version | Highlights |
 | :--- | :--- |
+| **v2.15.0** | MiniMax-Remover for high-quality object removal, toggleable with Flux Klein/LaMa fallback |
 | **v2.13.0** | AI Background Removal (BRIA RMBG), FLUX Klein toggle, Edit FFmpeg fallback, smarter defaults |
 | **v2.12.0** | AI Face Animation (LivePortrait), MMAudio in-process inference, MCP progressive disclosure, LaMa safetensors conversion |
 | **v2.11.0** | MMAudio in-process migration, `generate_audio` no-LLM mode, MCP tools, CLI binary caching |
@@ -501,6 +502,7 @@ All models are mirrored to first-party [AEmotionStudio](https://huggingface.co/A
 | **Whisper** tiny | ~75 MB | `ComfyUI/models/whisper/` | Same as above (set `whisper_model` to `tiny`) | Same as above |
 | **LaMa** (Large Mask Inpainting) | ~195 MB | `~/.cache/torch/hub/checkpoints/` | `auto_mask:effect=remove` (legacy fallback) | [AEmotionStudio/lama-inpainting](https://huggingface.co/AEmotionStudio/lama-inpainting) — download `big-lama.safetensors` |
 | **FLUX Klein 4B** (Editing/Removal) | ~15 GB (bf16) | `ComfyUI/models/flux_klein/` | `auto_mask:effect=remove`, `auto_mask:effect=edit` | [AEmotionStudio/flux-klein](https://huggingface.co/AEmotionStudio/flux-klein) |
+| **MiniMax-Remover** (Object Removal) | ~2.5 GB | `ComfyUI/models/minimax_remover/` | `auto_mask:effect=remove` (when `use_minimax_remover` is On) | [AEmotionStudio/minimax-remover](https://huggingface.co/AEmotionStudio/minimax-remover) |
 | **MMAudio** (Video-to-Audio) | ~5.5 GB | `ComfyUI/models/mmaudio/` | `generate_audio` skill | [AEmotionStudio/mmaudio-models](https://huggingface.co/AEmotionStudio/mmaudio-models) |
 | **MuseTalk** (Lip Sync) | ~1.6 GB (fp16) | `ComfyUI/models/musetalk/` | `lip_sync` skill | [AEmotionStudio/musetalk-models](https://huggingface.co/AEmotionStudio/musetalk-models) |
 | **LivePortrait** (Face Animation) | ~497 MB | `ComfyUI/models/liveportrait/` | `animate_portrait` skill, `animate_portrait` no-LLM mode | [AEmotionStudio/liveportrait-models](https://huggingface.co/AEmotionStudio/liveportrait-models) |
@@ -532,7 +534,7 @@ FFMPEGA provides **9 nodes** that work together:
 | `video_path` | STRING | Absolute path to source video. Used as ffmpeg input unless `images_a` is connected. |
 | `prompt` | STRING | Natural language editing instruction (e.g. *"Add cinematic letterbox"*, *"Speed up 2x"*). Not required in `manual` mode. |
 | `llm_model` | DROPDOWN | AI model selection — local Ollama models, CLI tools, or cloud APIs. Select `none` for no-LLM mode. |
-| `no_llm_mode` | DROPDOWN | Mode when `llm_model` is `none`: `manual` (Effects Builder, default), `sam3_masking`, `transcribe`, `karaoke_subtitles`, `generate_audio`, `lip_sync`, `animate_portrait`. |
+| `no_llm_mode` | DROPDOWN | Mode when `llm_model` is `none`: `manual` (Effects Builder, default), `sam3_masking`, `transcribe`, `karaoke_subtitles`, `generate_audio`, `lip_sync`, `animate_portrait`, `minimax_remover`, `flux_klein`. |
 | `quality_preset` | DROPDOWN | Output quality: `draft`, `standard`, `high`, `lossless`. |
 | `seed` | INT | Change to force re-execution with the same prompt. Supports randomize control. |
 
@@ -1137,6 +1139,8 @@ FFMPEGA includes a comprehensive skill system with **212 operations** organized 
 | `remove_background` | AI background removal with BRIA RMBG — 6 model choices |
 
 > ⚠️ **License Notice:** The `generate_audio` skill uses [MMAudio](https://github.com/hkchengrex/MMAudio) model weights which are licensed under **CC-BY-NC 4.0** (non-commercial use only). Model weights are downloaded on first use — by downloading them you accept the [CC-BY-NC 4.0 license](https://creativecommons.org/licenses/by-nc/4.0/). The FFMPEGA code itself remains GPL-3.0.
+
+> ⚠️ **License Notice:** The `auto_mask:effect=remove` skill (when `use_minimax_remover=On`) uses [MiniMax-Remover](https://github.com/zibojia/MiniMax-Remover) model weights which are licensed under **CC-BY-NC 4.0** (non-commercial use only). Model weights are downloaded on first use — by downloading them you accept the [CC-BY-NC 4.0 license](https://creativecommons.org/licenses/by-nc/4.0/). The vendored code is Apache 2.0.
 
 </details>
 

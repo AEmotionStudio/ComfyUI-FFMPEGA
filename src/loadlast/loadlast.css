@@ -303,43 +303,6 @@
     display: block;
 }
 
-/* Transport bar: play/pause + time display */
-.ll_edit_transport {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 6px 10px;
-    background: #111;
-    border-top: 1px solid #333;
-}
-
-.ll_edit_play_btn {
-    width: 32px;
-    height: 28px;
-    border: 1px solid #555;
-    background: #1a2a3a;
-    color: #7ad;
-    font-size: 14px;
-    border-radius: 4px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.15s;
-}
-
-.ll_edit_play_btn:hover {
-    background: #2a3a5a;
-    border-color: #7ad;
-    color: #adf;
-}
-
-.ll_edit_time_display {
-    font: 12px/1 monospace;
-    color: #7ad;
-    letter-spacing: 0.5px;
-}
-
 /* Black overlay for deleted regions */
 .ll_edit_black_overlay {
     position: absolute;
@@ -357,7 +320,51 @@
     position: relative;
 }
 
-/* Timeline */
+/* ─── Speed control collapsible ─────────────────────── */
+.ll_edit_speed_details {
+    border-top: 1px solid #222;
+    background: #111;
+}
+
+.ll_edit_speed_summary {
+    padding: 6px 10px;
+    font: 12px/1.4 monospace;
+    color: #999;
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.15s;
+}
+
+.ll_edit_speed_details[open] .ll_edit_speed_summary {
+    color: #ddd;
+    border-bottom: 1px solid #222;
+}
+
+.ll_edit_speed_summary:hover {
+    color: #fff;
+}
+
+.ll_edit_speed_details .veditor-speed {
+    padding: 6px 8px;
+}
+
+/* Compact overrides for veditor components inside the inline editor */
+.ll_edit_wrapper .veditor-transport {
+    padding: 4px 8px;
+    gap: 6px;
+}
+
+.ll_edit_wrapper .veditor-modal-toolbar {
+    padding: 4px 8px;
+    justify-content: center;
+    border-top: 1px solid #222;
+}
+
+.ll_edit_wrapper .veditor-nle-timeline {
+    border-top: 1px solid #222;
+}
+
+/* Old styles kept for backwards compatibility */
 .ll_edit_timeline {
     padding: 4px 0;
     background: #111;

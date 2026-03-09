@@ -2,12 +2,11 @@
 
 Provides ``inject_effects_hints()``, ``process_effects_pipeline()``,
 ``process_sam3_only()``, ``process_whisper_only()``,
-``process_mmaudio_only()``, ``process_lip_sync_only()``, and
-``process_animate_portrait_only()`` — all the codepaths that run
-without an LLM.
+``process_mmaudio_only()``, ``process_lip_sync_only()``,
+``process_animate_portrait_only()``, and ``process_flux_klein_only()``
+— all the codepaths that run without an LLM.
 """
 
-import atexit
 import json
 import logging
 import os
@@ -99,6 +98,7 @@ async def process_effects_pipeline(
     sam3_det_threshold: float = 0.7,
     mask_points: str = "",
     use_flux_klein: bool = False,
+    use_minimax_remover: bool = False,
     flux_smoothing: str = "none",
     temp_video_from_images: Optional[str] = None,
     temp_video_with_audio: Optional[str] = None,
@@ -172,6 +172,7 @@ async def process_effects_pipeline(
     if mask_points and mask_points.strip():
         pipeline.metadata["_mask_points"] = mask_points.strip()
     pipeline.metadata["_enable_flux_klein"] = use_flux_klein
+    pipeline.metadata["_enable_minimax_remover"] = use_minimax_remover
     if flux_smoothing and flux_smoothing != "none":
         pipeline.metadata["_flux_smoothing"] = flux_smoothing
 
@@ -559,6 +560,7 @@ async def process_whisper_only(
     )
 
     # --- Generate subtitle file ---
+    sub_tmp_path = None  # track for cleanup after ffmpeg
     if mode == "karaoke_subtitles":
         if not result.words:
             logger.warning("Whisper found no words — producing clean passthrough")
@@ -570,7 +572,7 @@ async def process_whisper_only(
             )
             tmp.write(ass_content)
             tmp.close()
-            atexit.register(os.unlink, tmp.name)
+            sub_tmp_path = tmp.name
 
             try:
                 from ..core.sanitize import ffmpeg_escape_path
@@ -590,7 +592,7 @@ async def process_whisper_only(
             )
             tmp.write(srt_content)
             tmp.close()
-            atexit.register(os.unlink, tmp.name)
+            sub_tmp_path = tmp.name
 
             try:
                 from ..core.sanitize import ffmpeg_escape_path
@@ -663,7 +665,7 @@ async def process_whisper_only(
     )
 
     # --- Cleanup temp files ---
-    for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+    for tmp_path in [temp_video_from_images, temp_video_with_audio, sub_tmp_path]:
         if tmp_path and os.path.exists(tmp_path):
             try:
                 os.remove(tmp_path)
@@ -1173,3 +1175,824 @@ async def process_animate_portrait_only(
         if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
             if not os.listdir(temp_render_dir):
                 shutil.rmtree(temp_render_dir, ignore_errors=True)
+
+
+async def process_marigold_only(
+    # dependencies
+    media_converter,
+    # parameters
+    effective_video_path: str,
+    video_metadata,
+    save_output: bool,
+    output_path: str,
+    preview_mode: bool,
+    quality_preset: str,
+    crf: int,
+    encoding_preset: str,
+    marigold_output_type: str = "depth",
+    marigold_num_steps: int = 4,
+    marigold_ensemble_size: int = 1,
+    temp_video_from_images: Optional[str] = None,
+    temp_video_with_audio: Optional[str] = None,
+    **kwargs,
+) -> tuple[torch.Tensor, dict, str, str, str, str]:
+    """Run Marigold dense vision analysis directly without any LLM involvement.
+
+    Produces depth maps, surface normals, or intrinsic image decomposition
+    (appearance or lighting) from the input image or video.
+
+    Args:
+        marigold_output_type: One of 'depth', 'normals', 'appearance', 'lighting'.
+        marigold_num_steps: Number of denoising steps (1-50).
+        marigold_ensemble_size: Number of ensemble predictions (1-10).
+
+    Returns the standard 6-tuple:
+        (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
+    """
+    logger.info(
+        "Marigold mode: type=%s, steps=%d, ensemble=%d",
+        marigold_output_type, marigold_num_steps, marigold_ensemble_size,
+    )
+
+    # --- Import Marigold synthesizer ---
+    try:
+        try:
+            from ..core.marigold_synthesizer import run_marigold, cleanup as _mg_cleanup
+        except ImportError:
+            from core.marigold_synthesizer import run_marigold, cleanup as _mg_cleanup  # type: ignore
+    except ImportError:
+        raise RuntimeError(
+            "Marigold is not available. "
+            "Ensure diffusers >= 0.28.0 is installed and "
+            "core/marigold_synthesizer.py exists."
+        )
+
+    # --- Build output path ---
+    output_path, temp_render_dir = build_output_path(
+        effective_video_path=effective_video_path,
+        save_output=save_output,
+        output_path=output_path,
+        preview_mode=preview_mode,
+    )
+
+    # --- Run Marigold (in-process with GPU offloading) ---
+    marigold_output = None
+    try:
+        marigold_output = run_marigold(
+            input_path=effective_video_path,
+            output_type=marigold_output_type,
+            num_steps=marigold_num_steps,
+            ensemble_size=marigold_ensemble_size,
+        )
+    except Exception as e:
+        logger.error("Marigold mode: inference failed: %s", e)
+        # Free VRAM on failure
+        try:
+            _mg_cleanup()
+        except Exception:
+            pass
+        raise RuntimeError(f"Marigold inference failed: {e}") from e
+
+    # --- Re-encode to output path ---
+    _ffmpeg = _get_ffmpeg_bin()
+    effective_crf = crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23)
+    effective_preset = encoding_preset if encoding_preset != "auto" else _PRESET_MAP.get(quality_preset, "medium")
+
+    # Determine if output is image or video
+    ext = os.path.splitext(marigold_output)[1].lower()
+    is_image = ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp")
+
+    if is_image:
+        # For images, just copy to output path (change extension)
+        import shutil as _shutil
+        output_path = str(Path(output_path).with_suffix(ext))
+        _shutil.copy2(marigold_output, output_path)
+        cmd_log = f"cp {marigold_output} {output_path}"
+    else:
+        # For video, re-encode
+        ffmpeg_cmd = [
+            _ffmpeg, "-y",
+            "-i", marigold_output,
+            "-c:v", "libx264",
+            "-crf", str(effective_crf),
+            "-preset", effective_preset,
+            "-pix_fmt", "yuv420p",
+            "-an",  # Marigold output has no audio
+        ]
+
+        if preview_mode:
+            ffmpeg_cmd.extend(["-vf", "scale=480:trunc(ow/a/2)*2", "-t", "10"])
+
+        ffmpeg_cmd.append(output_path)
+
+        logger.debug("Marigold ffmpeg command: %s", " ".join(ffmpeg_cmd))
+        proc = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"Marigold mode: ffmpeg encoding failed:\n{proc.stderr[-500:]}"
+            )
+        cmd_log = " ".join(ffmpeg_cmd)
+
+    try:
+        # --- Collect frame/audio output ---
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=True,
+        )
+
+        # --- Build analysis string ---
+        _type_desc = {
+            "depth": "Monocular depth estimation",
+            "normals": "Surface normals estimation",
+            "appearance": "Intrinsic decomposition (albedo, roughness, metallicity)",
+            "lighting": "Intrinsic decomposition (albedo, shading, residual)",
+        }
+        analysis = (
+            f"Marigold Mode (no LLM)\n"
+            f"Output type: {marigold_output_type} — "
+            f"{_type_desc.get(marigold_output_type, marigold_output_type)}\n"
+            f"Denoising steps: {marigold_num_steps}\n"
+            f"Ensemble size: {marigold_ensemble_size}\n\n"
+            f"Source: {effective_video_path}\n"
+            f"Marigold output: {marigold_output}\n"
+            f"Output: {output_path}"
+        )
+
+        return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
+    finally:
+        # --- Cleanup temp files (always runs, even on error) ---
+        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        # Clean up Marigold temp output
+        if marigold_output and os.path.exists(marigold_output):
+            try:
+                os.remove(marigold_output)
+            except OSError:
+                pass
+        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+            if not os.listdir(temp_render_dir):
+                shutil.rmtree(temp_render_dir, ignore_errors=True)
+
+
+async def process_video_depth_only(
+    # dependencies
+    media_converter,
+    # parameters
+    effective_video_path: str,
+    video_metadata,
+    save_output: bool,
+    output_path: str,
+    preview_mode: bool,
+    quality_preset: str,
+    crf: int,
+    encoding_preset: str,
+    video_depth_encoder: str = "vits",
+    video_depth_colormap: str = "gray",
+    temp_video_from_images: Optional[str] = None,
+    temp_video_with_audio: Optional[str] = None,
+    **kwargs,
+) -> tuple[torch.Tensor, dict, str, str, str, str]:
+    """Run Video Depth Anything directly without any LLM involvement.
+
+    Produces temporally-consistent depth videos using native temporal
+    attention layers.
+
+    Returns:
+        Standard 6-tuple: (images_tensor, audio_dict, output_path,
+                          ffmpeg_log, analysis_text, error_text)
+    """
+    import shutil
+
+    vda_output = None
+    temp_render_dir = None
+    try:
+        if not effective_video_path or not os.path.isfile(effective_video_path):
+            raise RuntimeError("No valid video provided for depth estimation")
+
+        # Import synthesizer
+        try:
+            from ..core.vda_synthesizer import run_video_depth
+        except ImportError:
+            from core.vda_synthesizer import run_video_depth
+
+        logger.info("[VideoDepth] Running depth estimation (encoder=%s)", video_depth_encoder)
+
+        vda_output = run_video_depth(
+            input_path=effective_video_path,
+            encoder=video_depth_encoder,
+            colormap=video_depth_colormap,
+        )
+
+        if not vda_output or not os.path.isfile(vda_output):
+            raise RuntimeError("Video Depth Anything produced no output")
+
+        logger.info("[VideoDepth] Depth output: %s", vda_output)
+
+        # VDA synthesizer already produces a properly encoded mp4,
+        # so just copy it — no re-encode needed.
+        temp_render_dir = tempfile.mkdtemp(prefix="ffmpega_vda_")
+        final_video = os.path.join(temp_render_dir, "vda_depth.mp4")
+        shutil.copy2(vda_output, final_video)
+        cmd_log = f"cp {vda_output} {final_video}"
+
+        # Copy to output path if saving
+        if save_output and output_path:
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            shutil.copy2(final_video, output_path)
+        else:
+            output_path = final_video
+
+        # --- Collect frame/audio output ---
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=True,
+        )
+
+        analysis = (
+            f"Video Depth Anything — Temporal Depth Estimation\n"
+            f"Encoder: {video_depth_encoder}\n"
+            f"Colormap: {video_depth_colormap}\n"
+            f"Input: {effective_video_path}\n"
+            f"Output: {output_path}"
+        )
+
+        return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
+    finally:
+        # Cleanup temp files
+        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        if vda_output and os.path.exists(vda_output):
+            try:
+                os.remove(vda_output)
+            except OSError:
+                pass
+        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+            if not os.listdir(temp_render_dir):
+                shutil.rmtree(temp_render_dir, ignore_errors=True)
+
+
+async def process_minimax_remover_only(
+    # dependencies
+    media_converter,
+    # parameters
+    prompt: str,
+    effective_video_path: str,
+    video_metadata,
+    save_output: bool,
+    output_path: str,
+    preview_mode: bool,
+    quality_preset: str,
+    crf: int,
+    encoding_preset: str,
+    temp_video_from_images: Optional[str] = None,
+    temp_video_with_audio: Optional[str] = None,
+    **kwargs,
+) -> tuple[torch.Tensor, dict, str, str, str, str]:
+    """Run MiniMax-Remover directly without any LLM involvement.
+
+    Auto-detects whether the input is a single image or a video and
+    performs full-frame object removal.  The prompt is used as the SAM3
+    text target to generate a mask, then MiniMax-Remover inpaints the
+    masked region.
+
+    When no prompt is provided, performs full-frame removal using the
+    entire frame as a mask (useful for background replacement).
+
+    Returns the standard 6-tuple:
+        (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
+    """
+    logger.info("MiniMax-Remover mode: prompt=%r", prompt)
+
+    # --- Import MiniMax-Remover ---
+    try:
+        try:
+            from ..core.minimax_remover import (
+                remove_object as minimax_remove,
+                cleanup as _mm_cleanup,
+            )
+        except ImportError:
+            from core.minimax_remover import (  # type: ignore
+                remove_object as minimax_remove,
+                cleanup as _mm_cleanup,
+            )
+    except ImportError:
+        raise RuntimeError(
+            "MiniMax-Remover is not available. "
+            "Ensure diffusers >= 0.33.0 is installed and "
+            "core/minimax_remover.py exists."
+        )
+
+    # --- Build output path ---
+    output_path, temp_render_dir = build_output_path(
+        effective_video_path=effective_video_path,
+        save_output=save_output,
+        output_path=output_path,
+        preview_mode=preview_mode,
+    )
+
+    # --- Pre-emptive VRAM clear ---
+    try:
+        import comfy.model_management as mm  # type: ignore[import-not-found]
+        mm.unload_all_models()
+        mm.soft_empty_cache()
+    except (ImportError, AttributeError):
+        pass
+
+    import gc as _gc
+    _gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    logger.info("MiniMax-Remover: pre-cleared GPU VRAM")
+
+    # --- Generate mask with SAM3 (if prompt provided) ---
+    mask_video_path = None
+    if prompt and prompt.strip():
+        try:
+            try:
+                from ..core.sam3_masker import mask_video_subprocess as sam3_mask
+            except ImportError:
+                from core.sam3_masker import mask_video_subprocess as sam3_mask  # type: ignore
+            logger.info("MiniMax-Remover: generating SAM3 mask for '%s'", prompt)
+            mask_video_path = sam3_mask(
+                video_path=effective_video_path,
+                text_prompt=prompt,
+            )
+        except ImportError:
+            logger.warning(
+                "SAM3 not available — performing full-frame removal"
+            )
+        except Exception as e:
+            logger.warning("SAM3 masking failed: %s — performing full-frame removal", e)
+
+    # --- If no mask, create a full-white mask (full-frame removal) ---
+    if mask_video_path is None or not os.path.isfile(mask_video_path):
+        if not prompt or not prompt.strip():
+            logger.warning(
+                "MiniMax-Remover: no prompt provided — creating full-white mask. "
+                "This will attempt to inpaint the ENTIRE frame, which may produce "
+                "artifacts. Consider providing a text prompt to target specific objects."
+            )
+        import cv2
+        import numpy as np
+
+        cap = cv2.VideoCapture(effective_video_path)
+        fps = cap.get(cv2.CAP_PROP_FPS) or 24.0
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        cap.release()
+
+        mask_video_path = os.path.join(
+            tempfile.mkdtemp(prefix="ffmpega_mm_mask_"), "mask.mp4"
+        )
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        writer = cv2.VideoWriter(mask_video_path, fourcc, fps, (w, h))
+        white = np.full((h, w, 3), 255, dtype=np.uint8)
+        for _ in range(max(1, n_frames)):
+            writer.write(white)
+        writer.release()
+        logger.info("MiniMax-Remover: created full-white mask (%dx%d, %d frames)", w, h, n_frames)
+
+    removed_path = None
+    try:
+        removed_path = minimax_remove(
+            video_path=effective_video_path,
+            mask_video_path=mask_video_path,
+            output_path=output_path,
+        )
+        output_path = removed_path
+
+        # Re-encode for preview if needed
+        if preview_mode:
+            _ffmpeg = _get_ffmpeg_bin()
+            effective_crf = crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23)
+            effective_preset = (
+                encoding_preset if encoding_preset != "auto"
+                else _PRESET_MAP.get(quality_preset, "medium")
+            )
+            preview_path = output_path + ".preview.mp4"
+            ffmpeg_cmd = [
+                _ffmpeg, "-y",
+                "-i", output_path,
+                "-vf", "scale=480:trunc(ow/a/2)*2",
+                "-t", "10",
+                "-c:v", "libx264",
+                "-crf", str(effective_crf),
+                "-preset", effective_preset,
+                "-pix_fmt", "yuv420p",
+                "-an",
+                preview_path,
+            ]
+            proc = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+            if proc.returncode == 0:
+                os.replace(preview_path, output_path)
+            else:
+                logger.warning(
+                    "MiniMax-Remover preview downscale failed: %s",
+                    proc.stderr[-300:],
+                )
+
+        cmd_log = f"minimax_remover remove_object → {output_path}"
+
+    except Exception as e:
+        logger.error("MiniMax-Remover mode failed: %s", e)
+        try:
+            _mm_cleanup()
+        except Exception:
+            pass
+        raise RuntimeError(f"MiniMax-Remover removal failed: {e}") from e
+
+    try:
+        # --- Collect frame/audio output ---
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=True,
+        )
+
+        # --- Build analysis string ---
+        analysis = (
+            f"MiniMax-Remover Mode (no LLM)\n"
+            f"Target: {prompt or '(full-frame removal)'}\n"
+            f"Mask: {mask_video_path}\n\n"
+            f"Source: {effective_video_path}\n"
+            f"Output: {output_path}"
+        )
+
+        return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
+    finally:
+        # --- Cleanup temp files (always runs, even on error) ---
+        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+            if not os.listdir(temp_render_dir):
+                shutil.rmtree(temp_render_dir, ignore_errors=True)
+
+
+async def process_flux_klein_only(
+    # dependencies
+    media_converter,
+    # parameters
+    prompt: str,
+    effective_video_path: str,
+    video_metadata,
+    save_output: bool,
+    output_path: str,
+    preview_mode: bool,
+    quality_preset: str,
+    crf: int,
+    encoding_preset: str,
+    flux_smoothing: str = "none",
+    image_a=None,
+    _all_image_paths=None,
+    temp_video_from_images: Optional[str] = None,
+    temp_video_with_audio: Optional[str] = None,
+    **kwargs,
+) -> tuple[torch.Tensor, dict, str, str, str, str]:
+    """Run FLUX Klein editing directly without any LLM involvement.
+
+    Auto-detects whether the input is a single image or a video:
+    - **Image**: calls ``edit_single_image()`` for a one-shot edit
+    - **Video**: calls ``edit_video()`` in maskless (full-frame) mode,
+      applying the prompt to every frame via Klein's reference conditioning
+
+    The prompt is sent directly to FLUX Klein as the edit instruction.
+
+    Returns the standard 6-tuple:
+        (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
+    """
+    logger.info("FLUX Klein mode: prompt=%r", prompt)
+
+    if not prompt or not prompt.strip():
+        raise RuntimeError(
+            "FLUX Klein mode requires a prompt describing the desired edit. "
+            "Enter your edit instruction in the prompt field (e.g. "
+            "'a person wearing a chrome bodysuit')."
+        )
+
+    # --- Import FLUX Klein editor ---
+    try:
+        try:
+            from ..core.flux_klein_editor import (
+                edit_single_image,
+                edit_video,
+                cleanup as _fk_cleanup,
+            )
+        except ImportError:
+            from core.flux_klein_editor import (  # type: ignore
+                edit_single_image,
+                edit_video,
+                cleanup as _fk_cleanup,
+            )
+    except ImportError:
+        raise RuntimeError(
+            "FLUX Klein is not available. "
+            "Ensure diffusers >= 0.32.0 is installed and "
+            "core/flux_klein_editor.py exists."
+        )
+
+    # --- Build output path ---
+    output_path, temp_render_dir = build_output_path(
+        effective_video_path=effective_video_path,
+        save_output=save_output,
+        output_path=output_path,
+        preview_mode=preview_mode,
+    )
+
+    # --- Detect image vs video ---
+    ext = os.path.splitext(effective_video_path)[1].lower()
+    is_image = ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp")
+
+    # --- Pre-emptive VRAM clear ---
+    # In the LLM path, SAM3 runs in a subprocess whose GPU memory is
+    # fully released at process exit before Klein loads.  In no-LLM mode
+    # there's no subprocess step, so ComfyUI-loaded models (checkpoints,
+    # CLIP, VAE) may still hold GPU memory.  Aggressively free everything.
+    try:
+        import comfy.model_management as mm  # type: ignore[import-not-found]
+        mm.unload_all_models()
+        mm.soft_empty_cache()
+    except (ImportError, AttributeError):
+        pass
+
+    import gc as _gc
+    _gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    logger.info("FLUX Klein: pre-cleared GPU VRAM for pipeline load")
+
+    # --- Convert image_a tensor → PIL reference images ---
+    reference_images = None
+    if image_a is not None:
+        from PIL import Image as _PILImage
+        import numpy as _np
+        reference_images = []
+        if hasattr(image_a, 'shape') and len(image_a.shape) == 4:
+            # Batch of images (B, H, W, C) — ComfyUI IMAGE tensor
+            for idx in range(image_a.shape[0]):
+                arr = (image_a[idx].cpu().numpy() * 255).clip(0, 255).astype(_np.uint8)
+                reference_images.append(_PILImage.fromarray(arr))
+        elif hasattr(image_a, 'shape') and len(image_a.shape) == 3:
+            # Single image (H, W, C)
+            arr = (image_a.cpu().numpy() * 255).clip(0, 255).astype(_np.uint8)
+            reference_images.append(_PILImage.fromarray(arr))
+        if not reference_images:
+            reference_images = None
+        else:
+            logger.info("FLUX Klein: using %d reference image(s) from image_a", len(reference_images))
+
+    # --- Load image_path_a / image_path_b / ... as PIL references ---
+    if _all_image_paths:
+        from PIL import Image as _PILImage
+        if reference_images is None:
+            reference_images = []
+        for img_path in _all_image_paths:
+            if os.path.isfile(img_path):
+                reference_images.append(_PILImage.open(img_path).convert("RGB"))
+                logger.info("FLUX Klein: loaded reference image from %s", img_path)
+        if not reference_images:
+            reference_images = None
+
+    edited_path = None
+    try:
+        if is_image:
+            # Single-image edit
+            logger.info("FLUX Klein: single-image mode")
+            img_output = os.path.splitext(output_path)[0] + ".png"
+            edited_path = edit_single_image(
+                image_path=effective_video_path,
+                prompt=prompt,
+                output_path=img_output,
+                reference_images=reference_images,
+            )
+            output_path = edited_path
+            cmd_log = f"flux_klein edit_single_image → {output_path}"
+        else:
+            # Video edit — full-frame (no mask)
+            logger.info("FLUX Klein: full-frame video mode (no mask)")
+            edited_path = edit_video(
+                video_path=effective_video_path,
+                mask_video_path=None,
+                prompt=prompt,
+                output_path=output_path,
+                mode="edit",
+                smoothing=flux_smoothing,
+                reference_images=reference_images,
+            )
+            output_path = edited_path
+
+            # Re-encode for preview if needed
+            if preview_mode:
+                _ffmpeg = _get_ffmpeg_bin()
+                effective_crf = crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23)
+                effective_preset = (
+                    encoding_preset if encoding_preset != "auto"
+                    else _PRESET_MAP.get(quality_preset, "medium")
+                )
+                preview_path = output_path + ".preview.mp4"
+                ffmpeg_cmd = [
+                    _ffmpeg, "-y",
+                    "-i", output_path,
+                    "-vf", "scale=480:trunc(ow/a/2)*2",
+                    "-t", "10",
+                    "-c:v", "libx264",
+                    "-crf", str(effective_crf),
+                    "-preset", effective_preset,
+                    "-pix_fmt", "yuv420p",
+                    "-an",
+                    preview_path,
+                ]
+                proc = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+                if proc.returncode == 0:
+                    os.replace(preview_path, output_path)
+                else:
+                    logger.warning(
+                        "FLUX Klein preview downscale failed: %s",
+                        proc.stderr[-300:],
+                    )
+
+            cmd_log = f"flux_klein edit_video (maskless) → {output_path}"
+
+    except Exception as e:
+        logger.error("FLUX Klein mode failed: %s", e)
+        try:
+            _fk_cleanup()
+        except Exception:
+            pass
+        raise RuntimeError(f"FLUX Klein editing failed: {e}") from e
+
+    try:
+        # --- Collect frame/audio output ---
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=True,
+        )
+
+        # --- Build analysis string ---
+        input_type = "Image" if is_image else "Video"
+        analysis = (
+            f"FLUX Klein Mode (no LLM)\n"
+            f"Input type: {input_type}\n"
+            f"Prompt: {prompt}\n"
+            f"Mask: none (full-frame edit)\n"
+            f"Smoothing: {flux_smoothing}\n\n"
+            f"Source: {effective_video_path}\n"
+            f"Output: {output_path}"
+        )
+
+        return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
+    finally:
+        # --- Cleanup temp files (always runs, even on error) ---
+        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+            if not os.listdir(temp_render_dir):
+                shutil.rmtree(temp_render_dir, ignore_errors=True)
+
+
+async def process_ai_upscale_only(
+    # dependencies
+    media_converter,
+    # parameters
+    effective_video_path: str,
+    video_metadata,
+    save_output: bool,
+    output_path: str,
+    preview_mode: bool,
+    quality_preset: str,
+    crf: int,
+    encoding_preset: str,
+    upscale_model: str = "realesrgan_x4plus",
+    upscale_scale: int = 4,
+    temp_video_from_images: Optional[str] = None,
+    temp_video_with_audio: Optional[str] = None,
+    **kwargs,
+) -> tuple[torch.Tensor, dict, str, str, str, str]:
+    """Run AI upscaling directly without any LLM involvement.
+
+    Upscales images and videos using Real-ESRGAN, HAT, DAT, or SwinIR
+    via spandrel.
+
+    Returns:
+        Standard 6-tuple: (images_tensor, audio_dict, output_path,
+                          ffmpeg_log, analysis_text, error_text)
+    """
+    import shutil
+
+    upscale_output = None
+    temp_render_dir = None
+    try:
+        if not effective_video_path or not os.path.isfile(effective_video_path):
+            raise RuntimeError("No valid input provided for AI upscaling")
+
+        # Import synthesizer
+        try:
+            from ..core.upscaler import upscale_image, upscale_video
+        except ImportError:
+            from core.upscaler import upscale_image, upscale_video
+
+        # Determine if input is video or image
+        ext = os.path.splitext(effective_video_path)[1].lower()
+        _video_exts = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv"}
+        is_video = ext in _video_exts
+
+        logger.info("[AIUpscale] Upscaling with model=%s, scale=%dx, is_video=%s",
+                    upscale_model, upscale_scale, is_video)
+
+        if is_video:
+            upscale_output = upscale_video(
+                input_path=effective_video_path,
+                model_name=upscale_model,
+                scale_factor=upscale_scale,
+            )
+        else:
+            upscale_output = upscale_image(
+                input_path=effective_video_path,
+                model_name=upscale_model,
+                scale_factor=upscale_scale,
+            )
+
+        if not upscale_output or not os.path.isfile(upscale_output):
+            raise RuntimeError("AI upscaler produced no output")
+
+        logger.info("[AIUpscale] Upscale output: %s", upscale_output)
+
+        # Place into final location
+        if save_output and output_path:
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            shutil.copy2(upscale_output, output_path)
+            cmd_log = f"cp {upscale_output} {output_path}"
+        else:
+            output_path = upscale_output
+            # Prevent the finally block from deleting the file we're using
+            upscale_output = None
+            cmd_log = f"ai_upscale → {output_path}"
+
+        # --- Collect frame/audio output ---
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=not is_video,
+        )
+
+        analysis = (
+            f"AI Upscale — Super-Resolution\n"
+            f"Model: {upscale_model}\n"
+            f"Scale: {upscale_scale}×\n"
+            f"Input: {effective_video_path}\n"
+            f"Output: {output_path}"
+        )
+
+        return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
+    finally:
+        # Cleanup temp files
+        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        if upscale_output and os.path.exists(upscale_output):
+            try:
+                os.remove(upscale_output)
+            except OSError:
+                pass

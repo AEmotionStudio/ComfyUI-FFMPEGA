@@ -161,19 +161,28 @@ def cleanup() -> None:
 
 
 def _free_vram():
-    """Free ComfyUI and SAM3 VRAM before loading LaMa."""
-    from .platform import free_comfyui_vram
-    free_comfyui_vram()
+    """Free all GPU VRAM before loading LaMa.
 
-    # Also free SAM3 if loaded
+    Delegates to the shared ``_vram_utils.free_for_module``.
+    """
     try:
-        from . import sam3_masker
-        sam3_masker.cleanup()
-    except Exception:
-        pass
+        from ._vram_utils import free_for_module
+    except ImportError:
+        from core._vram_utils import free_for_module  # type: ignore
+    free_for_module(exclude="lama_inpainter")
 
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+
+# ---------------------------------------------------------------------------
+#  ffmpeg binary resolution
+# ---------------------------------------------------------------------------
+
+def _get_ffmpeg_bin() -> str:
+    """Get the ffmpeg binary path via the centralized bin_paths module."""
+    try:
+        from .bin_paths import get_ffmpeg_bin
+    except ImportError:
+        from core.bin_paths import get_ffmpeg_bin  # type: ignore
+    return get_ffmpeg_bin() or "ffmpeg"
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +202,7 @@ def _load_video_frames(video_path: str) -> Tuple[list, float, str]:
     tmpdir = tempfile.mkdtemp(prefix="lama_frames_")
     subprocess.run(
         [
-            "ffmpeg", "-i", video_path,
+            _get_ffmpeg_bin(), "-i", video_path,
             "-q:v", "2",
             os.path.join(tmpdir, "%06d.png"),
         ],
@@ -230,7 +239,7 @@ def _load_mask_frames(mask_video_path: str, num_frames: int) -> Tuple[list, str]
     tmpdir = tempfile.mkdtemp(prefix="lama_masks_")
     subprocess.run(
         [
-            "ffmpeg", "-i", mask_video_path,
+            _get_ffmpeg_bin(), "-i", mask_video_path,
             "-q:v", "2",
             os.path.join(tmpdir, "%06d.png"),
         ],
@@ -273,7 +282,7 @@ def _encode_video(
 
     subprocess.run(
         [
-            "ffmpeg", "-y",
+            _get_ffmpeg_bin(), "-y",
             "-framerate", str(fps),
             "-i", os.path.join(tmpdir, "%06d.png"),
             "-c:v", "libx264",
@@ -325,7 +334,10 @@ def _temporal_smooth(
 
     # Stack into arrays for efficient processing
     stack = np.stack(frames).astype(np.float32)  # (N, H, W, 3)
-    mask_stack = np.stack(masks)  # (N, H, W)
+    mask_stack = np.stack(masks)
+    # Ensure masks are 2D (H×W) — squeeze trailing channel dim if present
+    if mask_stack.ndim == 4:
+        mask_stack = mask_stack.squeeze(-1)
 
     # Only smooth where mask > threshold
     sigma = window / 3.0

@@ -252,77 +252,16 @@ def _get_whisper_path() -> str:
 #  VRAM management
 # ---------------------------------------------------------------------------
 
-_freeing_vram = False
-
-
 def _free_vram():
     """Free all GPU VRAM before loading MuseTalk models.
 
-    Follows the MMAudio/WanVideo pattern:
-    1. Tell ComfyUI to unload ALL cached models from GPU
-    2. Free MMAudio models if loaded
-    3. Free SAM3 models if loaded
-    4. Free FLUX Klein pipeline if loaded
-    5. Empty CUDA cache + gc.collect
-
-    Uses a re-entrancy guard to prevent infinite recursion.
+    Delegates to the shared ``_vram_utils.free_for_module``.
     """
-    global _freeing_vram
-    if _freeing_vram:
-        return
-    _freeing_vram = True
     try:
-        try:
-            from .platform import free_comfyui_vram
-        except ImportError:
-            from core.platform import free_comfyui_vram  # type: ignore
-        free_comfyui_vram()
-
-        # Free MMAudio if loaded
-        try:
-            try:
-                from . import mmaudio_synthesizer
-            except ImportError:
-                from core import mmaudio_synthesizer  # type: ignore
-            mmaudio_synthesizer.cleanup()
-        except Exception:
-            pass
-
-        # Free SAM3 if loaded
-        try:
-            try:
-                from . import sam3_masker
-            except ImportError:
-                from core import sam3_masker  # type: ignore
-            sam3_masker.cleanup()
-        except Exception:
-            pass
-
-        # Free FLUX Klein if loaded
-        try:
-            try:
-                from . import flux_klein_editor
-            except ImportError:
-                from core import flux_klein_editor  # type: ignore
-            flux_klein_editor.cleanup()
-        except Exception:
-            pass
-
-        # Free LivePortrait if loaded
-        try:
-            try:
-                from . import liveportrait_synthesizer
-            except ImportError:
-                from core import liveportrait_synthesizer  # type: ignore
-            liveportrait_synthesizer.cleanup()
-        except Exception:
-            pass
-
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        gc.collect()
-    finally:
-        _freeing_vram = False
+        from ._vram_utils import free_for_module
+    except ImportError:
+        from core._vram_utils import free_for_module  # type: ignore
+    free_for_module(exclude="musetalk_synthesizer")
 
 
 def _get_device() -> torch.device:

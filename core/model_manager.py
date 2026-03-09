@@ -96,6 +96,18 @@ _MODEL_INFO: dict[str, dict] = {
                   "https://huggingface.co/AEmotionStudio/flux-klein "
                   "and place them in ComfyUI/models/flux_klein/.",
     },
+    "minimax_remover": {
+        "name": "MiniMax-Remover (Video Object Removal)",
+        "size": "~2.5 GB (transformer + VAE + scheduler)",
+        "url": "https://huggingface.co/AEmotionStudio/minimax-remover",
+        "mirror_repo": "AEmotionStudio/minimax-remover",
+        "license": "CC-BY-NC-4.0",
+        "manual": "⚠️ NON-COMMERCIAL LICENSE: MiniMax-Remover model weights are CC-BY-NC-4.0. "
+                  "Download from "
+                  "https://huggingface.co/AEmotionStudio/minimax-remover "
+                  "— place vae/, transformer/, scheduler/ subdirs in "
+                  "ComfyUI/models/minimax_remover/.",
+    },
     "liveportrait": {
         "name": "LivePortrait (Portrait Animation)",
         "size": "~497 MB (5 model components)",
@@ -105,6 +117,33 @@ _MODEL_INFO: dict[str, dict] = {
         "manual": "Download model files from "
                   "https://huggingface.co/AEmotionStudio/liveportrait-models "
                   "and place them in ComfyUI/models/liveportrait/.",
+    },
+    "marigold": {
+        "name": "Marigold (Dense Vision Analysis)",
+        "size": "~2.5 GB per mode (depth/normals/appearance/lighting)",
+        "url": "https://huggingface.co/AEmotionStudio",
+        "mirror_repo": "AEmotionStudio/marigold-depth-v1-1",
+        "license": "CreativeML Open RAIL++-M",
+        "manual": "Models are auto-downloaded by diffusers via from_pretrained(). "
+                  "See https://huggingface.co/prs-eth for upstream checkpoints.",
+    },
+    "video_depth": {
+        "name": "Video Depth Anything (Temporal Video Depth)",
+        "size": "~102 MB (Small), ~390 MB (Base), ~670 MB (Large)",
+        "url": "https://huggingface.co/depth-anything",
+        "mirror_repo": "AEmotionStudio/Video-Depth-Anything-Small",
+        "license": "Apache 2.0",
+        "manual": "Checkpoints are auto-downloaded from HuggingFace. "
+                  "See https://github.com/DepthAnything/Video-Depth-Anything for details.",
+    },
+    "ai_upscale": {
+        "name": "AI Upscaler (Real-ESRGAN / HAT / DAT / SwinIR)",
+        "size": "~17-170 MB per model",
+        "url": "https://huggingface.co/AEmotionStudio/ai-upscale-models",
+        "mirror_repo": "AEmotionStudio/ai-upscale-models",
+        "license": "BSD-3-Clause (Real-ESRGAN) / Apache 2.0 (SwinIR)",
+        "manual": "Models are auto-downloaded from HuggingFace on first use. "
+                  "See https://huggingface.co/AEmotionStudio/ai-upscale-models",
     },
 }
 

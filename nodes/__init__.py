@@ -8,7 +8,7 @@ from .load_image_path_node import LoadImagePathNode
 from .load_video_path_node import LoadVideoPathNode
 from .text_input_node import TextInputNode
 from .save_video_node import SaveVideoNode
-from .video_to_path_node import VideoToPathNode
+from .media_bridge_node import MediaBridgeNode
 from .effects_node import FFMPEGAEffectsNode
 
 # Node class mappings for ComfyUI
@@ -18,7 +18,8 @@ NODE_CLASS_MAPPINGS = {
     "FFMPEGALoadImagePath": LoadImagePathNode,
     "FFMPEGALoadVideoPath": LoadVideoPathNode,
     "FFMPEGASaveVideo": SaveVideoNode,
-    "FFMPEGAVideoToPath": VideoToPathNode,
+    "FFMPEGAMediaBridge": MediaBridgeNode,
+    "FFMPEGAVideoToPath": MediaBridgeNode,  # backward-compat alias for existing workflows
     "FFMPEGATextInput": TextInputNode,
     "FFMPEGAEffects": FFMPEGAEffectsNode,
 }
@@ -30,7 +31,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FFMPEGALoadImagePath": "Load Image Path (FFMPEGA)",
     "FFMPEGALoadVideoPath": "Load Video Path (FFMPEGA)",
     "FFMPEGASaveVideo": "Save Video (FFMPEGA)",
-    "FFMPEGAVideoToPath": "Video to Path (FFMPEGA)",
+    "FFMPEGAMediaBridge": "Media Bridge (FFMPEGA)",
     "FFMPEGATextInput": "FFMPEGA Text",
     "FFMPEGAEffects": "FFMPEGA Effects Builder",
 }
@@ -67,7 +68,7 @@ __all__ = [
     "LoadImagePathNode",
     "LoadVideoPathNode",
     "SaveVideoNode",
-    "VideoToPathNode",
+    "MediaBridgeNode",
     "TextInputNode",
     "FFMPEGAEffectsNode",
     "NODE_CLASS_MAPPINGS",

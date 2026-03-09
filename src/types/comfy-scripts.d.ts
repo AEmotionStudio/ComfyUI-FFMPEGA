@@ -13,6 +13,7 @@ declare module 'comfyui/app' {
         ui: any;
         extensionManager: any;
         registerExtension(extension: any): void;
+        queuePrompt(num?: number, batchCount?: number): Promise<void>;
     }
     export const app: ComfyApp;
 }

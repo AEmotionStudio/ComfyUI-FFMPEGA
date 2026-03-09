@@ -366,7 +366,20 @@ export function registerAgentNode(
                 if (visionWidget) toggleWidget(visionWidget, !isNone);
                 if (ptcWidget) toggleWidget(ptcWidget, !isNone);
                 const noLlmModeWidget = node.widgets?.find((w: ComfyWidget) => w.name === "no_llm_mode");
-                if (noLlmModeWidget) toggleWidget(noLlmModeWidget, isNone);
+                if (noLlmModeWidget) {
+                    toggleWidget(noLlmModeWidget, isNone);
+                    // Hook no_llm_mode callback for conditional sub-widget visibility
+                    if (!noLlmModeWidget._cbHooked) {
+                        noLlmModeWidget._cbHooked = true;
+                        const origNoLlmCb = noLlmModeWidget.callback;
+                        noLlmModeWidget.callback = function (...args: unknown[]) {
+                            origNoLlmCb?.apply(this, args);
+                            updateNoLlmModeVisibility();
+                            fitHeight();
+                        };
+                    }
+                }
+                updateNoLlmModeVisibility();
                 fitHeight();
             }
 
@@ -417,6 +430,30 @@ export function registerAgentNode(
         const allowDownloadsWidget = this.widgets?.find((w: ComfyWidget) => w.name === "allow_model_downloads");
         const fluxSmoothingWidget = this.widgets?.find((w: ComfyWidget) => w.name === "flux_smoothing");
         const mmaudioModeWidget = this.widgets?.find((w: ComfyWidget) => w.name === "mmaudio_mode");
+        const marigoldOutputWidget = this.widgets?.find((w: ComfyWidget) => w.name === "marigold_output_type");
+        const vdaEncoderWidget = this.widgets?.find((w: ComfyWidget) => w.name === "video_depth_encoder");
+        const vdaColormapWidget = this.widgets?.find((w: ComfyWidget) => w.name === "video_depth_colormap");
+
+        /** Show/hide marigold + VDA widgets based on no_llm_mode value */
+        function updateNoLlmModeVisibility(): void {
+            // Use dynamic lookups to avoid temporal dead zone issues
+            const adv = node.widgets?.find((w: ComfyWidget) => w.name === "advanced_options");
+            const showAdvanced = Boolean(adv?.value);
+            const llm = node.widgets?.find((w: ComfyWidget) => w.name === "llm_model");
+            const isNone = llm?.value === "none";
+            const noLlmMode = node.widgets?.find((w: ComfyWidget) => w.name === "no_llm_mode");
+            const mode = isNone ? String(noLlmMode?.value ?? "manual") : "";
+
+            const showMarigold = showAdvanced && mode === "marigold";
+            const showVda = showAdvanced && mode === "video_depth";
+
+            const mw = node.widgets?.find((w: ComfyWidget) => w.name === "marigold_output_type");
+            const ve = node.widgets?.find((w: ComfyWidget) => w.name === "video_depth_encoder");
+            const vc = node.widgets?.find((w: ComfyWidget) => w.name === "video_depth_colormap");
+            if (mw) toggleWidget(mw, showMarigold);
+            if (ve) toggleWidget(ve, showVda);
+            if (vc) toggleWidget(vc, showVda);
+        }
 
         function updateAdvancedVisibility(): void {
             const show = Boolean(advancedWidget?.value);
@@ -439,6 +476,7 @@ export function registerAgentNode(
             if (trackTokensWidget) toggleWidget(trackTokensWidget, show);
             if (logUsageWidget) toggleWidget(logUsageWidget, show);
             if (allowDownloadsWidget) toggleWidget(allowDownloadsWidget, show);
+            updateNoLlmModeVisibility();
             fitHeight();
         }
 

@@ -738,6 +738,8 @@ def _f_auto_mask(p):
 
     # Whether FLUX Klein is enabled (off by default to save VRAM)
     _enable_flux_klein = bool(p.get("_enable_flux_klein", False))
+    # Whether MiniMax-Remover is enabled (off by default)
+    _enable_minimax_remover = bool(p.get("_enable_minimax_remover", False))
 
     mask_path = None  # will be set by cache hit or SAM3 generation
 
@@ -747,8 +749,8 @@ def _f_auto_mask(p):
         # Only reuse cached FLUX output when the toggle is still ON —
         # otherwise the user explicitly asked for the lightweight fallback.
         _cached_flux = _flux_cache.get(_cache_key)
-        if effect in ("remove", "edit") and _enable_flux_klein and _cached_flux and os.path.isfile(_cached_flux):
-            log.info("auto_mask: reusing cached FLUX Klein output: %s", _cached_flux)
+        if effect in ("remove", "edit") and (_enable_flux_klein or _enable_minimax_remover) and _cached_flux and os.path.isfile(_cached_flux):
+            log.info("auto_mask: reusing cached AI output: %s", _cached_flux)
             escaped = _escape_filter_path(_cached_flux)
             fc = f"movie={escaped}[inp];[inp]format=yuv420p[_vout]"
             return make_result(fc=fc)
@@ -840,10 +842,42 @@ def _f_auto_mask(p):
     if smoothing not in ("none", "gaussian", "adaptive"):
         smoothing = "none"
 
-    # Special handling for "remove" — use FLUX Klein AI inpainting (if enabled)
-    # or fall back to LaMa inpainting
+    # Special handling for "remove" — priority: MiniMax → FLUX Klein → LaMa → black fill
     if effect == "remove":
-        if _enable_flux_klein:
+        if _enable_minimax_remover:
+            try:
+                try:
+                    from ...core.minimax_remover import remove_object as minimax_remove
+                except ImportError:
+                    from core.minimax_remover import remove_object as minimax_remove
+                log.info(
+                    "⚠️  auto_mask removal uses MiniMax-Remover model weights licensed "
+                    "CC-BY-NC 4.0 (non-commercial). "
+                    "See: https://creativecommons.org/licenses/by-nc/4.0/"
+                )
+                inpainted_path = minimax_remove(
+                    video_path=video_path,
+                    mask_video_path=mask_path,
+                    smoothing=smoothing,
+                )
+                log.info("MiniMax-Remover removal complete: %s", inpainted_path)
+                if _metadata_ref is not None and isinstance(_metadata_ref, dict):
+                    _metadata_ref.setdefault("_flux_klein_outputs", {})[_cache_key] = inpainted_path
+                escaped = _escape_filter_path(inpainted_path)
+                fc = f"movie={escaped}[inp];[inp]format=yuv420p[_vout]"
+                return make_result(fc=fc)
+            except Exception as e:
+                log.error("MiniMax-Remover removal failed: %s", e)
+                try:
+                    try:
+                        from ...core.minimax_remover import cleanup as _mm_cleanup
+                    except ImportError:
+                        from core.minimax_remover import cleanup as _mm_cleanup
+                    _mm_cleanup()
+                except Exception:
+                    pass
+                raise
+        elif _enable_flux_klein:
             try:
                 try:
                     from ...core.flux_klein_editor import remove_object
@@ -872,8 +906,8 @@ def _f_auto_mask(p):
                     pass
                 raise
         else:
-            # FLUX Klein disabled — fall back to LaMa inpainting
-            log.info("FLUX Klein disabled — using LaMa for object removal")
+            # Both disabled — fall back to LaMa inpainting
+            log.info("MiniMax & FLUX Klein disabled — using LaMa for object removal")
             try:
                 try:
                     from ...core.lama_inpainter import remove_object as lama_remove

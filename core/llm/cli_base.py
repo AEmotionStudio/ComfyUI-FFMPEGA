@@ -229,9 +229,17 @@ class CLIConnectorBase(LLMConnector):
                     await proc.wait()
                 except Exception:
                     pass
-                raise TimeoutError(
+                last_error = TimeoutError(
                     f"{self._log_tag()} timed out after {self.config.timeout}s"
                 )
+                if attempt < self._MAX_RETRIES:
+                    logger.warning(
+                        "[%s] Attempt %d/%d timed out after %.0fs — retrying",
+                        self._log_tag(), attempt, self._MAX_RETRIES,
+                        self.config.timeout,
+                    )
+                    continue
+                raise last_error
             except FileNotFoundError:
                 raise RuntimeError(self._install_hint())
 

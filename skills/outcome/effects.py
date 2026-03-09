@@ -2956,9 +2956,14 @@ def register_skills(registry: SkillRegistry) -> None:
             "(e.g. 'the person', 'license plate') and SAM3 generates a "
             "precise pixel-level mask. Supports blur, pixelate, remove, edit, "
             "grayscale, highlight, greenscreen, and transparent effects. "
-            "The 'remove' effect uses FLUX Klein AI to cleanly erase objects. "
+            "The 'remove' effect uses MiniMax-Remover (when enabled) or "
+            "FLUX Klein AI to cleanly erase objects. "
             "The 'edit' effect uses FLUX Klein AI for text-guided changes "
-            "(e.g. change hair color, replace background)."
+            "(e.g. change hair color, replace background). "
+            "NOTE: MiniMax-Remover model weights are licensed CC-BY-NC 4.0 "
+            "(non-commercial use only). By using effect=remove with "
+            "use_minimax_remover=On you accept that license: "
+            "https://creativecommons.org/licenses/by-nc/4.0/"
         ),
         parameters=[
             SkillParameter(

@@ -168,6 +168,29 @@ class SkillComposer:
         "face_puppet": "animate_portrait",
         "puppet": "animate_portrait",
         "face_swap_motion": "animate_portrait",
+        # Marigold — Dense Vision Analysis
+        "depth_map": "marigold",
+        "normal_map": "marigold",
+        "surface_normals": "marigold",
+        "depth_estimation": "marigold",
+        "normals_estimation": "marigold",
+        "intrinsic_decomposition": "marigold",
+        "albedo_map": "marigold",
+        "material_map": "marigold",
+        # Video Depth Anything — Temporal Video Depth
+        "video_depth_map": "video_depth",
+        "temporal_depth": "video_depth",
+        "consistent_depth": "video_depth",
+        "vda": "video_depth",
+        "vda_depth": "video_depth",
+        # AI Upscale — Super-Resolution
+        "super_resolution": "ai_upscale",
+        "esrgan": "ai_upscale",
+        "swinir": "ai_upscale",
+        "hat_upscale": "ai_upscale",
+        "ai_enhance": "ai_upscale",
+        "upscale_ai": "ai_upscale",
+        "sr": "ai_upscale",
     }
 
     def __init__(self, registry: Optional[SkillRegistry] = None):
@@ -733,6 +756,8 @@ class SkillComposer:
                 step.params["_flux_smoothing"] = pipeline.metadata["_flux_smoothing"]
             if "_enable_flux_klein" in pipeline.metadata:
                 step.params["_enable_flux_klein"] = pipeline.metadata["_enable_flux_klein"]
+            if "_enable_minimax_remover" in pipeline.metadata:
+                step.params["_enable_minimax_remover"] = pipeline.metadata["_enable_minimax_remover"]
             if "_mmaudio_mode" in pipeline.metadata:
                 step.params["_mmaudio_mode"] = pipeline.metadata["_mmaudio_mode"]
             # Provide mutable reference so handlers can write back metadata
@@ -778,6 +803,14 @@ class SkillComposer:
 
             # Get filters/options for this skill
             vf, af, opts, fc, input_opts = self._skill_to_filters(skill, step.params)
+
+            # Movie-producing skills (VDA, Marigold) store a pre-built
+            # movie path — skip ffmpeg entirely and use that file.
+            movie_override = step.params.pop("_movie_override", None)
+            if movie_override:
+                pipeline.metadata["_movie_override"] = movie_override
+                continue
+
             video_filters.extend(vf)
             audio_filters.extend(af)
             output_options.extend(opts)
@@ -1340,6 +1373,18 @@ class SkillComposer:
         if handler is None:
             return [], [], [], "", []
         result = handler(params)
+
+        # Movie-producing handlers return dicts: {"movie": path} or {"error": msg}
+        if isinstance(result, dict):
+            if "error" in result:
+                raise RuntimeError(result["error"])
+            if "movie" in result:
+                # Store the replacement movie path in params so the
+                # caller can short-circuit the ffmpeg pipeline.
+                params["_movie_override"] = result["movie"]
+                return [], [], [], "", []
+            return [], [], [], "", []
+
         # Handlers may return 3-tuple, 4-tuple, or 5-tuple
         if len(result) == 5:
             return result
@@ -1405,6 +1450,12 @@ def _get_dispatch() -> dict:
         _f_lip_sync,
         # portrait animation (LivePortrait)
         _f_animate_portrait,
+        # dense vision (Marigold)
+        _f_marigold,
+        # video depth (Video Depth Anything)
+        _f_video_depth,
+        # ai upscale (Real-ESRGAN, HAT, DAT, SwinIR)
+        _f_ai_upscale,
         # presets
         _f_fade_to_black, _f_fade_to_white, _f_flash,
         _f_spin, _f_shake, _f_pulse, _f_bounce, _f_drift,
@@ -1602,6 +1653,32 @@ def _get_dispatch() -> dict:
         "face_puppet": _f_animate_portrait,
         "puppet": _f_animate_portrait,
         "face_swap_motion": _f_animate_portrait,
+        # Marigold — Dense Vision Analysis
+        "marigold": _f_marigold,
+        "depth_map": _f_marigold,
+        "normal_map": _f_marigold,
+        "surface_normals": _f_marigold,
+        "depth_estimation": _f_marigold,
+        "normals_estimation": _f_marigold,
+        "intrinsic_decomposition": _f_marigold,
+        "albedo_map": _f_marigold,
+        "material_map": _f_marigold,
+        # Video Depth Anything — Temporal Video Depth
+        "video_depth": _f_video_depth,
+        "video_depth_map": _f_video_depth,
+        "temporal_depth": _f_video_depth,
+        "consistent_depth": _f_video_depth,
+        "vda": _f_video_depth,
+        "vda_depth": _f_video_depth,
+        # AI Upscale — Super-Resolution
+        "ai_upscale": _f_ai_upscale,
+        "super_resolution": _f_ai_upscale,
+        "esrgan": _f_ai_upscale,
+        "swinir": _f_ai_upscale,
+        "hat_upscale": _f_ai_upscale,
+        "ai_enhance": _f_ai_upscale,
+        "upscale_ai": _f_ai_upscale,
+        "sr": _f_ai_upscale,
         # Presets / Transitions
         "fade_to_black": _f_fade_to_black,
         "fade_to_white": _f_fade_to_white,

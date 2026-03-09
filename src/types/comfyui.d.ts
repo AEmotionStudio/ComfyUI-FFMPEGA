@@ -15,6 +15,7 @@ export interface ComfyApp {
     ui: ComfyUI;
     extensionManager: ComfyExtensionManager;
     registerExtension(extension: ComfyExtension): void;
+    queuePrompt(num?: number, batchCount?: number): Promise<void>;
 }
 
 export interface ComfyExtension {
@@ -78,11 +79,21 @@ export interface ComfySetting {
 // ComfyUI Extension Manager
 // ============================================================================
 
+export interface ComfySidebarTab {
+    id: string;
+    icon: string;
+    title: string;
+    tooltip: string;
+    type: 'custom';
+    render: (el: HTMLElement) => void;
+}
+
 export interface ComfyExtensionManager {
     setting: {
         get(id: string): unknown;
         set(id: string, value: unknown): void;
     };
+    registerSidebarTab(tab: ComfySidebarTab): void;
 }
 
 // ============================================================================
@@ -163,6 +174,7 @@ export interface ComfyWidget {
     // Internal state for toggle pattern
     _origType?: string;
     _origComputeSize?: (width: number) => [number, number];
+    _cbHooked?: boolean;
 }
 
 export interface ComfySlot {
