@@ -75,11 +75,12 @@ def free_for_module(exclude: str = "") -> None:
             free_comfyui_vram()
 
         # Step 2: Cleanup every other FFMPEGA synthesizer
-        # NOTE: __import__ only succeeds for modules already in sys.modules
-        # (or importable at the top-level).  This is intentional — a module
-        # that hasn't been imported yet cannot have loaded a GPU model, so
-        # there is nothing to clean up.  The broad ``except Exception``
-        # silently handles ImportError for modules not yet loaded.
+        # NOTE: ``__import__`` performs a full import if the module is
+        # importable — it is NOT limited to ``sys.modules``.  However,
+        # a module that hasn't been imported yet cannot have loaded a
+        # GPU model, so calling ``cleanup()`` on it is harmless.  The
+        # broad ``except Exception`` silently handles ImportError for
+        # modules whose dependencies are unavailable.
         for mod_name in ALL_SYNTHESIZER_MODULES:
             if mod_name == exclude:
                 continue
@@ -93,12 +94,10 @@ def free_for_module(exclude: str = "") -> None:
             except Exception:
                 pass
 
-        # Step 3: Aggressive GC + CUDA cleanup
+        # Step 3: GC + CUDA cleanup
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-            torch.cuda.synchronize()
-        gc.collect()
 
         if torch.cuda.is_available():
             free_mem = torch.cuda.mem_get_info()[0] / (1024**3)

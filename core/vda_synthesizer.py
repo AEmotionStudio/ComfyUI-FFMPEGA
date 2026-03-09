@@ -297,8 +297,6 @@ def cleanup() -> None:
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-        torch.cuda.synchronize()
-    gc.collect()
 
     try:
         import comfy.model_management as mm
