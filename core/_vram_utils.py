@@ -75,6 +75,11 @@ def free_for_module(exclude: str = "") -> None:
             free_comfyui_vram()
 
         # Step 2: Cleanup every other FFMPEGA synthesizer
+        # NOTE: __import__ only succeeds for modules already in sys.modules
+        # (or importable at the top-level).  This is intentional — a module
+        # that hasn't been imported yet cannot have loaded a GPU model, so
+        # there is nothing to clean up.  The broad ``except Exception``
+        # silently handles ImportError for modules not yet loaded.
         for mod_name in ALL_SYNTHESIZER_MODULES:
             if mod_name == exclude:
                 continue

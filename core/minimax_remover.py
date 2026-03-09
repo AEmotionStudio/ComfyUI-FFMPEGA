@@ -315,12 +315,10 @@ def _load_video_frames(video_path: str):
     """Load video frames as PIL Images.
 
     Returns:
-        (frames_pil, fps, tmpdir)
+        (frames_pil, fps)
     """
     from PIL import Image
     import cv2
-
-    tmpdir = tempfile.mkdtemp(prefix="ffmpega_minimax_frames_")
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -328,7 +326,6 @@ def _load_video_frames(video_path: str):
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 24.0
     frames = []
-    idx = 0
 
     while True:
         ret, frame = cap.read()
@@ -337,23 +334,20 @@ def _load_video_frames(video_path: str):
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         pil = Image.fromarray(rgb)
         frames.append(pil)
-        idx += 1
 
     cap.release()
     log.info("Loaded %d frames from %s (%.1f fps)", len(frames), video_path, fps)
-    return frames, fps, tmpdir
+    return frames, fps
 
 
 def _load_mask_frames(mask_video_path: str, num_frames: int):
     """Load mask frames as PIL Images (mode 'L').
 
     Returns:
-        (masks, tmpdir)
+        list of PIL Images in mode 'L'.
     """
     from PIL import Image
     import cv2
-
-    tmpdir = tempfile.mkdtemp(prefix="ffmpega_minimax_masks_")
 
     cap = cv2.VideoCapture(mask_video_path)
     if not cap.isOpened():
@@ -377,7 +371,7 @@ def _load_mask_frames(mask_video_path: str, num_frames: int):
         masks = masks[:num_frames]
 
     log.info("Loaded %d mask frames from %s", len(masks), mask_video_path)
-    return masks, tmpdir
+    return masks
 
 
 def _encode_video(frames: list, output_path: str, fps: float) -> str:
@@ -657,8 +651,8 @@ def remove_object(
     pipe = load_pipeline()
 
     # Load frames and masks
-    frames_pil, fps, frames_tmpdir = _load_video_frames(video_path)
-    masks_pil, masks_tmpdir = _load_mask_frames(mask_video_path, len(frames_pil))
+    frames_pil, fps = _load_video_frames(video_path)
+    masks_pil = _load_mask_frames(mask_video_path, len(frames_pil))
 
     try:
         total_frames = len(frames_pil)
@@ -696,6 +690,8 @@ def remove_object(
                 batch_results = _remove_batch(pipe, batch_frames, batch_masks)
 
                 # Place results, handling overlap blending
+                import numpy as np
+                from PIL import Image
                 actual_count = batch_end - batch_start
                 for i in range(actual_count):
                     frame_idx = batch_start + i
@@ -705,8 +701,6 @@ def remove_object(
                         all_output_frames[frame_idx] = result_frame
                     else:
                         # Overlap region — blend with previous batch result
-                        import numpy as np
-                        from PIL import Image
                         prev = np.array(all_output_frames[frame_idx]).astype(np.float32)
                         curr = np.array(result_frame).astype(np.float32)
                         # Linear blend: earlier batch has more weight at start of overlap
@@ -741,10 +735,5 @@ def remove_object(
         return output_path
 
     finally:
-        # Clean up temp directories
-        for d in [frames_tmpdir, masks_tmpdir]:
-            if d and os.path.isdir(d):
-                shutil.rmtree(d, ignore_errors=True)
-
         # Free pipeline memory after use
         cleanup()
