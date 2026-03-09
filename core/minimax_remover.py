@@ -290,6 +290,10 @@ def cleanup() -> None:
             import torch
             pipe = _pipeline
             _pipeline = None
+            try:
+                pipe.to("cpu")
+            except Exception:
+                pass
             del pipe
             gc.collect()
             if torch.cuda.is_available():
@@ -303,8 +307,6 @@ def cleanup() -> None:
         except Exception as e:
             _pipeline = None
             log.warning("MiniMax-Remover cleanup error: %s", e)
-    else:
-        _pipeline = None
 
 
 # ---------------------------------------------------------------------------
@@ -661,6 +663,9 @@ def remove_object(
     masks_pil = _load_mask_frames(mask_video_path, len(frames_pil))
 
     try:
+        import numpy as np
+        from PIL import Image
+
         total_frames = len(frames_pil)
         log.info("MiniMax-Remover: %d frames @ %.1f fps", total_frames, fps)
 
@@ -696,8 +701,6 @@ def remove_object(
                 batch_results = _remove_batch(pipe, batch_frames, batch_masks)
 
                 # Place results, handling overlap blending
-                import numpy as np
-                from PIL import Image
                 actual_count = batch_end - batch_start
                 for i in range(actual_count):
                     frame_idx = batch_start + i

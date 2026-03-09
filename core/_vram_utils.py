@@ -16,6 +16,7 @@ frees synthesizer B, which in turn tries to free synthesizer A.
 
 import gc
 import logging
+import sys
 
 import torch
 
@@ -79,20 +80,18 @@ def free_for_module(exclude: str = "") -> None:
             free_comfyui_vram()
 
         # Step 2: Cleanup every other FFMPEGA synthesizer
-        # NOTE: ``__import__`` performs a full import if the module is
-        # importable — it is NOT limited to ``sys.modules``.  However,
-        # a module that hasn't been imported yet cannot have loaded a
-        # GPU model, so calling ``cleanup()`` on it is harmless.  The
-        # broad ``except Exception`` silently handles ImportError for
-        # modules whose dependencies are unavailable.
+        # Only clean modules already in sys.modules — a module that hasn't
+        # been imported yet cannot have loaded a GPU model, so there's
+        # nothing to free.  Using sys.modules avoids triggering a full
+        # import (and loading heavy deps like torch/diffusers) for modules
+        # the user never activated this session.
         for mod_name in ALL_SYNTHESIZER_MODULES:
             if mod_name == exclude:
                 continue
+            mod = sys.modules.get(f"core.{mod_name}") or sys.modules.get(mod_name)
+            if mod is None:
+                continue
             try:
-                try:
-                    mod = __import__(f"core.{mod_name}", fromlist=[mod_name])
-                except ImportError:
-                    mod = __import__(mod_name)
                 if hasattr(mod, "cleanup"):
                     mod.cleanup()
             except Exception:
