@@ -38,7 +38,7 @@ def _get_ffmpeg_bin() -> str:
         from .bin_paths import get_ffmpeg_bin
     except ImportError:
         from core.bin_paths import get_ffmpeg_bin  # type: ignore
-    return get_ffmpeg_bin()
+    return get_ffmpeg_bin() or "ffmpeg"
 
 # ---------------------------------------------------------------------------
 #  Model configurations
