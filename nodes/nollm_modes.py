@@ -1561,6 +1561,12 @@ async def process_minimax_remover_only(
         n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         cap.release()
 
+        # Pad dimensions to even values so the mask matches the
+        # pad=ceil(iw/2)*2:ceil(ih/2)*2 encoding used downstream,
+        # preventing pixel misalignment with the source video.
+        w = int(np.ceil(w / 2) * 2)
+        h = int(np.ceil(h / 2) * 2)
+
         mask_tmpdir = tempfile.mkdtemp(prefix="ffmpega_mm_mask_")
         mask_video_path = os.path.join(mask_tmpdir, "mask.mp4")
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")

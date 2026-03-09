@@ -627,8 +627,9 @@ def upscale_video(
             _tensor_to_image(sr_tensor, out_frame)
             del sr_tensor
 
-            # Per-frame VRAM cleanup
-            if i % 5 == 0:
+            # Periodic VRAM cleanup — every 20 frames balances memory
+            # pressure vs gc.collect() overhead (~50-100ms per call).
+            if i % 20 == 0:
                 gc.collect()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()

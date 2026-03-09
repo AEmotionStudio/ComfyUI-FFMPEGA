@@ -33,7 +33,7 @@ ALL_SYNTHESIZER_MODULES: tuple[str, ...] = (
     "mmaudio_synthesizer",
     "musetalk_synthesizer",
     "sam3_masker",
-    "flux_klein_editor",
+    "flux_klein_editor",  # NB: not *_synthesizer — module is named flux_klein_editor
     "lama_inpainter",
     "marigold_synthesizer",
     "vda_synthesizer",
