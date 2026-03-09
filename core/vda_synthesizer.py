@@ -432,7 +432,7 @@ def _save_depth_video(depths: np.ndarray, output_path: str,
                 cv2.imwrite(os.path.join(tmp_dir, f"{i:06d}.png"), normalized)
 
         # Use integer framerate for ffmpeg compatibility
-        fps_str = str(int(round(fps))) if fps == int(fps) else f"{fps:.2f}"
+        fps_str = str(int(round(fps))) if round(fps, 2) == int(round(fps)) else f"{fps:.2f}"
         cmd = [
             _get_ffmpeg_bin(), "-y",
             "-framerate", fps_str,
@@ -541,7 +541,10 @@ def run_video_depth(
             frames, fps, input_size=input_size, device=device,
         )
     finally:
-        # Offload model to offload device after inference to free VRAM
+        # Offload model to CPU after inference to free VRAM but keep model
+        # in RAM for fast re-use (unlike MiniMax/Upscaler which fully cleanup
+        # after each run).  _vram_utils.free_for_module() will call cleanup()
+        # if another synthesizer needs VRAM later.
         offload_to_cpu()
 
     # Save output video

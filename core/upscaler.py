@@ -639,7 +639,7 @@ def upscale_video(
         )
         os.close(_fd)
         # Use integer framerate for ffmpeg compatibility
-        fps_str = str(int(round(fps))) if fps == int(fps) else f"{fps:.2f}"
+        fps_str = str(int(round(fps))) if round(fps, 2) == int(round(fps)) else f"{fps:.2f}"
         encode_cmd = [
             ffmpeg, "-y",
             "-framerate", fps_str,

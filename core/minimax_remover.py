@@ -406,7 +406,7 @@ def _encode_video(frames: list, output_path: str, fps: float) -> str:
             frame.save(os.path.join(frames_dir, f"{i:06d}.png"))
 
         # Use integer framerate for ffmpeg compatibility
-        fps_str = str(int(round(fps))) if fps == int(fps) else f"{fps:.2f}"
+        fps_str = str(int(round(fps))) if round(fps, 2) == int(round(fps)) else f"{fps:.2f}"
         cmd = [
             ffmpeg, "-y",
             "-framerate", fps_str,

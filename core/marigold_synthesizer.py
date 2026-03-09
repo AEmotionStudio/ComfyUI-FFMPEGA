@@ -207,9 +207,9 @@ def cleanup() -> None:
         pass
     del pipe
 
+    gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-    gc.collect()
 
     try:
         import comfy.model_management as mm  # type: ignore[import-not-found]
@@ -308,10 +308,13 @@ def _save_frames_as_video(frames, output_path: str, fps: float) -> None:
         for i, frame in enumerate(frames):
             frame.save(os.path.join(tmp_dir, f"{i:06d}.png"))
 
+        # Use integer framerate for ffmpeg compatibility
+        fps_str = str(int(round(fps))) if round(fps, 2) == int(round(fps)) else f"{fps:.2f}"
         cmd = [
             _get_ffmpeg_bin(), "-y",
-            "-framerate", str(fps),
+            "-framerate", fps_str,
             "-i", os.path.join(tmp_dir, "%06d.png"),
+            "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
             "-c:v", "libx264",
             "-crf", "18",
             "-pix_fmt", "yuv420p",
