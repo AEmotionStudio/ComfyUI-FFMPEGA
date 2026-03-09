@@ -1140,9 +1140,10 @@ class SkillComposer:
             # Optimization: Skip replacements entirely if there are no placeholders
             if "{" in template:
                 for key, value in params.items():
-                    val_str = str(value)
                     if isinstance(value, str):
-                        val_str = sanitize_text_param(val_str)
+                        val_str = sanitize_text_param(value)
+                    else:
+                        val_str = str(value)
 
                     # Unconditional replace is fast here because user params are few
                     # and likely present in the template.
