@@ -295,8 +295,7 @@ def _frames_to_base64_raw_strings_no_resize(
 def _escape_path(path: str) -> str:
     """Escape path for use in ffprobe lavfi filter expressions."""
     # Replace backslashes and colons for cross-platform compat
-    # Also escape single quotes since path is wrapped in single quotes
-    return path.replace("\\", "/").replace(":", "\\\\:").replace("'", "\\'")
+    return path.replace("\\", "/").replace(":", "\\\\:")
 
 
 def _analyze_colors_simple(
@@ -941,4 +940,3 @@ def generate_audio_visualization(
         "folder": str(out),
         "audio_metrics": metrics,
     }
-

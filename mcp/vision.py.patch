@@ -1,0 +1,12 @@
+--- mcp/vision.py
++++ mcp/vision.py
+@@ -354,7 +354,8 @@
+ def _escape_path(path: str) -> str:
+     """Escape path for use in ffprobe lavfi filter expressions."""
+     # Replace backslashes and colons for cross-platform compat
+-    return path.replace("\\", "/").replace(":", "\\\\:")
++    # Also escape single quotes since path is wrapped in single quotes
++    return path.replace("\\", "/").replace(":", "\\\\:").replace("'", "\\'")
+
+
+ def _analyze_colors_simple(
