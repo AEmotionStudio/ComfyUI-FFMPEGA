@@ -1569,6 +1569,27 @@ async def process_minimax_remover_only(
         for _ in range(max(1, n_frames)):
             writer.write(white)
         writer.release()
+
+        # Re-encode with ffmpeg for proper MP4 container (mp4v can
+        # produce files that ffmpeg/PIL decoders struggle with).
+        _ffmpeg = _get_ffmpeg_bin()
+        reencoded = mask_video_path + ".tmp.mp4"
+        _re = subprocess.run(
+            [_ffmpeg, "-y", "-i", mask_video_path,
+             "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p",
+             reencoded],
+            capture_output=True,
+        )
+        if _re.returncode == 0 and os.path.isfile(reencoded):
+            os.replace(reencoded, mask_video_path)
+        else:
+            # Clean up failed re-encode attempt
+            try:
+                os.remove(reencoded)
+            except OSError:
+                pass
+            logger.warning("Mask re-encode failed (rc=%d), using mp4v original", _re.returncode)
+
         logger.info("MiniMax-Remover: created full-white mask (%dx%d, %d frames)", w, h, n_frames)
 
     removed_path = None

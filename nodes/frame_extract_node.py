@@ -441,7 +441,7 @@ class FrameExtractNode:
             preview_path = os.path.join(temp_dir, preview_name)
 
             cmd = [
-                "ffmpeg", "-y",
+                get_ffmpeg_bin(), "-y",
                 "-ss", str(start_time),
                 "-i", video_path,
                 "-t", str(duration),

@@ -1383,6 +1383,11 @@ class SkillComposer:
                 # caller can short-circuit the ffmpeg pipeline.
                 params["_movie_override"] = result["movie"]
                 return [], [], [], "", []
+            if "image" in result:
+                # Image-producing handlers (e.g. ai_upscale on a single
+                # image) — propagate the same way as movie overrides.
+                params["_movie_override"] = result["image"]
+                return [], [], [], "", []
             return [], [], [], "", []
 
         # Handlers may return 3-tuple, 4-tuple, or 5-tuple

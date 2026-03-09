@@ -306,6 +306,30 @@ def _upscale_tensor(model_desc, img_tensor: torch.Tensor,
     _, c, h, w = img_tensor.shape
     scale = model_desc.scale
 
+    # Auto-reduce tile_size if total VRAM usage would exceed available memory.
+    # Total cost = fixed output+weight tensors + per-tile inference peak.
+    # We can only reduce per-tile cost by shrinking tile_size.
+    if torch.cuda.is_available() and img_tensor.device.type == "cuda":
+        try:
+            free_mem = torch.cuda.mem_get_info()[0]
+            # Fixed cost: output accumulation (1,C,H*s,W*s) + weight (1,1,H*s,W*s)
+            out_bytes = (c + 1) * h * scale * w * scale * 4
+            budget = free_mem * 0.8 - out_bytes
+            # Per-tile peak: input tile + output tile, both in float16 (2 bytes)
+            # with ~3x overhead for intermediate activations
+            tile_peak = 0
+            while budget > 0 and tile_size > 128:
+                tile_peak = 3 * 2 * c * (tile_size * scale) ** 2 * 2
+                if tile_peak <= budget:
+                    break
+                tile_size = max(128, tile_size // 2)
+                log.info("[Upscaler] Auto-reduced tile_size to %d (free=%.1f GiB, "
+                         "budget=%.1f GiB, tile_peak=%.1f GiB)", tile_size,
+                         free_mem / (1024**3), budget / (1024**3),
+                         tile_peak / (1024**3))
+        except Exception:
+            pass
+
     # Small enough for single-pass — avoid tiling overhead
     if h <= tile_size and w <= tile_size:
         with torch.no_grad():

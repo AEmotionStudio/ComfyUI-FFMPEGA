@@ -18,7 +18,8 @@ try:
 
     XFORMERS_AVAILABLE = True
 except ImportError:
-    print("xFormers not available")
+    import logging as _logging
+    _logging.getLogger("ffmpega").debug("xFormers not available")
     XFORMERS_AVAILABLE = False
 
 

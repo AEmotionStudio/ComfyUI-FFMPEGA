@@ -198,8 +198,8 @@ class LoadVideoPathNode:
             },
         }
 
-    RETURN_TYPES = ("STRING", "INT", "FLOAT", "FLOAT", "STRING", "STRING", "IMAGE", "AUDIO")
-    RETURN_NAMES = ("video_path", "frame_count", "fps", "duration", "mask_points", "crop_data", "images", "audio")
+    RETURN_TYPES = ("STRING", "INT", "FLOAT", "FLOAT", "STRING", "IMAGE", "AUDIO", "STRING")
+    RETURN_NAMES = ("video_path", "frame_count", "fps", "duration", "mask_points", "images", "audio", "crop_data")
     OUTPUT_TOOLTIPS = (
         "Validated video file path — connect to FFMPEGA Agent's "
         "video_a / video_b / video_c input slots.",
@@ -208,10 +208,10 @@ class LoadVideoPathNode:
         "Effective duration in seconds after applying trim parameters.",
         "JSON-encoded point selection data from the Point Selector. "
         "Connect to FFMPEGA Agent's mask_points input for guided masking.",
-        "JSON-encoded crop rectangle from the Crop Selector. "
-        "Format: {\"x\":N, \"y\":N, \"w\":N, \"h\":N}.",
         "Upstream IMAGE pass-through (or empty tensor if not connected).",
         "Upstream AUDIO pass-through (or silence if not connected).",
+        "JSON-encoded crop rectangle from the Crop Selector. "
+        "Format: {\"x\":N, \"y\":N, \"w\":N, \"h\":N}.",
     )
     FUNCTION = "load_path"
     CATEGORY = "FFMPEGA"
@@ -468,8 +468,8 @@ class LoadVideoPathNode:
         return {
             "result": (resolved_path, available_frames, effective_fps,
                        effective_duration, mask_points_data or "",
-                       crop_data or "",
-                       images_out, audio_out),
+                       images_out, audio_out,
+                       crop_data or ""),
             "ui": {
                 "video": ui_video,
                 "video_info": [video_info],
