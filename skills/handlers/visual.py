@@ -734,12 +734,20 @@ def _f_auto_mask(p):
         _metadata_ref.get("_flux_klein_outputs", {})
         if isinstance(_metadata_ref, dict) else {}
     )
-    _cache_key = str(p.get("edit_prompt", effect))
-
     # Whether FLUX Klein is enabled (off by default to save VRAM)
     _enable_flux_klein = bool(p.get("_enable_flux_klein", False))
     # Whether MiniMax-Remover is enabled (off by default)
     _enable_minimax_remover = bool(p.get("_enable_minimax_remover", False))
+
+    _base_cache_key = str(p.get("edit_prompt", effect))
+    # Prefix the cache key with the active model so switching between
+    # MiniMax and FLUX Klein invalidates stale cached results.
+    if _enable_minimax_remover:
+        _cache_key = f"minimax:{_base_cache_key}"
+    elif _enable_flux_klein:
+        _cache_key = f"flux:{_base_cache_key}"
+    else:
+        _cache_key = _base_cache_key
 
     mask_path = None  # will be set by cache hit or SAM3 generation
 

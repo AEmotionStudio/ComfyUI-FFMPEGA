@@ -465,7 +465,7 @@ class TestFluxKleinPlusVideoFilters:
                         "edit_prompt": "make it cinematic",
                         "_metadata_ref": {
                             "_mask_video_path": edited_path,
-                            "_flux_klein_outputs": {"make it cinematic": edited_path},
+                            "_flux_klein_outputs": {"flux:make it cinematic": edited_path},
                         },
                     }),
                     ("contrast", {"value": 1.1}),
@@ -473,7 +473,7 @@ class TestFluxKleinPlusVideoFilters:
                 ],
                 metadata={
                     "_mask_video_path": edited_path,
-                    "_flux_klein_outputs": {"make it cinematic": edited_path},
+                    "_flux_klein_outputs": {"flux:make it cinematic": edited_path},
                     "_enable_flux_klein": True,
                 },
             )
@@ -524,7 +524,7 @@ class TestFluxKleinPlusVideoFilters:
                         "edit_prompt": "make it thermal",
                         "_metadata_ref": {
                             "_mask_video_path": edited_path,
-                            "_flux_klein_outputs": {"make it thermal": edited_path},
+                            "_flux_klein_outputs": {"flux:make it thermal": edited_path},
                         },
                     }),
                     # LLM generates auto_mask again (duplicate)
@@ -534,14 +534,14 @@ class TestFluxKleinPlusVideoFilters:
                         "edit_prompt": "make it thermal",
                         "_metadata_ref": {
                             "_mask_video_path": edited_path,
-                            "_flux_klein_outputs": {"make it thermal": edited_path},
+                            "_flux_klein_outputs": {"flux:make it thermal": edited_path},
                         },
                     }),
                     ("contrast", {"value": 1.1}),
                 ],
                 metadata={
                     "_mask_video_path": edited_path,
-                    "_flux_klein_outputs": {"make it thermal": edited_path},
+                    "_flux_klein_outputs": {"flux:make it thermal": edited_path},
                     "_enable_flux_klein": True,
                 },
             )
@@ -580,7 +580,7 @@ class TestFluxKleinPlusVideoFilters:
                         "edit_prompt": "chrome skin",
                         "_metadata_ref": {
                             "_mask_video_path": edited_path,
-                            "_flux_klein_outputs": {"chrome skin": edited_path},
+                            "_flux_klein_outputs": {"flux:chrome skin": edited_path},
                         },
                     }),
                     ("false_color", {
@@ -589,7 +589,7 @@ class TestFluxKleinPlusVideoFilters:
                 ],
                 metadata={
                     "_mask_video_path": edited_path,
-                    "_flux_klein_outputs": {"chrome skin": edited_path},
+                    "_flux_klein_outputs": {"flux:chrome skin": edited_path},
                     "_enable_flux_klein": True,
                 },
             )

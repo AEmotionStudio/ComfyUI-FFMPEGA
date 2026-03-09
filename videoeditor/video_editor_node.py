@@ -437,8 +437,8 @@ class VideoEditorNode:
     @staticmethod
     def _has_speed_changes(speed_map_json: str) -> bool:
         """Check if any segment has a non-1.0 speed."""
-        from .processing.export import _has_speed_changes
-        return _has_speed_changes(speed_map_json)
+        from .processing.export import has_speed_changes
+        return has_speed_changes(speed_map_json)
 
     # Audio extraction constants — used in both the ffmpeg command and
     # the downstream numpy reshape so they stay in sync.

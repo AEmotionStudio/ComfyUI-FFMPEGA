@@ -397,13 +397,17 @@ def _upscale_tensor(model_desc, img_tensor: torch.Tensor,
 # ---------------------------------------------------------------------------
 
 def _image_to_tensor(image_path: str, device: torch.device) -> torch.Tensor:
-    """Load an image as a [1, 3, H, W] float16 tensor in [0, 1]."""
+    """Load an image as a [1, 3, H, W] float32 tensor in [0, 1].
+
+    Kept as float32 — the model is loaded in half precision and
+    spandrel / torch autocast handles the conversion during inference.
+    """
     from PIL import Image
 
     img = Image.open(image_path).convert("RGB")
     arr = np.array(img).astype(np.float32) / 255.0
     tensor = torch.from_numpy(arr).permute(2, 0, 1).unsqueeze(0)
-    return tensor.to(device).half()
+    return tensor.to(device)
 
 
 def _tensor_to_image(tensor: torch.Tensor, output_path: str) -> None:
@@ -507,10 +511,8 @@ def upscale_image(
     _tensor_to_image(sr_tensor, output_path)
     del sr_tensor
 
-    # Cleanup VRAM
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    # Unload model after processing — matches upscale_video / VDA patterns
+    cleanup()
 
     log.info("[Upscaler] Image upscaled: %s", output_path)
     return output_path
@@ -654,15 +656,9 @@ def upscale_video(
             except OSError:
                 pass
 
-        # Offload model after processing
-        try:
-            if _model is not None:
-                _model.model.cpu()
-        except Exception:
-            pass
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        # Unload model after processing — matches VDA/Marigold patterns
+        # where models are fully cleaned up after use to free VRAM.
+        cleanup()
 
     log.info("[Upscaler] Video upscaled: %s (%d frames)", output_path, total)
     return output_path

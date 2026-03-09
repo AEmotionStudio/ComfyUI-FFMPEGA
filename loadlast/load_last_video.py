@@ -688,8 +688,8 @@ class LoadLastVideo:
     def _has_speed_changes(speed_map_json: str) -> bool:
         """Check if any segment has a non-1.0 speed."""
         try:
-            from ..videoeditor.processing.export import _has_speed_changes
-            return _has_speed_changes(speed_map_json)
+            from ..videoeditor.processing.export import has_speed_changes
+            return has_speed_changes(speed_map_json)
         except ImportError:
             return False
 
