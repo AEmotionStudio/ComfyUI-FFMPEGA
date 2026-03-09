@@ -69,6 +69,7 @@ export function openPointSelector(
     // Build the modal
     const overlay = document.createElement("div");
     overlay.id = "ffmpega-point-selector";
+    overlay.tabIndex = -1;
     overlay.setAttribute("role", "dialog");
     overlay.setAttribute("aria-modal", "true");
     overlay.setAttribute("aria-label", "Mask Editor");
@@ -76,7 +77,7 @@ export function openPointSelector(
         position:fixed;top:0;left:0;width:100vw;height:100vh;
         background:rgba(0,0,0,0.85);z-index:999999;
         display:flex;flex-direction:column;align-items:center;
-        justify-content:center;font-family:sans-serif;
+        justify-content:center;font-family:sans-serif;outline:none;
     `;
 
     // Header bar
@@ -184,6 +185,7 @@ export function openPointSelector(
     btnBar.appendChild(cancelBtn);
     overlay.appendChild(btnBar);
     document.body.appendChild(overlay);
+    overlay.focus();
 
     // ── State ──
     let pts: number[][] = existing.points ? [...existing.points] : [];
