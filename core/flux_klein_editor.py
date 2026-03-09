@@ -712,10 +712,9 @@ def edit_single_image(
         result.save(output_path)
         log.info("FLUX Klein single-image edit complete: %s", output_path)
         return output_path
-    except Exception:
-        # Free pipeline on error so VRAM isn't leaked
+    finally:
+        # Always free pipeline (~8 GB VRAM) after use, matching edit_video().
         cleanup()
-        raise
 
 
 def edit_video(

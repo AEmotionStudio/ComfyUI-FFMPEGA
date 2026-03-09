@@ -395,13 +395,10 @@ def _encode_video(frames: list, output_path: str, fps: float) -> str:
         raise ValueError("No frames to encode")
 
     try:
-        try:
-            from .bin_paths import get_ffmpeg_bin
-        except ImportError:
-            from core.bin_paths import get_ffmpeg_bin  # type: ignore
-        ffmpeg = get_ffmpeg_bin()
-    except (ImportError, AttributeError):
-        ffmpeg = "ffmpeg"
+        from .bin_paths import get_ffmpeg_bin
+    except ImportError:
+        from core.bin_paths import get_ffmpeg_bin  # type: ignore
+    ffmpeg = get_ffmpeg_bin()
 
     frames_dir = tempfile.mkdtemp(prefix="ffmpega_minimax_enc_")
     try:

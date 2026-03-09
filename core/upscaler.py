@@ -421,28 +421,42 @@ def _upscale_tensor(model_desc, img_tensor: torch.Tensor,
 def _image_to_tensor(image_path: str, device: torch.device) -> torch.Tensor:
     """Load an image as a [1, 3, H, W] float32 tensor in [0, 1].
 
-    Kept as float32 — the model is loaded in half precision and
-    spandrel / torch autocast handles the conversion during inference.
+    Uses cv2 for direct numpy loading, avoiding a PIL round-trip.
+    The tensor is kept as float32 — the model is loaded in half
+    precision and spandrel / torch autocast handles the conversion
+    during inference.
     """
-    from PIL import Image
+    import cv2
 
-    img = Image.open(image_path).convert("RGB")
-    arr = np.array(img).astype(np.float32) / 255.0
+    bgr = cv2.imread(image_path, cv2.IMREAD_COLOR)
+    if bgr is None:
+        raise RuntimeError(f"Cannot read image: {image_path}")
+    rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+    arr = rgb.astype(np.float32) / 255.0
     tensor = torch.from_numpy(arr).permute(2, 0, 1).unsqueeze(0)
     return tensor.to(device)
 
 
 def _tensor_to_image(tensor: torch.Tensor, output_path: str) -> None:
-    """Save a [1, 3, H, W] tensor to an image file."""
-    from PIL import Image
+    """Save a [1, 3, H, W] tensor to an image file.
+
+    Uses cv2 for direct numpy writing, avoiding a PIL round-trip.
+    JPEG quality is set to 95 for high-fidelity upscaled output.
+    """
+    import cv2
 
     arr = tensor.squeeze(0).permute(1, 2, 0).cpu().float().numpy()
     arr = (arr.clip(0, 1) * 255).astype(np.uint8)
-    Image.fromarray(arr).save(output_path)
+    bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+    ext = os.path.splitext(output_path)[1].lower()
+    if ext in (".jpg", ".jpeg"):
+        cv2.imwrite(output_path, bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
+    else:
+        cv2.imwrite(output_path, bgr)
 
 
 def _get_ffmpeg_bin() -> str:
-    """Get the ffmpeg binary path."""
+    """Get the ffmpeg binary path via bin_paths (includes fallback)."""
     try:
         from .bin_paths import get_ffmpeg_bin
     except ImportError:
@@ -451,7 +465,7 @@ def _get_ffmpeg_bin() -> str:
 
 
 def _get_ffprobe_bin() -> str:
-    """Get the ffprobe binary path."""
+    """Get the ffprobe binary path via bin_paths (includes fallback)."""
     try:
         from .bin_paths import get_ffprobe_bin
     except ImportError:
