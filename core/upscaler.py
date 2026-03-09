@@ -548,6 +548,12 @@ def upscale_video(
 ) -> str:
     """Upscale a video using AI super-resolution (per-frame).
 
+    Extracts all frames as PNGs, upscales each individually, then
+    re-encodes.  This requires temporary disk space proportional to
+    ``2 × frames × resolution`` — e.g. a 300-frame 4K video may need
+    ~10 GB of temp storage.  Both temp directories are cleaned up in a
+    ``finally`` block.
+
     Args:
         input_path: Path to source video.
         model_name: Model to use (see MODEL_CONFIGS).

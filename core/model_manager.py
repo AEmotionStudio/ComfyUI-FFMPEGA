@@ -156,7 +156,8 @@ def require_downloads_allowed(model_key: str) -> None:
     the model's download URL so the user knows where to get it manually.
 
     Args:
-        model_key: One of "sam3", "lama", "whisper".
+        model_key: A key from ``_MODEL_INFO`` (e.g. ``"sam3"``,
+            ``"minimax_remover"``, ``"ai_upscale"``).
 
     Raises:
         RuntimeError: If allow_model_downloads is False on the node.

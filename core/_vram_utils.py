@@ -23,6 +23,10 @@ log = logging.getLogger("ffmpega")
 
 # Complete list of all synthesizer module names that have a ``cleanup()``
 # function.  Order is irrelevant — all are iterated every time.
+#
+# IMPORTANT: When adding a new core/*.py synthesizer module that caches a
+# GPU model and exposes a ``cleanup()`` function, you MUST add its base
+# name here.  Otherwise it won't be freed when other modules need VRAM.
 ALL_SYNTHESIZER_MODULES: tuple[str, ...] = (
     "liveportrait_synthesizer",
     "mmaudio_synthesizer",

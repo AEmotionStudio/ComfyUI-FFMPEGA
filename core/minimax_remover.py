@@ -542,6 +542,12 @@ def _remove_batch(
     # then decodes to (num_latent-1)*factor + 1 frames, which can be
     # *fewer* than input.  Pad to the next aligned count so no frames
     # are lost.  factor = 2^sum(temperal_downsample) = 4 for this model.
+    #
+    # NOTE: Repeating the last frame as padding is the standard approach
+    # for this model architecture.  The last few *real* frames may show
+    # minor temporal artifacts because the model "sees" duplicated context
+    # at the boundary — this is expected and inherent to the upstream
+    # MiniMax-Remover design.  Output is trimmed to ``num_frames`` below.
     _VAE_TEMPORAL_FACTOR = 4
     aligned_frames = ((num_frames - 1 + _VAE_TEMPORAL_FACTOR - 1)
                        // _VAE_TEMPORAL_FACTOR) * _VAE_TEMPORAL_FACTOR + 1
