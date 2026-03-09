@@ -314,8 +314,8 @@ def _upscale_tensor(model_desc, img_tensor: torch.Tensor,
             out_bytes = (c + 1) * h * scale * w * scale * 4
             budget = free_mem * 0.8 - out_bytes
             # Per-tile peak: input tile + output tile, both in float16 (2 bytes)
-            # with ~3x overhead for intermediate activations
-            tile_peak = 0
+            # with ~3x overhead for intermediate activations.
+            # Halve tile_size until per-tile peak fits the budget.
             while budget > 0 and tile_size > 128:
                 tile_peak = 3 * 2 * c * (tile_size * scale) ** 2 * 2
                 if tile_peak <= budget:
@@ -618,9 +618,11 @@ def upscale_video(
             suffix=f"_upscaled_{model_name}.mp4", prefix="ffmpega_"
         )
         os.close(_fd)
+        # Use integer framerate for ffmpeg compatibility
+        fps_str = str(int(round(fps))) if fps == int(fps) else f"{fps:.2f}"
         encode_cmd = [
             ffmpeg, "-y",
-            "-framerate", str(fps),
+            "-framerate", fps_str,
             "-start_number", "0",
             "-i", os.path.join(out_dir, "%06d.png"),
             "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
