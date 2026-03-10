@@ -76,7 +76,7 @@ Describe edits in plain text: *"Make it cinematic with a fade in"*, *"Speed up 2
 <td width="50%">
 
 ### 🏗️ Manual Mode — No AI Required
-Use the **Effects Builder** to visually compose up to 3 effects with parameters. Add **text overlays and subtitles** via preset-powered Text nodes. Full editing control with zero LLM dependency.
+Use the **Effects Builder** to visually compose up to 5 effects with parameters. Add **text overlays and subtitles** via preset-powered Text nodes. Full editing control with zero LLM dependency.
 
 </td>
 </tr>
@@ -98,7 +98,7 @@ Works with **Ollama** (local, free), **OpenAI**, **Anthropic**, **Google Gemini*
 <td width="50%">
 
 ### 🎨 Right-Click Presets
-18 built-in Effects Builder presets and 10 Text node presets with example content. Save/load/delete your own custom presets. One-click clear to reset.
+26 built-in Effects Builder presets and 10 Text node presets with example content. Save/load/delete your own custom presets. One-click clear to reset.
 
 </td>
 <td width="50%">
@@ -509,7 +509,7 @@ All models are mirrored to first-party [AEmotionStudio](https://huggingface.co/A
 | **MuseTalk** (Lip Sync) | ~1.6 GB (fp16) | `ComfyUI/models/musetalk/` | `lip_sync` skill | [AEmotionStudio/musetalk-models](https://huggingface.co/AEmotionStudio/musetalk-models) |
 | **LivePortrait** (Face Animation) | ~497 MB | `ComfyUI/models/liveportrait/` | `animate_portrait` skill, `animate_portrait` no-LLM mode | [AEmotionStudio/liveportrait-models](https://huggingface.co/AEmotionStudio/liveportrait-models) |
 | **Video Depth Anything** (Temporal Depth) | ~102–670 MB | `ComfyUI/models/video_depth/` | `video_depth` no-LLM mode | [AEmotionStudio/video-depth-anything](https://huggingface.co/AEmotionStudio/video-depth-anything) |
-| **Marigold** (Dense Vision) | ~2.5 GB per mode | Auto-downloaded by diffusers | `marigold` no-LLM mode (depth/normals/appearance/lighting) | [prs-eth/marigold-depth-v1-1](https://huggingface.co/prs-eth/marigold-depth-v1-1) |
+| **Marigold** (Dense Vision) | ~2.5 GB per mode | Auto-downloaded by diffusers | `marigold` no-LLM mode (depth/normals/appearance/lighting) | [AEmotionStudio/marigold-depth-v1-1](https://huggingface.co/AEmotionStudio/marigold-depth-v1-1) |
 | **AI Upscaler** (Real-ESRGAN / HAT / DAT / SwinIR) | ~17–170 MB per model | `ComfyUI/models/upscale_models/` | `ai_upscale` skill, `ai_upscale` no-LLM mode | [AEmotionStudio/ai-upscale-models](https://huggingface.co/AEmotionStudio/ai-upscale-models) |
 | **BRIA RMBG** (rembg) | ~270 MB | `~/.u2net/` | `remove_background` skill | Install with `pip install 'comfyui-ffmpega[masking]'` — model auto-fetched by rembg |
 
@@ -520,7 +520,7 @@ All models are mirrored to first-party [AEmotionStudio](https://huggingface.co/A
 
 ## 🎛️ Nodes
 
-FFMPEGA provides **9 nodes** that work together:
+FFMPEGA provides **11 nodes** that work together:
 
 > [!TIP]
 > **One task per run.** Instead of cramming multiple edits into a single prompt, focus each run on one editing task — then feed the output back into FFMPEGA for the next. This keeps context low and model focus high, leading to significantly better results. Chain FFMPEGA Agent → Save Video → Load Video Path → FFMPEGA Agent for multi-step workflows.
@@ -611,9 +611,9 @@ FFMPEGA provides **9 nodes** that work together:
 <details>
 <summary><b>FFMPEGA Effects Builder</b> — Compose video effects visually without an LLM.</summary>
 
-Select up to 3 skills with parameters, add raw FFmpeg filters, and use presets. Outputs a pipeline JSON that connects to the FFMPEG Agent's `pipeline_json` input.
+Select up to 5 skills with parameters, add raw FFmpeg filters, and use presets. Outputs a pipeline JSON that connects to the FFMPEG Agent's `pipeline_json` input.
 
-**Built-in presets:** 🎬 Cinematic Look, 📼 VHS Retro, 🎥 High Quality Export, 🎵 Clean Audio, ✨ Glow + Saturation, 🎙️ Auto Subtitles, 🎤 Karaoke Subtitles, 🌑 Fade In + Out, 🪞 Mirror Horizontal, 🎬 Ken Burns Zoom.
+**26 built-in presets:** 🎬 Cinematic Look, 📼 Vintage / Retro, 🔍 Privacy Blur (face), ⚡ Speed Ramp (2x), 🖤 B&W + Vignette, 📱 Social (9:16 + Quality), 🎵 Clean Audio, ✨ Glow + Saturation, 🎙️ Auto Subtitles, 🎤 Karaoke Subtitles, 🔗 Concat Videos, 🔗 Concat + Crossfade, 📺 Split Screen, 🖼️ Grid Layout, 🎞️ Slideshow, 🐢 Slow Motion (0.5x), ✂️ Trim (first 10s), 🌑 Fade In + Out, 🪞 Mirror Horizontal, 🎬 Ken Burns Zoom, 🎭 Remove Background, 🔍 AI Upscale (2x), 📹 Stabilize + Denoise, 🎬 Cinematic B&W, 📱 TikTok Ready, 🐢 Slow Motion + Fades.
 
 | Input | Type | Description |
 | :--- | :--- | :--- |
@@ -624,9 +624,13 @@ Select up to 3 skills with parameters, add raw FFmpeg filters, and use presets. 
 | `effect_2_params` | STRING | JSON parameters for effect 2. |
 | `effect_3` | DROPDOWN | Third effect (chained after effect 2). |
 | `effect_3_params` | STRING | JSON parameters for effect 3. |
+| `effect_4` | DROPDOWN | Fourth effect (chained after effect 3). |
+| `effect_4_params` | STRING | JSON parameters for effect 4. |
+| `effect_5` | DROPDOWN | Fifth effect (chained after effect 4). |
+| `effect_5_params` | STRING | JSON parameters for effect 5. |
 | `raw_ffmpeg` | STRING | Raw FFmpeg `-vf` filter string applied after skill effects. |
 | `sam3_target` | STRING | SAM3 text target — apply effects only to the masked region. Leave empty for full-frame. |
-| `sam3_effect` | DROPDOWN | Effect for SAM3-detected region: `blur`, `pixelate`, `remove`, `edit`, `grayscale`, `highlight`, `greenscreen`, `transparent`. |
+| `sam3_effect` | DROPDOWN | Effect for SAM3-detected region: `blur`, `pixelate`, `remove`, `grayscale`, `highlight`. |
 
 | Output | Description |
 | :--- | :--- |
@@ -730,18 +734,25 @@ Auto-detects whether text is SRT subtitles, a short watermark, or overlay text. 
 </details>
 
 <details>
-<summary><b>Video to Path (FFMPEGA)</b> — Convert IMAGE tensor to a temp video file path.</summary>
+<summary><b>Media Bridge (FFMPEGA)</b> — Bidirectional IMAGE ↔ video-path converter.</summary>
 
-Bridge node between Load Video nodes (which output IMAGE tensors) and FFMPEGA Agent's `video_a`/`video_b`/`video_c` slots. Encodes frames to a temp video file, then releases the tensor so ComfyUI can free the memory.
+Switch between tensor-based and path-based video representations. In `images_to_path` mode, encodes an IMAGE tensor to a temp video file and releases the tensor. In `path_to_images` mode, decodes a video file path into IMAGE tensor + audio.
 
 | Input | Type | Description |
 | :--- | :--- | :--- |
-| `images` | IMAGE | Video frames from a Load Video node. |
-| `fps` | INT | *(optional)* FPS for the output video (default: 24). |
+| `mode` | DROPDOWN | Conversion direction: `images_to_path` or `path_to_images`. |
+| `images` | IMAGE | *(optional)* Video frames — required for `images_to_path` mode. |
+| `video_path` | STRING | *(optional)* Path to video file — required for `path_to_images` mode. |
+| `fps` | INT | *(optional)* FPS for encoding (default: 24). Used in `images_to_path` only. |
+| `audio` | AUDIO | *(optional)* Audio to mux into encoded video (`images_to_path` only). |
 
 | Output | Description |
 | :--- | :--- |
-| `video_path` | File path to the temp video |
+| `video_path` | File path to the temp video (`images_to_path`) or empty string |
+| `images` | Decoded video frames (`path_to_images`) or empty tensor |
+| `audio` | Extracted audio (`path_to_images`) or silent fallback |
+| `fps` | Frames per second — always populated |
+| `frame_count` | Total frame count — always populated |
 
 </details>
 
@@ -769,18 +780,85 @@ A full-featured non-linear editor built into ComfyUI. Open the editor modal from
 
 </details>
 
+<details>
+<summary><b>Load Last Image (FFMPEGA)</b> — Auto-discover and load the most recently generated image(s).</summary>
+
+Scans ComfyUI's output/temp directories for the newest image by mtime. Supports batch loading, deduplication, grid/side-by-side outputs, diff overlays, captions, ring buffer mode for AnimateDiff, and PNG metadata passthrough.
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `refresh_mode` | DROPDOWN | `auto` (reload every queue) or `manual` (only on trigger). |
+| `batch_size` | INT | Number of recent images to load as a batch (default: 1). |
+| `grid_columns` | INT | Columns in grid output layout (default: 2). |
+| `grid_padding` | INT | Pixel gap between grid cells (default: 4). |
+| `skip_duplicates` | BOOLEAN | Skip consecutive identical images (default: on). |
+| `pin_index` | INT | Pin a specific iteration as output. 0 = disabled. |
+| `diff_mode` | DROPDOWN | Diff visualization: `heatmap`, `overlay`, `side_by_side_diff`. |
+| `diff_sensitivity` | FLOAT | Diff brightness multiplier (0.1–5.0, default: 1.0). |
+| `show_captions` | BOOLEAN | Burn caption text onto grid/side-by-side outputs. |
+| `caption_format` | STRING | Caption template with tokens: `{iteration}`, `{timestamp}`, `{seed}`, `{index}`, `{filename}`. |
+| `ring_buffer_size` | INT | Fixed-size circular batch for AnimateDiff. 0 = disabled. |
+| `source_folder` | STRING | *(optional)* Custom folder to scan. Empty = defaults. |
+| `filename_filter` | STRING | *(optional)* Prefix filter (e.g. `ComfyUI_`). |
+
+| Output | Description |
+| :--- | :--- |
+| `IMAGE` | Batched image tensor of recent images |
+| `MASK` | Solid white mask |
+| `GRID_IMAGE` | All batch images composed in a grid |
+| `SIDE_BY_SIDE` | Most recent vs previous image |
+| `DIFF_IMAGE` | Diff visualization between latest and previous |
+| `width` / `height` | Image dimensions |
+| `batch_count` | Number of images loaded |
+| `iteration` | Execution counter |
+| `metadata_prompt` / `metadata_seed` / `metadata_workflow` | PNG metadata from the most recent image |
+| `RING_BUFFER_FULL` | Boolean — true when ring buffer is at capacity |
+
+</details>
+
+<details>
+<summary><b>Load Last Video (FFMPEGA)</b> — Auto-discover and load the most recently saved video with inline preview.</summary>
+
+Scans ComfyUI's output/temp directories for the newest video. Decodes frames (with configurable cap), extracts audio, and shows an inline preview that loads immediately without queuing. Supports manual frame selection, auto-select strategies, inline edits (trim/crop/speed), and input overrides.
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `refresh_mode` | DROPDOWN | `auto` (reload when latest video changes) or `manual`. |
+| `source_folder` | STRING | *(optional)* Custom folder to scan. Empty = defaults. |
+| `filename_filter` | STRING | *(optional)* Prefix filter for filenames. |
+| `max_frames` | INT | *(optional)* Max frames to decode into IMAGE tensor (0 = all). Caps memory. |
+| `images` | IMAGE | *(optional)* Override: provide frames directly instead of auto-discovery. |
+| `audio` | AUDIO | *(optional)* Override: provide audio directly. |
+| `video_path` | STRING | *(optional)* Override: path to a specific video file. |
+| `frame_select_mode` | DROPDOWN | Frame selection strategy: `manual`, `uniform_5`, `uniform_10`, `first_last`, `every_2nd`, `every_5th`, `timestamps`. |
+| `auto_timestamps` | STRING | *(optional)* Comma-separated timestamps for `timestamps` mode. |
+| `pause_for_selection` | BOOLEAN | *(optional)* Block execution until frames are selected (manual mode). |
+
+| Output | Description |
+| :--- | :--- |
+| `IMAGE` | All decoded video frames as a batched tensor |
+| `SELECTED_FRAMES` | Frames at selected/auto-selected timestamps |
+| `AUDIO` | Extracted audio from the video |
+| `video_path` | Absolute path to the loaded video |
+| `image_paths` | Comma-separated paths to selected frame PNGs |
+| `frame_count` | Total frame count |
+| `fps` | Video frame rate |
+| `duration` | Video duration in seconds |
+
+</details>
+
 ---
 
 ## 🎯 Skill System
 
-FFMPEGA includes a comprehensive skill system with **215 operations** organized into categories. Use them in two ways: let the **AI agent** select skills from your prompt, or pick them yourself with the **Effects Builder** — no LLM needed.
+FFMPEGA includes a comprehensive skill system with **218 operations** organized into categories. Use them in two ways: let the **AI agent** select skills from your prompt, or pick them yourself with the **Effects Builder** — no LLM needed.
 
 > 📄 **See [SKILLS_REFERENCE.md](SKILLS_REFERENCE.md) for the complete skill reference with all parameters and example prompts.**
 >
 > 🧪 **See [SKILL_TEST_PROMPTS.md](SKILL_TEST_PROMPTS.md) for ready-to-use copy-and-paste test prompts for every skill.**
 
 <details>
-<summary><b>🎨 Visual Effects (33 skills)</b></summary>
+<summary><b>🎨 Visual Effects (31 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -814,9 +892,7 @@ FFMPEGA includes a comprehensive skill system with **215 operations** organized 
 | `deflicker` | Remove fluorescent/timelapse flicker |
 | `unsharp_mask` | Fine-grained luma/chroma sharpening |
 | `remove_background` | Remove backgrounds using AI (rembg) |
-| `golden_glow` | Warm golden glow effect (aliases: `warm_filter`, `warm_glow`) |
 | `selective_color` | Isolate and adjust specific color ranges |
-| `warm_filter` | Warm golden tone filter |
 
 </details>
 
@@ -889,7 +965,7 @@ FFMPEGA includes a comprehensive skill system with **215 operations** organized 
 </details>
 
 <details>
-<summary><b>📦 Encoding (13 skills)</b></summary>
+<summary><b>📦 Encoding (12 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -903,7 +979,6 @@ FFMPEGA includes a comprehensive skill system with **215 operations** organized 
 | `hwaccel` | Hardware acceleration (cuda, vaapi, qsv) |
 | `audio_codec` | Set audio codec (aac, mp3, opus, flac) |
 | `frame_rate_interpolation` | Motion-interpolated FPS conversion |
-| `frame_interpolation` | Smooth slow motion via motion interpolation |
 | `two_pass` | Two-pass encoding for better quality |
 | `hls_package` | HLS adaptive streaming packaging |
 
@@ -949,7 +1024,7 @@ FFMPEGA includes a comprehensive skill system with **215 operations** organized 
 </details>
 
 <details>
-<summary><b>📱 Social Media (9 skills)</b></summary>
+<summary><b>📱 Social Media (8 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -961,12 +1036,11 @@ FFMPEGA includes a comprehensive skill system with **215 operations** organized 
 | `thumbnail` | Extract thumbnail frame |
 | `caption_space` | Add space for captions |
 | `watermark` | Overlay logo/watermark |
-| `intro_outro` | Add intro/outro segments |
 
 </details>
 
 <details>
-<summary><b>✨ Creative Effects (17 skills)</b></summary>
+<summary><b>✨ Creative Effects (14 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -984,9 +1058,6 @@ FFMPEGA includes a comprehensive skill system with **215 operations** organized 
 | `thermal` | Thermal / heat vision camera |
 | `posterize` | Reduce color palette / screen-print |
 | `emboss` | Emboss / relief surface effect |
-| `burn_effect` | Film burn / light leak overlay (aliases: `film_burn`, `light_leak`) |
-| `film_burn` | Film burn simulation |
-| `light_leak` | Analog light leak effect |
 
 </details>
 
@@ -1079,7 +1150,7 @@ FFMPEGA includes a comprehensive skill system with **215 operations** organized 
 </details>
 
 <details>
-<summary><b>🔗 Multi-Input & Composition (10 skills)</b></summary>
+<summary><b>🔗 Multi-Input & Composition (7 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -1111,7 +1182,7 @@ FFMPEGA includes a comprehensive skill system with **215 operations** organized 
 </details>
 
 <details>
-<summary><b>✂️ Editing & Delivery (13 skills)</b></summary>
+<summary><b>✂️ Editing & Delivery (12 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |

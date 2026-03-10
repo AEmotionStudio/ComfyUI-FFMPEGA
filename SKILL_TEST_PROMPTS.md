@@ -464,11 +464,6 @@ Add blank space at the bottom for captions
 Add a watermark in the bottom right corner
 ```
 
-### intro_outro
-```
-Add an intro segment to the beginning
-```
-
 ---
 
 ## ✨ Creative Effects
@@ -1485,35 +1480,4 @@ Lip sync this video to the provided audio
 Make the person's lips match the speech recording
 ```
 
----
-
-## 🎆 Film Effects
-
-### golden_glow
-```
-Add a warm golden glow
-```
-
-```
-Give it a cozy golden hour sunset feel
-```
-
-### warm_glow
-```
-Apply a warm glow filter
-```
-
-### burn_effect
-```
-Add a film burn effect
-```
-
-```
-Apply a light leak overlay
-```
-
-### light_leak
-```
-Give it an analog light leak look
-```
 

@@ -1030,9 +1030,6 @@ Add blank space for captions at top/bottom.
 ### watermark
 Overlay a logo/watermark image.
 
-### intro_outro
-Add intro and/or outro video segments.
-
 ---
 
 ## ✨ Creative Effects
@@ -2497,36 +2494,4 @@ AI-generate synchronized audio/sound effects from video content or text descript
 > [!WARNING]
 > MMAudio model weights are licensed **CC-BY-NC 4.0** (non-commercial use only). By downloading and using them you accept the [CC-BY-NC 4.0 license](https://creativecommons.org/licenses/by-nc/4.0/).
 
----
-
-## 🎆 Film Effects
-
-### golden_glow
-Add a warm golden glow by boosting warm tones and softening highlights.
-| Parameter | Type | Default | Range |
-|-----------|------|---------|-------|
-| `intensity` | float | 0.5 | 0.0 to 1.0 |
-
-**Example prompts:**
-- "Add a warm golden glow"
-- "Give it a cozy sunset feel"
-- "Apply a golden hour warmth"
-
-**Aliases:** `warm_filter`, `warm_glow`
-
----
-
-### burn_effect
-Simulate a film burn / light leak by boosting exposure and adding warm color shift.
-| Parameter | Type | Default | Choices/Range |
-|-----------|------|---------|---------------|
-| `intensity` | float | 0.5 | 0.1 to 1.0 |
-| `color` | choice | warm | warm, cool, neutral |
-
-**Example prompts:**
-- "Add a film burn effect"
-- "Apply a light leak overlay"
-- "Give it an analog film burn look"
-
-**Aliases:** `film_burn`, `light_leak`
 
