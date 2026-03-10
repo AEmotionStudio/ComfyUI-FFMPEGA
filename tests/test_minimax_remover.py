@@ -213,6 +213,7 @@ class TestMiniMaxAutoMaskPriority:
 
     def test_metadata_propagation(self):
         """Verify _enable_minimax_remover is set on pipeline metadata."""
+        pytest.importorskip("torch")
         from nodes.pipeline_assembler import assemble_pipeline
         import inspect
         sig = inspect.signature(assemble_pipeline)
@@ -227,9 +228,11 @@ class TestMiniMaxVendoredImports:
     """Verify the vendored modules are importable."""
 
     def test_transformer_importable(self):
+        pytest.importorskip("torch")
         from core.minimax.transformer_minimax_remover import Transformer3DModel
         assert Transformer3DModel is not None
 
     def test_pipeline_importable(self):
+        pytest.importorskip("torch")
         from core.minimax.pipeline_minimax_remover import Minimax_Remover_Pipeline
         assert Minimax_Remover_Pipeline is not None
