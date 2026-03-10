@@ -2903,12 +2903,14 @@ function _setupNode(node) {
     const m = getModal();
     m.setCallbacks({
       onApply: (state) => {
+        var _a2;
         editState = state;
         _syncToWidgets(node, state);
         infoEl.textContent = "Edits applied";
         previewContainer.style.display = "";
         resizeNode();
-        app.queuePrompt(0, 1);
+        const pauseW = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "pause_on_input");
+        if (pauseW == null ? void 0 : pauseW.value) app.queuePrompt(0, 1);
       },
       onCancel: () => {
       }
@@ -3059,12 +3061,14 @@ function _setupNode(node) {
         const m = getModal();
         m.setCallbacks({
           onApply: (state) => {
+            var _a3;
             editState = state;
             _syncToWidgets(node, state);
             infoEl.textContent = "Edits applied";
             previewContainer.style.display = "";
             resizeNode();
-            app.queuePrompt(0, 1);
+            const pauseW2 = (_a3 = node.widgets) == null ? void 0 : _a3.find((w) => w.name === "pause_on_input");
+            if (pauseW2 == null ? void 0 : pauseW2.value) app.queuePrompt(0, 1);
           },
           onCancel: () => {
           }

@@ -288,7 +288,7 @@ function registerAgentNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGAgent") return;
   const onNodeCreated = nodeType.prototype.onNodeCreated;
   nodeType.prototype.onNodeCreated = function() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H;
     const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
     const node = this;
     this.color = "#2a3a5a";
@@ -301,9 +301,10 @@ function registerAgentNode(nodeType, nodeData) {
       ]);
       (_a2 = node == null ? void 0 : node.graph) == null ? void 0 : _a2.setDirtyCanvas(true);
     };
+    let updateLlmVisibility;
     const llmWidget = (_a = this.widgets) == null ? void 0 : _a.find((w) => w.name === "llm_model");
     if (llmWidget) {
-      let updateLlmVisibility = function() {
+      let doUpdateLlmVisibility = function() {
         var _a2;
         const model = llmWidget.value;
         const isNone = model === "none";
@@ -335,11 +336,12 @@ function registerAgentNode(nodeType, nodeData) {
       const verifyWidget = (_e = this.widgets) == null ? void 0 : _e.find((w) => w.name === "verify_output");
       const visionWidget = (_f = this.widgets) == null ? void 0 : _f.find((w) => w.name === "use_vision");
       const ptcWidget = (_g = this.widgets) == null ? void 0 : _g.find((w) => w.name === "ptc_mode");
-      updateLlmVisibility();
+      updateLlmVisibility = doUpdateLlmVisibility;
+      doUpdateLlmVisibility();
       const origLlmCb = llmWidget.callback;
       llmWidget.callback = function(...args) {
         origLlmCb == null ? void 0 : origLlmCb.apply(this, args);
-        updateLlmVisibility();
+        doUpdateLlmVisibility();
       };
     }
     const saveWidget = (_h = this.widgets) == null ? void 0 : _h.find((w) => w.name === "save_output");
@@ -381,7 +383,7 @@ function registerAgentNode(nodeType, nodeData) {
     (_F = this.widgets) == null ? void 0 : _F.find((w) => w.name === "video_depth_encoder");
     (_G = this.widgets) == null ? void 0 : _G.find((w) => w.name === "video_depth_colormap");
     function updateNoLlmModeVisibility() {
-      var _a2, _b2, _c2, _d2, _e2, _f2;
+      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2;
       const adv = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "advanced_options");
       const showAdvanced = Boolean(adv == null ? void 0 : adv.value);
       const llm = (_b2 = node.widgets) == null ? void 0 : _b2.find((w) => w.name === "llm_model");
@@ -390,14 +392,20 @@ function registerAgentNode(nodeType, nodeData) {
       const mode = isNone ? String((noLlmMode == null ? void 0 : noLlmMode.value) ?? "manual") : "";
       const showMarigold = showAdvanced && mode === "marigold";
       const showVda = showAdvanced && mode === "video_depth";
+      const showUpscale = showAdvanced && mode === "ai_upscale";
       const mw = (_d2 = node.widgets) == null ? void 0 : _d2.find((w) => w.name === "marigold_output_type");
       const ve = (_e2 = node.widgets) == null ? void 0 : _e2.find((w) => w.name === "video_depth_encoder");
       const vc = (_f2 = node.widgets) == null ? void 0 : _f2.find((w) => w.name === "video_depth_colormap");
+      const um = (_g2 = node.widgets) == null ? void 0 : _g2.find((w) => w.name === "upscale_model");
+      const us = (_h2 = node.widgets) == null ? void 0 : _h2.find((w) => w.name === "upscale_scale");
       if (mw) toggleWidget(mw, showMarigold);
       if (ve) toggleWidget(ve, showVda);
       if (vc) toggleWidget(vc, showVda);
+      if (um) toggleWidget(um, showUpscale);
+      if (us) toggleWidget(us, showUpscale);
     }
     function updateAdvancedVisibility() {
+      var _a2;
       const show = Boolean(advancedWidget == null ? void 0 : advancedWidget.value);
       if (previewWidget) toggleWidget(previewWidget, show);
       if (subtitleWidget) toggleWidget(subtitleWidget, show);
@@ -408,7 +416,9 @@ function registerAgentNode(nodeType, nodeData) {
       if (sam3MaxObjWidget) toggleWidget(sam3MaxObjWidget, show);
       if (sam3ThreshWidget) toggleWidget(sam3ThreshWidget, show);
       if (maskTypeWidget) toggleWidget(maskTypeWidget, show);
-      if (fluxSmoothingWidget) toggleWidget(fluxSmoothingWidget, show);
+      const fluxKleinWidget = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "use_flux_klein");
+      const showFlux = show && Boolean(fluxKleinWidget == null ? void 0 : fluxKleinWidget.value);
+      if (fluxSmoothingWidget) toggleWidget(fluxSmoothingWidget, showFlux);
       if (mmaudioModeWidget) toggleWidget(mmaudioModeWidget, show);
       if (batchWidget) toggleWidget(batchWidget, show);
       const showBatch = show && Boolean(batchWidget == null ? void 0 : batchWidget.value);
@@ -426,6 +436,14 @@ function registerAgentNode(nodeType, nodeData) {
       const origAdvCb = advancedWidget.callback;
       advancedWidget.callback = function(...args) {
         origAdvCb == null ? void 0 : origAdvCb.apply(this, args);
+        updateAdvancedVisibility();
+      };
+    }
+    const fluxKleinToggle = (_H = this.widgets) == null ? void 0 : _H.find((w) => w.name === "use_flux_klein");
+    if (fluxKleinToggle) {
+      const origFluxCb = fluxKleinToggle.callback;
+      fluxKleinToggle.callback = function(...args) {
+        origFluxCb == null ? void 0 : origFluxCb.apply(this, args);
         updateAdvancedVisibility();
       };
     }
@@ -499,20 +517,14 @@ function registerAgentNode(nodeType, nodeData) {
           }
         }
       }
-      const self = this;
-      function restoreSlots() {
-        updateDynamicSlots(self, "images_", "IMAGE", []);
-        updateDynamicSlots(self, "image_", "IMAGE", ["images_", "image_path_"]);
-        updateDynamicSlots(self, "audio_", "AUDIO", []);
-        updateDynamicSlots(self, "video_", "STRING", ["video_path", "video_folder"]);
-        updateDynamicSlots(self, "image_path_", "STRING", []);
-        updateDynamicSlots(self, "text_", "STRING", []);
+      function restoreVisibility() {
         updateAdvancedVisibility();
+        if (updateLlmVisibility) updateLlmVisibility();
         fitHeight();
       }
-      restoreSlots();
-      setTimeout(restoreSlots, 0);
-      setTimeout(restoreSlots, 300);
+      restoreVisibility();
+      setTimeout(restoreVisibility, 0);
+      setTimeout(restoreVisibility, 300);
     };
     return result;
   };

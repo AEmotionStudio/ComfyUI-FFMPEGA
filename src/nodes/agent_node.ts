@@ -346,6 +346,9 @@ export function registerAgentNode(
             node?.graph?.setDirtyCanvas(true);
         };
 
+        // Hoisted so restoreSlots (onConfigure) can re-run it after values are restored
+        let updateLlmVisibility: (() => void) | undefined;
+
         // --- LLM model → custom_model / api_key visibility ---
         const llmWidget = this.widgets?.find((w: ComfyWidget) => w.name === "llm_model");
         if (llmWidget) {
@@ -356,7 +359,7 @@ export function registerAgentNode(
             const visionWidget = this.widgets?.find((w: ComfyWidget) => w.name === "use_vision");
             const ptcWidget = this.widgets?.find((w: ComfyWidget) => w.name === "ptc_mode");
 
-            function updateLlmVisibility(): void {
+            function doUpdateLlmVisibility(): void {
                 const model = llmWidget!.value;
                 const isNone = model === "none";
                 toggleWidget(customWidget, model === "custom");
@@ -383,11 +386,12 @@ export function registerAgentNode(
                 fitHeight();
             }
 
-            updateLlmVisibility();
+            updateLlmVisibility = doUpdateLlmVisibility;
+            doUpdateLlmVisibility();
             const origLlmCb = llmWidget.callback;
             llmWidget.callback = function (...args: unknown[]) {
                 origLlmCb?.apply(this, args);
-                updateLlmVisibility();
+                doUpdateLlmVisibility();
             };
         }
 
@@ -434,7 +438,7 @@ export function registerAgentNode(
         const vdaEncoderWidget = this.widgets?.find((w: ComfyWidget) => w.name === "video_depth_encoder");
         const vdaColormapWidget = this.widgets?.find((w: ComfyWidget) => w.name === "video_depth_colormap");
 
-        /** Show/hide marigold + VDA widgets based on no_llm_mode value */
+        /** Show/hide marigold, VDA, and upscale widgets based on no_llm_mode value */
         function updateNoLlmModeVisibility(): void {
             // Use dynamic lookups to avoid temporal dead zone issues
             const adv = node.widgets?.find((w: ComfyWidget) => w.name === "advanced_options");
@@ -446,13 +450,18 @@ export function registerAgentNode(
 
             const showMarigold = showAdvanced && mode === "marigold";
             const showVda = showAdvanced && mode === "video_depth";
+            const showUpscale = showAdvanced && mode === "ai_upscale";
 
             const mw = node.widgets?.find((w: ComfyWidget) => w.name === "marigold_output_type");
             const ve = node.widgets?.find((w: ComfyWidget) => w.name === "video_depth_encoder");
             const vc = node.widgets?.find((w: ComfyWidget) => w.name === "video_depth_colormap");
+            const um = node.widgets?.find((w: ComfyWidget) => w.name === "upscale_model");
+            const us = node.widgets?.find((w: ComfyWidget) => w.name === "upscale_scale");
             if (mw) toggleWidget(mw, showMarigold);
             if (ve) toggleWidget(ve, showVda);
             if (vc) toggleWidget(vc, showVda);
+            if (um) toggleWidget(um, showUpscale);
+            if (us) toggleWidget(us, showUpscale);
         }
 
         function updateAdvancedVisibility(): void {
@@ -466,7 +475,9 @@ export function registerAgentNode(
             if (sam3MaxObjWidget) toggleWidget(sam3MaxObjWidget, show);
             if (sam3ThreshWidget) toggleWidget(sam3ThreshWidget, show);
             if (maskTypeWidget) toggleWidget(maskTypeWidget, show);
-            if (fluxSmoothingWidget) toggleWidget(fluxSmoothingWidget, show);
+            const fluxKleinWidget = node.widgets?.find((w: ComfyWidget) => w.name === "use_flux_klein");
+            const showFlux = show && Boolean(fluxKleinWidget?.value);
+            if (fluxSmoothingWidget) toggleWidget(fluxSmoothingWidget, showFlux);
             if (mmaudioModeWidget) toggleWidget(mmaudioModeWidget, show);
             if (batchWidget) toggleWidget(batchWidget, show);
             const showBatch = show && Boolean(batchWidget?.value);
@@ -485,6 +496,16 @@ export function registerAgentNode(
             const origAdvCb = advancedWidget.callback;
             advancedWidget.callback = function (...args: unknown[]) {
                 origAdvCb?.apply(this, args);
+                updateAdvancedVisibility();
+            };
+        }
+
+        // --- use_flux_klein → flux_smoothing visibility ---
+        const fluxKleinToggle = this.widgets?.find((w: ComfyWidget) => w.name === "use_flux_klein");
+        if (fluxKleinToggle) {
+            const origFluxCb = fluxKleinToggle.callback;
+            fluxKleinToggle.callback = function (...args: unknown[]) {
+                origFluxCb?.apply(this, args);
                 updateAdvancedVisibility();
             };
         }
@@ -574,22 +595,20 @@ export function registerAgentNode(
                 }
             }
 
-            // Deferred slot restoration
+            // Restore widget visibility after slot pre-creation
+            // (Do NOT call updateDynamicSlots here — Steps 1/2 above already
+            // pre-created the correct slots from saved info. updateDynamicSlots
+            // would remove trailing slots before links are resolved by ComfyUI.)
             const self = this;
-            function restoreSlots(): void {
-                updateDynamicSlots(self, "images_", "IMAGE", []);
-                updateDynamicSlots(self, "image_", "IMAGE", ["images_", "image_path_"]);
-                updateDynamicSlots(self, "audio_", "AUDIO", []);
-                updateDynamicSlots(self, "video_", "STRING", ["video_path", "video_folder"]);
-                updateDynamicSlots(self, "image_path_", "STRING", []);
-                updateDynamicSlots(self, "text_", "STRING", []);
+            function restoreVisibility(): void {
                 updateAdvancedVisibility();
+                if (updateLlmVisibility) updateLlmVisibility();
                 fitHeight();
             }
 
-            restoreSlots();
-            setTimeout(restoreSlots, 0);
-            setTimeout(restoreSlots, 300);
+            restoreVisibility();
+            setTimeout(restoreVisibility, 0);
+            setTimeout(restoreVisibility, 300);
         };
 
         return result;
