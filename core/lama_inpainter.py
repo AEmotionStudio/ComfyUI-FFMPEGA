@@ -172,17 +172,10 @@ def _free_vram():
     free_for_module(exclude="lama_inpainter")
 
 
-# ---------------------------------------------------------------------------
-#  ffmpeg binary resolution
-# ---------------------------------------------------------------------------
-
-def _get_ffmpeg_bin() -> str:
-    """Get the ffmpeg binary path via bin_paths (includes fallback)."""
-    try:
-        from .bin_paths import get_ffmpeg_bin
-    except ImportError:
-        from core.bin_paths import get_ffmpeg_bin  # type: ignore
-    return get_ffmpeg_bin()
+try:
+    from .bin_paths import get_ffmpeg_bin as _get_ffmpeg_bin
+except ImportError:
+    from core.bin_paths import get_ffmpeg_bin as _get_ffmpeg_bin  # type: ignore
 
 
 # ---------------------------------------------------------------------------

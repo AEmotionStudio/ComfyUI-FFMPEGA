@@ -28,6 +28,15 @@ from typing import Optional
 import numpy as np
 import torch
 
+try:
+    from .bin_paths import get_ffmpeg_bin as _get_ffmpeg_bin
+except ImportError:
+    from core.bin_paths import get_ffmpeg_bin as _get_ffmpeg_bin  # type: ignore
+try:
+    from .bin_paths import get_ffprobe_bin as _get_ffprobe_bin
+except ImportError:
+    from core.bin_paths import get_ffprobe_bin as _get_ffprobe_bin  # type: ignore
+
 log = logging.getLogger("ffmpega")
 
 # ---------------------------------------------------------------------------
@@ -455,23 +464,6 @@ def _tensor_to_image(tensor: torch.Tensor, output_path: str) -> None:
     else:
         cv2.imwrite(output_path, bgr)
 
-
-def _get_ffmpeg_bin() -> str:
-    """Get the ffmpeg binary path via bin_paths (includes fallback)."""
-    try:
-        from .bin_paths import get_ffmpeg_bin
-    except ImportError:
-        from core.bin_paths import get_ffmpeg_bin  # type: ignore
-    return get_ffmpeg_bin()
-
-
-def _get_ffprobe_bin() -> str:
-    """Get the ffprobe binary path via bin_paths (includes fallback)."""
-    try:
-        from .bin_paths import get_ffprobe_bin
-    except ImportError:
-        from core.bin_paths import get_ffprobe_bin  # type: ignore
-    return get_ffprobe_bin()
 
 
 def _get_video_fps(video_path: str) -> float:

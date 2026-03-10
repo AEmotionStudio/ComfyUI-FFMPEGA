@@ -342,8 +342,15 @@ def _load_video_frames(video_path: str):
     return frames, fps
 
 
-def _load_mask_frames(mask_video_path: str, num_frames: int):
+def _load_mask_frames(mask_video_path: str, num_frames: int,
+                      frame_size: tuple[int, int] | None = None):
     """Load mask frames as PIL Images (mode 'L').
+
+    Args:
+        mask_video_path: path to the mask video.
+        num_frames: expected number of frames (will pad/truncate).
+        frame_size: (width, height) of the video frames.  Used only as
+                    a fallback when the mask video has zero frames.
 
     Returns:
         list of PIL Images in mode 'L'.
@@ -367,8 +374,13 @@ def _load_mask_frames(mask_video_path: str, num_frames: int):
 
     # Pad or truncate to match video frame count
     if len(masks) < num_frames:
-        last = masks[-1] if masks else Image.new("L", (640, 480), 0)
-        masks.extend([last] * (num_frames - len(masks)))
+        if masks:
+            last = masks[-1]
+        else:
+            # No mask frames — create a blank mask at the video's resolution
+            fallback_size = frame_size or (640, 480)
+            last = Image.new("L", fallback_size, 0)
+        masks.extend([last.copy() for _ in range(num_frames - len(masks))])
     elif len(masks) > num_frames:
         masks = masks[:num_frames]
 
@@ -657,7 +669,10 @@ def remove_object(
 
     # Load frames and masks
     frames_pil, fps = _load_video_frames(video_path)
-    masks_pil = _load_mask_frames(mask_video_path, len(frames_pil))
+    # Pass frame dimensions so fallback masks match the video resolution
+    frame_size = frames_pil[0].size if frames_pil else None
+    masks_pil = _load_mask_frames(mask_video_path, len(frames_pil),
+                                  frame_size=frame_size)
 
     try:
         import numpy as np
