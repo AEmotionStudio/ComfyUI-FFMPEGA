@@ -317,6 +317,7 @@ class TestFluxKleinNoLLMMode:
 
     def test_process_flux_klein_only_exists(self):
         """process_flux_klein_only should be importable from nollm_modes."""
+        pytest.importorskip("torch")
         from nodes.nollm_modes import process_flux_klein_only
         assert callable(process_flux_klein_only)
 

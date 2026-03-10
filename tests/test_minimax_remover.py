@@ -139,6 +139,7 @@ class TestMiniMaxNoLLMMode:
         assert "minimax_remover" in modes
 
     def test_process_function_importable(self):
+        pytest.importorskip("torch")
         from nodes.nollm_modes import process_minimax_remover_only
         assert callable(process_minimax_remover_only)
 

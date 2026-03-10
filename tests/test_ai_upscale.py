@@ -287,6 +287,7 @@ class TestAIUpscaleNoLLMMode:
 
     def test_process_ai_upscale_only_exists(self):
         """process_ai_upscale_only should be importable from nollm_modes."""
+        pytest.importorskip("torch")
         from nodes.nollm_modes import process_ai_upscale_only
         assert callable(process_ai_upscale_only)
 
