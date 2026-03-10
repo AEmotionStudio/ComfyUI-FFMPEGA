@@ -233,6 +233,7 @@ class TestFluxKleinNoLLMMode:
 
     def test_flux_klein_in_no_llm_dropdown(self):
         """'flux_klein' should be in the no_llm_mode dropdown choices."""
+        pytest.importorskip("torch")
         from nodes.agent_node import FFMPEGAgentNode
         input_types = FFMPEGAgentNode.INPUT_TYPES()
         choices = input_types["required"]["no_llm_mode"][0]

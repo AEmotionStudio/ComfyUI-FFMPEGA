@@ -131,6 +131,7 @@ class TestMiniMaxNoLLMMode:
     """Verify minimax_remover appears in the no_llm_mode dropdown."""
 
     def test_in_dropdown(self):
+        pytest.importorskip("torch")
         from nodes.agent_node import FFMPEGAgentNode
         input_types = FFMPEGAgentNode.INPUT_TYPES()
         all_required = input_types.get("required", {})
@@ -150,12 +151,14 @@ class TestMiniMaxToggle:
     """Verify use_minimax_remover toggle is in INPUT_TYPES."""
 
     def test_toggle_exists(self):
+        pytest.importorskip("torch")
         from nodes.agent_node import FFMPEGAgentNode
         input_types = FFMPEGAgentNode.INPUT_TYPES()
         optional = input_types.get("optional", {})
         assert "use_minimax_remover" in optional
 
     def test_toggle_is_boolean(self):
+        pytest.importorskip("torch")
         from nodes.agent_node import FFMPEGAgentNode
         input_types = FFMPEGAgentNode.INPUT_TYPES()
         optional = input_types.get("optional", {})
@@ -163,6 +166,7 @@ class TestMiniMaxToggle:
         assert widget[0] == "BOOLEAN"
 
     def test_toggle_default_false(self):
+        pytest.importorskip("torch")
         from nodes.agent_node import FFMPEGAgentNode
         input_types = FFMPEGAgentNode.INPUT_TYPES()
         optional = input_types.get("optional", {})

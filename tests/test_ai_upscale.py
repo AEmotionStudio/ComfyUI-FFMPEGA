@@ -260,6 +260,7 @@ class TestAIUpscaleNoLLMMode:
 
     def test_ai_upscale_in_no_llm_dropdown(self):
         """'ai_upscale' should be in the no_llm_mode dropdown choices."""
+        pytest.importorskip("torch")
         from nodes.agent_node import FFMPEGAgentNode
         input_types = FFMPEGAgentNode.INPUT_TYPES()
         choices = input_types["required"]["no_llm_mode"][0]
@@ -267,6 +268,7 @@ class TestAIUpscaleNoLLMMode:
 
     def test_upscale_model_dropdown_exists(self):
         """upscale_model should be in optional INPUT_TYPES."""
+        pytest.importorskip("torch")
         from nodes.agent_node import FFMPEGAgentNode
         input_types = FFMPEGAgentNode.INPUT_TYPES()
         optional = input_types.get("optional", {})
@@ -277,6 +279,7 @@ class TestAIUpscaleNoLLMMode:
 
     def test_upscale_scale_dropdown_exists(self):
         """upscale_scale should be in optional INPUT_TYPES."""
+        pytest.importorskip("torch")
         from nodes.agent_node import FFMPEGAgentNode
         input_types = FFMPEGAgentNode.INPUT_TYPES()
         optional = input_types.get("optional", {})
