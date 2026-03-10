@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.15.0] - 2026-03-08
+
+### Added
+- **MiniMax-Remover Integration**: New toggleable AI object removal powered by [MiniMax-Remover](https://github.com/zibojia/MiniMax-Remover). Purpose-built DiT model for video inpainting with 81-frame batch processing and sliding-window support for longer videos. ~2.5 GB model, significantly lighter than FLUX Klein (~15 GB). ⚠️ Model weights are CC-BY-NC-4.0 (non-commercial); code is Apache 2.0. *(PR #TBD)*
+  - **Tiered Removal Priority**: New removal hierarchy — MiniMax-Remover (highest, when `use_minimax_remover=On`) → FLUX Klein (when `use_flux_klein=On`) → LaMa → black fill (FFmpeg). Each tier automatically falls back to the next if disabled or unavailable.
+  - **`use_minimax_remover` Toggle**: New node-level boolean toggle on the FFMPEG Agent. Threaded through all pipeline paths (LLM, effects builder, batch, SAM3-only) via `_enable_minimax_remover` metadata key. Defaults to `False`.
+  - **`minimax_remover` No-LLM Mode**: New `minimax_remover` option in the `no_llm_mode` dropdown — run MiniMax-Remover directly without an LLM. Uses SAM3 for mask generation with full-frame fallback.
+  - **Vendored Core Components**: `pipeline_minimax_remover.py` and `transformer_minimax_remover.py` vendored into `core/minimax/` with attribution headers citing the original [MiniMax-Remover repository](https://github.com/zibojia/MiniMax-Remover) and paper.
+  - **Sliding-Window Batching**: Videos exceeding 81 frames are processed in overlapping windows with configurable overlap (default 8 frames) and temporal smoothing (Gaussian/adaptive) for seamless transitions.
+  - **VRAM Management**: Explicit model loading/unloading with `gc.collect()` + `torch.cuda.empty_cache()`. Other models (FLUX Klein, LaMa) are freed before loading MiniMax-Remover.
+  - **Model Mirror**: Weights mirrored to [AEmotionStudio/minimax-remover](https://huggingface.co/AEmotionStudio/minimax-remover) with mirror-first download and upstream fallback.
+- **MiniMax-Remover Tests**: New `tests/test_minimax_remover.py` with 22 tests covering constants, model manager, cleanup, no-LLM mode registration, toggle, auto_mask priority, metadata propagation, and vendored imports.
+
+### Changed
+- **Model Registry**: Added `minimax_remover` to `core/model_manager.py` with size, HuggingFace repo, license (CC-BY-NC-4.0 for weights), and manual download instructions.
+- **Sidebar Docs**: Updated performance tips and widget documentation to include MiniMax-Remover.
+- **Test Suite**: Expanded from 1,056 to **1,131 tests**, 0 failures.
+
+### Fixed
+- **VRAM Cleanup Style**: Refactored `flux_klein_editor._free_vram()` from 9 individual import+cleanup blocks to a loop-over-list pattern, matching the style used in all other synthesizers. Prevents missed modules when adding new AI backends.
+- **Upscaler Audio Mux Path**: Fixed `upscale_video` audio mux using `str.replace(".mp4", ...)` which could corrupt paths containing `.mp4` in directory names or non-MP4 extensions. Now uses `Path.with_suffix()`.
+- **Video Editor WAV Parsing**: Fixed `_extract_audio()` WAV `data` chunk search starting at byte 0, which could false-match metadata fields. Now starts at byte 12 (past RIFF/WAVE header).
+- **Video Editor Auto-Resume**: Guarded `app.queuePrompt()` calls to only resume when `pause_on_input` is enabled, preventing unexpected re-execution when the editor is used outside the pause flow.
+- **AI Upscale Temp Copy**: Eliminated redundant temp directory creation in `process_ai_upscale_only` — copies directly from upscaler output to final path.
+- **LoadVideoPathNode Output**: Added `crop_data` to return types (index 5). Downstream nodes reading positional indices should update accordingly.
+- **Video Editor Input Priority**: Changed from `images > video_path` to `video_path > images` to match `LoadVideoPathNode` behavior.
+
 ## [2.14.0] - 2026-03-08
 
 ### Added

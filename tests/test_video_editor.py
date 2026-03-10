@@ -270,17 +270,17 @@ class TestExportHelpers:
     """Test export pipeline helper functions."""
 
     def test_has_speed_changes_empty(self):
-        from videoeditor.processing.export import _has_speed_changes
+        from videoeditor.processing.export import has_speed_changes
 
-        assert not _has_speed_changes('')
-        assert not _has_speed_changes('{}')
-        assert not _has_speed_changes('{"0": 1.0}')
+        assert not has_speed_changes('')
+        assert not has_speed_changes('{}')
+        assert not has_speed_changes('{"0": 1.0}')
 
     def test_has_speed_changes_true(self):
-        from videoeditor.processing.export import _has_speed_changes
+        from videoeditor.processing.export import has_speed_changes
 
-        assert _has_speed_changes('{"0": 2.0}')
-        assert _has_speed_changes('{"1": 0.5}')
+        assert has_speed_changes('{"0": 2.0}')
+        assert has_speed_changes('{"1": 0.5}')
 
     def test_parse_segments(self):
         from videoeditor.processing.export import _parse_segments

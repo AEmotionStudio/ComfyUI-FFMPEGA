@@ -370,20 +370,15 @@ def _warn_if_bad_checkpoint(ckpt: dict, model, model_type: str = "image") -> Non
 # ---------------------------------------------------------------------------
 
 def _free_vram() -> None:
-    """Free ComfyUI VRAM before loading SAM3."""
-    try:
-        from .platform import free_comfyui_vram
-    except ImportError:
-        try:
-            from core.platform import free_comfyui_vram  # type: ignore
-        except ImportError:
-            free_comfyui_vram = None  # subprocess — no ComfyUI runtime
-    if free_comfyui_vram is not None:
-        free_comfyui_vram()
+    """Free all GPU VRAM before loading SAM3.
 
-    import torch
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    Delegates to the shared ``_vram_utils.free_for_module``.
+    """
+    try:
+        from ._vram_utils import free_for_module
+    except ImportError:
+        from core._vram_utils import free_for_module  # type: ignore
+    free_for_module(exclude="sam3_masker")
 
 
 def _offload_inference_state_to_cpu(

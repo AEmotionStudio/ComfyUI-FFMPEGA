@@ -3,7 +3,8 @@ var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { en
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
-import { E as EditManager, f as fmtDuration, a as EditTimeline, c as captureFrames, b as captureFrame, v as viewUrl } from "./_chunks/EditTimeline-BeK0Y4a7.js";
+import { E as EditManager, f as fmtDuration, T as TransportBar, a as EditToolbar, S as SpeedControl, N as NLETimeline, U as UndoManager, c as captureFrames, b as captureFrame, v as viewUrl } from "./_chunks/UndoManager-DCdZdNls.js";
+import { C as CropOverlay } from "./_chunks/CropOverlay-RBSIEwzt.js";
 const VIEW_MODES = {
   PLAYBACK: "playback",
   GRID: "grid",
@@ -233,7 +234,7 @@ function drawCheckmark(ctx, x, y, size) {
   ctx.stroke();
   ctx.restore();
 }
-const cssText = "/**\n * LoadLast Video Preview — Stylesheet\n *\n * Extracted from inline styles in video_preview.ts.\n * Dynamic styles (visibility toggles, computed positions) remain inline.\n */\n\n/* ─── Container ──────────────────────────────────────── */\n.ll_container {\n    display: flex;\n    flex-direction: column;\n    background: #0d0d0d;\n    border-radius: 8px;\n    overflow: hidden;\n    min-height: 60px;\n    position: relative;\n}\n\n/* ─── Toolbar ────────────────────────────────────────── */\n.ll_toolbar {\n    display: flex;\n    align-items: center;\n    gap: 3px;\n    padding: 4px 6px;\n    background: #111;\n    border-bottom: 1px solid #222;\n    flex-shrink: 0;\n}\n\n.ll_toolbar_btn {\n    border: 1px solid transparent;\n    background: transparent;\n    color: #777;\n    font-size: 14px;\n    padding: 4px 8px;\n    border-radius: 4px;\n    cursor: pointer;\n    transition: all 0.15s;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n}\n\n.ll_toolbar_btn.active {\n    color: #fff;\n    background: #333;\n    border-color: #555;\n}\n\n.ll_clear_btn {\n    margin-left: auto;\n    border: 1px solid transparent;\n    background: transparent;\n    color: #777;\n    font-size: 11px;\n    padding: 3px 6px;\n    border-radius: 3px;\n    cursor: pointer;\n    transition: all 0.15s;\n    display: flex;\n    align-items: center;\n}\n\n/* ─── Selection badge ────────────────────────────────── */\n.ll_sel_badge {\n    position: absolute;\n    top: 6px;\n    right: 8px;\n    z-index: 20;\n    background: rgba(0, 221, 255, 0.85);\n    color: #000;\n    font: bold 11px/1 monospace;\n    padding: 3px 8px;\n    border-radius: 10px;\n    cursor: pointer;\n    display: none;\n    text-shadow: none;\n    user-select: none;\n    transition: background 0.15s;\n}\n\n.ll_sel_badge:hover {\n    background: rgba(255, 80, 80, 0.9);\n}\n\n/* ─── Marker bar ─────────────────────────────────────── */\n.ll_marker_bar {\n    position: relative;\n    height: 10px;\n    background: #1a1a1a;\n    border-radius: 2px;\n    margin: 0 4px 2px 4px;\n    display: none;\n    border: 1px solid #333;\n    flex-shrink: 0;\n}\n\n.ll_marker_tick {\n    position: absolute;\n    top: 1px;\n    width: 3px;\n    height: 8px;\n    background: #00ddff;\n    border-radius: 1px;\n}\n\n/* ─── Video / Canvas ─────────────────────────────────── */\n.ll_video {\n    width: 100%;\n    display: block;\n}\n\n.ll_canvas {\n    width: 100%;\n    display: none;\n    cursor: crosshair;\n}\n\n/* ─── Info bar ───────────────────────────────────────── */\n.ll_info {\n    padding: 4px 8px;\n    font: 11px/1.4 monospace;\n    color: #888;\n    background: #0a0a0a;\n    border-top: 1px solid #222;\n    white-space: nowrap;\n    overflow: hidden;\n    text-overflow: ellipsis;\n    flex-shrink: 0;\n}\n\n/* ─── Browser strip ──────────────────────────────────── */\n.ll_strip_wrapper {\n    background: #0a0a0a;\n}\n\n.ll_browser_strip {\n    display: flex;\n    gap: 4px;\n    padding: 4px 6px;\n    overflow-x: auto;\n    background: #0a0a0a;\n    flex-shrink: 0;\n    scrollbar-width: none;\n}\n\n.ll_browser_strip::-webkit-scrollbar {\n    display: none;\n}\n\n/* ─── Scroll track ───────────────────────────────────── */\n.ll_scroll_track {\n    height: 10px;\n    background: #222;\n    margin: 2px 6px 6px;\n    border-radius: 5px;\n    position: relative;\n    cursor: pointer;\n    border: 1px solid #333;\n}\n\n.ll_scroll_thumb {\n    height: 100%;\n    background: #5ac;\n    border-radius: 5px;\n    position: absolute;\n    top: 0;\n    min-width: 20px;\n    cursor: grab;\n    transition: background 0.15s;\n}\n\n.ll_scroll_thumb:hover {\n    background: #7cd;\n}\n\n.ll_scroll_thumb.dragging {\n    cursor: grabbing;\n    background: #bbb;\n}\n\n/* ─── Flash overlay ──────────────────────────────────── */\n.ll_flash_overlay {\n    position: absolute;\n    top: 0;\n    left: 0;\n    right: 0;\n    bottom: 0;\n    pointer-events: none;\n    z-index: 10;\n    opacity: 0;\n    border: 4px solid #00ddff;\n    border-radius: 4px;\n    transition: opacity 0.1s ease-in;\n}\n\n/* ─── Filmstrip controls ─────────────────────────────── */\n.ll_filmstrip_ctrl {\n    display: flex;\n    flex-direction: column;\n    gap: 4px;\n    padding: 6px 8px;\n    background: #111;\n    border-top: 1px solid #222;\n}\n\n.ll_filmstrip_row {\n    display: flex;\n    align-items: center;\n    gap: 4px;\n    justify-content: center;\n}\n\n.ll_filmstrip_btn {\n    border: 1px solid #555;\n    background: #222;\n    color: #aaa;\n    font-size: 12px;\n    padding: 3px 10px;\n    border-radius: 4px;\n    cursor: pointer;\n    transition: all 0.15s;\n}\n\n.ll_filmstrip_btn:hover {\n    background: #333;\n    color: #fff;\n}\n\n/* ─── Scrubber ───────────────────────────────────────── */\n.ll_scrubber {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    padding: 0 4px;\n}\n\n.ll_scrubber_range {\n    flex: 1;\n    height: 4px;\n    accent-color: #00ddff;\n    cursor: pointer;\n}\n\n.ll_scrubber_dot {\n    width: 6px;\n    height: 6px;\n    border-radius: 50%;\n    background: #555;\n    flex-shrink: 0;\n}\n\n/* ─── Browser thumbnails ─────────────────────────────── */\n.ll_thumb {\n    flex-shrink: 0;\n    border-radius: 4px;\n    overflow: hidden;\n    cursor: pointer;\n    border: 2px solid transparent;\n    transition: border-color 0.15s;\n    position: relative;\n}\n\n.ll_thumb.active {\n    border-color: #00ddff;\n}\n\n.ll_thumb:hover {\n    border-color: #555;\n}\n\n.ll_thumb video {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n    pointer-events: none;\n}\n\n.ll_thumb_label {\n    position: absolute;\n    bottom: 0;\n    left: 0;\n    right: 0;\n    background: rgba(0, 0, 0, 0.7);\n    color: #ccc;\n    font: 9px/1.3 monospace;\n    padding: 1px 3px;\n    text-align: center;\n    overflow: hidden;\n    text-overflow: ellipsis;\n    white-space: nowrap;\n}\n\n/* ─── Edit Mode Wrapper (self-contained, dynamically inserted) ─── */\n.ll_edit_wrapper {\n    display: flex;\n    flex-direction: column;\n    background: #0d0d0d;\n}\n\n.ll_edit_wrapper .ll_video {\n    width: 100%;\n    display: block;\n}\n\n/* Transport bar: play/pause + time display */\n.ll_edit_transport {\n    display: flex;\n    align-items: center;\n    gap: 10px;\n    padding: 6px 10px;\n    background: #111;\n    border-top: 1px solid #333;\n}\n\n.ll_edit_play_btn {\n    width: 32px;\n    height: 28px;\n    border: 1px solid #555;\n    background: #1a2a3a;\n    color: #7ad;\n    font-size: 14px;\n    border-radius: 4px;\n    cursor: pointer;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    transition: all 0.15s;\n}\n\n.ll_edit_play_btn:hover {\n    background: #2a3a5a;\n    border-color: #7ad;\n    color: #adf;\n}\n\n.ll_edit_time_display {\n    font: 12px/1 monospace;\n    color: #7ad;\n    letter-spacing: 0.5px;\n}\n\n/* Black overlay for deleted regions */\n.ll_edit_black_overlay {\n    position: absolute;\n    top: 0;\n    left: 0;\n    right: 0;\n    bottom: 0;\n    background: #000;\n    pointer-events: none;\n    display: none;\n}\n\n/* Video area (relative for overlay positioning) */\n.ll_edit_video_area {\n    position: relative;\n}\n\n/* Timeline */\n.ll_edit_timeline {\n    padding: 4px 0;\n    background: #111;\n    border-top: 1px solid #222;\n}\n\n.ll_edit_canvas {\n    display: block;\n}\n\n/* Timeline toolbar with split/reset buttons */\n.ll_edit_toolbar {\n    display: flex;\n    align-items: center;\n    gap: 4px;\n    padding: 6px 8px;\n    justify-content: center;\n}\n\n.ll_edit_btn {\n    border: 1px solid #555;\n    background: #222;\n    color: #aaa;\n    font-size: 11px;\n    padding: 4px 10px;\n    border-radius: 4px;\n    cursor: pointer;\n    transition: all 0.15s;\n}\n\n.ll_edit_btn:hover {\n    background: #333;\n    color: #fff;\n}";
+const cssText = "/**\n * LoadLast Video Preview — Stylesheet\n *\n * Extracted from inline styles in video_preview.ts.\n * Dynamic styles (visibility toggles, computed positions) remain inline.\n */\n\n/* ─── Container ──────────────────────────────────────── */\n.ll_container {\n    display: flex;\n    flex-direction: column;\n    background: #0d0d0d;\n    border-radius: 8px;\n    overflow: hidden;\n    min-height: 60px;\n    position: relative;\n}\n\n/* ─── Toolbar ────────────────────────────────────────── */\n.ll_toolbar {\n    display: flex;\n    align-items: center;\n    gap: 3px;\n    padding: 4px 6px;\n    background: #111;\n    border-bottom: 1px solid #222;\n    flex-shrink: 0;\n}\n\n.ll_toolbar_btn {\n    border: 1px solid transparent;\n    background: transparent;\n    color: #777;\n    font-size: 14px;\n    padding: 4px 8px;\n    border-radius: 4px;\n    cursor: pointer;\n    transition: all 0.15s;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n}\n\n.ll_toolbar_btn.active {\n    color: #fff;\n    background: #333;\n    border-color: #555;\n}\n\n.ll_clear_btn {\n    margin-left: auto;\n    border: 1px solid transparent;\n    background: transparent;\n    color: #777;\n    font-size: 11px;\n    padding: 3px 6px;\n    border-radius: 3px;\n    cursor: pointer;\n    transition: all 0.15s;\n    display: flex;\n    align-items: center;\n}\n\n/* ─── Selection badge ────────────────────────────────── */\n.ll_sel_badge {\n    position: absolute;\n    top: 6px;\n    right: 8px;\n    z-index: 20;\n    background: rgba(0, 221, 255, 0.85);\n    color: #000;\n    font: bold 11px/1 monospace;\n    padding: 3px 8px;\n    border-radius: 10px;\n    cursor: pointer;\n    display: none;\n    text-shadow: none;\n    user-select: none;\n    transition: background 0.15s;\n}\n\n.ll_sel_badge:hover {\n    background: rgba(255, 80, 80, 0.9);\n}\n\n/* ─── Marker bar ─────────────────────────────────────── */\n.ll_marker_bar {\n    position: relative;\n    height: 10px;\n    background: #1a1a1a;\n    border-radius: 2px;\n    margin: 0 4px 2px 4px;\n    display: none;\n    border: 1px solid #333;\n    flex-shrink: 0;\n}\n\n.ll_marker_tick {\n    position: absolute;\n    top: 1px;\n    width: 3px;\n    height: 8px;\n    background: #00ddff;\n    border-radius: 1px;\n}\n\n/* ─── Video / Canvas ─────────────────────────────────── */\n.ll_video {\n    width: 100%;\n    display: block;\n}\n\n.ll_canvas {\n    width: 100%;\n    display: none;\n    cursor: crosshair;\n}\n\n/* ─── Info bar ───────────────────────────────────────── */\n.ll_info {\n    padding: 4px 8px;\n    font: 11px/1.4 monospace;\n    color: #888;\n    background: #0a0a0a;\n    border-top: 1px solid #222;\n    white-space: nowrap;\n    overflow: hidden;\n    text-overflow: ellipsis;\n    flex-shrink: 0;\n}\n\n/* ─── Browser strip ──────────────────────────────────── */\n.ll_strip_wrapper {\n    background: #0a0a0a;\n}\n\n.ll_browser_strip {\n    display: flex;\n    gap: 4px;\n    padding: 4px 6px;\n    overflow-x: auto;\n    background: #0a0a0a;\n    flex-shrink: 0;\n    scrollbar-width: none;\n}\n\n.ll_browser_strip::-webkit-scrollbar {\n    display: none;\n}\n\n/* ─── Scroll track ───────────────────────────────────── */\n.ll_scroll_track {\n    height: 10px;\n    background: #222;\n    margin: 2px 6px 6px;\n    border-radius: 5px;\n    position: relative;\n    cursor: pointer;\n    border: 1px solid #333;\n}\n\n.ll_scroll_thumb {\n    height: 100%;\n    background: #5ac;\n    border-radius: 5px;\n    position: absolute;\n    top: 0;\n    min-width: 20px;\n    cursor: grab;\n    transition: background 0.15s;\n}\n\n.ll_scroll_thumb:hover {\n    background: #7cd;\n}\n\n.ll_scroll_thumb.dragging {\n    cursor: grabbing;\n    background: #bbb;\n}\n\n/* ─── Flash overlay ──────────────────────────────────── */\n.ll_flash_overlay {\n    position: absolute;\n    top: 0;\n    left: 0;\n    right: 0;\n    bottom: 0;\n    pointer-events: none;\n    z-index: 10;\n    opacity: 0;\n    border: 4px solid #00ddff;\n    border-radius: 4px;\n    transition: opacity 0.1s ease-in;\n}\n\n/* ─── Filmstrip controls ─────────────────────────────── */\n.ll_filmstrip_ctrl {\n    display: flex;\n    flex-direction: column;\n    gap: 4px;\n    padding: 6px 8px;\n    background: #111;\n    border-top: 1px solid #222;\n}\n\n.ll_filmstrip_row {\n    display: flex;\n    align-items: center;\n    gap: 4px;\n    justify-content: center;\n}\n\n.ll_filmstrip_btn {\n    border: 1px solid #555;\n    background: #222;\n    color: #aaa;\n    font-size: 12px;\n    padding: 3px 10px;\n    border-radius: 4px;\n    cursor: pointer;\n    transition: all 0.15s;\n}\n\n.ll_filmstrip_btn:hover {\n    background: #333;\n    color: #fff;\n}\n\n/* ─── Scrubber ───────────────────────────────────────── */\n.ll_scrubber {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    padding: 0 4px;\n}\n\n.ll_scrubber_range {\n    flex: 1;\n    height: 4px;\n    accent-color: #00ddff;\n    cursor: pointer;\n}\n\n.ll_scrubber_dot {\n    width: 6px;\n    height: 6px;\n    border-radius: 50%;\n    background: #555;\n    flex-shrink: 0;\n}\n\n/* ─── Browser thumbnails ─────────────────────────────── */\n.ll_thumb {\n    flex-shrink: 0;\n    border-radius: 4px;\n    overflow: hidden;\n    cursor: pointer;\n    border: 2px solid transparent;\n    transition: border-color 0.15s;\n    position: relative;\n}\n\n.ll_thumb.active {\n    border-color: #00ddff;\n}\n\n.ll_thumb:hover {\n    border-color: #555;\n}\n\n.ll_thumb video {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n    pointer-events: none;\n}\n\n.ll_thumb_label {\n    position: absolute;\n    bottom: 0;\n    left: 0;\n    right: 0;\n    background: rgba(0, 0, 0, 0.7);\n    color: #ccc;\n    font: 9px/1.3 monospace;\n    padding: 1px 3px;\n    text-align: center;\n    overflow: hidden;\n    text-overflow: ellipsis;\n    white-space: nowrap;\n}\n\n/* ─── Edit Mode Wrapper (self-contained, dynamically inserted) ─── */\n.ll_edit_wrapper {\n    display: flex;\n    flex-direction: column;\n    background: #0d0d0d;\n}\n\n.ll_edit_wrapper .ll_video {\n    width: 100%;\n    display: block;\n}\n\n/* Black overlay for deleted regions */\n.ll_edit_black_overlay {\n    position: absolute;\n    top: 0;\n    left: 0;\n    right: 0;\n    bottom: 0;\n    background: #000;\n    pointer-events: none;\n    display: none;\n}\n\n/* Video area (relative for overlay positioning) */\n.ll_edit_video_area {\n    position: relative;\n}\n\n/* ─── Speed control collapsible ─────────────────────── */\n.ll_edit_speed_details {\n    border-top: 1px solid #222;\n    background: #111;\n}\n\n.ll_edit_speed_summary {\n    padding: 6px 10px;\n    font: 12px/1.4 monospace;\n    color: #999;\n    cursor: pointer;\n    user-select: none;\n    transition: color 0.15s;\n}\n\n.ll_edit_speed_details[open] .ll_edit_speed_summary {\n    color: #ddd;\n    border-bottom: 1px solid #222;\n}\n\n.ll_edit_speed_summary:hover {\n    color: #fff;\n}\n\n.ll_edit_speed_details .veditor-speed {\n    padding: 6px 8px;\n}\n\n/* Compact overrides for veditor components inside the inline editor */\n.ll_edit_wrapper .veditor-transport {\n    padding: 4px 8px;\n    gap: 6px;\n}\n\n.ll_edit_wrapper .veditor-modal-toolbar {\n    padding: 4px 8px;\n    justify-content: center;\n    border-top: 1px solid #222;\n}\n\n.ll_edit_wrapper .veditor-nle-timeline {\n    border-top: 1px solid #222;\n}\n\n/* Old styles kept for backwards compatibility */\n.ll_edit_timeline {\n    padding: 4px 0;\n    background: #111;\n    border-top: 1px solid #222;\n}\n\n.ll_edit_canvas {\n    display: block;\n}\n\n/* Timeline toolbar with split/reset buttons */\n.ll_edit_toolbar {\n    display: flex;\n    align-items: center;\n    gap: 4px;\n    padding: 6px 8px;\n    justify-content: center;\n}\n\n.ll_edit_btn {\n    border: 1px solid #555;\n    background: #222;\n    color: #aaa;\n    font-size: 11px;\n    padding: 4px 10px;\n    border-radius: 4px;\n    cursor: pointer;\n    transition: all 0.15s;\n}\n\n.ll_edit_btn:hover {\n    background: #333;\n    color: #fff;\n}";
 if (!document.getElementById("loadlast-styles")) {
   const style = document.createElement("style");
   style.id = "loadlast-styles";
@@ -245,7 +246,7 @@ app.registerExtension({
   beforeRegisterNodeDef(nodeType, nodeData, _app) {
     if ((nodeData == null ? void 0 : nodeData.name) !== "LoadLastVideo") return;
     const origCreated = nodeType.prototype.onNodeCreated;
-    nodeType.prototype.onNodeCreated = function () {
+    nodeType.prototype.onNodeCreated = function() {
       var _a;
       origCreated == null ? void 0 : origCreated.apply(this, arguments);
       const node = this;
@@ -256,14 +257,15 @@ app.registerExtension({
       let lastFilename = "";
       const editMgr = new EditManager();
       editMgr.bind(node);
-      let editTimeline = null;
       let editWrapper = null;
-      let editPlaybackRaf = null;
-      let editPlaying = false;
-      let editOutputTime = 0;
-      let editPlayBtn = null;
-      let editTimeDisplay = null;
       let editBlackOverlay = null;
+      let editTransport = null;
+      let editNleTimeline = null;
+      let editToolbar = null;
+      let editSpeedCtrl = null;
+      let editCropOverlay = null;
+      let editUndoMgr = null;
+      let editCropEnabled = false;
       let filmstripZoom = 0;
       let filmstripPage = 0;
       node.color = "#3a3a5a";
@@ -463,7 +465,7 @@ app.registerExtension({
         }
       });
       previewWidget.aspectRatio = null;
-      previewWidget.computeSize = function (width) {
+      previewWidget.computeSize = function(width) {
         if (container.style.display === "none") return [width, 0];
         let chrome = 32 + 22 + 14 + (allVideos.length > 1 ? 100 : 0);
         if (currentMode === VIEW_MODES.FILMSTRIP) chrome += 50;
@@ -515,60 +517,162 @@ app.registerExtension({
           editBlackOverlay = document.createElement("div");
           editBlackOverlay.className = "ll_edit_black_overlay";
           videoArea.appendChild(editBlackOverlay);
-          editWrapper.appendChild(videoArea);
-          const transport = document.createElement("div");
-          transport.className = "ll_edit_transport";
-          editPlayBtn = document.createElement("button");
-          editPlayBtn.className = "ll_edit_play_btn";
-          editPlayBtn.textContent = "▶";
-          editPlayBtn.title = "Play edited clip";
-          editPlayBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            if (editPlaying) {
-              stopEditPlayback();
-            } else {
-              startEditPlayback();
+          editCropOverlay = new CropOverlay({
+            onCropChanged: (rect) => {
+              syncEditToWidgets();
+              pushUndoState();
             }
           });
-          transport.appendChild(editPlayBtn);
-          editTimeDisplay = document.createElement("span");
-          editTimeDisplay.className = "ll_edit_time_display";
-          editTimeDisplay.textContent = "0:00 / 0:00";
-          transport.appendChild(editTimeDisplay);
-          editWrapper.appendChild(transport);
+          videoArea.appendChild(editCropOverlay.canvasElement);
+          editCropOverlay.canvasElement.style.display = "none";
+          editWrapper.appendChild(videoArea);
+          const timelineCallbacks = {
+            onSegmentsChanged: () => {
+              editMgr.syncToWidget();
+              syncEditToWidgets();
+              updateEditPreview();
+              updateEditInfo();
+              if (editNleTimeline) editNleTimeline.render();
+              pushUndoState();
+            },
+            onPlayheadChanged: (time) => {
+              if (editTransport) editTransport.seekTo(time);
+              if (editBlackOverlay) {
+                editBlackOverlay.style.display = editMgr.isInGap(time) ? "block" : "none";
+              }
+            },
+            onTrimHandleDrag: (time) => {
+              videoEl.currentTime = time;
+              if (editBlackOverlay) editBlackOverlay.style.display = "none";
+            },
+            onRequestSplit: () => {
+              editMgr.splitAt(videoEl.currentTime);
+              editMgr.syncToWidget();
+              syncEditToWidgets();
+              updateEditInfo();
+              if (editNleTimeline) editNleTimeline.render();
+              pushUndoState();
+            },
+            onDragStart: () => {
+            },
+            onDragEnd: () => {
+              pushUndoState();
+            }
+          };
+          editTransport = new TransportBar({
+            onTimeUpdate: (time) => {
+              if (editNleTimeline) editNleTimeline.setPlayhead(time);
+              if (editBlackOverlay) {
+                editBlackOverlay.style.display = editMgr.isInGap(time) ? "block" : "none";
+              }
+            },
+            onPlayStateChange: (_playing) => {
+            }
+          });
+          editTransport.setEditManager(editMgr);
+          editWrapper.appendChild(editTransport.element);
+          editToolbar = new EditToolbar({
+            onToolChanged: (_mode) => {
+            },
+            onSplitRequested: () => {
+              editMgr.splitAt(videoEl.currentTime);
+              editMgr.syncToWidget();
+              syncEditToWidgets();
+              updateEditInfo();
+              if (editNleTimeline) editNleTimeline.render();
+              pushUndoState();
+            },
+            onDeleteRequested: () => {
+              const t = videoEl.currentTime;
+              const seg = editMgr.segments.find((s) => t >= s.start && t <= s.end);
+              if (seg && editMgr.segments.length > 1) {
+                editMgr.removeSegment(seg.id);
+                editMgr.syncToWidget();
+                syncEditToWidgets();
+                updateEditPreview();
+                updateEditInfo();
+                if (editNleTimeline) editNleTimeline.render();
+                pushUndoState();
+              }
+            },
+            onResetRequested: () => {
+              editMgr.reset();
+              editMgr.syncToWidget();
+              syncEditToWidgets();
+              if (editSpeedCtrl) editSpeedCtrl.reset();
+              if (editCropOverlay) editCropOverlay.setRect(null);
+              editCropEnabled = false;
+              if (editCropOverlay) editCropOverlay.canvasElement.style.display = "none";
+              updateEditPreview();
+              updateEditInfo();
+              if (editNleTimeline) editNleTimeline.render();
+              pushUndoState();
+            }
+          });
+          const cropToggle = document.createElement("button");
+          cropToggle.className = "veditor-tool-btn";
+          cropToggle.textContent = "⬒ Crop";
+          cropToggle.title = "Toggle crop overlay";
+          cropToggle.setAttribute("data-tool-id", "loadlast-crop-toggle");
+          cropToggle.addEventListener("click", () => {
+            editCropEnabled = !editCropEnabled;
+            cropToggle.classList.toggle("active", editCropEnabled);
+            if (editCropOverlay) {
+              editCropOverlay.canvasElement.style.display = editCropEnabled ? "block" : "none";
+              if (editCropEnabled) {
+                editCropOverlay.setVideoDimensions(videoEl.videoWidth, videoEl.videoHeight);
+                editCropOverlay.render();
+              }
+            }
+          });
+          editToolbar.element.appendChild(cropToggle);
+          editWrapper.appendChild(editToolbar.element);
+          editSpeedCtrl = new SpeedControl({
+            onSpeedChanged: (_segIdx, _speed) => {
+              syncEditToWidgets();
+              pushUndoState();
+            }
+          });
+          const speedCollapse = document.createElement("details");
+          speedCollapse.className = "ll_edit_speed_details";
+          const speedSummary = document.createElement("summary");
+          speedSummary.className = "ll_edit_speed_summary";
+          speedSummary.textContent = "⏩ Speed";
+          speedCollapse.appendChild(speedSummary);
+          speedCollapse.appendChild(editSpeedCtrl.element);
+          editWrapper.appendChild(speedCollapse);
           const dur = videoEl.duration;
           if (dur && isFinite(dur)) {
             editMgr.init(dur);
-            editOutputTime = 0;
-            updateEditTimeDisplay();
-            editTimeline = new EditTimeline(editMgr, {
-              onSegmentsChanged: () => {
+            editNleTimeline = new NLETimeline(editMgr, timelineCallbacks);
+            editWrapper.appendChild(editNleTimeline.element);
+            editUndoMgr = new UndoManager({
+              onRestore: (state) => {
+                editMgr.segments = [];
+                for (const [start, end] of state.segments) {
+                  editMgr.addSegment(start, end);
+                }
                 editMgr.syncToWidget();
+                if (editSpeedCtrl) editSpeedCtrl.loadSpeedMap(state.speedMap);
+                if (editCropOverlay) {
+                  const cropRect = state.cropRect ? JSON.parse(state.cropRect) : null;
+                  editCropOverlay.setRect(cropRect);
+                  editCropOverlay.render();
+                }
+                syncEditToWidgets();
                 updateEditPreview();
                 updateEditInfo();
-                updateEditTimeDisplay();
-              },
-              onPlayheadChanged: (time) => {
-                videoEl.currentTime = time;
-                if (editBlackOverlay) {
-                  editBlackOverlay.style.display = editMgr.isInGap(time) ? "block" : "none";
-                }
-                editOutputTime = Math.max(0, editMgr.sourceTimeToOutput(time));
-                updateEditTimeDisplay();
-              },
-              onTrimHandleDrag: (time) => {
-                videoEl.currentTime = time;
-                if (editBlackOverlay) editBlackOverlay.style.display = "none";
-                editOutputTime = Math.max(0, editMgr.sourceTimeToOutput(time));
-                updateEditTimeDisplay();
-              },
-              onRequestSplit: () => {
+                if (editNleTimeline) editNleTimeline.render();
               }
             });
-            editWrapper.appendChild(editTimeline.element);
+            pushUndoState();
+            editTransport.bindVideo(videoEl);
+            if (videoEl.videoWidth > 0) {
+              editCropOverlay.setVideoDimensions(videoEl.videoWidth, videoEl.videoHeight);
+            }
             videoEl.currentTime = ((_a2 = editMgr.segments[0]) == null ? void 0 : _a2.start) ?? 0;
             requestAnimationFrame(() => {
-              editTimeline == null ? void 0 : editTimeline.render();
+              editNleTimeline == null ? void 0 : editNleTimeline.render();
             });
           }
           container.insertBefore(editWrapper, stripWrapper);
@@ -586,10 +690,31 @@ app.registerExtension({
         fitNode();
       }
       function cleanupEditMode() {
-        stopEditPlayback();
-        if (editTimeline) {
-          editTimeline = null;
+        if (editTransport) {
+          editTransport.destroy();
+          editTransport = null;
         }
+        if (editNleTimeline) {
+          editNleTimeline.destroy();
+          editNleTimeline = null;
+        }
+        if (editToolbar) {
+          editToolbar.destroy();
+          editToolbar = null;
+        }
+        if (editSpeedCtrl) {
+          editSpeedCtrl.destroy();
+          editSpeedCtrl = null;
+        }
+        if (editCropOverlay) {
+          editCropOverlay.destroy();
+          editCropOverlay = null;
+        }
+        if (editUndoMgr) {
+          editUndoMgr.destroy();
+          editUndoMgr = null;
+        }
+        editCropEnabled = false;
         if (editWrapper) {
           videoEl.style.display = "none";
           videoEl.controls = true;
@@ -597,8 +722,6 @@ app.registerExtension({
           editWrapper.remove();
           editWrapper = null;
         }
-        editPlayBtn = null;
-        editTimeDisplay = null;
         editBlackOverlay = null;
       }
       function updateEditInfo() {
@@ -607,7 +730,10 @@ app.registerExtension({
         } else {
           const outDur = fmtDuration(editMgr.getOutputDuration());
           const segs = editMgr.segments.length;
-          infoEl.textContent = `✂️ Edit: ${outDur} output │ ${segs} segment${segs !== 1 ? "s" : ""}`;
+          const speedInfo = editSpeedCtrl ? Object.keys(editSpeedCtrl.getSpeedMap()).length : 0;
+          const cropInfo = (editCropOverlay == null ? void 0 : editCropOverlay.getRect()) ? " │ Cropped" : "";
+          const speedStr = speedInfo > 0 ? ` │ ${speedInfo} speed change${speedInfo > 1 ? "s" : ""}` : "";
+          infoEl.textContent = `✂️ Edit: ${outDur} output │ ${segs} segment${segs !== 1 ? "s" : ""}${speedStr}${cropInfo}`;
         }
       }
       function updateEditPreview() {
@@ -625,48 +751,40 @@ app.registerExtension({
           }
           if (editBlackOverlay) editBlackOverlay.style.display = "none";
         }
-        editOutputTime = Math.max(0, editMgr.sourceTimeToOutput(videoEl.currentTime));
       }
-      function updateEditTimeDisplay() {
-        if (!editTimeDisplay) return;
-        const pos = fmtDuration(editOutputTime);
-        const total = fmtDuration(editMgr.getOutputDuration());
-        editTimeDisplay.textContent = `${pos} / ${total}`;
-      }
-      function startEditPlayback() {
-        if (editPlaying) return;
-        editPlaying = true;
-        if (editPlayBtn) editPlayBtn.textContent = "⏸";
-        let lastFrameTime = performance.now();
-        function editLoop(now) {
-          if (!editPlaying) return;
-          const dt = (now - lastFrameTime) / 1e3;
-          lastFrameTime = now;
-          editOutputTime += dt;
-          const totalDur = editMgr.getOutputDuration();
-          if (editOutputTime >= totalDur) {
-            editOutputTime = 0;
-          }
-          const srcTime = editMgr.outputTimeToSource(editOutputTime);
-          videoEl.currentTime = srcTime;
-          if (editBlackOverlay) editBlackOverlay.style.display = "none";
-          if (editTimeline) {
-            editTimeline.playhead = srcTime;
-            editTimeline.render();
-          }
-          updateEditTimeDisplay();
-          editPlaybackRaf = requestAnimationFrame(editLoop);
+      function syncEditToWidgets() {
+        var _a2, _b;
+        const cropRect = editCropOverlay == null ? void 0 : editCropOverlay.getRect();
+        const cropJson = cropRect ? JSON.stringify(cropRect) : "";
+        const cropWidget = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "_crop_rect");
+        if (cropWidget) {
+          cropWidget.value = cropJson;
+        } else {
+          if (!node.properties) node.properties = {};
+          node.properties["_crop_rect"] = cropJson;
         }
-        videoEl.pause();
-        editPlaybackRaf = requestAnimationFrame(editLoop);
-      }
-      function stopEditPlayback() {
-        editPlaying = false;
-        if (editPlayBtn) editPlayBtn.textContent = "▶";
-        if (editPlaybackRaf !== null) {
-          cancelAnimationFrame(editPlaybackRaf);
-          editPlaybackRaf = null;
+        const speedMap = (editSpeedCtrl == null ? void 0 : editSpeedCtrl.getSpeedMap()) ?? {};
+        const speedJson = JSON.stringify(speedMap);
+        const speedWidget = (_b = node.widgets) == null ? void 0 : _b.find((w) => w.name === "_speed_map");
+        if (speedWidget) {
+          speedWidget.value = speedJson;
+        } else {
+          if (!node.properties) node.properties = {};
+          node.properties["_speed_map"] = speedJson;
         }
+      }
+      function getEditState() {
+        return {
+          segments: editMgr.toJSON(),
+          cropRect: (editCropOverlay == null ? void 0 : editCropOverlay.getRect()) ? JSON.stringify(editCropOverlay.getRect()) : "",
+          speedMap: (editSpeedCtrl == null ? void 0 : editSpeedCtrl.getSpeedMap()) ?? {},
+          volume: 1,
+          textOverlays: [],
+          transitions: []
+        };
+      }
+      function pushUndoState() {
+        if (editUndoMgr) editUndoMgr.push(getEditState());
       }
       container.addEventListener("keydown", (e) => {
         if (currentMode !== VIEW_MODES.FILMSTRIP) return;
@@ -1149,7 +1267,7 @@ app.registerExtension({
         }
       });
       const origGetExtra = node.constructor.prototype.getExtraMenuOptions;
-      node.getExtraMenuOptions = function (_, options) {
+      node.getExtraMenuOptions = function(_, options) {
         origGetExtra == null ? void 0 : origGetExtra.apply(this, arguments);
         const optNew = [];
         const hasVideo = !!videoEl.src && container.style.display !== "none";
@@ -1201,36 +1319,26 @@ app.registerExtension({
             content: "⏱️ Playback Speed",
             submenu: {
               options: [
-                {
-                  content: "0.25x", callback: () => {
-                    videoEl.playbackRate = 0.25;
-                    flashBg("#5a5a3a");
-                  }
-                },
-                {
-                  content: "0.5x", callback: () => {
-                    videoEl.playbackRate = 0.5;
-                    flashBg("#5a5a3a");
-                  }
-                },
-                {
-                  content: "1x (Normal)", callback: () => {
-                    videoEl.playbackRate = 1;
-                    flashBg("#5a5a3a");
-                  }
-                },
-                {
-                  content: "1.5x", callback: () => {
-                    videoEl.playbackRate = 1.5;
-                    flashBg("#5a5a3a");
-                  }
-                },
-                {
-                  content: "2x", callback: () => {
-                    videoEl.playbackRate = 2;
-                    flashBg("#5a5a3a");
-                  }
-                }
+                { content: "0.25x", callback: () => {
+                  videoEl.playbackRate = 0.25;
+                  flashBg("#5a5a3a");
+                } },
+                { content: "0.5x", callback: () => {
+                  videoEl.playbackRate = 0.5;
+                  flashBg("#5a5a3a");
+                } },
+                { content: "1x (Normal)", callback: () => {
+                  videoEl.playbackRate = 1;
+                  flashBg("#5a5a3a");
+                } },
+                { content: "1.5x", callback: () => {
+                  videoEl.playbackRate = 1.5;
+                  flashBg("#5a5a3a");
+                } },
+                { content: "2x", callback: () => {
+                  videoEl.playbackRate = 2;
+                  flashBg("#5a5a3a");
+                } }
               ]
             }
           });
@@ -1365,31 +1473,21 @@ app.registerExtension({
           content: "🎨 View Mode",
           submenu: {
             options: [
-              {
-                content: `${currentMode === VIEW_MODES.PLAYBACK ? "● " : ""}Playback`, callback: () => {
-                  switchMode(VIEW_MODES.PLAYBACK);
-                }
-              },
-              {
-                content: `${currentMode === VIEW_MODES.GRID ? "● " : ""}Grid`, callback: () => {
-                  switchMode(VIEW_MODES.GRID);
-                }
-              },
-              {
-                content: `${currentMode === VIEW_MODES.SIDE_BY_SIDE ? "● " : ""}Side by Side`, callback: () => {
-                  switchMode(VIEW_MODES.SIDE_BY_SIDE);
-                }
-              },
-              {
-                content: `${currentMode === VIEW_MODES.FILMSTRIP ? "● " : ""}Filmstrip`, callback: () => {
-                  switchMode(VIEW_MODES.FILMSTRIP);
-                }
-              },
-              {
-                content: `${currentMode === VIEW_MODES.SELECTED ? "● " : ""}Selected`, callback: () => {
-                  switchMode(VIEW_MODES.SELECTED);
-                }
-              }
+              { content: `${currentMode === VIEW_MODES.PLAYBACK ? "● " : ""}Playback`, callback: () => {
+                switchMode(VIEW_MODES.PLAYBACK);
+              } },
+              { content: `${currentMode === VIEW_MODES.GRID ? "● " : ""}Grid`, callback: () => {
+                switchMode(VIEW_MODES.GRID);
+              } },
+              { content: `${currentMode === VIEW_MODES.SIDE_BY_SIDE ? "● " : ""}Side by Side`, callback: () => {
+                switchMode(VIEW_MODES.SIDE_BY_SIDE);
+              } },
+              { content: `${currentMode === VIEW_MODES.FILMSTRIP ? "● " : ""}Filmstrip`, callback: () => {
+                switchMode(VIEW_MODES.FILMSTRIP);
+              } },
+              { content: `${currentMode === VIEW_MODES.SELECTED ? "● " : ""}Selected`, callback: () => {
+                switchMode(VIEW_MODES.SELECTED);
+              } }
             ]
           }
         });

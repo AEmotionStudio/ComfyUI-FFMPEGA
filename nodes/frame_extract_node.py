@@ -94,11 +94,12 @@ class FrameExtractNode:
             },
             "hidden": {
                 "mask_points_data": "STRING",
+                "crop_data": "STRING",
             },
         }
 
-    RETURN_TYPES = ("IMAGE", "AUDIO", "INT", "FLOAT", "FLOAT", "STRING", "STRING")
-    RETURN_NAMES = ("frames", "audio", "frame_count", "fps", "duration", "video_path", "mask_points")
+    RETURN_TYPES = ("IMAGE", "AUDIO", "INT", "FLOAT", "FLOAT", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("frames", "audio", "frame_count", "fps", "duration", "video_path", "mask_points", "crop_data")
     OUTPUT_TOOLTIPS = (
         "Extracted video frames as a batched image tensor.",
         "Audio from the extracted segment in ComfyUI AUDIO format.",
@@ -108,6 +109,8 @@ class FrameExtractNode:
         "Resolved absolute path to the video file.",
         "JSON-encoded point selection data from the Point Selector. "
         "Connect to FFMPEGA Agent's mask_points input for guided masking.",
+        "JSON-encoded crop rectangle from the Crop Selector. "
+        "Format: {\"x\":N, \"y\":N, \"w\":N, \"h\":N}.",
     )
     FUNCTION = "extract_frames"
     OUTPUT_NODE = True
@@ -133,6 +136,7 @@ class FrameExtractNode:
         duration: float = 10.0,
         max_frames: int = 100,
         mask_points_data: str = "",
+        crop_data: str = "",
         images=None,
         audio=None,
         input_video_path=None,
@@ -283,6 +287,7 @@ class FrameExtractNode:
                 round(actual_duration, 3),
                 video_path,
                 mask_points_data or "",
+                crop_data or "",
             ),
         }
 
@@ -436,7 +441,7 @@ class FrameExtractNode:
             preview_path = os.path.join(temp_dir, preview_name)
 
             cmd = [
-                "ffmpeg", "-y",
+                get_ffmpeg_bin(), "-y",
                 "-ss", str(start_time),
                 "-i", video_path,
                 "-t", str(duration),

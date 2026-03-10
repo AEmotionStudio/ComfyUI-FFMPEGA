@@ -225,3 +225,161 @@ class TestFluxKleinOOMCleanup:
                 _f_auto_mask(params)
             mock_cleanup.assert_called_once()
 
+
+# --- No-LLM Mode Tests --------------------------------------------------------
+
+class TestFluxKleinNoLLMMode:
+    """Test the flux_klein no_llm_mode integration."""
+
+    def test_flux_klein_in_no_llm_dropdown(self):
+        """'flux_klein' should be in the no_llm_mode dropdown choices."""
+        pytest.importorskip("torch")
+        from nodes.agent_node import FFMPEGAgentNode
+        input_types = FFMPEGAgentNode.INPUT_TYPES()
+        choices = input_types["required"]["no_llm_mode"][0]
+        assert "flux_klein" in choices
+
+    def test_edit_single_image_exists(self):
+        """edit_single_image should be importable from flux_klein_editor."""
+        from core.flux_klein_editor import edit_single_image
+        assert callable(edit_single_image)
+
+    def test_edit_video_mask_optional(self):
+        """edit_video should accept mask_video_path=None."""
+        import inspect
+        from core.flux_klein_editor import edit_video
+        sig = inspect.signature(edit_video)
+        param = sig.parameters["mask_video_path"]
+        assert param.default is None
+
+    @pytest.mark.skipif(not _has_torch, reason="PyTorch not available")
+    def test_edit_video_maskless_calls_edit_frame(self):
+        """edit_video with mask_video_path=None should call _edit_frame, not _remove_frame."""
+        from unittest.mock import patch, MagicMock
+        import core.flux_klein_editor as fk
+        from PIL import Image
+        import numpy as np
+
+        fk._pipeline = MagicMock()
+
+        dummy = Image.fromarray(np.zeros((64, 64, 3), dtype=np.uint8))
+
+        with (
+            patch.object(fk, "_load_video_frames") as mock_load,
+            patch.object(fk, "_edit_frame", return_value=dummy) as mock_edit,
+            patch.object(fk, "_remove_frame") as mock_remove,
+            patch.object(fk, "_encode_video_from_dir"),
+            patch.object(fk, "cleanup"),
+            patch.object(fk, "validate_video_path", side_effect=lambda x: x),
+            patch.object(fk, "validate_output_file_path", side_effect=lambda x: x),
+        ):
+            mock_load.return_value = ([dummy], 8.0, "/tmp/fake_frames")
+
+            fk.edit_video(
+                "/tmp/v.mp4",
+                mask_video_path=None,
+                prompt="chrome statue",
+                output_path="/tmp/out.mp4",
+            )
+
+            mock_edit.assert_called()
+            mock_remove.assert_not_called()
+
+    @pytest.mark.skipif(not _has_torch, reason="PyTorch not available")
+    def test_edit_video_maskless_cleanup_on_error(self):
+        """cleanup() should be called even when maskless edit_video errors."""
+        from unittest.mock import patch, MagicMock
+        import core.flux_klein_editor as fk
+        from PIL import Image
+        import numpy as np
+
+        fk._pipeline = MagicMock()
+        dummy = Image.fromarray(np.zeros((64, 64, 3), dtype=np.uint8))
+
+        with (
+            patch.object(fk, "_load_video_frames") as mock_load,
+            patch.object(fk, "_edit_frame", side_effect=RuntimeError("fake OOM")),
+            patch.object(fk, "cleanup") as mock_cleanup,
+            patch.object(fk, "validate_video_path", side_effect=lambda x: x),
+            patch.object(fk, "validate_output_file_path", side_effect=lambda x: x),
+        ):
+            mock_load.return_value = ([dummy], 8.0, "/tmp/fake_frames")
+
+            with pytest.raises(RuntimeError, match="fake OOM"):
+                fk.edit_video(
+                    "/tmp/v.mp4",
+                    mask_video_path=None,
+                    prompt="test",
+                    output_path="/tmp/out.mp4",
+                )
+
+            mock_cleanup.assert_called_once()
+
+    def test_process_flux_klein_only_exists(self):
+        """process_flux_klein_only should be importable from nollm_modes."""
+        pytest.importorskip("torch")
+        from nodes.nollm_modes import process_flux_klein_only
+        assert callable(process_flux_klein_only)
+
+    def test_edit_frame_accepts_reference_images(self):
+        """_edit_frame should accept a reference_images parameter."""
+        import inspect
+        from core.flux_klein_editor import _edit_frame
+        sig = inspect.signature(_edit_frame)
+        assert "reference_images" in sig.parameters
+
+    @pytest.mark.skipif(not _has_torch, reason="PyTorch not available")
+    def test_edit_frame_passes_references_to_pipe(self):
+        """_edit_frame should include reference images in the pipe's image list."""
+        from unittest.mock import patch, MagicMock
+        import core.flux_klein_editor as fk
+        from PIL import Image
+        import numpy as np
+
+        dummy = Image.fromarray(np.zeros((64, 64, 3), dtype=np.uint8))
+        ref = Image.fromarray(np.ones((64, 64, 3), dtype=np.uint8) * 128)
+
+        mock_pipe = MagicMock()
+        mock_pipe._execution_device = "cpu"
+        mock_pipe.return_value = MagicMock(images=[dummy])
+
+        fk._edit_frame(mock_pipe, dummy, "test prompt", reference_images=[ref])
+
+        # The image list should have 2 images: reference + source
+        call_kwargs = mock_pipe.call_args
+        image_list = call_kwargs.kwargs.get("image") or call_kwargs[1].get("image")
+        assert len(image_list) == 2, f"Expected 2 images, got {len(image_list)}"
+
+    @pytest.mark.skipif(not _has_torch, reason="PyTorch not available")
+    def test_edit_video_threads_reference_images(self):
+        """edit_video should pass reference_images to _edit_frame."""
+        from unittest.mock import patch, MagicMock
+        import core.flux_klein_editor as fk
+        from PIL import Image
+        import numpy as np
+
+        fk._pipeline = MagicMock()
+        dummy = Image.fromarray(np.zeros((64, 64, 3), dtype=np.uint8))
+        ref = Image.fromarray(np.ones((64, 64, 3), dtype=np.uint8) * 200)
+
+        with (
+            patch.object(fk, "_load_video_frames") as mock_load,
+            patch.object(fk, "_edit_frame", return_value=dummy) as mock_edit,
+            patch.object(fk, "_encode_video_from_dir"),
+            patch.object(fk, "cleanup"),
+            patch.object(fk, "validate_video_path", side_effect=lambda x: x),
+            patch.object(fk, "validate_output_file_path", side_effect=lambda x: x),
+        ):
+            mock_load.return_value = ([dummy], 8.0, "/tmp/fake_frames")
+
+            fk.edit_video(
+                "/tmp/v.mp4",
+                mask_video_path=None,
+                prompt="test",
+                output_path="/tmp/out.mp4",
+                reference_images=[ref],
+            )
+
+            # Verify reference_images was passed to _edit_frame
+            _, call_kwargs = mock_edit.call_args
+            assert call_kwargs.get("reference_images") == [ref]

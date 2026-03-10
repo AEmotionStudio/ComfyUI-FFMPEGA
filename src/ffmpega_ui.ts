@@ -17,13 +17,21 @@ import { registerSaveVideoNode } from "@ffmpega/nodes/save_video_node";
 import { registerLoadImageNode } from "@ffmpega/nodes/load_image_node";
 import { registerTextInputNode } from "@ffmpega/nodes/text_input_node";
 import { registerPointSelectorHooks } from "@ffmpega/nodes/point_selector_hooks";
+import { registerCropSelectorHooks } from "@ffmpega/nodes/crop_selector_hooks";
+
+// Sidebar
+import { initSidebar } from "@ffmpega/sidebar/sidebar";
 
 // Register FFMPEGA extensions
 app.registerExtension({
     name: "FFMPEGA.UI",
 
+    async setup() {
+        initSidebar();
+    },
+
     async beforeRegisterNodeDef(nodeType: import("@ffmpega/types/comfyui").ComfyNodeType, nodeData: import("@ffmpega/types/comfyui").ComfyNodeData, _app: unknown) {
-        // Styling-only nodes (Preview, VideoToPath, BatchProcessor, VideoInfo)
+        // Styling-only nodes (Preview, MediaBridge, BatchProcessor, VideoInfo)
         if (registerNodeStyling(nodeType, nodeData)) return;
 
         // Complex node handlers
@@ -36,6 +44,9 @@ app.registerExtension({
 
         // Point selector context menu hooks (LoadVideoPath, FrameExtract)
         registerPointSelectorHooks(nodeType, nodeData);
+
+        // Crop selector context menu hooks (LoadVideoPath, FrameExtract)
+        registerCropSelectorHooks(nodeType, nodeData);
     },
 });
 

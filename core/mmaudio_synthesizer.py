@@ -284,79 +284,16 @@ def _detect_model_variant(sd: dict) -> tuple[str, bool]:
 #  VRAM management
 # ---------------------------------------------------------------------------
 
-_freeing_vram = False
-
-
 def _free_vram():
     """Free all GPU VRAM before loading MMAudio.
 
-    Follows WanVideoWrapper's pattern:
-    1. Tell ComfyUI to unload ALL cached models from GPU
-    2. Free SAM3 models if loaded
-    3. Free FLUX Klein pipeline if loaded
-    4. Empty CUDA cache + gc.collect
-
-    Uses a re-entrancy guard (``_freeing_vram``) to prevent infinite
-    recursion — ``flux_klein_editor._free_vram()`` calls back into
-    ``mmaudio_synthesizer.cleanup()``.
+    Delegates to the shared ``_vram_utils.free_for_module``.
     """
-    global _freeing_vram
-    if _freeing_vram:
-        return
-    _freeing_vram = True
     try:
-        from .platform import free_comfyui_vram
-        free_comfyui_vram()
-
-        # Free SAM3 if loaded
-        try:
-            try:
-                from . import sam3_masker
-            except ImportError:
-                from core import sam3_masker  # type: ignore
-            sam3_masker.cleanup()
-        except Exception:
-            pass
-
-        # Free MuseTalk if loaded
-        try:
-            try:
-                from . import musetalk_synthesizer
-            except ImportError:
-                from core import musetalk_synthesizer  # type: ignore
-            musetalk_synthesizer.cleanup()
-        except Exception:
-            pass
-
-        # Free FLUX Klein if loaded
-        try:
-            try:
-                from . import flux_klein_editor
-            except ImportError:
-                from core import flux_klein_editor  # type: ignore
-            flux_klein_editor.cleanup()
-        except Exception:
-            pass
-
-        # Free LivePortrait if loaded
-        try:
-            try:
-                from . import liveportrait_synthesizer
-            except ImportError:
-                from core import liveportrait_synthesizer  # type: ignore
-            liveportrait_synthesizer.cleanup()
-        except Exception:
-            pass
-
-        try:
-            import torch
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        except ImportError:
-            pass
-        gc.collect()
-    finally:
-        _freeing_vram = False
+        from ._vram_utils import free_for_module
+    except ImportError:
+        from core._vram_utils import free_for_module  # type: ignore
+    free_for_module(exclude="mmaudio_synthesizer")
 
 
 def _get_offload_device():

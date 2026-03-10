@@ -152,83 +152,19 @@ def _download_model(model_dir: Path) -> None:
 #  VRAM management
 # ---------------------------------------------------------------------------
 
-_freeing_vram = False
-
 
 def _free_vram() -> None:
     """Free all GPU VRAM before loading FLUX Klein.
-    
-    1. Tell ComfyUI to unload ALL cached models from GPU
-    2. Free SAM3 models if loaded
-    3. Free MMAudio models if loaded
-    4. Empty CUDA cache + gc.collect
 
-    Uses a re-entrancy guard (``_freeing_vram``) to prevent infinite
-    recursion — ``mmaudio_synthesizer._free_vram()`` calls back into
-    ``flux_klein_editor.cleanup()``.
+    Delegates to the shared ``_vram_utils.free_for_module`` which handles
+    ComfyUI eviction, cross-synthesizer cleanup, and CUDA cache clearing
+    with a re-entrancy guard.
     """
-    global _freeing_vram
-    if _freeing_vram:
-        return
-    _freeing_vram = True
     try:
-        import torch
-
-        # 1. Unload ComfyUI models (the main VRAM consumer)
-        try:
-            import comfy.model_management as mm  # type: ignore[import-not-found]
-            mm.unload_all_models()
-            mm.soft_empty_cache()
-            log.debug("Freed ComfyUI GPU VRAM via model_management")
-        except (ImportError, AttributeError):
-            pass
-
-        # 2. Free SAM3 if loaded
-        try:
-            try:
-                from . import sam3_masker
-            except ImportError:
-                from core import sam3_masker  # type: ignore
-            sam3_masker.cleanup()
-        except Exception:
-            pass
-
-        # 3. Free MMAudio if loaded
-        try:
-            try:
-                from . import mmaudio_synthesizer
-            except ImportError:
-                from core import mmaudio_synthesizer  # type: ignore
-            mmaudio_synthesizer.cleanup()
-        except Exception:
-            pass
-
-        # 4. Free MuseTalk if loaded
-        try:
-            try:
-                from . import musetalk_synthesizer
-            except ImportError:
-                from core import musetalk_synthesizer  # type: ignore
-            musetalk_synthesizer.cleanup()
-        except Exception:
-            pass
-
-        # 5. Free LivePortrait if loaded
-        try:
-            try:
-                from . import liveportrait_synthesizer
-            except ImportError:
-                from core import liveportrait_synthesizer  # type: ignore
-            liveportrait_synthesizer.cleanup()
-        except Exception:
-            pass
-
-        # 6. Empty CUDA cache + gc.collect
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        gc.collect()
-    finally:
-        _freeing_vram = False
+        from ._vram_utils import free_for_module
+    except ImportError:
+        from core._vram_utils import free_for_module  # type: ignore
+    free_for_module(exclude="flux_klein_editor")
 
 
 # ---------------------------------------------------------------------------
@@ -279,7 +215,14 @@ def load_pipeline():
         str(model_dir),
         torch_dtype=dtype,
     )
-    pipe.enable_model_cpu_offload()  # Save VRAM by offloading to CPU
+    # Sequential offload moves individual *layers* to GPU one at a time,
+    # keeping peak VRAM at ~2-3 GB instead of ~8+ GB.
+    # We cannot use enable_model_cpu_offload() because Klein's __call__
+    # invokes vae.encode() for the reference image BEFORE the transformer
+    # denoising loop, but model_cpu_offload_seq is "text_encoder->
+    # transformer->vae" — so the text_encoder stays on GPU during VAE
+    # encoding, blowing past 12 GB cards.
+    pipe.enable_sequential_cpu_offload()
 
     _pipeline = pipe
     log.info("FLUX Klein pipeline loaded successfully (dtype=%s)", dtype)
@@ -547,6 +490,7 @@ def _edit_frame(
     image,
     prompt: str,
     seed: int = 42,
+    reference_images: "list | None" = None,
 ):
     """Edit a single frame using FLUX Klein reference-image conditioning.
 
@@ -555,6 +499,9 @@ def _edit_frame(
         image: PIL.Image.Image — source frame (used as reference)
         prompt: Text describing the desired edit
         seed: Random seed for reproducibility
+        reference_images: Optional list of extra PIL.Image.Image references.
+            When provided they are prepended to Klein's ``image`` list so
+            they condition the generation alongside the source frame.
 
     Returns:
         PIL.Image.Image — edited result at the original resolution
@@ -567,12 +514,21 @@ def _edit_frame(
     # Resize to model's expected resolution
     ref_image = image.resize((_OUTPUT_SIZE, _OUTPUT_SIZE), Image.LANCZOS)  # type: ignore[attr-defined]
 
+    # Build the image list: extra references first, then the source frame
+    image_list: list = []
+    if reference_images:
+        for ri in reference_images:
+            image_list.append(
+                ri.resize((_OUTPUT_SIZE, _OUTPUT_SIZE), Image.LANCZOS)  # type: ignore[attr-defined]
+            )
+    image_list.append(ref_image)
+
     device = pipe._execution_device if hasattr(pipe, '_execution_device') else "cuda"
     generator = torch.Generator(device=device).manual_seed(seed)
 
     result = pipe(
         prompt=prompt,
-        image=[ref_image],
+        image=image_list,
         height=_OUTPUT_SIZE,
         width=_OUTPUT_SIZE,
         guidance_scale=_GUIDANCE_SCALE,
@@ -711,13 +667,64 @@ def remove_object(
     )
 
 
+def edit_single_image(
+    image_path: str,
+    prompt: str,
+    output_path: Optional[str] = None,
+    seed: int = 42,
+    reference_images: "list | None" = None,
+) -> str:
+    """Edit a single image using FLUX Klein (no mask, full-frame).
+
+    Loads the image, runs Klein reference-image-conditioned editing,
+    and saves the result.  Designed for the ``flux_klein`` no_llm_mode
+    when the input is a single image rather than a video.
+
+    Args:
+        image_path: path to the source image
+        prompt: text describing the desired edit
+        output_path: output path (auto-generated if None)
+        seed: random seed for reproducibility
+        reference_images: optional list of extra PIL images to condition on
+
+    Returns:
+        Path to the edited image.
+    """
+    from PIL import Image
+
+    image_path = validate_video_path(image_path)  # reuses path validation
+    if output_path is not None:
+        output_path = validate_output_file_path(output_path)
+
+    if output_path is None:
+        tmpdir = tempfile.mkdtemp(prefix="fk_img_")
+        output_path = os.path.join(tmpdir, "edited.png")
+
+    image = Image.open(image_path).convert("RGB")
+
+    try:
+        pipe = load_pipeline()
+
+        import torch
+        with torch.no_grad():
+            result = _edit_frame(pipe, image, prompt, seed=seed, reference_images=reference_images)
+
+        result.save(output_path)
+        log.info("FLUX Klein single-image edit complete: %s", output_path)
+        return output_path
+    finally:
+        # Always free pipeline (~8 GB VRAM) after use, matching edit_video().
+        cleanup()
+
+
 def edit_video(
     video_path: str,
-    mask_video_path: str,
-    prompt: str,
+    mask_video_path: Optional[str] = None,
+    prompt: str = "",
     output_path: Optional[str] = None,
     mode: str = "edit",
     smoothing: str = "none",
+    reference_images: "list | None" = None,
 ) -> str:
     """Edit a video using FLUX Klein per-frame image editing.
 
@@ -725,9 +732,15 @@ def edit_video(
     - "remove": fills masked regions with surrounding context
     - "edit": applies text-guided changes to masked regions
 
+    When ``mask_video_path`` is ``None``, runs full-frame editing on
+    every frame without compositing — the raw Klein output replaces
+    the original frame entirely.  This is useful for testing temporal
+    consistency and for standalone no-LLM mode.
+
     Args:
         video_path: path to the original video
-        mask_video_path: path to the mask video (white = region to edit)
+        mask_video_path: path to the mask video (white = region to edit),
+            or None for full-frame editing
         prompt: text prompt describing the desired edit
         output_path: output path (auto-generated if None)
         mode: "remove" or "edit"
@@ -742,9 +755,12 @@ def edit_video(
         Path to the edited video.
     """
     video_path = validate_video_path(video_path)
-    mask_video_path = validate_video_path(mask_video_path)
+    if mask_video_path is not None:
+        mask_video_path = validate_video_path(mask_video_path)
     if output_path is not None:
         output_path = validate_output_file_path(output_path)
+
+    maskless = mask_video_path is None
 
     import numpy as np
     from PIL import Image
@@ -762,77 +778,94 @@ def edit_video(
         total_frames, fps, frames[0].width, frames[0].height,
     )
 
-    # Load masks
-    log.info("Loading mask frames from %s", mask_video_path)
+    # Load masks (skip for full-frame / maskless mode)
     masks_tmpdir = None
     comp_tmpdir = None
+    masks = None
 
     try:
-        masks, masks_tmpdir = _load_mask_frames(mask_video_path, total_frames)
+        if not maskless:
+            log.info("Loading mask frames from %s", mask_video_path)
+            masks, masks_tmpdir = _load_mask_frames(mask_video_path, total_frames)
 
         # Load pipeline
         pipe = load_pipeline()
+
+        # Flush VRAM fragments left by pipeline + model load so the
+        # subsequent VAE encode has enough contiguous memory.
+        import torch
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         # Use a fixed seed for temporal consistency across frames
         base_seed = 42
 
         # Per-frame processing — write composited frames to disk to
         # avoid accumulating ~135 MiB of numpy arrays in memory.
-        log.info("Running FLUX Klein %s on %d frames...", mode, total_frames)
+        _mode_label = "full-frame edit" if maskless else mode
+        log.info("Running FLUX Klein %s on %d frames...", _mode_label, total_frames)
         comp_tmpdir = tempfile.mkdtemp(prefix="fk_comp_")
         mask_np_list = []
-
-        import torch
 
         for i in range(total_frames):
             if i % 10 == 0:
                 log.info("  Frame %d/%d", i + 1, total_frames)
 
             frame_i = frames[i]
-            mask_i = masks[i]
 
-            # Check if mask has any content (skip blank masks)
-            mask_arr = np.array(mask_i)
-            if mask_arr.max() < 10:
-                Image.fromarray(np.array(frame_i)).save(
+            if maskless:
+                # Full-frame mode — edit entire frame, no compositing
+                with torch.no_grad():
+                    edited = _edit_frame(pipe, frame_i, prompt, seed=base_seed, reference_images=reference_images)
+                edited.save(os.path.join(comp_tmpdir, f"{i:06d}.png"))
+                del edited
+                frames[i] = None  # type: ignore[assignment]
+            else:
+                mask_i = masks[i]
+
+                # Check if mask has any content (skip blank masks)
+                mask_arr = np.array(mask_i)
+                if mask_arr.max() < 10:
+                    Image.fromarray(np.array(frame_i)).save(
+                        os.path.join(comp_tmpdir, f"{i:06d}.png")
+                    )
+                    mask_np_list.append(
+                        np.zeros(
+                            (frame_i.height, frame_i.width),
+                            dtype=np.float32,
+                        )
+                    )
+                    # Release PIL sources immediately
+                    frames[i] = None  # type: ignore[assignment]
+                    masks[i] = None  # type: ignore[assignment]
+                    continue
+
+                # Edit or remove the frame (no_grad prevents autograd from
+                # accumulating graph memory across frames)
+                with torch.no_grad():
+                    if mode == "remove":
+                        edited = _remove_frame(pipe, frame_i, mask_i, seed=base_seed)
+                    else:
+                        edited = _edit_frame(pipe, frame_i, prompt, seed=base_seed, reference_images=reference_images)
+
+                # Composite and write to disk
+                result = _composite_frame(frame_i, edited, mask_i)
+                Image.fromarray(result).save(
                     os.path.join(comp_tmpdir, f"{i:06d}.png")
                 )
-                mask_np_list.append(
-                    np.zeros(
-                        (frame_i.height, frame_i.width),
-                        dtype=np.float32,
-                    )
-                )
-                # Release PIL sources immediately
+                del edited, result  # drop refs before cache flush
+
+                mask_np = np.array(
+                    mask_i.resize(frame_i.size, Image.NEAREST)  # type: ignore[attr-defined]
+                    if mask_i.size != frame_i.size
+                    else mask_i
+                ).astype(np.float32) / 255.0
+                mask_np_list.append(mask_np)
+
+                # Release PIL sources — they're only needed once
                 frames[i] = None  # type: ignore[assignment]
                 masks[i] = None  # type: ignore[assignment]
-                continue
-
-            # Edit or remove the frame (no_grad prevents autograd from
-            # accumulating graph memory across frames)
-            with torch.no_grad():
-                if mode == "remove":
-                    edited = _remove_frame(pipe, frame_i, mask_i, seed=base_seed)
-                else:
-                    edited = _edit_frame(pipe, frame_i, prompt, seed=base_seed)
-
-            # Composite and write to disk
-            result = _composite_frame(frame_i, edited, mask_i)
-            Image.fromarray(result).save(
-                os.path.join(comp_tmpdir, f"{i:06d}.png")
-            )
-            del edited, result  # drop refs before cache flush
-
-            mask_np = np.array(
-                mask_i.resize(frame_i.size, Image.NEAREST)  # type: ignore[attr-defined]
-                if mask_i.size != frame_i.size
-                else mask_i
-            ).astype(np.float32) / 255.0
-            mask_np_list.append(mask_np)
-
-            # Release PIL sources — they're only needed once
-            frames[i] = None  # type: ignore[assignment]
-            masks[i] = None  # type: ignore[assignment]
 
             # Per-frame cleanup: gc.collect + empty_cache every frame to
             # minimise OOM risk.  Adds ~10-50 ms/frame overhead but avoids
@@ -841,8 +874,8 @@ def edit_video(
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
-        # Temporal smoothing
-        if smoothing != "none":
+        # Temporal smoothing (only applicable in masked mode)
+        if not maskless and smoothing != "none":
             # Reload composited frames from disk for smoothing pass
             comp_files = sorted(Path(comp_tmpdir).glob("*.png"))
             composited_np = [np.array(Image.open(f)) for f in comp_files]
@@ -865,8 +898,11 @@ def edit_video(
             del smoothed
             del mask_np_list  # free ~2.4 GB for 1080p/300-frame videos
         else:
-            log.info("Temporal smoothing disabled")
-            del mask_np_list  # free ~2.4 GB for 1080p/300-frame videos
+            if maskless:
+                log.info("Full-frame mode — temporal smoothing skipped")
+            else:
+                log.info("Temporal smoothing disabled")
+            del mask_np_list  # free mask list (empty in maskless mode)
 
         # Encode directly from the composited frames directory
         log.info("Encoding edited video to %s", output_path)
@@ -885,6 +921,6 @@ def edit_video(
         # The pipeline is re-loaded on next call via load_pipeline().
         cleanup()
 
-    log.info("FLUX Klein %s complete: %s", mode, output_path)
+    log.info("FLUX Klein %s complete: %s", "full-frame edit" if maskless else mode, output_path)
     return output_path
 

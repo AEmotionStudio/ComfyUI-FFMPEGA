@@ -16,6 +16,7 @@ Architecture:
 
 from __future__ import annotations
 
+import atexit
 import hashlib
 import json
 import logging
@@ -62,6 +63,22 @@ _FALLBACK_FPS_GUESS = 30
 
 # Time-to-live (seconds) for selected-frame PNGs before cleanup
 _STALE_FRAME_TTL = 60
+
+# Track temp paths for cleanup at exit — a single atexit handler
+# iterates this set rather than accumulating one handler per path.
+_registered_atexit_paths: set[str] = set()
+_atexit_registered = False
+
+
+def _cleanup_registered_temps() -> None:
+    """Remove all registered temp files at interpreter exit."""
+    for p in list(_registered_atexit_paths):
+        try:
+            if os.path.isfile(p):
+                os.remove(p)
+        except OSError:
+            pass
+    _registered_atexit_paths.clear()
 
 # Module-level timestamps for rate-limiting stale-frame cleanup.
 # Each cleanup site tracks its own timestamp so they run independently.
@@ -364,6 +381,10 @@ class LoadLastVideo:
             },
             "hidden": {
                 "_selected_timestamps": ("STRING", {"default": "[]"}),
+                "_edit_segments": ("STRING", {"default": "[]"}),
+                "_edit_action": ("STRING", {"default": "none"}),
+                "_crop_rect": ("STRING", {"default": ""}),
+                "_speed_map": ("STRING", {"default": "{}"}),
             },
         }
 
@@ -396,6 +417,11 @@ class LoadLastVideo:
         m.update(str(kwargs.get("_selected_timestamps", "[]")).encode())
         m.update(str(kwargs.get("frame_select_mode", "manual")).encode())
         m.update(str(kwargs.get("auto_timestamps", "")).encode())
+        # Include edit state so the node re-runs when edits change
+        m.update(str(kwargs.get("_edit_segments", "[]")).encode())
+        m.update(str(kwargs.get("_edit_action", "none")).encode())
+        m.update(str(kwargs.get("_crop_rect", "")).encode())
+        m.update(str(kwargs.get("_speed_map", "{}")).encode())
         return m.hexdigest()
 
     def load(
@@ -411,6 +437,10 @@ class LoadLastVideo:
         auto_timestamps: str = "",
         pause_for_selection: bool = False,
         _selected_timestamps: str = "[]",
+        _edit_segments: str = "[]",
+        _edit_action: str = "none",
+        _crop_rect: str = "",
+        _speed_map: str = "{}",
     ):
         from .processing.video_decode import VideoDecoder
         from .processing.audio_extract import AudioExtractor
@@ -477,6 +507,13 @@ class LoadLastVideo:
             return {"ui": {"video": [], "gifs": []}, "result": empty_result}
 
         logger.info("[LoadLast] Loading video: %s", resolved_path)
+
+        # --- Apply inline edits (trim/crop/speed) if present ---
+        if _edit_action == "passthrough":
+            resolved_path = self._apply_edits(
+                resolved_path,
+                _edit_segments, _crop_rect, _speed_map,
+            )
 
         # --- Decode frames via VideoDecoder ---
         decoder = VideoDecoder()
@@ -581,6 +618,80 @@ class LoadLastVideo:
                 frame_count, fps, duration,
             ),
         }
+
+    def _apply_edits(
+        self,
+        source_path: str,
+        segments_json: str,
+        crop_json: str,
+        speed_map_json: str,
+    ) -> str:
+        """Apply inline edits (trim/crop/speed) via the Video Editor render pipeline.
+
+        Returns the path to the edited temp video, or the original path
+        if no real edits are detected or rendering fails.
+        """
+        # Quick check: are there actually any edits?
+        has_real_edits = (
+            segments_json != "[]"
+            or (crop_json and crop_json.strip() and crop_json != "{}")
+            or self._has_speed_changes(speed_map_json)
+        )
+        if not has_real_edits:
+            return source_path
+
+        try:
+            from ..videoeditor.processing.export import render_edits
+
+            temp_dir = folder_paths.get_temp_directory() if folder_paths else "/tmp"
+            os.makedirs(temp_dir, exist_ok=True)
+            # Use a deterministic filename based on the source path so
+            # repeated edits of the same video overwrite instead of
+            # accumulating files.  Register for atexit cleanup once.
+            source_hash = hashlib.sha256(source_path.encode()).hexdigest()[:12]
+            output_path = os.path.join(
+                temp_dir,
+                f"loadlast_edit_{source_hash}.mp4",
+            )
+
+            result = render_edits(
+                source_path,
+                output_path,
+                segments_json=segments_json,
+                crop_json=crop_json,
+                speed_map_json=speed_map_json,
+                volume=1.0,
+                text_overlays_json="[]",
+                transitions_json="[]",
+            )
+
+            if result.get("success") and os.path.isfile(output_path):
+                logger.info("[LoadLast] Edits applied → %s", output_path)
+                if output_path not in _registered_atexit_paths:
+                    _registered_atexit_paths.add(output_path)
+                    global _atexit_registered
+                    if not _atexit_registered:
+                        atexit.register(_cleanup_registered_temps)
+                        _atexit_registered = True
+                return output_path
+            else:
+                logger.warning(
+                    "[LoadLast] Edit render failed: %s — using original",
+                    result.get("error", "unknown"),
+                )
+                return source_path
+        except Exception as e:
+            logger.warning("[LoadLast] Edit apply failed: %s — using original", e)
+            return source_path
+
+    @staticmethod
+    def _has_speed_changes(speed_map_json: str) -> bool:
+        """Check if any segment has a non-1.0 speed."""
+        try:
+            from ..videoeditor.processing.export import has_speed_changes
+            return has_speed_changes(speed_map_json)
+        except ImportError:
+            return False
 
     def _resolve_timestamps(
         self,

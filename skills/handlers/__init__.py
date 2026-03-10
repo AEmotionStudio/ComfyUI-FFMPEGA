@@ -23,6 +23,18 @@ from .animate_portrait import (  # noqa: F401
     _f_animate_portrait,
 )
 
+from .marigold import (  # noqa: F401
+    _f_marigold,
+)
+
+from .video_depth import (  # noqa: F401
+    _f_video_depth,
+)
+
+from .upscale import (  # noqa: F401
+    _f_ai_upscale,
+)
+
 from .multi_input import (  # noqa: F401
     _f_grid,
     _f_slideshow,

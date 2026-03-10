@@ -1,9 +1,10 @@
 import { app } from "../../scripts/app.js";
 import { u as updateDynamicSlots, S as SLOT_LABELS, s as setPrompt, R as RANDOM_PROMPTS, f as flashNode, h as handlePaste, c as createUploadButton, a as addDownloadOverlay, b as addVideoPreviewMenu } from "./_chunks/ui_helpers-CvUDB6-L.js";
 import { api } from "../../scripts/api.js";
+import { C as CropOverlay } from "./_chunks/CropOverlay-RBSIEwzt.js";
 const NODE_COLORS = {
   "FFMPEGAPreview": ["#3a5a3a", "#2a4a2a"],
-  "FFMPEGAVideoToPath": ["#3a5a4a", "#2a4a3a"],
+  "FFMPEGAMediaBridge": ["#3a5a4a", "#2a4a3a"],
   "FFMPEGABatchProcessor": ["#5a3a3a", "#4a2a2a"],
   "FFMPEGAVideoInfo": ["#4a4a3a", "#3a3a2a"],
   "LoadLastImage": ["#5a4a3a", "#4a3a2a"]
@@ -13,7 +14,7 @@ function registerNodeStyling(nodeType, nodeData) {
   if (!colors) return false;
   const [color, bgcolor] = colors;
   const onNodeCreated = nodeType.prototype.onNodeCreated;
-  nodeType.prototype.onNodeCreated = function () {
+  nodeType.prototype.onNodeCreated = function() {
     const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
     this.color = color;
     this.bgcolor = bgcolor;
@@ -286,8 +287,8 @@ function buildPresetMenu(node) {
 function registerAgentNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGAgent") return;
   const onNodeCreated = nodeType.prototype.onNodeCreated;
-  nodeType.prototype.onNodeCreated = function () {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D;
+  nodeType.prototype.onNodeCreated = function() {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G;
     const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
     const node = this;
     this.color = "#2a3a5a";
@@ -302,7 +303,7 @@ function registerAgentNode(nodeType, nodeData) {
     };
     const llmWidget = (_a = this.widgets) == null ? void 0 : _a.find((w) => w.name === "llm_model");
     if (llmWidget) {
-      let updateLlmVisibility = function () {
+      let updateLlmVisibility = function() {
         var _a2;
         const model = llmWidget.value;
         const isNone = model === "none";
@@ -313,7 +314,19 @@ function registerAgentNode(nodeType, nodeData) {
         if (visionWidget) toggleWidget(visionWidget, !isNone);
         if (ptcWidget) toggleWidget(ptcWidget, !isNone);
         const noLlmModeWidget = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "no_llm_mode");
-        if (noLlmModeWidget) toggleWidget(noLlmModeWidget, isNone);
+        if (noLlmModeWidget) {
+          toggleWidget(noLlmModeWidget, isNone);
+          if (!noLlmModeWidget._cbHooked) {
+            noLlmModeWidget._cbHooked = true;
+            const origNoLlmCb = noLlmModeWidget.callback;
+            noLlmModeWidget.callback = function(...args) {
+              origNoLlmCb == null ? void 0 : origNoLlmCb.apply(this, args);
+              updateNoLlmModeVisibility();
+              fitHeight();
+            };
+          }
+        }
+        updateNoLlmModeVisibility();
         fitHeight();
       };
       const customWidget = (_b = this.widgets) == null ? void 0 : _b.find((w) => w.name === "custom_model");
@@ -324,7 +337,7 @@ function registerAgentNode(nodeType, nodeData) {
       const ptcWidget = (_g = this.widgets) == null ? void 0 : _g.find((w) => w.name === "ptc_mode");
       updateLlmVisibility();
       const origLlmCb = llmWidget.callback;
-      llmWidget.callback = function (...args) {
+      llmWidget.callback = function(...args) {
         origLlmCb == null ? void 0 : origLlmCb.apply(this, args);
         updateLlmVisibility();
       };
@@ -332,13 +345,13 @@ function registerAgentNode(nodeType, nodeData) {
     const saveWidget = (_h = this.widgets) == null ? void 0 : _h.find((w) => w.name === "save_output");
     const outputPathWidget = (_i = this.widgets) == null ? void 0 : _i.find((w) => w.name === "output_path");
     if (saveWidget && outputPathWidget) {
-      let updateSaveVisibility = function () {
+      let updateSaveVisibility = function() {
         toggleWidget(outputPathWidget, Boolean(saveWidget.value));
         fitHeight();
       };
       updateSaveVisibility();
       const origSaveCb = saveWidget.callback;
-      saveWidget.callback = function (...args) {
+      saveWidget.callback = function(...args) {
         origSaveCb == null ? void 0 : origSaveCb.apply(this, args);
         updateSaveVisibility();
       };
@@ -364,6 +377,26 @@ function registerAgentNode(nodeType, nodeData) {
     const allowDownloadsWidget = (_B = this.widgets) == null ? void 0 : _B.find((w) => w.name === "allow_model_downloads");
     const fluxSmoothingWidget = (_C = this.widgets) == null ? void 0 : _C.find((w) => w.name === "flux_smoothing");
     const mmaudioModeWidget = (_D = this.widgets) == null ? void 0 : _D.find((w) => w.name === "mmaudio_mode");
+    (_E = this.widgets) == null ? void 0 : _E.find((w) => w.name === "marigold_output_type");
+    (_F = this.widgets) == null ? void 0 : _F.find((w) => w.name === "video_depth_encoder");
+    (_G = this.widgets) == null ? void 0 : _G.find((w) => w.name === "video_depth_colormap");
+    function updateNoLlmModeVisibility() {
+      var _a2, _b2, _c2, _d2, _e2, _f2;
+      const adv = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "advanced_options");
+      const showAdvanced = Boolean(adv == null ? void 0 : adv.value);
+      const llm = (_b2 = node.widgets) == null ? void 0 : _b2.find((w) => w.name === "llm_model");
+      const isNone = (llm == null ? void 0 : llm.value) === "none";
+      const noLlmMode = (_c2 = node.widgets) == null ? void 0 : _c2.find((w) => w.name === "no_llm_mode");
+      const mode = isNone ? String((noLlmMode == null ? void 0 : noLlmMode.value) ?? "manual") : "";
+      const showMarigold = showAdvanced && mode === "marigold";
+      const showVda = showAdvanced && mode === "video_depth";
+      const mw = (_d2 = node.widgets) == null ? void 0 : _d2.find((w) => w.name === "marigold_output_type");
+      const ve = (_e2 = node.widgets) == null ? void 0 : _e2.find((w) => w.name === "video_depth_encoder");
+      const vc = (_f2 = node.widgets) == null ? void 0 : _f2.find((w) => w.name === "video_depth_colormap");
+      if (mw) toggleWidget(mw, showMarigold);
+      if (ve) toggleWidget(ve, showVda);
+      if (vc) toggleWidget(vc, showVda);
+    }
     function updateAdvancedVisibility() {
       const show = Boolean(advancedWidget == null ? void 0 : advancedWidget.value);
       if (previewWidget) toggleWidget(previewWidget, show);
@@ -385,18 +418,19 @@ function registerAgentNode(nodeType, nodeData) {
       if (trackTokensWidget) toggleWidget(trackTokensWidget, show);
       if (logUsageWidget) toggleWidget(logUsageWidget, show);
       if (allowDownloadsWidget) toggleWidget(allowDownloadsWidget, show);
+      updateNoLlmModeVisibility();
       fitHeight();
     }
     if (advancedWidget) {
       updateAdvancedVisibility();
       const origAdvCb = advancedWidget.callback;
-      advancedWidget.callback = function (...args) {
+      advancedWidget.callback = function(...args) {
         origAdvCb == null ? void 0 : origAdvCb.apply(this, args);
         updateAdvancedVisibility();
       };
     }
     if (batchWidget) {
-      let updateBatchVisibility = function () {
+      let updateBatchVisibility = function() {
         const showAdvanced = Boolean((advancedWidget == null ? void 0 : advancedWidget.value) ?? true);
         const show = Boolean(batchWidget.value) && showAdvanced;
         if (folderWidget) toggleWidget(folderWidget, show);
@@ -406,13 +440,13 @@ function registerAgentNode(nodeType, nodeData) {
       };
       updateBatchVisibility();
       const origBatchCb = batchWidget.callback;
-      batchWidget.callback = function (...args) {
+      batchWidget.callback = function(...args) {
         origBatchCb == null ? void 0 : origBatchCb.apply(this, args);
         updateBatchVisibility();
       };
     }
     const origOnConnectionsChange = this.onConnectionsChange;
-    this.onConnectionsChange = function (type, slotIndex, isConnected, link, ioSlot) {
+    this.onConnectionsChange = function(type, slotIndex, isConnected, link, ioSlot) {
       origOnConnectionsChange == null ? void 0 : origOnConnectionsChange.apply(this, arguments);
       if (type === LiteGraph.INPUT) {
         updateDynamicSlots(this, "images_", "IMAGE", []);
@@ -425,7 +459,7 @@ function registerAgentNode(nodeType, nodeData) {
       }
     };
     const origOnConfigure = this.onConfigure;
-    this.onConfigure = function (info) {
+    this.onConfigure = function(info) {
       origOnConfigure == null ? void 0 : origOnConfigure.apply(this, arguments);
       if (info == null ? void 0 : info.inputs) {
         const existingNames = new Set(this.inputs.map((i) => i.name));
@@ -483,7 +517,7 @@ function registerAgentNode(nodeType, nodeData) {
     return result;
   };
   const origGetExtraMenuOptions = nodeType.prototype.getExtraMenuOptions;
-  nodeType.prototype.getExtraMenuOptions = function (_, options) {
+  nodeType.prototype.getExtraMenuOptions = function(_, options) {
     origGetExtraMenuOptions == null ? void 0 : origGetExtraMenuOptions.apply(this, arguments);
     if (this._previousPrompt) {
       options.unshift({
@@ -592,7 +626,7 @@ function formatTime(sec) {
 function registerFrameExtractNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGAFrameExtract") return;
   const onNodeCreated = nodeType.prototype.onNodeCreated;
-  nodeType.prototype.onNodeCreated = function () {
+  nodeType.prototype.onNodeCreated = function() {
     const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
     const node = this;
     this.color = "#2a4a5a";
@@ -667,7 +701,7 @@ function registerFrameExtractNode(nodeType, nodeData) {
       }
     );
     previewWidget.aspectRatio = null;
-    previewWidget.computeSize = function (width) {
+    previewWidget.computeSize = function(width) {
       if (this.aspectRatio && previewContainer.style.display !== "none") {
         const h = (node.size[0] - 20) / this.aspectRatio + 10;
         return [width, Math.max(h, 0) + 30];
@@ -747,7 +781,7 @@ function registerFrameExtractNode(nodeType, nodeData) {
     }, 500);
     setTimeout(updateLivePreview, 300);
     const origOnExecuted = this.onExecuted;
-    this.onExecuted = function (data) {
+    this.onExecuted = function(data) {
       var _a, _b;
       origOnExecuted == null ? void 0 : origOnExecuted.apply(this, arguments);
       if ((_a = data == null ? void 0 : data.video) == null ? void 0 : _a[0]) {
@@ -770,7 +804,7 @@ function registerFrameExtractNode(nodeType, nodeData) {
       }
     };
     const origOnRemoved = this.onRemoved;
-    this.onRemoved = function () {
+    this.onRemoved = function() {
       clearInterval(pollInterval);
       fileInput == null ? void 0 : fileInput.remove();
       origOnRemoved == null ? void 0 : origOnRemoved.apply(this, arguments);
@@ -952,7 +986,7 @@ function formatTimeLV(sec) {
 function registerLoadVideoNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGALoadVideoPath") return;
   const onNodeCreated = nodeType.prototype.onNodeCreated;
-  nodeType.prototype.onNodeCreated = function () {
+  nodeType.prototype.onNodeCreated = function() {
     var _a;
     const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
     const node = this;
@@ -984,7 +1018,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
       node.setDirtyCanvas(true, true);
     });
     const origOnCC = this.onConnectionsChange;
-    this.onConnectionsChange = function (type, slotIndex, isConnected, link, ioSlot) {
+    this.onConnectionsChange = function(type, slotIndex, isConnected, link, ioSlot) {
       var _a2, _b;
       origOnCC == null ? void 0 : origOnCC.apply(this, arguments);
       if (type === LiteGraph.INPUT) {
@@ -995,7 +1029,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
       }
     };
     const origConfigure = this.onConfigure;
-    this.onConfigure = function (data) {
+    this.onConfigure = function(data) {
       origConfigure == null ? void 0 : origConfigure.apply(this, arguments);
       requestAnimationFrame(_syncDynamicOutputs);
     };
@@ -1206,7 +1240,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
       }
     );
     previewWidget.aspectRatio = null;
-    previewWidget.computeSize = function (width) {
+    previewWidget.computeSize = function(width) {
       if (this.aspectRatio && previewContainer.style.display !== "none") {
         const h = (node.size[0] - 20) / this.aspectRatio + 10;
         return [width, Math.max(h, 0) + 30];
@@ -1244,7 +1278,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
       (w) => w.name === "video"
     );
     const origOnRemoved = this.onRemoved;
-    this.onRemoved = function () {
+    this.onRemoved = function() {
       clearInterval(lvPollInterval);
       fileInput == null ? void 0 : fileInput.remove();
       origOnRemoved == null ? void 0 : origOnRemoved.apply(this, arguments);
@@ -1368,7 +1402,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
     };
     if (videoWidget) {
       const origCallback = videoWidget.callback;
-      videoWidget.callback = function (value) {
+      videoWidget.callback = function(value) {
         origCallback == null ? void 0 : origCallback.apply(this, arguments);
         updatePreview(value);
       };
@@ -1377,7 +1411,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
       }
     }
     const origOnExecuted = this.onExecuted;
-    this.onExecuted = function (data) {
+    this.onExecuted = function(data) {
       var _a2, _b;
       origOnExecuted == null ? void 0 : origOnExecuted.apply(this, arguments);
       if ((_a2 = data == null ? void 0 : data.video) == null ? void 0 : _a2[0]) {
@@ -1411,7 +1445,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
 function registerSaveVideoNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGASaveVideo") return;
   const onNodeCreated = nodeType.prototype.onNodeCreated;
-  nodeType.prototype.onNodeCreated = function () {
+  nodeType.prototype.onNodeCreated = function() {
     const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
     const node = this;
     this.color = "#2a5a3a";
@@ -1495,7 +1529,7 @@ function registerSaveVideoNode(nodeType, nodeData) {
       }
     );
     previewWidget.aspectRatio = null;
-    previewWidget.computeSize = function (width) {
+    previewWidget.computeSize = function(width) {
       if (this.aspectRatio && previewContainer.style.display !== "none") {
         const h = (node.size[0] - 20) / this.aspectRatio + 10;
         return [width, Math.max(h, 0) + 30];
@@ -1503,7 +1537,7 @@ function registerSaveVideoNode(nodeType, nodeData) {
       return [width, -4];
     };
     const origOnExecuted = this.onExecuted;
-    this.onExecuted = function (data) {
+    this.onExecuted = function(data) {
       var _a, _b;
       origOnExecuted == null ? void 0 : origOnExecuted.apply(this, arguments);
       if ((_a = data == null ? void 0 : data.video) == null ? void 0 : _a[0]) {
@@ -2037,7 +2071,7 @@ function openPointSelector(node, imgSrc, _videoSrc) {
 function registerLoadImageNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGALoadImagePath") return;
   const origOnCreatedImg = nodeType.prototype.onNodeCreated;
-  nodeType.prototype.onNodeCreated = function () {
+  nodeType.prototype.onNodeCreated = function() {
     const result = origOnCreatedImg == null ? void 0 : origOnCreatedImg.apply(this, arguments);
     const node = this;
     this.color = "#3a5a5a";
@@ -2061,7 +2095,7 @@ function registerLoadImageNode(nodeType, nodeData) {
       node.setDirtyCanvas(true, true);
     });
     const origOnCCImg = this.onConnectionsChange;
-    this.onConnectionsChange = function (type, slotIndex, isConnected, link, ioSlot) {
+    this.onConnectionsChange = function(type, slotIndex, isConnected, link, ioSlot) {
       var _a, _b;
       origOnCCImg == null ? void 0 : origOnCCImg.apply(this, arguments);
       if (type === LiteGraph.INPUT) {
@@ -2072,12 +2106,12 @@ function registerLoadImageNode(nodeType, nodeData) {
       }
     };
     const origConfigureImg = this.onConfigure;
-    this.onConfigure = function (data) {
+    this.onConfigure = function(data) {
       origConfigureImg == null ? void 0 : origConfigureImg.apply(this, arguments);
       requestAnimationFrame(_syncImagesOutput);
     };
     const origOnExecutedImg = this.onExecuted;
-    this.onExecuted = function (data) {
+    this.onExecuted = function(data) {
       var _a, _b, _c, _d;
       origOnExecutedImg == null ? void 0 : origOnExecutedImg.apply(this, arguments);
       if ((_a = data == null ? void 0 : data.images) == null ? void 0 : _a[0]) {
@@ -2105,7 +2139,7 @@ function registerLoadImageNode(nodeType, nodeData) {
     return result;
   };
   const origGetMenuImg = nodeType.prototype.getExtraMenuOptions;
-  nodeType.prototype.getExtraMenuOptions = function (_, options) {
+  nodeType.prototype.getExtraMenuOptions = function(_, options) {
     origGetMenuImg == null ? void 0 : origGetMenuImg.apply(this, arguments);
     const self = this;
     options.unshift({
@@ -2264,13 +2298,13 @@ function applyPreset(node, preset) {
       w.inputEl.value = String(val);
       w.inputEl.dispatchEvent(new Event("input", { bubbles: true }));
     } else if (w.element) {
-      const el = w.element;
-      const tag = (_b = el.tagName) == null ? void 0 : _b.toLowerCase();
+      const el2 = w.element;
+      const tag = (_b = el2.tagName) == null ? void 0 : _b.toLowerCase();
       if (tag === "textarea" || tag === "input") {
-        el.value = String(val);
-        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el2.value = String(val);
+        el2.dispatchEvent(new Event("input", { bubbles: true }));
       } else {
-        const input = (_c = el.querySelector) == null ? void 0 : _c.call(el, "textarea, input");
+        const input = (_c = el2.querySelector) == null ? void 0 : _c.call(el2, "textarea, input");
         if (input) {
           input.value = String(val);
           input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -2331,7 +2365,7 @@ async function deleteCustomPreset(node, customPresets, presetName) {
 function registerTextInputNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGATextInput") return;
   const onNodeCreated = nodeType.prototype.onNodeCreated;
-  nodeType.prototype.onNodeCreated = function () {
+  nodeType.prototype.onNodeCreated = function() {
     var _a;
     const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
     const node = this;
@@ -2468,7 +2502,7 @@ function registerTextInputNode(nodeType, nodeData) {
     _customPresets = [];
   });
   const origGetMenuText = nodeType.prototype.getExtraMenuOptions;
-  nodeType.prototype.getExtraMenuOptions = function (_, options) {
+  nodeType.prototype.getExtraMenuOptions = function(_, options) {
     origGetMenuText == null ? void 0 : origGetMenuText.apply(this, arguments);
     const self = this;
     const presetItems = [];
@@ -2588,7 +2622,7 @@ function captureFirstFrameAndOpen(node, videoSrc) {
 function registerPointSelectorHooks(nodeType, nodeData) {
   if (nodeData.name === "FFMPEGALoadVideoPath") {
     const origGetMenuVid = nodeType.prototype.getExtraMenuOptions;
-    nodeType.prototype.getExtraMenuOptions = function (_, options) {
+    nodeType.prototype.getExtraMenuOptions = function(_, options) {
       origGetMenuVid == null ? void 0 : origGetMenuVid.apply(this, arguments);
       const self = this;
       options.unshift({
@@ -2610,7 +2644,7 @@ function registerPointSelectorHooks(nodeType, nodeData) {
   }
   if (nodeData.name === "FFMPEGAFrameExtract") {
     const origGetMenuExtract = nodeType.prototype.getExtraMenuOptions;
-    nodeType.prototype.getExtraMenuOptions = function (_, options) {
+    nodeType.prototype.getExtraMenuOptions = function(_, options) {
       origGetMenuExtract == null ? void 0 : origGetMenuExtract.apply(this, arguments);
       const self = this;
       options.unshift({
@@ -2634,8 +2668,1484 @@ function registerPointSelectorHooks(nodeType, nodeData) {
     };
   }
 }
+function ensureCropStyles() {
+  if (document.getElementById("ffmpega-crop-selector-styles")) return;
+  const style = document.createElement("style");
+  style.id = "ffmpega-crop-selector-styles";
+  style.textContent = `
+        /* Minimal veditor styles for CropOverlay outside the video editor */
+        .ffmpega-crop-modal .veditor-crop-controls {
+            display: flex; flex-direction: column; gap: 8px;
+            padding: 12px; font-family: 'Inter', 'Segoe UI', sans-serif;
+            font-size: 12px; color: #ddd;
+        }
+        .ffmpega-crop-modal .veditor-panel-section {
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 6px; padding: 8px 10px;
+            background: rgba(255,255,255,0.03);
+        }
+        .ffmpega-crop-modal .veditor-section-label {
+            font-size: 11px; font-weight: 600;
+            color: #aaa; text-transform: uppercase;
+            letter-spacing: 0.5px; margin-bottom: 6px;
+        }
+        .ffmpega-crop-modal .veditor-control-row {
+            display: flex; align-items: center; gap: 6px;
+            margin-bottom: 4px;
+        }
+        .ffmpega-crop-modal .veditor-control-label {
+            font-size: 11px; color: #999;
+            white-space: nowrap; min-width: 14px;
+        }
+        .ffmpega-crop-modal .veditor-btn {
+            padding: 4px 8px; border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 4px; background: transparent;
+            color: #ccc; font-size: 11px; cursor: pointer;
+            transition: all 0.15s;
+        }
+        .ffmpega-crop-modal .veditor-btn:hover {
+            background: rgba(255,255,255,0.08);
+            border-color: rgba(255,255,255,0.2);
+        }
+        .ffmpega-crop-modal .veditor-toggle-btn {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 4px 10px;
+        }
+        .ffmpega-crop-modal .veditor-toggle-btn.active {
+            background: rgba(0,200,255,0.15);
+            border-color: rgba(0,200,255,0.4);
+            color: #0cf;
+        }
+        .ffmpega-crop-modal .veditor-preset-row {
+            display: flex; gap: 4px; flex-wrap: wrap;
+        }
+        .ffmpega-crop-modal .veditor-preset-btn {
+            font-size: 10px; padding: 3px 6px;
+        }
+        .ffmpega-crop-modal .veditor-preset-btn.active {
+            background: rgba(0,200,255,0.25);
+            border-color: rgba(0,200,255,0.5);
+            color: #fff;
+        }
+        .ffmpega-crop-modal .veditor-input {
+            width: 54px; padding: 2px 4px;
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 3px; background: rgba(0,0,0,0.3);
+            color: #ddd; font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .ffmpega-crop-modal .veditor-input:focus {
+            border-color: rgba(0,200,255,0.5);
+            outline: none;
+        }
+        .ffmpega-crop-modal .veditor-output-label {
+            font-size: 11px; color: #aaa;
+        }
+    `;
+  document.head.appendChild(style);
+}
+function captureFrameAt(video, time) {
+  return new Promise((resolve, reject) => {
+    const onSeeked = () => {
+      video.removeEventListener("seeked", onSeeked);
+      const c = document.createElement("canvas");
+      c.width = video.videoWidth;
+      c.height = video.videoHeight;
+      c.getContext("2d").drawImage(video, 0, 0);
+      resolve(c.toDataURL("image/jpeg", 0.92));
+    };
+    video.addEventListener("seeked", onSeeked);
+    video.currentTime = time;
+    setTimeout(() => reject(new Error("Frame capture timed out")), 8e3);
+  });
+}
+function applyCropPreview(node, rect) {
+  var _a, _b;
+  const nodeEl = node.element;
+  const container = ((_a = nodeEl == null ? void 0 : nodeEl.querySelector) == null ? void 0 : _a.call(nodeEl, ".ffmpega_preview")) ?? document.querySelector(`[data-node-id="${node.id}"] .ffmpega_preview`);
+  if (!container) return;
+  const videoEl = container.querySelector("video");
+  if (!videoEl) return;
+  (_b = container.querySelector(".ffmpega-crop-badge")) == null ? void 0 : _b.remove();
+  if (!rect || rect.w <= 0 || rect.h <= 0) {
+    videoEl.style.objectFit = "";
+    videoEl.style.objectPosition = "";
+    videoEl.style.transform = "";
+    videoEl.style.clipPath = "";
+    return;
+  }
+  const srcW = videoEl.videoWidth || 1920;
+  const srcH = videoEl.videoHeight || 1080;
+  const top = rect.y / srcH * 100;
+  const right = (srcW - rect.x - rect.w) / srcW * 100;
+  const bottom = (srcH - rect.y - rect.h) / srcH * 100;
+  const left = rect.x / srcW * 100;
+  videoEl.style.clipPath = `inset(${top.toFixed(2)}% ${right.toFixed(2)}% ${bottom.toFixed(2)}% ${left.toFixed(2)}%)`;
+  const badge = document.createElement("div");
+  badge.className = "ffmpega-crop-badge";
+  badge.textContent = `✂️ ${rect.w}×${rect.h}`;
+  badge.style.cssText = `
+        position: absolute; top: 4px; right: 4px;
+        background: rgba(0,180,255,0.2); color: #0cf;
+        border: 1px solid rgba(0,180,255,0.4);
+        border-radius: 4px; padding: 2px 6px;
+        font-size: 10px; font-family: monospace;
+        pointer-events: none; z-index: 5;
+    `;
+  container.appendChild(badge);
+}
+function openCropSelector(node, videoSrc) {
+  var _a, _b;
+  ensureCropStyles();
+  (_a = document.getElementById("ffmpega-crop-selector")) == null ? void 0 : _a.remove();
+  let existingRect = null;
+  const cdWidget = (_b = node.widgets) == null ? void 0 : _b.find((w) => w.name === "crop_data");
+  if (cdWidget == null ? void 0 : cdWidget.value) {
+    try {
+      const parsed = JSON.parse(String(cdWidget.value));
+      if (parsed && typeof parsed.x === "number") existingRect = parsed;
+    } catch {
+    }
+  }
+  const overlay = document.createElement("div");
+  overlay.id = "ffmpega-crop-selector";
+  overlay.className = "ffmpega-crop-modal";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", "Crop Selector");
+  overlay.style.cssText = `
+        position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+        background: rgba(0,0,0,0.88); z-index: 999999;
+        display: flex; flex-direction: column; align-items: center;
+        justify-content: center; font-family: 'Inter', 'Segoe UI', sans-serif;
+    `;
+  const header = document.createElement("div");
+  header.style.cssText = `
+        color: #eee; font-size: 14px; margin-bottom: 8px;
+        display: flex; gap: 16px; align-items: center;
+    `;
+  header.innerHTML = `
+        <span><span aria-hidden="true">✂️</span> <b>Crop Selector</b></span>
+        <span style="color:#888">Drag corners to crop • Use presets below</span>
+    `;
+  overlay.appendChild(header);
+  const contentArea = document.createElement("div");
+  contentArea.style.cssText = `
+        display: flex; gap: 16px; align-items: flex-start;
+        max-width: 95vw; max-height: 78vh;
+    `;
+  const canvasArea = document.createElement("div");
+  canvasArea.style.cssText = `
+        position: relative; display: flex;
+        flex-direction: column; align-items: center;
+    `;
+  const frameImg = document.createElement("img");
+  frameImg.style.cssText = `
+        max-width: 70vw; max-height: 68vh;
+        display: block; border-radius: 4px;
+        background: #000;
+    `;
+  const frameContainer = document.createElement("div");
+  frameContainer.style.cssText = "position: relative; display: inline-block;";
+  frameContainer.appendChild(frameImg);
+  canvasArea.appendChild(frameContainer);
+  const scrubberWrap = document.createElement("div");
+  scrubberWrap.style.cssText = `
+        display: flex; gap: 10px; align-items: center;
+        margin-top: 8px; color: #ccc; font-size: 12px; width: 100%;
+    `;
+  const scrubLabel = document.createElement("span");
+  scrubLabel.textContent = "Frame:";
+  scrubLabel.style.cssText = "white-space: nowrap; min-width: 44px;";
+  const scrubSlider = document.createElement("input");
+  scrubSlider.type = "range";
+  scrubSlider.min = "0";
+  scrubSlider.max = "100";
+  scrubSlider.value = "0";
+  scrubSlider.step = "1";
+  scrubSlider.style.cssText = `
+        flex: 1; accent-color: #0cf;
+        cursor: pointer; height: 6px;
+    `;
+  scrubSlider.setAttribute("aria-label", "Frame position");
+  const timeLabel = document.createElement("span");
+  timeLabel.textContent = "0.0s";
+  timeLabel.style.cssText = "min-width: 50px; text-align: right; font-family: monospace;";
+  scrubberWrap.append(scrubLabel, scrubSlider, timeLabel);
+  canvasArea.appendChild(scrubberWrap);
+  contentArea.appendChild(canvasArea);
+  const sidePanel = document.createElement("div");
+  sidePanel.style.cssText = `
+        min-width: 200px; max-width: 240px;
+        background: rgba(20,20,35,0.9);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 8px; padding: 8px;
+        max-height: 68vh; overflow-y: auto;
+    `;
+  contentArea.appendChild(sidePanel);
+  overlay.appendChild(contentArea);
+  const statusBar = document.createElement("div");
+  statusBar.style.cssText = "color: #aaa; font-size: 12px; margin-top: 6px;";
+  statusBar.textContent = "Loading video...";
+  statusBar.setAttribute("role", "status");
+  statusBar.setAttribute("aria-live", "polite");
+  overlay.appendChild(statusBar);
+  const btnBar = document.createElement("div");
+  btnBar.style.cssText = "display: flex; gap: 12px; margin-top: 12px;";
+  const makeBtn = (label, ariaLabel, bg) => {
+    const b = document.createElement("button");
+    b.innerHTML = label;
+    b.setAttribute("aria-label", ariaLabel);
+    b.style.cssText = `
+            padding: 8px 24px; border: none; border-radius: 6px;
+            font-size: 14px; cursor: pointer; color: #fff;
+            background: ${bg}; font-weight: 600;
+            transition: opacity 0.15s; outline: none;
+        `;
+    b.onmouseenter = () => {
+      b.style.opacity = "0.85";
+    };
+    b.onmouseleave = () => {
+      b.style.opacity = "1";
+    };
+    b.onfocus = () => {
+      b.style.outline = "2px solid #fff";
+      b.style.outlineOffset = "2px";
+    };
+    b.onblur = () => {
+      b.style.outline = "none";
+    };
+    return b;
+  };
+  const applyBtn = makeBtn(
+    '<span aria-hidden="true">✓</span> Apply Crop',
+    "Apply crop",
+    "#2a7a2a"
+  );
+  const clearBtn = makeBtn("Clear", "Clear crop", "#555");
+  const cancelBtn = makeBtn("Cancel", "Cancel", "#7a2a2a");
+  btnBar.append(applyBtn, clearBtn, cancelBtn);
+  overlay.appendChild(btnBar);
+  document.body.appendChild(overlay);
+  const cropOverlay = new CropOverlay({
+    onCropChanged: (rect) => {
+      if (rect) {
+        statusBar.textContent = `Crop: ${Math.round(rect.w)}×${Math.round(rect.h)} at (${Math.round(rect.x)}, ${Math.round(rect.y)})`;
+      } else {
+        statusBar.textContent = "No crop set";
+      }
+    }
+  });
+  sidePanel.appendChild(cropOverlay.element);
+  const tmpVideo = document.createElement("video");
+  tmpVideo.crossOrigin = "anonymous";
+  tmpVideo.muted = true;
+  tmpVideo.preload = "auto";
+  tmpVideo.src = videoSrc;
+  let videoDuration = 0;
+  const onVideoReady = async () => {
+    videoDuration = tmpVideo.duration || 0;
+    if (isFinite(videoDuration) && videoDuration > 0) {
+      scrubSlider.max = String(Math.floor(videoDuration * 10));
+    }
+    try {
+      const initialTime = Math.min(0.1, videoDuration * 0.01);
+      const dataUrl = await captureFrameAt(tmpVideo, initialTime);
+      frameImg.src = dataUrl;
+    } catch {
+      statusBar.textContent = "Failed to capture frame";
+      statusBar.style.color = "#f44";
+      return;
+    }
+  };
+  tmpVideo.addEventListener("loadedmetadata", () => {
+    onVideoReady();
+  }, { once: true });
+  tmpVideo.addEventListener("error", () => {
+    statusBar.textContent = "Failed to load video";
+    statusBar.style.color = "#f44";
+  }, { once: true });
+  frameImg.onload = () => {
+    const videoW = tmpVideo.videoWidth;
+    const videoH = tmpVideo.videoHeight;
+    const imgRect = frameImg.getBoundingClientRect();
+    const cropCanvas = cropOverlay.canvasElement;
+    cropCanvas.style.position = "absolute";
+    cropCanvas.style.top = "0";
+    cropCanvas.style.left = "0";
+    cropCanvas.style.width = imgRect.width + "px";
+    cropCanvas.style.height = imgRect.height + "px";
+    cropCanvas.style.pointerEvents = "auto";
+    frameContainer.appendChild(cropCanvas);
+    cropOverlay.setVideoDimensions(videoW, videoH);
+    if (existingRect) {
+      cropOverlay.setRect(existingRect);
+    }
+    statusBar.textContent = existingRect ? `Crop: ${existingRect.w}×${existingRect.h} at (${existingRect.x}, ${existingRect.y})` : `Video: ${videoW}×${videoH} — Enable crop in the panel →`;
+  };
+  let scrubDebounce = null;
+  scrubSlider.addEventListener("input", () => {
+    const t = parseInt(scrubSlider.value, 10) / 10;
+    timeLabel.textContent = `${t.toFixed(1)}s`;
+    if (scrubDebounce) clearTimeout(scrubDebounce);
+    scrubDebounce = setTimeout(async () => {
+      try {
+        const dataUrl = await captureFrameAt(tmpVideo, t);
+        frameImg.src = dataUrl;
+      } catch {
+      }
+    }, 150);
+  });
+  const cleanup = () => {
+    document.removeEventListener("keydown", keyHandler);
+    cropOverlay.destroy();
+    tmpVideo.remove();
+    overlay.remove();
+  };
+  applyBtn.onclick = () => {
+    const rect = cropOverlay.getRect();
+    const data = rect ? JSON.stringify({
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      w: Math.round(rect.w),
+      h: Math.round(rect.h)
+    }) : "";
+    if (cdWidget) {
+      cdWidget.value = data;
+    } else {
+      const w = node.addWidget(
+        "text",
+        "crop_data",
+        data,
+        () => {
+        },
+        { serialize: true }
+      );
+      w.type = "text";
+      if (w.computeSize) w.computeSize = () => [0, -4];
+    }
+    node.setDirtyCanvas(true, true);
+    applyCropPreview(node, rect ? {
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      w: Math.round(rect.w),
+      h: Math.round(rect.h)
+    } : null);
+    cleanup();
+    flashNode(node, "#2a7a2a");
+  };
+  clearBtn.onclick = () => {
+    cropOverlay.setRect(null);
+    statusBar.textContent = "Crop cleared";
+  };
+  cancelBtn.onclick = cleanup;
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) cleanup();
+  });
+  overlay.addEventListener("contextmenu", (e) => e.preventDefault());
+  const keyHandler = (e) => {
+    if (e.key === "Escape") cleanup();
+  };
+  document.addEventListener("keydown", keyHandler);
+}
+function restoreCropPreview(node) {
+  var _a;
+  const cdWidget = (_a = node.widgets) == null ? void 0 : _a.find((w) => w.name === "crop_data");
+  if (!(cdWidget == null ? void 0 : cdWidget.value)) return;
+  try {
+    const rect = JSON.parse(String(cdWidget.value));
+    if (rect && typeof rect.x === "number") {
+      applyCropPreview(node, rect);
+    }
+  } catch {
+  }
+}
+function watchForVideoAndRestoreCrop(node) {
+  setTimeout(() => {
+    const nodeEl = node.element;
+    if (!nodeEl) return;
+    const videoEl = nodeEl.querySelector("video");
+    if (videoEl) {
+      videoEl.addEventListener("loadedmetadata", () => restoreCropPreview(node));
+      if (videoEl.readyState >= 1) restoreCropPreview(node);
+      return;
+    }
+    const observer = new MutationObserver(() => {
+      const vid = nodeEl.querySelector("video");
+      if (vid) {
+        observer.disconnect();
+        vid.addEventListener("loadedmetadata", () => restoreCropPreview(node));
+        if (vid.readyState >= 1) restoreCropPreview(node);
+      }
+    });
+    observer.observe(nodeEl, { childList: true, subtree: true });
+    setTimeout(() => observer.disconnect(), 1e4);
+  }, 200);
+}
+function registerCropSelectorHooks(nodeType, nodeData) {
+  if (nodeData.name === "FFMPEGALoadVideoPath") {
+    const origGetMenu = nodeType.prototype.getExtraMenuOptions;
+    nodeType.prototype.getExtraMenuOptions = function(_, options) {
+      origGetMenu == null ? void 0 : origGetMenu.apply(this, arguments);
+      const self = this;
+      options.unshift({
+        content: "✂️ Open Crop Selector",
+        callback: () => {
+          var _a;
+          const vidWidget = (_a = self.widgets) == null ? void 0 : _a.find((w) => w.name === "video");
+          const filename = vidWidget == null ? void 0 : vidWidget.value;
+          if (!filename) {
+            flashNode(self, "#7a4a4a");
+            return;
+          }
+          const params = new URLSearchParams({ filename, type: "input" });
+          const src = api.apiURL("/view?" + params.toString());
+          openCropSelector(self, src);
+        }
+      }, null);
+    };
+    const origCreated = nodeType.prototype.onNodeCreated;
+    nodeType.prototype.onNodeCreated = function() {
+      const result = origCreated == null ? void 0 : origCreated.apply(this, arguments);
+      watchForVideoAndRestoreCrop(this);
+      return result;
+    };
+  }
+  if (nodeData.name === "FFMPEGAFrameExtract") {
+    const origGetMenu = nodeType.prototype.getExtraMenuOptions;
+    nodeType.prototype.getExtraMenuOptions = function(_, options) {
+      origGetMenu == null ? void 0 : origGetMenu.apply(this, arguments);
+      const self = this;
+      options.unshift({
+        content: "✂️ Open Crop Selector",
+        callback: () => {
+          var _a, _b;
+          const pathWidget = (_a = self.widgets) == null ? void 0 : _a.find((w) => w.name === "video_path");
+          const videoPath = (_b = pathWidget == null ? void 0 : pathWidget.value) == null ? void 0 : _b.trim();
+          if (!videoPath) {
+            flashNode(self, "#7a4a4a");
+            return;
+          }
+          const params = new URLSearchParams({
+            path: videoPath,
+            duration: "1"
+          });
+          const src = api.apiURL("/ffmpega/preview?" + params.toString());
+          openCropSelector(self, src);
+        }
+      }, null);
+    };
+    const origCreated = nodeType.prototype.onNodeCreated;
+    nodeType.prototype.onNodeCreated = function() {
+      const result = origCreated == null ? void 0 : origCreated.apply(this, arguments);
+      watchForVideoAndRestoreCrop(this);
+      return result;
+    };
+  }
+}
+const NODE_DOCS = [
+  {
+    type: "FFMPEGAgent",
+    title: "FFMPEG Agent",
+    description: "AI-powered video editor: describe edits in natural language and the agent generates and runs the FFmpeg pipeline automatically.",
+    tips: [
+      "Use gemini-cli or claude-cli for zero-cost local inference — no API key needed.",
+      "Set llm_model to 'none' and connect an Effects Builder for manual, AI-free editing.",
+      "Connect multiple videos to video_a/b/c for concat, split screen, or xfade. New slots appear automatically.",
+      "Enable 'Advanced' toggle to access encoding, SAM3, Whisper, FLUX, and batch settings.",
+      "Use preview_mode for quick 480p test renders before full quality.",
+      "save_output is Off by default — turn it On or connect a Save Video node downstream."
+    ],
+    inputs: [
+      { name: "prompt", info: "Natural language instruction describing the desired edit." },
+      { name: "video_path", info: "Absolute path to the source video file." },
+      { name: "llm_model", info: "AI model selection: CLI tools, Ollama (local), cloud APIs, or 'none' for manual mode." },
+      { name: "no_llm_mode", info: "What to do when llm_model is 'none': manual, sam3_masking, transcribe, karaoke, generate_audio, lip_sync, animate_portrait, minimax_remover, flux_klein, marigold, video_depth, or ai_upscale." },
+      { name: "quality_preset", info: "Output quality: draft (fast), standard (balanced), high (slow), lossless." },
+      { name: "images_a", info: "Video as image frames. More slots (images_b, c, …) appear automatically." },
+      { name: "audio_a", info: "Audio input. More slots appear automatically." },
+      { name: "pipeline_json", info: "Connect from Effects Builder for manual effect composition." }
+    ],
+    relatedWorkflows: [
+      "Colorgrade_Text_Overlay_Ex_v1",
+      "Multi_Special_Effects_Ex_v1",
+      "Simple_Colograde_Ex_v1"
+    ]
+  },
+  {
+    type: "FFMPEGAEffects",
+    title: "FFMPEGA Effects Builder",
+    description: "Compose video effects visually without an LLM. Select effects from categorized dropdowns, choose a preset, add raw FFmpeg filters, and target objects with SAM3.",
+    tips: [
+      "Right-click the node for 18+ built-in presets (Cinematic, Vintage, Social, etc.).",
+      "Chain up to 3 effects — they apply in order (effect_1 → effect_2 → effect_3).",
+      "Use sam3_target to apply effects only to detected objects (e.g., 'face', 'person').",
+      "The raw_ffmpeg field accepts standard FFmpeg -vf syntax, applied after skill effects.",
+      "Connect output to the Agent node's pipeline_json input."
+    ],
+    inputs: [
+      { name: "preset", info: "Quick-start presets that auto-fill effects and params." },
+      { name: "effect_1/2/3", info: "Effects categorized by: 🎨 Visual, ⏱️ Temporal, 📐 Spatial, 🔊 Audio, 📦 Encoding, ✨ Outcome." },
+      { name: "raw_ffmpeg", info: "Raw FFmpeg video filter string, applied after skill effects." },
+      { name: "sam3_target", info: "Text description of object to mask (e.g., 'the person', 'license plate')." }
+    ],
+    relatedWorkflows: [
+      "Colorhold_VHS_Tensors_Ex_v1",
+      "Datamosh_Special_Effects_VHS_Tensors_Ex_v1"
+    ]
+  },
+  {
+    type: "FFMPEGALoadVideoPath",
+    title: "Load Video Path (FFMPEGA)",
+    description: "Zero-memory video input with inline preview. Select or upload a video and connect to the Agent's video_a/b/c slots. Uses 0 MB regardless of video length.",
+    tips: [
+      "Uses ~0 MB vs ~21 GB for a standard Load Video — always prefer this for multi-video workflows.",
+      "Supports VHS-style trim params: force_rate, skip_first_frames, frame_load_cap, select_every_nth.",
+      "Accepts upstream video_path input for chaining from Save Video nodes.",
+      "Also outputs mask_points for SAM3 guided masking via the Point Selector."
+    ],
+    inputs: [
+      { name: "video", info: "Select or upload a video file — path only, not loaded into memory." },
+      { name: "force_rate", info: "Override FPS. 0 = use source FPS." },
+      { name: "skip_first_frames", info: "Number of frames to skip from the start." },
+      { name: "frame_load_cap", info: "Max frames to use. 0 = all frames." }
+    ]
+  },
+  {
+    type: "FFMPEGASaveVideo",
+    title: "Save Video (FFMPEGA)",
+    description: "Zero-memory video output with inline preview. Copies video to output directory and saves a workflow PNG thumbnail alongside it for drag-and-drop workflow loading.",
+    tips: [
+      "Set save_output to 'Preview Only' to test without saving to disk.",
+      "The workflow PNG saved alongside the video lets you drag it back into ComfyUI to reload the workflow.",
+      "Outputs IMAGE frames and AUDIO for chaining with downstream nodes."
+    ],
+    inputs: [
+      { name: "video_path", info: "Path from FFMPEGA Agent or Load Video Path." },
+      { name: "filename_prefix", info: "Supports ComfyUI formatting like %date:yyyy-MM-dd%." },
+      { name: "save_output", info: "On = save to output folder. Off = preview only." }
+    ]
+  },
+  {
+    type: "FFMPEGAFrameExtract",
+    title: "Frame Extract (FFMPEGA)",
+    description: "Extract individual frames and audio from a video at a specified frame rate, time range, and frame limit.",
+    tips: [
+      "Set fps=1 to extract one frame per second — good for thumbnails or analysis.",
+      "Accepts upstream video_path from Save Video or Load Video Path nodes.",
+      "max_frames caps output to prevent memory issues with long videos."
+    ],
+    inputs: [
+      { name: "video_path", info: "Absolute path to video file." },
+      { name: "fps", info: "Extraction rate. 1.0 = one frame/sec, 30 = every frame at 30fps." },
+      { name: "start_time", info: "Start time in seconds." },
+      { name: "duration", info: "Duration to extract. 0 = full video." },
+      { name: "max_frames", info: "Maximum frames to return (default 100)." }
+    ]
+  },
+  {
+    type: "FFMPEGAMediaBridge",
+    title: "Media Bridge (FFMPEGA)",
+    description: "Bidirectional media switch: convert IMAGE tensors to a video file path, or decode a video path back to IMAGE + AUDIO. Lightweight alternative to full Load/Save nodes.",
+    tips: [
+      "images_to_path: insert between Load Video Upload and the Agent to free tensors early.",
+      "path_to_images: quickly decode a video path into frames for downstream image processing.",
+      "Audio is automatically extracted (path_to_images) or muxed in (images_to_path) when connected.",
+      "Outputs fps and frame_count in both modes for easy downstream use."
+    ],
+    inputs: [
+      { name: "mode", info: "images_to_path or path_to_images — pick the conversion direction." },
+      { name: "images", info: "IMAGE tensor input (used in images_to_path mode)." },
+      { name: "video_path", info: "Video file path input (used in path_to_images mode)." },
+      { name: "fps", info: "Encoding FPS for images_to_path mode (default 24)." },
+      { name: "audio", info: "Optional audio to mux into the video (images_to_path mode)." }
+    ]
+  },
+  {
+    type: "FFMPEGALoadImagePath",
+    title: "Load Image Path (FFMPEGA)",
+    description: "Zero-memory image loader — outputs a file path instead of an IMAGE tensor. Uses ~0 MB for any number of images.",
+    tips: [
+      "Uses ~0 MB vs ~6 MB per image with standard Load Image.",
+      "Connect to Agent's image_path_a/b/c inputs for overlay, grid, or slideshow workflows.",
+      "Supports the Point Selector for SAM3 guided masking."
+    ],
+    inputs: [
+      { name: "image", info: "Select or upload an image from ComfyUI's input directory." }
+    ]
+  },
+  {
+    type: "FFMPEGATextInput",
+    title: "FFMPEGA Text",
+    description: "Flexible text input for subtitles, overlays, watermarks, and title cards with auto-mode detection.",
+    tips: [
+      "Paste SRT-formatted text and it auto-detects as subtitle mode.",
+      "Short single-line text auto-detects as watermark, multi-line as subtitle.",
+      "Right-click for 10 built-in presets (SRT Example, Bold Watermark, Title Card, etc.).",
+      "Connect to Agent's text_a/b/c inputs — multiple text nodes can be connected."
+    ],
+    inputs: [
+      { name: "text", info: "Text content — plain text, SRT subtitles, or watermark text." },
+      { name: "mode", info: "auto, subtitle, overlay, watermark, title_card, or raw." },
+      { name: "position", info: "auto, center, top, bottom, top_left, bottom_right, etc." },
+      { name: "font_size", info: "0 = auto (24 for subtitles, 48 for overlay, 20 for watermark)." }
+    ],
+    relatedWorkflows: [
+      "Colorgrade_Text_Overlay_Ex_v1",
+      "Subtitle_Burn_Ex_v1"
+    ]
+  },
+  {
+    type: "FFMPEGAPreview",
+    title: "FFMPEGA Preview",
+    description: "Quick video preview node for inspecting intermediate results.",
+    tips: ["Use for debugging — preview any video_path in the pipeline without saving."],
+    inputs: []
+  },
+  {
+    type: "FFMPEGAVideoInfo",
+    title: "FFMPEGA Video Info",
+    description: "Analyze a video and output metadata: resolution, FPS, duration, codec, and frame count.",
+    tips: ["Outputs structured metadata for use in conditional or parametric workflows."],
+    inputs: []
+  },
+  {
+    type: "LoadLastImage",
+    title: "Load Last Image (FFMPEGA)",
+    description: "Automatically loads the most recently saved image from ComfyUI's output directory.",
+    tips: ["Useful for iterative workflows — always picks up the latest result."],
+    inputs: []
+  },
+  {
+    type: "LoadLastVideo",
+    title: "Load Last Video (FFMPEGA)",
+    description: "Automatically loads the most recently saved video from ComfyUI's output directory.",
+    tips: ["Useful for chaining workflows — process the latest output again with different effects."],
+    inputs: []
+  },
+  {
+    type: "FFMPEGAVideoEditor",
+    title: "Video Editor (FFMPEGA)",
+    description: "Interactive NLE (Non-Linear Editor) for hands-on video editing directly inside ComfyUI. Full-screen modal with timeline, transport controls, and editing tools — no LLM required.",
+    tips: [
+      "Press '?' in the editor to see all keyboard shortcuts.",
+      "Use the Razor tool (R) to split segments at the playhead.",
+      "Speed control supports 0.25x–4x per segment.",
+      "Text overlays support configurable font size, color, and timing.",
+      "Transitions (crossfade, dip-to-black) are added between segments.",
+      "Ctrl+Z / Ctrl+Shift+Z for undo/redo."
+    ],
+    inputs: [
+      { name: "video_path", info: "Path to video file to edit." },
+      { name: "images", info: "Video frames from upstream nodes." },
+      { name: "audio", info: "Audio input for the editor." }
+    ]
+  }
+];
+const TIPS_AND_TRICKS = [
+  {
+    title: "Performance",
+    icon: "⚡",
+    tips: [
+      "Use Load Video Path instead of Load Video Upload — it uses 0 MB vs ~21 GB for long videos.",
+      "Use Media Bridge between Load Video Upload and the Agent to free tensors early.",
+      "Set quality_preset to 'draft' for quick test renders, then switch to 'high' for final output.",
+      "preview_mode renders at 480p for the first 10 seconds — great for quick checks.",
+      "Run Whisper on CPU (whisper_device='cpu') if you're low on VRAM.",
+      "Disable FLUX Klein (use_flux_klein=Off) to save 8–15 GB VRAM — MiniMax-Remover, LaMa + FFmpeg fallbacks work well.",
+      "Enable MiniMax-Remover (use_minimax_remover=On) for high-quality video object removal (~5–8 GB VRAM). Takes priority over FLUX Klein for removal.",
+      "Use file-path inputs (video_a, image_path_a) instead of tensor inputs for multi-video workflows."
+    ]
+  },
+  {
+    title: "Common Pitfalls",
+    icon: "⚠️",
+    tips: [
+      "Don't enable save_output on both the Agent AND a downstream Save Video — you'll get duplicate files.",
+      "If using cloud API models (GPT, Claude, Gemini), you need an api_key. CLI models don't need one.",
+      "The Effects Builder output must connect to the Agent's pipeline_json input, not video_path.",
+      "For concat/xfade, connect videos to video_a/b/c slots — not the main video_path input.",
+      "SAM3 requires GPU — there is no CPU fallback for video segmentation.",
+      "When chaining nodes, the video_path output is a STRING — connect it to STRING inputs only."
+    ]
+  },
+  {
+    title: "Advanced Techniques",
+    icon: "🔬",
+    tips: [
+      "Chain an Effects Builder → Agent with llm_model='none' for precise manual control.",
+      "Use no_llm_mode='sam3_masking' with a text prompt to blur/remove specific objects without AI.",
+      "Connect multiple Text nodes (text_a, text_b) for multi-line subtitles or positioned overlays.",
+      "Use no_llm_mode='transcribe' or 'karaoke_subtitles' for automatic speech-to-text subtitles.",
+      "Batch mode processes an entire folder of videos with one LLM call — great for consistent edits.",
+      "Custom LUT files (.cube/.3dl) dropped in the luts/ folder are auto-discovered by the Agent.",
+      "Enable verify_output for complex edits — the Agent inspects and auto-corrects output quality.",
+      "Use mask_points from Load Video Path to guide SAM3 with click-to-select instead of text prompts."
+    ]
+  }
+];
+const EDITOR_SHORTCUTS = [
+  { key: "Space", action: "Play / Pause" },
+  { key: "J", action: "Shuttle reverse" },
+  { key: "K", action: "Pause" },
+  { key: "L", action: "Shuttle forward" },
+  { key: "I", action: "Mark In point" },
+  { key: "O", action: "Mark Out point" },
+  { key: "←", action: "Step back 1 frame" },
+  { key: "→", action: "Step forward 1 frame" },
+  { key: "R", action: "Razor tool (split at playhead)" },
+  { key: "V", action: "Select tool" },
+  { key: "Delete", action: "Delete selected segment" },
+  { key: "Ctrl+Z", action: "Undo" },
+  { key: "Ctrl+Shift+Z", action: "Redo" },
+  { key: "?", action: "Show shortcut overlay" }
+];
+const CHANGELOG_HIGHLIGHTS = [
+  {
+    version: "2.14.0",
+    date: "2026-03-08",
+    highlights: [
+      "Video Editor Node — interactive NLE for hands-on editing inside ComfyUI",
+      "Seekable MP4 preview server with HTTP Range support",
+      "TypeScript migration for Video Editor frontend",
+      "1,056 tests, 0 failures"
+    ]
+  },
+  {
+    version: "2.13.0",
+    date: "2026-03-06",
+    highlights: [
+      "FLUX Klein toggle — disable to save 8–15 GB VRAM",
+      "Edit FFmpeg fallback with 22 keyword-matched filters",
+      "AI Background Removal with BRIA RMBG (6 model choices)",
+      "952 tests, 0 failures"
+    ]
+  },
+  {
+    version: "2.12.0",
+    date: "2026-03-06",
+    highlights: [
+      "AI Face Animation (LivePortrait) with motion transfer",
+      "LivePortrait no-LLM mode for direct face animation",
+      "LaMa safetensors conversion for improved security",
+      "939 tests, 0 failures"
+    ]
+  }
+];
+const EXAMPLE_WORKFLOWS = [
+  { filename: "4x4_Video_Grid_Ex_v1", title: "4×4 Video Grid", description: "Combine 4 videos into a grid layout" },
+  { filename: "Bouncing_Logo_Animation_Ex_v1", title: "Bouncing Logo Animation", description: "Animated logo overlay with bounce motion" },
+  { filename: "Colorgrade_Text_Overlay_Ex_v1", title: "Color Grade + Text Overlay", description: "Apply color grading with text effects" },
+  { filename: "Colorhold_VHS_Tensors_Ex_v1", title: "Color Hold + VHS Effect", description: "Isolate a color and apply VHS distortion" },
+  { filename: "Datamosh_Special_Effects_VHS_Tensors_Ex_v1", title: "Datamosh + Special Effects", description: "Datamosh glitch effects with VHS overlay" },
+  { filename: "Greenscreen_Remove_VHS_Tensors_Ex_v1", title: "Green Screen Removal", description: "Chroma key background removal" },
+  { filename: "Multi_Special_Effects_Ex_v1", title: "Multi Special Effects", description: "Chain multiple visual effects together" },
+  { filename: "PiP_Video_Overlay_Example_v1", title: "Picture-in-Picture Overlay", description: "Overlay a video on top of another" },
+  { filename: "Simple_Colograde_Ex_v1", title: "Simple Color Grade", description: "Basic color grading workflow" },
+  { filename: "Slideshow_Audio_Example_v1", title: "Slideshow with Audio", description: "Image slideshow with background music" },
+  { filename: "Subtitle_Burn_Ex_v1", title: "Subtitle Burn-In", description: "Burn SRT subtitles into video" }
+];
+const EXTERNAL_LINKS = [
+  { label: "GitHub Repository", url: "https://github.com/AEmotionStudio/ComfyUI-FFMPEGA", icon: "🔗" },
+  { label: "Report Issues", url: "https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/issues", icon: "🐛" },
+  { label: "Changelog", url: "https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/blob/main/CHANGELOG.md", icon: "📋" },
+  { label: "Skills Reference", url: "https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/blob/main/SKILLS_REFERENCE.md", icon: "📖" }
+];
+const SIDEBAR_CSS = `/**
+ * FFMPEGA Help Sidebar — Styles
+ *
+ * Uses ComfyUI's PrimeVue CSS variables for consistent theming.
+ * Follows the same patterns as comfyui-magnifyglass sidebar.
+ */
+
+.ffmpega-sidebar {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 13px;
+    color: var(--fg-color, #ddd);
+    background: transparent;
+    padding: 0;
+}
+
+/* ── Header ──────────────────────────────────────────────────── */
+
+.ffmpega-sidebar-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color, #333);
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.ffmpega-sidebar-header h2 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.ffmpega-sidebar-header .version-badge {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--descrip-text, #999);
+    margin-left: auto;
+}
+
+/* ── Search ──────────────────────────────────────────────────── */
+
+.ffmpega-search-bar {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-color, #333);
+}
+
+.ffmpega-search-input {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid var(--border-color, #444);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.3);
+    color: var(--fg-color, #ddd);
+    font-size: 12px;
+    outline: none;
+    box-sizing: border-box;
+    transition: border-color 0.15s;
+}
+
+.ffmpega-search-input:focus {
+    border-color: var(--p-primary-color, #3b82f6);
+}
+
+.ffmpega-search-input::placeholder {
+    color: var(--descrip-text, #666);
+}
+
+/* ── Content area ────────────────────────────────────────────── */
+
+.ffmpega-sidebar-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0;
+}
+
+/* ── Section (accordion) ─────────────────────────────────────── */
+
+.ffmpega-section {
+    margin-bottom: 2px;
+}
+
+.ffmpega-section-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 14px;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.03);
+    border-bottom: 1px solid var(--border-color, #333);
+    transition: background 0.15s;
+    user-select: none;
+}
+
+.ffmpega-section-header:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.ffmpega-section-header:focus-visible {
+    outline: 2px solid var(--p-primary-color, #3b82f6);
+    outline-offset: -2px;
+}
+
+.ffmpega-section-header .chevron {
+    font-size: 10px;
+    transition: transform 0.2s;
+    opacity: 0.5;
+    flex-shrink: 0;
+}
+
+.ffmpega-section-header.collapsed .chevron {
+    transform: rotate(-90deg);
+}
+
+.ffmpega-section-header .section-title {
+    font-weight: 500;
+    font-size: 12px;
+    letter-spacing: 0.3px;
+}
+
+.ffmpega-section-header.highlighted {
+    background: rgba(59, 130, 246, 0.12);
+    border-left: 3px solid var(--p-primary-color, #3b82f6);
+    padding-left: 11px;
+}
+
+.ffmpega-section-body {
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.ffmpega-section-body.collapsed {
+    display: none;
+}
+
+/* ── Node description ────────────────────────────────────────── */
+
+.ffmpega-node-desc {
+    color: var(--descrip-text, #aaa);
+    font-size: 12px;
+    line-height: 1.5;
+    margin-bottom: 4px;
+}
+
+/* ── Tips list ────────────────────────────────────────────────── */
+
+.ffmpega-tips {
+    list-style: none;
+    padding: 0;
+    margin: 4px 0;
+}
+
+.ffmpega-tips li {
+    padding: 3px 0 3px 16px;
+    position: relative;
+    color: var(--fg-color, #ddd);
+    font-size: 11.5px;
+    line-height: 1.5;
+}
+
+.ffmpega-tips li::before {
+    content: "💡";
+    position: absolute;
+    left: 0;
+    font-size: 10px;
+}
+
+/* ── Input reference ─────────────────────────────────────────── */
+
+.ffmpega-inputs-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+    margin-top: 4px;
+}
+
+.ffmpega-inputs-table th {
+    text-align: left;
+    padding: 4px 6px;
+    font-weight: 600;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--descrip-text, #888);
+    border-bottom: 1px solid var(--border-color, #333);
+}
+
+.ffmpega-inputs-table td {
+    padding: 4px 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    vertical-align: top;
+}
+
+.ffmpega-inputs-table td:first-child {
+    font-family: monospace;
+    font-size: 11px;
+    color: var(--p-primary-color, #3b82f6);
+    white-space: nowrap;
+    font-weight: 500;
+}
+
+.ffmpega-inputs-table td:last-child {
+    color: var(--descrip-text, #999);
+}
+
+/* ── Shortcuts table ─────────────────────────────────────────── */
+
+.ffmpega-shortcuts-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.ffmpega-shortcuts-table td {
+    padding: 4px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.ffmpega-shortcuts-table td:first-child {
+    width: 40%;
+}
+
+.ffmpega-kbd {
+    display: inline-block;
+    padding: 2px 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 11px;
+    min-width: 20px;
+    text-align: center;
+}
+
+/* ── Workflow links ──────────────────────────────────────────── */
+
+.ffmpega-workflow-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s;
+    text-decoration: none;
+    color: var(--fg-color, #ddd);
+}
+
+.ffmpega-workflow-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.ffmpega-workflow-title {
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.ffmpega-workflow-desc {
+    font-size: 11px;
+    color: var(--descrip-text, #888);
+}
+
+/* ── External links ──────────────────────────────────────────── */
+
+.ffmpega-link-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    text-decoration: none;
+    color: var(--fg-color, #ddd);
+    transition: background 0.15s;
+    font-size: 12px;
+}
+
+.ffmpega-link-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--p-primary-color, #3b82f6);
+}
+
+/* ── Changelog ───────────────────────────────────────────────── */
+
+.ffmpega-changelog-version {
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--p-primary-color, #3b82f6);
+    margin-bottom: 4px;
+}
+
+.ffmpega-changelog-date {
+    font-size: 10px;
+    color: var(--descrip-text, #777);
+    margin-left: 6px;
+    font-weight: 400;
+}
+
+.ffmpega-changelog-list {
+    list-style: disc;
+    padding-left: 18px;
+    margin: 4px 0 8px;
+}
+
+.ffmpega-changelog-list li {
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--fg-color, #ddd);
+    padding: 1px 0;
+}
+
+/* ── Context badge ───────────────────────────────────────────── */
+
+.ffmpega-context-hint {
+    padding: 6px 12px;
+    background: rgba(59, 130, 246, 0.08);
+    border-bottom: 1px solid var(--border-color, #333);
+    font-size: 11px;
+    color: var(--descrip-text, #999);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.ffmpega-context-hint .node-name {
+    color: var(--p-primary-color, #3b82f6);
+    font-weight: 500;
+}
+
+/* ── Hidden by search ────────────────────────────────────────── */
+
+.ffmpega-hidden {
+    display: none !important;
+}
+
+/* ── Sub-header (section group titles) ───────────────────────── */
+
+.ffmpega-group-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--descrip-text, #666);
+    padding: 8px 14px 4px;
+    font-weight: 600;
+}
+`;
+let sidebarRegistered = false;
+let currentHighlightedType = null;
+let pollIntervalId = null;
+const FFMPEGA_NODE_TYPES = new Set(NODE_DOCS.map((n) => n.type));
+function loadSidebarStyles() {
+  const id = "ffmpega-sidebar-styles";
+  if (document.getElementById(id)) return;
+  const style = document.createElement("style");
+  style.id = id;
+  style.textContent = SIDEBAR_CSS;
+  document.head.appendChild(style);
+}
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text) e.textContent = text;
+  return e;
+}
+function makeSection(id, title, collapsed, renderBody) {
+  const section = el("div", "ffmpega-section");
+  section.dataset.sectionId = id;
+  const header = el("div", `ffmpega-section-header${" collapsed"}`);
+  header.setAttribute("tabindex", "0");
+  header.setAttribute("role", "button");
+  header.setAttribute("aria-expanded", String(false));
+  header.innerHTML = `<span class="chevron">▼</span><span class="section-title">${title}</span>`;
+  const body = el("div", `ffmpega-section-body${" collapsed"}`);
+  renderBody(body);
+  const toggle = () => {
+    const isCollapsed = header.classList.toggle("collapsed");
+    body.classList.toggle("collapsed", isCollapsed);
+    header.setAttribute("aria-expanded", String(!isCollapsed));
+  };
+  header.addEventListener("click", toggle);
+  header.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      toggle();
+    }
+  });
+  section.appendChild(header);
+  section.appendChild(body);
+  return section;
+}
+function renderNodeDoc(body, doc) {
+  body.appendChild(el("div", "ffmpega-node-desc", doc.description));
+  if (doc.tips.length > 0) {
+    const ul = el("ul", "ffmpega-tips");
+    for (const tip of doc.tips) {
+      ul.appendChild(el("li", void 0, tip));
+    }
+    body.appendChild(ul);
+  }
+  if (doc.inputs.length > 0) {
+    const table = document.createElement("table");
+    table.className = "ffmpega-inputs-table";
+    table.innerHTML = "<thead><tr><th>Input</th><th>Info</th></tr></thead>";
+    const tbody = document.createElement("tbody");
+    for (const inp of doc.inputs) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${inp.name}</td><td>${inp.info}</td>`;
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    body.appendChild(table);
+  }
+  if (doc.relatedWorkflows && doc.relatedWorkflows.length > 0) {
+    const label = el("div", "ffmpega-group-title", "RELATED WORKFLOWS");
+    body.appendChild(label);
+    for (const wf of doc.relatedWorkflows) {
+      const info = EXAMPLE_WORKFLOWS.find((w) => w.filename === wf);
+      if (info) {
+        const item = el("div", "ffmpega-workflow-item");
+        item.innerHTML = `<span>📂</span><div><div class="ffmpega-workflow-title">${info.title}</div></div>`;
+        item.title = `Load workflow: ${info.title}`;
+        body.appendChild(item);
+      }
+    }
+  }
+}
+function renderSidebar(container) {
+  if (container.querySelector(".ffmpega-sidebar")) return;
+  container.innerHTML = "";
+  const sidebar = el("div", "ffmpega-sidebar");
+  const header = el("div", "ffmpega-sidebar-header");
+  header.innerHTML = `<span>📖</span><h2>FFMPEGA Help</h2><span class="version-badge">v2.14</span>`;
+  sidebar.appendChild(header);
+  const contextHint = el("div", "ffmpega-context-hint ffmpega-hidden");
+  contextHint.id = "ffmpega-context-hint";
+  contextHint.innerHTML = `<span>🎯</span> Viewing: <span class="node-name" id="ffmpega-context-name"></span>`;
+  sidebar.appendChild(contextHint);
+  const searchBar = el("div", "ffmpega-search-bar");
+  const searchInput = document.createElement("input");
+  searchInput.type = "text";
+  searchInput.className = "ffmpega-search-input";
+  searchInput.placeholder = "Search docs…";
+  searchInput.setAttribute("aria-label", "Search FFMPEGA documentation");
+  searchBar.appendChild(searchInput);
+  sidebar.appendChild(searchBar);
+  const content = el("div", "ffmpega-sidebar-content");
+  content.appendChild(el("div", "ffmpega-group-title", "NODE REFERENCE"));
+  for (const doc of NODE_DOCS) {
+    const section = makeSection(
+      `node-${doc.type}`,
+      doc.title,
+      true,
+      (body) => renderNodeDoc(body, doc)
+    );
+    section.dataset.nodeType = doc.type;
+    section.dataset.searchText = [
+      doc.title,
+      doc.description,
+      ...doc.tips,
+      ...doc.inputs.map((i) => `${i.name} ${i.info}`)
+    ].join(" ").toLowerCase();
+    content.appendChild(section);
+  }
+  content.appendChild(el("div", "ffmpega-group-title", "TIPS & TRICKS"));
+  for (const cat of TIPS_AND_TRICKS) {
+    const section = makeSection(
+      `tips-${cat.title.toLowerCase()}`,
+      `${cat.icon} ${cat.title}`,
+      true,
+      (body) => {
+        const ul = el("ul", "ffmpega-tips");
+        for (const tip of cat.tips) {
+          ul.appendChild(el("li", void 0, tip));
+        }
+        body.appendChild(ul);
+      }
+    );
+    section.dataset.searchText = [cat.title, ...cat.tips].join(" ").toLowerCase();
+    content.appendChild(section);
+  }
+  const shortcutsSection = makeSection(
+    "shortcuts",
+    "⌨️ Video Editor Shortcuts",
+    true,
+    (body) => {
+      const table = document.createElement("table");
+      table.className = "ffmpega-shortcuts-table";
+      for (const sc of EDITOR_SHORTCUTS) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td><span class="ffmpega-kbd">${sc.key}</span></td><td>${sc.action}</td>`;
+        table.appendChild(tr);
+      }
+      body.appendChild(table);
+    }
+  );
+  shortcutsSection.dataset.searchText = [
+    "shortcuts",
+    "keyboard",
+    "keys",
+    ...EDITOR_SHORTCUTS.map((s) => `${s.key} ${s.action}`)
+  ].join(" ").toLowerCase();
+  content.appendChild(shortcutsSection);
+  content.appendChild(el("div", "ffmpega-group-title", "EXAMPLE WORKFLOWS"));
+  const workflowsSection = makeSection(
+    "workflows",
+    "📂 Example Workflows",
+    true,
+    (body) => {
+      for (const wf of EXAMPLE_WORKFLOWS) {
+        const item = el("div", "ffmpega-workflow-item");
+        item.innerHTML = `<span>📄</span><div><div class="ffmpega-workflow-title">${wf.title}</div><div class="ffmpega-workflow-desc">${wf.description}</div></div>`;
+        item.title = `Workflow: ${wf.title}`;
+        body.appendChild(item);
+      }
+    }
+  );
+  workflowsSection.dataset.searchText = EXAMPLE_WORKFLOWS.map((w) => `${w.title} ${w.description}`).join(" ").toLowerCase();
+  content.appendChild(workflowsSection);
+  content.appendChild(el("div", "ffmpega-group-title", "WHAT'S NEW"));
+  for (const entry of CHANGELOG_HIGHLIGHTS) {
+    const section = makeSection(
+      `changelog-${entry.version}`,
+      `🆕 v${entry.version}`,
+      true,
+      (body) => {
+        const versionLine = el("div", "ffmpega-changelog-version");
+        versionLine.innerHTML = `v${entry.version}<span class="ffmpega-changelog-date">${entry.date}</span>`;
+        body.appendChild(versionLine);
+        const ul = el("ul", "ffmpega-changelog-list");
+        for (const hl of entry.highlights) {
+          ul.appendChild(el("li", void 0, hl));
+        }
+        body.appendChild(ul);
+      }
+    );
+    section.dataset.searchText = [entry.version, ...entry.highlights].join(" ").toLowerCase();
+    content.appendChild(section);
+  }
+  content.appendChild(el("div", "ffmpega-group-title", "LINKS"));
+  const linksSection = makeSection(
+    "links",
+    "🔗 Resources & Links",
+    true,
+    (body) => {
+      for (const link of EXTERNAL_LINKS) {
+        const a = document.createElement("a");
+        a.className = "ffmpega-link-item";
+        a.href = link.url;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.innerHTML = `<span>${link.icon}</span>${link.label}`;
+        body.appendChild(a);
+      }
+    }
+  );
+  linksSection.dataset.searchText = EXTERNAL_LINKS.map((l) => l.label).join(" ").toLowerCase();
+  content.appendChild(linksSection);
+  sidebar.appendChild(content);
+  container.appendChild(sidebar);
+  searchInput.addEventListener("input", () => {
+    const query = searchInput.value.trim().toLowerCase();
+    const sections = content.querySelectorAll(".ffmpega-section");
+    const groupTitles = content.querySelectorAll(".ffmpega-group-title");
+    if (!query) {
+      sections.forEach((s) => s.classList.remove("ffmpega-hidden"));
+      groupTitles.forEach((g) => g.classList.remove("ffmpega-hidden"));
+      return;
+    }
+    sections.forEach((s) => {
+      var _a, _b;
+      const text = s.dataset.searchText || "";
+      const matches = text.includes(query);
+      s.classList.toggle("ffmpega-hidden", !matches);
+      if (matches) {
+        (_a = s.querySelector(".ffmpega-section-header")) == null ? void 0 : _a.classList.remove("collapsed");
+        (_b = s.querySelector(".ffmpega-section-body")) == null ? void 0 : _b.classList.remove("collapsed");
+      }
+    });
+    groupTitles.forEach((g) => {
+      let next = g.nextElementSibling;
+      let hasVisible = false;
+      while (next && !next.classList.contains("ffmpega-group-title")) {
+        if (next.classList.contains("ffmpega-section") && !next.classList.contains("ffmpega-hidden")) {
+          hasVisible = true;
+          break;
+        }
+        next = next.nextElementSibling;
+      }
+      g.classList.toggle("ffmpega-hidden", !hasVisible);
+    });
+  });
+  loadSidebarStyles();
+  startNodePolling(content);
+}
+function startNodePolling(content) {
+  if (pollIntervalId) clearInterval(pollIntervalId);
+  pollIntervalId = setInterval(() => {
+    try {
+      const selectedNode = getSelectedFFMPEGANode();
+      const nodeType = (selectedNode == null ? void 0 : selectedNode.type) || null;
+      if (nodeType === currentHighlightedType) return;
+      currentHighlightedType = nodeType;
+      const hint = document.getElementById("ffmpega-context-hint");
+      const nameEl = document.getElementById("ffmpega-context-name");
+      if (hint && nameEl) {
+        if (nodeType) {
+          const doc = NODE_DOCS.find((d) => d.type === nodeType);
+          nameEl.textContent = (doc == null ? void 0 : doc.title) || nodeType;
+          hint.classList.remove("ffmpega-hidden");
+        } else {
+          hint.classList.add("ffmpega-hidden");
+        }
+      }
+      content.querySelectorAll(".ffmpega-section-header.highlighted").forEach((h) => h.classList.remove("highlighted"));
+      if (!nodeType) return;
+      const section = content.querySelector(
+        `.ffmpega-section[data-node-type="${nodeType}"]`
+      );
+      if (!section) return;
+      const header = section.querySelector(".ffmpega-section-header");
+      const body = section.querySelector(".ffmpega-section-body");
+      if (header) {
+        header.classList.add("highlighted");
+        header.classList.remove("collapsed");
+        header.setAttribute("aria-expanded", "true");
+      }
+      if (body) {
+        body.classList.remove("collapsed");
+      }
+      section.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    } catch {
+    }
+  }, 500);
+}
+function getSelectedFFMPEGANode() {
+  var _a, _b, _c;
+  try {
+    const graph = (_a = app) == null ? void 0 : _a.graph;
+    if (!(graph == null ? void 0 : graph._nodes)) return null;
+    for (const node of graph._nodes) {
+      if (node && FFMPEGA_NODE_TYPES.has(node.type) && // Check if the node is selected (LiteGraph selection)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      node.is_selected) {
+        return node;
+      }
+    }
+    const hovered = (_c = (_b = app) == null ? void 0 : _b.canvas) == null ? void 0 : _c.node_over;
+    if (hovered && FFMPEGA_NODE_TYPES.has(hovered.type)) {
+      return hovered;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+function registerSidebar() {
+  if (sidebarRegistered) return;
+  if (!app.extensionManager) {
+    console.warn("FFMPEGA: extensionManager not available, sidebar registration skipped");
+    return;
+  }
+  try {
+    app.extensionManager.registerSidebarTab({
+      id: "ffmpega-help",
+      icon: "pi pi-book",
+      title: "FFMPEGA",
+      tooltip: "FFMPEGA Help & Documentation",
+      type: "custom",
+      render: (el2) => {
+        renderSidebar(el2);
+      }
+    });
+    sidebarRegistered = true;
+    console.log("FFMPEGA: Help sidebar registered");
+  } catch (e) {
+    console.warn("FFMPEGA: Failed to register sidebar:", e);
+  }
+}
+function initSidebar() {
+  setTimeout(() => {
+    registerSidebar();
+  }, 100);
+}
 app.registerExtension({
   name: "FFMPEGA.UI",
+  async setup() {
+    initSidebar();
+  },
   async beforeRegisterNodeDef(nodeType, nodeData, _app) {
     if (registerNodeStyling(nodeType, nodeData)) return;
     registerAgentNode(nodeType, nodeData);
@@ -2645,6 +4155,7 @@ app.registerExtension({
     registerLoadImageNode(nodeType, nodeData);
     registerTextInputNode(nodeType, nodeData);
     registerPointSelectorHooks(nodeType, nodeData);
+    registerCropSelectorHooks(nodeType, nodeData);
   }
 });
 console.log("FFMPEGA UI extensions loaded");

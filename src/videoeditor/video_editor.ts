@@ -182,6 +182,9 @@ function _setupNode(node: EditorNode): void {
                 infoEl.textContent = 'Edits applied';
                 previewContainer.style.display = '';
                 resizeNode();
+                // Resume the paused workflow (only if it was actually paused)
+                const pauseW = node.widgets?.find((w: ComfyWidget) => w.name === 'pause_on_input');
+                if (pauseW?.value) app.queuePrompt(0, 1);
             },
             onCancel: () => { },
         });
@@ -355,7 +358,7 @@ function _setupNode(node: EditorNode): void {
             resizeNode();
 
             const autoW = node.widgets?.find((w: ComfyWidget) => w.name === 'auto_open_editor');
-            if (autoW?.value === true && !getModal().isOpen) {
+            if (autoW?.value && !getModal().isOpen) {
                 const m = getModal();
                 m.setCallbacks({
                     onApply: (state: ModalEditState) => {
@@ -364,6 +367,9 @@ function _setupNode(node: EditorNode): void {
                         infoEl.textContent = 'Edits applied';
                         previewContainer.style.display = '';
                         resizeNode();
+                        // Resume the paused workflow (only if it was actually paused)
+                        const pauseW2 = node.widgets?.find((w: ComfyWidget) => w.name === 'pause_on_input');
+                        if (pauseW2?.value) app.queuePrompt(0, 1);
                     },
                     onCancel: () => { },
                 });

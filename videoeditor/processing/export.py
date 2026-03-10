@@ -74,7 +74,7 @@ def render_edits(
         # --- Step 1: Parse segments ---
         segments = _parse_segments(segments_json)
         has_edits = bool(segments)
-        has_speed = _has_speed_changes(speed_map_json)
+        has_speed = has_speed_changes(speed_map_json)
         has_crop = bool(crop_json and crop_json.strip() and crop_json != "{}")
         has_text = bool(text_overlays_json and text_overlays_json.strip()
                         and text_overlays_json != "[]")
@@ -376,7 +376,7 @@ def _apply_audio(
     return output_path
 
 
-def _has_speed_changes(speed_map_json: str) -> bool:
+def has_speed_changes(speed_map_json: str) -> bool:
     """Check if any segment has a non-1.0 speed."""
     if not speed_map_json or not speed_map_json.strip():
         return False

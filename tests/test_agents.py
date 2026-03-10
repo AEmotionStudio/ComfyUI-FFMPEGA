@@ -10,6 +10,7 @@ Tests cover:
 - PipelineGenerator agentic loop integration
 """
 
+import asyncio
 import json
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
@@ -42,7 +43,7 @@ class TestLLMConfig:
         assert cfg.model == "llama3.1:8b"
         assert cfg.temperature == 0.3
         assert cfg.max_tokens == 4096
-        assert cfg.timeout == 240.0
+        assert cfg.timeout == 120.0
         assert cfg.api_key is None
         assert cfg.extra_options == {}
 
@@ -594,6 +595,52 @@ class TestCLIGenerate:
         """list_models should return the single model identifier."""
         models = await connector.list_models()
         assert models == ["gemini-cli"]
+
+    @pytest.mark.asyncio
+    async def test_generate_retries_on_timeout(self, connector):
+        """Timeout on first attempt should retry and succeed on second attempt."""
+        mock_proc_ok = AsyncMock()
+        mock_proc_ok.communicate = AsyncMock(return_value=(b"ok", b""))
+        mock_proc_ok.returncode = 0
+
+        call_count = 0
+
+        async def _fake_wait_for(coro, *, timeout):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise asyncio.TimeoutError
+            return await coro
+
+        mock_proc_timeout = AsyncMock()
+        mock_proc_timeout.kill = AsyncMock()
+        mock_proc_timeout.wait = AsyncMock()
+
+        procs = iter([mock_proc_timeout, mock_proc_ok])
+
+        with patch.object(connector, "_resolve_binary", return_value="/usr/bin/gemini"), \
+             patch("asyncio.create_subprocess_exec", side_effect=lambda *a, **kw: next(procs)), \
+             patch("asyncio.wait_for", side_effect=_fake_wait_for):
+            response = await connector.generate("test")
+
+        assert response.content == "ok"
+        assert call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_generate_raises_after_all_timeouts(self, connector):
+        """Should raise TimeoutError after exhausting all retry attempts."""
+        mock_proc = AsyncMock()
+        mock_proc.kill = AsyncMock()
+        mock_proc.wait = AsyncMock()
+
+        async def _always_timeout(coro, *, timeout):
+            raise asyncio.TimeoutError
+
+        with patch.object(connector, "_resolve_binary", return_value="/usr/bin/gemini"), \
+             patch("asyncio.create_subprocess_exec", return_value=mock_proc), \
+             patch("asyncio.wait_for", side_effect=_always_timeout):
+            with pytest.raises(TimeoutError, match="timed out"):
+                await connector.generate("test")
 
 
 class TestCLIChatWithTools:

@@ -25,6 +25,11 @@ import torch
 
 log = logging.getLogger("ffmpega.videoeditor")
 
+try:
+    from ..core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin
+except ImportError:
+    from core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin  # type: ignore
+
 # Lazy import to avoid circular deps at module load
 _folder_paths = None
 
@@ -104,6 +109,7 @@ class VideoEditorNode:
                     "min": 0.0,
                     "max": 120.0,
                     "step": 0.01,
+                    "forceInput": True,
                     "tooltip": "Framerate for IMAGE tensor input. 0 = auto-detect from source.",
                 }),
             },
@@ -130,6 +136,17 @@ class VideoEditorNode:
         m.update(kwargs.get("_edit_segments", "[]").encode())
         return m.hexdigest()
 
+    @classmethod
+    def VALIDATE_INPUTS(cls, **kwargs):
+        """Accept empty or missing fps gracefully."""
+        fps_val = kwargs.get("fps", 0.0)
+        if fps_val is not None and fps_val != "":
+            try:
+                float(fps_val)
+            except (ValueError, TypeError):
+                return f"Invalid fps value: {fps_val}"
+        return True
+
     def process(
         self,
         pause_on_input: bool = True,
@@ -150,28 +167,38 @@ class VideoEditorNode:
         """Main execution method."""
         from .processing.export import render_edits
 
+        # Defensive cast — fps may arrive as "" from an unconnected widget
+        try:
+            fps = float(fps) if fps is not None and fps != "" else 0.0
+        except (ValueError, TypeError):
+            fps = 0.0
+
         folder_paths = _get_folder_paths()
         empty_frames = torch.zeros(1, 512, 512, 3)
         silent_audio = {"waveform": torch.zeros(1, 1, 1), "sample_rate": 44100}
 
-        # --- Resolve video source (priority: images > video_path) ---
+        # --- Resolve video source (priority: video_path > images) ---
+        # video_path always wins when connected, matching LoadVideoPathNode.
         resolved_path = None
 
-        if images is not None:
-            resolved_path = self._resolve_images_input(
-                images, fps, unique_id, folder_paths,
-            )
-
-        if resolved_path is None and video_path and video_path.strip():
+        if video_path and video_path.strip():
             vp = video_path.strip()
+            if images is not None:
+                log.info("[VideoEditor] Both video_path and images connected — using video_path")
             if not self._is_path_sandboxed(vp):
                 log.warning(
                     "[VideoEditor] video_path '%s' is outside allowed directories, ignoring", vp,
                 )
             elif os.path.isfile(vp):
                 resolved_path = vp
+                log.info("[VideoEditor] using upstream video_path: %s", vp)
             else:
                 log.warning("[VideoEditor] video_path not found: %s", vp)
+
+        if resolved_path is None and images is not None:
+            resolved_path = self._resolve_images_input(
+                images, fps, unique_id, folder_paths,
+            )
 
         if resolved_path is None:
             log.info("[VideoEditor] No input connected")
@@ -179,6 +206,10 @@ class VideoEditorNode:
                 "ui": {"text": ["Connect a video path or IMAGE tensor"]},
                 "result": (empty_frames, "", silent_audio, 0.0, 0),
             }
+
+        # --- Extract audio from video file if no upstream audio ---
+        if audio is None and resolved_path:
+            audio = self._extract_audio(resolved_path)
 
         # --- Passthrough mode: skip editing ---
         if not pause_on_input:
@@ -406,8 +437,110 @@ class VideoEditorNode:
     @staticmethod
     def _has_speed_changes(speed_map_json: str) -> bool:
         """Check if any segment has a non-1.0 speed."""
-        from .processing.export import _has_speed_changes
-        return _has_speed_changes(speed_map_json)
+        from .processing.export import has_speed_changes
+        return has_speed_changes(speed_map_json)
+
+    # Audio extraction constants — used in both the ffmpeg command and
+    # the downstream numpy reshape so they stay in sync.
+    _AUDIO_CHANNELS = 2
+    _AUDIO_SAMPLE_RATE = 44100
+
+    @staticmethod
+    def _extract_audio(video_path: str) -> dict | None:
+        """Extract audio from a video file as a ComfyUI AUDIO dict.
+
+        Returns ``{"waveform": Tensor, "sample_rate": int}`` if the video
+        has an audio stream, or ``None`` on failure / no audio.
+        """
+        ffprobe_bin = get_ffprobe_bin()
+        ffmpeg_bin = get_ffmpeg_bin()
+        if not ffprobe_bin or not ffmpeg_bin:
+            return None
+
+        channels = VideoEditorNode._AUDIO_CHANNELS
+        sample_rate = VideoEditorNode._AUDIO_SAMPLE_RATE
+
+        # Check if video has an audio stream
+        try:
+            probe = subprocess.run(
+                [
+                    ffprobe_bin, "-v", "quiet",
+                    "-select_streams", "a:0",
+                    "-show_entries", "stream=codec_type",
+                    "-of", "csv=p=0",
+                    video_path,
+                ],
+                capture_output=True, text=True, timeout=10,
+            )
+            if probe.returncode != 0 or "audio" not in probe.stdout:
+                return None
+        except Exception:
+            return None
+
+        # Extract audio to raw PCM via ffmpeg
+        try:
+            result = subprocess.run(
+                [
+                    ffmpeg_bin, "-i", video_path,
+                    "-vn",  # no video
+                    "-f", "wav",
+                    "-acodec", "pcm_s16le",
+                    "-ac", str(channels),
+                    "-ar", str(sample_rate),
+                    "pipe:1",
+                ],
+                capture_output=True, timeout=30,
+            )
+            if result.returncode != 0 or not result.stdout:
+                return None
+
+            import struct
+
+            data = result.stdout
+            # Skip WAV header (44 bytes standard)
+            if len(data) <= 44:
+                return None
+
+            # Parse WAV header for actual data offset
+            # Find 'data' chunk — start search at byte 12 (past RIFF/WAVE
+            # header) to avoid false matches in metadata chunks.
+            idx = data.find(b'data', 12)
+            if idx < 0:
+                return None
+            data_size = struct.unpack_from('<I', data, idx + 4)[0]
+            pcm_start = idx + 8
+            # Sanity cap — reject obviously corrupt data_size values
+            _MAX_WAV_DATA = 500_000_000  # 500 MB
+            if data_size > _MAX_WAV_DATA:
+                log.warning("[VideoEditor] WAV data_size=%d exceeds sanity cap, capping", data_size)
+                data_size = _MAX_WAV_DATA
+            # Guard against truncated PCM data (header claims more than buffer holds)
+            available = len(data) - pcm_start
+            if available <= 0:
+                return None
+            if data_size > available:
+                data_size = available
+            pcm_bytes = data[pcm_start:pcm_start + data_size]
+
+            samples = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+            # Reshape to (channels, samples) — guard against truncated PCM
+            remainder = len(samples) % channels
+            if remainder != 0:
+                samples = samples[:-remainder]
+            if len(samples) == 0:
+                return None
+            samples = samples.reshape(-1, channels).T  # (channels, N)
+            waveform = torch.from_numpy(samples).unsqueeze(0)  # (1, channels, N)
+
+            log.info(
+                "[VideoEditor] Extracted audio: %d samples @ %dHz",
+                waveform.shape[-1], sample_rate,
+            )
+            return {"waveform": waveform, "sample_rate": sample_rate}
+
+        except Exception as e:
+            log.warning("[VideoEditor] Audio extraction failed: %s", e)
+            return None
 
     @staticmethod
     def _is_path_sandboxed(path: str) -> bool:

@@ -215,7 +215,7 @@ class TestLoadVideoPathOverride:
             video_path=str(video_file),
             images=fake_images,
         )
-        # images_out is at index 5
+        # images_out is at index 5 (crop_data moved to end at index 7)
         assert torch.equal(result["result"][5], fake_images)
 
     def test_passthrough_audio(self, tmp_path, monkeypatch):
@@ -238,7 +238,7 @@ class TestLoadVideoPathOverride:
             video_path=str(video_file),
             audio=fake_audio,
         )
-        # audio_out is at index 6
+        # audio_out is at index 6 (crop_data moved to end at index 7)
         assert result["result"][6] is fake_audio
 
     def test_empty_defaults_when_no_upstream(self, tmp_path, monkeypatch):

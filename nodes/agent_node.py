@@ -143,7 +143,7 @@ class FFMPEGAgentNode:
                                "Select 'custom' to type any model name manually. "
                                "Select 'none' to skip the LLM entirely and use no_llm_mode instead (manual pipeline, SAM3, Whisper, or MMAudio).",
                 }),
-                "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles", "generate_audio", "lip_sync", "animate_portrait"], {
+                "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles", "generate_audio", "lip_sync", "animate_portrait", "marigold", "video_depth", "flux_klein", "minimax_remover", "ai_upscale"], {
                     "default": "manual",
                     "tooltip": "What to do when llm_model is 'none'. "
                                "'manual' runs the Effects Builder pipeline directly (no AI). "
@@ -152,7 +152,10 @@ class FFMPEGAgentNode:
                                "'karaoke_subtitles' runs Whisper and burns word-by-word karaoke subtitles. "
                                "'generate_audio' uses MMAudio to synthesize audio from video/prompt. "
                                "'lip_sync' uses MuseTalk to sync lip movements to connected audio_a. "
-                               "'animate_portrait' uses LivePortrait to animate a face — connect driving video to video_a.",
+                               "'animate_portrait' uses LivePortrait to animate a face — connect driving video to video_a. "
+                               "'marigold' runs Marigold dense vision analysis (depth/normals/intrinsics) — choose output via marigold_output_type. "
+                               "'video_depth' runs Video Depth Anything for temporally-consistent depth — choose encoder via video_depth_encoder. "
+                               "'flux_klein' runs FLUX Klein editing directly — prompt is the edit instruction, works on images and videos (full-frame, no mask needed).",
                 }),
                 "quality_preset": (cls.QUALITY_PRESETS, {
                     "default": "standard",
@@ -196,6 +199,10 @@ class FFMPEGAgentNode:
                 "mask_points": ("STRING", {
                     "forceInput": True,
                     "tooltip": "JSON-encoded point selection data from the Load Image/Video Path node's Point Selector. Guides SAM3 masking with click-to-select points instead of relying on text prompts alone.",
+                }),
+                "crop_data": ("STRING", {
+                    "forceInput": True,
+                    "tooltip": "JSON-encoded crop rectangle from the Load Video Path or Frame Extract node's Crop Selector. Format: {\"x\":N, \"y\":N, \"w\":N, \"h\":N}. Crops the input video before processing.",
                 }),
 
                 # ── Basic options (always visible) ────────────────────────
@@ -312,11 +319,60 @@ class FFMPEGAgentNode:
                     "default": False,
                     "label_on": "FLUX On",
                     "label_off": "FLUX Off",
-                    "tooltip": "Enable FLUX Klein 4B for AI-powered object removal (auto_mask:effect=remove) and text-guided editing (auto_mask:effect=edit). OFF by default to avoid high VRAM usage (~8–15 GB). When OFF, removal falls back to LaMa (~200 MB) and editing uses lightweight FFmpeg filter approximations.",
+                    "tooltip": "Enable FLUX Klein 4B for AI-powered object removal (auto_mask:effect=remove) and text-guided editing (auto_mask:effect=edit). OFF by default to avoid high VRAM usage (~8–15 GB). When OFF, removal falls back to MiniMax-Remover (if enabled) or LaMa (~200 MB) and editing uses lightweight FFmpeg filter approximations.",
                 }),
                 "flux_smoothing": (["none", "gaussian", "adaptive"], {
                     "default": "none",
                     "tooltip": "Temporal smoothing for FLUX Klein effects (remove/edit). 'none' = no smoothing (fastest, least VRAM). 'gaussian' = Gaussian blur across time (reduces flicker, +700 MiB RAM). 'adaptive' = per-pixel deviation check, only smooths outlier frames (+700 MiB RAM).",
+                }),
+
+                # ── Advanced: MiniMax-Remover ─────────────────────────────
+                "use_minimax_remover": ("BOOLEAN", {
+                    "default": False,
+                    "label_on": "MiniMax On",
+                    "label_off": "MiniMax Off",
+                    "tooltip": "Enable MiniMax-Remover for high-quality video object removal (auto_mask:effect=remove). Uses a purpose-built DiT model (~2.5 GB, ~5–8 GB VRAM). Takes priority over FLUX Klein for removal when both are enabled. When OFF, removal falls back to FLUX Klein (if enabled) or LaMa (~200 MB).",
+                }),
+
+                # ── Advanced: Marigold ────────────────────────────────────
+                "marigold_output_type": (["depth", "normals", "appearance", "lighting"], {
+                    "default": "depth",
+                    "tooltip": "Marigold output type (used in 'marigold' no_llm_mode or agentic mode). "
+                               "'depth' = monocular depth map. "
+                               "'normals' = surface normals. "
+                               "'appearance' = albedo + roughness + metallicity. "
+                               "'lighting' = albedo + shading + residual.",
+                }),
+
+                # ── Advanced: Video Depth Anything ─────────────────────────
+                "video_depth_encoder": (["vits", "vitb", "vitl"], {
+                    "default": "vits",
+                    "tooltip": "Video Depth Anything model size (used in 'video_depth' no_llm_mode or agentic mode). "
+                               "'vits' = Small (~7 GB, fastest). "
+                               "'vitb' = Base (~12 GB). "
+                               "'vitl' = Large (~24 GB, best quality).",
+                }),
+                "video_depth_colormap": (["gray", "inferno", "turbo", "plasma", "magma", "viridis", "hot", "bone"], {
+                    "default": "gray",
+                    "tooltip": "Depth map colormap (used in 'video_depth' no_llm_mode). "
+                               "'gray' = standard B&W depth (for ControlNet/compositing). "
+                               "Others are artistic colormaps for creative visualization.",
+                }),
+
+                # ── Advanced: AI Upscale ───────────────────────────────────
+                "upscale_model": (["realesrgan_x4plus", "realesrgan_x4_anime", "hat_x4", "dat_x4", "swinir_x4"], {
+                    "default": "realesrgan_x4plus",
+                    "tooltip": "AI upscaler model (used in 'ai_upscale' no_llm_mode). "
+                               "'realesrgan_x4plus' = fast general-purpose. "
+                               "'realesrgan_x4_anime' = anime/cartoon. "
+                               "'hat_x4' = SOTA quality (Real-HAT-GAN). "
+                               "'dat_x4' = balanced (DAT-2). "
+                               "'swinir_x4' = classical SR.",
+                }),
+                "upscale_scale": (["4", "2"], {
+                    "default": "4",
+                    "tooltip": "AI upscale factor (used in 'ai_upscale' no_llm_mode). "
+                               "'4' = 4× resolution. '2' = 2× resolution.",
                 }),
 
                 # ── Advanced: MMAudio ─────────────────────────────────────
@@ -810,7 +866,9 @@ class FFMPEGAgentNode:
         sam3_max_objects: int = 5,
         sam3_det_threshold: float = 0.7,
         mask_points: str = "",
+        crop_data: str = "",
         use_flux_klein: bool = False,
+        use_minimax_remover: bool = False,
         flux_smoothing: str = "none",
         mmaudio_mode: str = "replace",
         batch_mode: bool = False,
@@ -877,6 +935,7 @@ class FFMPEGAgentNode:
                 sam3_det_threshold=sam3_det_threshold,
                 mask_points=mask_points,
                 use_flux_klein=use_flux_klein,
+                use_minimax_remover=use_minimax_remover,
                 flux_smoothing=flux_smoothing,
                 pipeline_json=pipeline_json,
             )
@@ -901,12 +960,37 @@ class FFMPEGAgentNode:
             audio_a=audio_a,
             **kwargs,
         )
-        # images_a is freed inside _resolve_inputs when a tensor; null out local ref
         images_a = None
+
+        # --- Apply crop if crop_data is provided ---
+        if crop_data and crop_data.strip():
+            try:
+                from ..videoeditor.processing.crop import apply_crop
+                import tempfile as _crop_tmp
+                _crop_out = _crop_tmp.NamedTemporaryFile(
+                    suffix=".mp4", delete=False,
+                )
+                _crop_out.close()
+                cropped = apply_crop(
+                    effective_video_path, crop_data, _crop_out.name,
+                )
+                if cropped != effective_video_path:
+                    logger.info(
+                        "Applied crop %s → %s", crop_data.strip(), cropped,
+                    )
+                    effective_video_path = cropped
+                else:
+                    # Crop wasn't applied (e.g. invalid rect), clean up
+                    try:
+                        os.unlink(_crop_out.name)
+                    except OSError:
+                        pass
+            except Exception as e:
+                logger.warning("Could not apply crop_data: %s", e)
 
         if not prompt.strip():
             # manual + whisper + lip_sync modes don't need a prompt
-            if llm_model != "none" or no_llm_mode not in ("manual", "transcribe", "karaoke_subtitles", "generate_audio", "lip_sync", "animate_portrait"):
+            if llm_model != "none" or no_llm_mode not in ("manual", "transcribe", "karaoke_subtitles", "generate_audio", "lip_sync", "animate_portrait", "marigold", "video_depth", "minimax_remover", "ai_upscale"):
                 raise ValueError("Prompt cannot be empty")
 
         # --- Analyze input video ---
@@ -937,6 +1021,7 @@ class FFMPEGAgentNode:
                     sam3_det_threshold=sam3_det_threshold,
                     mask_points=mask_points,
                     use_flux_klein=use_flux_klein,
+                    use_minimax_remover=use_minimax_remover,
                     flux_smoothing=flux_smoothing,
                     temp_video_from_images=temp_video_from_images,
                     temp_video_with_audio=temp_video_with_audio,
@@ -1036,6 +1121,92 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
+            # Marigold mode (dense vision analysis)
+            if no_llm_mode == "marigold":
+                return await self._process_marigold_only(
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
+                    marigold_output_type=kwargs.pop("marigold_output_type", "depth"),
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    **kwargs,
+                )
+            # Video Depth Anything mode (temporal depth estimation)
+            if no_llm_mode == "video_depth":
+                return await self._process_video_depth_only(
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
+                    video_depth_encoder=kwargs.pop("video_depth_encoder", "vits"),
+                    video_depth_colormap=kwargs.pop("video_depth_colormap", "gray"),
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    **kwargs,
+                )
+            # MiniMax-Remover mode (direct removal, no SAM3)
+            if no_llm_mode == "minimax_remover":
+                return await self._process_minimax_remover_only(
+                    prompt=prompt,
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    **kwargs,
+                )
+            # FLUX Klein mode (direct editing, no SAM3)
+            if no_llm_mode == "flux_klein":
+                return await self._process_flux_klein_only(
+                    prompt=prompt,
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
+                    flux_smoothing=flux_smoothing,
+                    image_a=image_a,
+                    _all_image_paths=_all_image_paths,
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    **kwargs,
+                )
+            # AI Upscale mode (spandrel-based super-resolution)
+            if no_llm_mode == "ai_upscale":
+                return await self._process_ai_upscale_only(
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
+                    upscale_model=kwargs.pop("upscale_model", "realesrgan_x4plus"),
+                    upscale_scale=int(kwargs.pop("upscale_scale", "4")),
+                    tile_size=int(kwargs.pop("tile_size", "512")),
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    **kwargs,
+                )
             # Text inputs connected → build a text overlay pipeline
             if _all_text_inputs:
                 # Auto-generate a pipeline from text inputs
@@ -1084,6 +1255,7 @@ class FFMPEGAgentNode:
                     sam3_det_threshold=sam3_det_threshold,
                     mask_points=mask_points,
                     use_flux_klein=use_flux_klein,
+                    use_minimax_remover=use_minimax_remover,
                     flux_smoothing=flux_smoothing,
                     temp_video_from_images=temp_video_from_images,
                     temp_video_with_audio=temp_video_with_audio,
@@ -1099,7 +1271,7 @@ class FFMPEGAgentNode:
                 "No-LLM 'manual' mode requires an Effects Builder node or "
                 "FFMPEGA Text node. Connect one to the pipeline_json or "
                 "text_a input, or switch no_llm_mode to 'sam3_masking', "
-                "'transcribe', 'karaoke_subtitles', 'generate_audio', or 'lip_sync'."
+                "'transcribe', 'karaoke_subtitles', 'generate_audio', 'lip_sync', 'marigold', 'video_depth', 'flux_klein', 'minimax_remover', or 'ai_upscale'."
             )
         # --- Build connected-inputs context string ---
         connected_inputs_str = self._build_connected_inputs_summary(
@@ -1158,6 +1330,7 @@ class FFMPEGAgentNode:
             sam3_det_threshold=sam3_det_threshold,
             mask_points=mask_points,
             use_flux_klein=use_flux_klein,
+            use_minimax_remover=use_minimax_remover,
             flux_smoothing=flux_smoothing,
             mmaudio_mode=mmaudio_mode,
             composer=self.composer,
@@ -1184,6 +1357,30 @@ class FFMPEGAgentNode:
 
         # --- Compose command ---
         command = self.composer.compose(pipeline)
+
+        # --- Movie-override: skill produced a pre-built video (VDA, Marigold) ---
+        movie_override = pipeline.metadata.get("_movie_override")
+        if movie_override and os.path.isfile(movie_override):
+            import shutil
+            shutil.copy2(movie_override, output_path)
+            cmd_log = f"cp {movie_override} → {output_path}"
+            unique_id = str(kwargs.get("unique_id", ""))
+            hidden_prompt = kwargs.get("hidden_prompt") or {}
+            try:
+                from .nollm_modes import collect_frame_output
+            except ImportError:
+                from nodes.nollm_modes import collect_frame_output
+            images_tensor, audio_out = collect_frame_output(
+                media_converter=self.media_converter,
+                output_path=output_path,
+                unique_id=unique_id,
+                hidden_prompt=hidden_prompt,
+                removes_audio=True,
+            )
+            analysis = f"AI Skill produced video: {os.path.basename(movie_override)}"
+            if hasattr(connector, 'close'):
+                await connector.close()
+            return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
 
         # --- Execute ---
         result, pipeline, command = await self._execute_pipeline(
@@ -1338,7 +1535,7 @@ class FFMPEGAgentNode:
 
         return prompt + "\n".join(hint_lines)
 
-    async def _process_effects_pipeline(self, pipeline_json, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, whisper_device="cpu", whisper_model="large-v3", sam3_device="gpu", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", use_flux_klein=False, flux_smoothing="none", temp_video_from_images=None, temp_video_with_audio=None, image_a=None, audio_a=None, _all_video_paths=None, _all_image_paths=None, _all_text_inputs=None, **kwargs):
+    async def _process_effects_pipeline(self, pipeline_json, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, whisper_device="cpu", whisper_model="large-v3", sam3_device="gpu", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", use_flux_klein=False, use_minimax_remover=False, flux_smoothing="none", temp_video_from_images=None, temp_video_with_audio=None, image_a=None, audio_a=None, _all_video_paths=None, _all_image_paths=None, _all_text_inputs=None, **kwargs):
         """Delegate to nollm_modes module."""
         return await _nollm.process_effects_pipeline(
             composer=self.composer, process_manager=self.process_manager,
@@ -1353,6 +1550,7 @@ class FFMPEGAgentNode:
             sam3_device=sam3_device, sam3_max_objects=sam3_max_objects,
             sam3_det_threshold=sam3_det_threshold, mask_points=mask_points,
             use_flux_klein=use_flux_klein,
+            use_minimax_remover=use_minimax_remover,
             flux_smoothing=flux_smoothing,
             temp_video_from_images=temp_video_from_images,
             temp_video_with_audio=temp_video_with_audio,
@@ -1458,6 +1656,107 @@ class FFMPEGAgentNode:
             **kwargs,
         )
 
+    # ------------------------------------------------------------------ #
+    #  Marigold mode (no LLM)                                             #
+    # ------------------------------------------------------------------ #
+
+    async def _process_marigold_only(self, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, marigold_output_type="depth", temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+        """Delegate to nollm_modes module."""
+        return await _nollm.process_marigold_only(
+            media_converter=self.media_converter,
+            effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            marigold_output_type=marigold_output_type,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
+        )
+
+    # ------------------------------------------------------------------ #
+    #  Video Depth mode (no LLM)                                          #
+    # ------------------------------------------------------------------ #
+
+    async def _process_video_depth_only(self, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, video_depth_encoder="vits", video_depth_colormap="gray", temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+        """Delegate to nollm_modes module."""
+        return await _nollm.process_video_depth_only(
+            media_converter=self.media_converter,
+            effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            video_depth_encoder=video_depth_encoder,
+            video_depth_colormap=video_depth_colormap,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
+        )
+
+    # ------------------------------------------------------------------ #
+    #  AI Upscale mode (no LLM)                                            #
+    # ------------------------------------------------------------------ #
+
+    async def _process_ai_upscale_only(self, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, upscale_model="realesrgan_x4plus", upscale_scale=4, tile_size=512, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+        """Delegate to nollm_modes module."""
+        return await _nollm.process_ai_upscale_only(
+            media_converter=self.media_converter,
+            effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            upscale_model=upscale_model,
+            upscale_scale=upscale_scale,
+            tile_size=tile_size,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
+        )
+
+    # ------------------------------------------------------------------ #
+    #  MiniMax-Remover mode (no LLM)                                       #
+    # ------------------------------------------------------------------ #
+
+    async def _process_minimax_remover_only(self, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+        """Delegate to nollm_modes module."""
+        return await _nollm.process_minimax_remover_only(
+            media_converter=self.media_converter,
+            prompt=prompt,
+            effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
+        )
+
+    # ------------------------------------------------------------------ #
+    #  FLUX Klein mode (no LLM)                                            #
+    # ------------------------------------------------------------------ #
+
+    async def _process_flux_klein_only(self, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, flux_smoothing="none", image_a=None, _all_image_paths=None, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+        """Delegate to nollm_modes module."""
+        return await _nollm.process_flux_klein_only(
+            media_converter=self.media_converter,
+            prompt=prompt,
+            effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            flux_smoothing=flux_smoothing,
+            image_a=image_a,
+            _all_image_paths=_all_image_paths,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
+        )
+
     async def _verify_output(self, connector, output_path, prompt, pipeline, effective_video_path, use_vision):
         """Delegate to execution_engine module."""
         return await _ee._verify_output(
@@ -1494,7 +1793,7 @@ class FFMPEGAgentNode:
         """Delegate to output_handler module."""
         return _oh.strip_api_key_from_metadata(api_key, prompt, extra_pnginfo)
 
-    async def _process_batch(self, video_folder, file_pattern, prompt, llm_model, quality_preset, ollama_url, api_key, custom_model, crf, encoding_preset, max_concurrent, save_output, output_path, use_vision=False, verify_output=False, ptc_mode="off", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", pipeline_json="", use_flux_klein=False, flux_smoothing="none"):
+    async def _process_batch(self, video_folder, file_pattern, prompt, llm_model, quality_preset, ollama_url, api_key, custom_model, crf, encoding_preset, max_concurrent, save_output, output_path, use_vision=False, verify_output=False, ptc_mode="off", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", pipeline_json="", use_flux_klein=False, use_minimax_remover=False, flux_smoothing="none"):
         """Delegate to batch_processor module."""
         return await _bp.process_batch(
             analyzer=self.analyzer, composer=self.composer,
@@ -1513,6 +1812,7 @@ class FFMPEGAgentNode:
             sam3_det_threshold=sam3_det_threshold,
             mask_points=mask_points, pipeline_json=pipeline_json,
             use_flux_klein=use_flux_klein,
+            use_minimax_remover=use_minimax_remover,
             flux_smoothing=flux_smoothing,
         )
     @classmethod

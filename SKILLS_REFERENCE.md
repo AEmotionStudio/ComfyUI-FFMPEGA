@@ -2343,7 +2343,7 @@ Generate a sprite sheet of evenly-spaced frames.
 ## 🤖 AI-Powered Skills
 
 ### auto_mask
-Apply an effect only to specific objects using SAM3 AI segmentation. Describe the target with a text prompt and SAM3 generates pixel-level masks. The `remove` and `edit` effects use FLUX Klein 4B AI for high-quality inpainting and text-guided editing.
+Apply an effect only to specific objects using SAM3 AI segmentation. Describe the target with a text prompt and SAM3 generates pixel-level masks. The `remove` effect uses MiniMax-Remover (when enabled) or FLUX Klein 4B AI for high-quality inpainting. The `edit` effect uses FLUX Klein 4B AI for text-guided editing.
 | Parameter | Type | Default | Choices/Range |
 |-----------|------|---------|---------------|
 | `target` | string | *(required)* | text describing what to segment (e.g. "the dog", "face", "background") |
@@ -2356,15 +2356,18 @@ Apply an effect only to specific objects using SAM3 AI segmentation. Describe th
 - "Blur all faces for privacy using auto_mask"
 - "Keep the subject in color and grayscale everything else"
 - "Pixelate the license plates"
-- "Remove the watermark" *(uses FLUX Klein AI)*
+- "Remove the watermark" *(uses MiniMax-Remover when enabled, else FLUX Klein AI)*
 - "Isolate the person on a green screen"
 - "Make the background transparent (WebM output)"
 - "Change the hair to red" *(uses effect=edit with edit_prompt)*
 - "Replace the background with a beach scene" *(uses effect=edit with edit_prompt)*
 
 > [!NOTE]
-> **`remove` and `edit` effects** use FLUX Klein 4B (Apache 2.0). First run downloads the model (~8 GB fp16) to `ComfyUI/models/flux_klein/`.
-> **VRAM:** ~8–13 GB for FLUX Klein (fp16/bf16, with CPU offload).
+> **`remove` effect priority:** MiniMax-Remover (when `use_minimax_remover=On`) → FLUX Klein (when `use_flux_klein=On`) → LaMa → black fill.
+> **VRAM:** ~2.5 GB for MiniMax-Remover, ~8–13 GB for FLUX Klein (fp16/bf16, with CPU offload).
+
+> [!WARNING]
+> MiniMax-Remover model weights are licensed **CC-BY-NC 4.0** (non-commercial use only). By downloading and using them you accept the [CC-BY-NC 4.0 license](https://creativecommons.org/licenses/by-nc/4.0/).
 
 ---
 
