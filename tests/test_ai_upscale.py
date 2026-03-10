@@ -21,6 +21,12 @@ try:
 except (ImportError, RuntimeError):
     _has_torch = False
 
+# Pre-import so unittest.mock.patch("core.upscaler.xxx") can resolve the
+# dotted path — without this, Python may fail to find the attribute on the
+# ``core`` package if the submodule hasn't been imported yet (CI hit).
+if _has_torch:
+    import core.upscaler  # noqa: F401
+
 
 # ------------------------------------------------------------------ #
 #  Skill registration

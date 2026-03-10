@@ -12,6 +12,14 @@ from unittest.mock import patch, MagicMock
 
 from skills.registry import get_registry, SkillCategory
 
+# Pre-import so unittest.mock.patch("core.marigold_synthesizer.xxx") can
+# resolve the dotted path in CI where the submodule may not yet be an
+# attribute of the ``core`` package.
+try:
+    import core.marigold_synthesizer  # noqa: F401
+except ImportError:
+    pass
+
 
 # ── Skill Registration ─────────────────────────────────────────────
 
