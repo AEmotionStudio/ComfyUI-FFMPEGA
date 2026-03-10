@@ -21,6 +21,7 @@ import gc
 import logging
 import os
 import subprocess
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -452,7 +453,6 @@ def _save_depth_video(depths: np.ndarray, output_path: str,
                 f"{result.stderr[:500] if result.stderr else 'no stderr'}"
             )
     finally:
-        import shutil
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 

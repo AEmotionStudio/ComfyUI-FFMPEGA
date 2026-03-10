@@ -1508,19 +1508,8 @@ async def process_minimax_remover_only(
         preview_mode=preview_mode,
     )
 
-    # --- Pre-emptive VRAM clear ---
-    try:
-        import comfy.model_management as mm  # type: ignore[import-not-found]
-        mm.unload_all_models()
-        mm.soft_empty_cache()
-    except (ImportError, AttributeError):
-        pass
-
-    import gc as _gc
-    _gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    logger.info("MiniMax-Remover: pre-cleared GPU VRAM")
+    # NOTE: VRAM is freed internally by minimax_remover.load_pipeline()
+    # via _vram_utils.free_for_module() — no manual clearing needed here.
 
     # --- Generate mask with SAM3 (if prompt provided) ---
     mask_video_path = None
@@ -1759,23 +1748,9 @@ async def process_flux_klein_only(
     ext = os.path.splitext(effective_video_path)[1].lower()
     is_image = ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp")
 
-    # --- Pre-emptive VRAM clear ---
-    # In the LLM path, SAM3 runs in a subprocess whose GPU memory is
-    # fully released at process exit before Klein loads.  In no-LLM mode
-    # there's no subprocess step, so ComfyUI-loaded models (checkpoints,
-    # CLIP, VAE) may still hold GPU memory.  Aggressively free everything.
-    try:
-        import comfy.model_management as mm  # type: ignore[import-not-found]
-        mm.unload_all_models()
-        mm.soft_empty_cache()
-    except (ImportError, AttributeError):
-        pass
-
-    import gc as _gc
-    _gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    logger.info("FLUX Klein: pre-cleared GPU VRAM for pipeline load")
+    # NOTE: VRAM is freed internally by flux_klein_editor when loading
+    # the pipeline via _vram_utils.free_for_module() — no manual clearing
+    # needed here.
 
     # --- Convert image_a tensor → PIL reference images ---
     reference_images = None
@@ -1929,6 +1904,7 @@ async def process_ai_upscale_only(
     encoding_preset: str,
     upscale_model: str = "realesrgan_x4plus",
     upscale_scale: int = 4,
+    tile_size: int = 512,
     temp_video_from_images: Optional[str] = None,
     temp_video_with_audio: Optional[str] = None,
     **kwargs,
@@ -1969,12 +1945,14 @@ async def process_ai_upscale_only(
                 input_path=effective_video_path,
                 model_name=upscale_model,
                 scale_factor=upscale_scale,
+                tile_size=tile_size,
             )
         else:
             upscale_output = upscale_image(
                 input_path=effective_video_path,
                 model_name=upscale_model,
                 scale_factor=upscale_scale,
+                tile_size=tile_size,
             )
 
         if not upscale_output or not os.path.isfile(upscale_output):

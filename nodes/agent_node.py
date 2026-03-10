@@ -1202,6 +1202,7 @@ class FFMPEGAgentNode:
                     encoding_preset=encoding_preset,
                     upscale_model=kwargs.pop("upscale_model", "realesrgan_x4plus"),
                     upscale_scale=int(kwargs.pop("upscale_scale", "4")),
+                    tile_size=int(kwargs.pop("tile_size", "512")),
                     temp_video_from_images=temp_video_from_images,
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
@@ -1698,7 +1699,7 @@ class FFMPEGAgentNode:
     #  AI Upscale mode (no LLM)                                            #
     # ------------------------------------------------------------------ #
 
-    async def _process_ai_upscale_only(self, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, upscale_model="realesrgan_x4plus", upscale_scale=4, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+    async def _process_ai_upscale_only(self, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, upscale_model="realesrgan_x4plus", upscale_scale=4, tile_size=512, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
         """Delegate to nollm_modes module."""
         return await _nollm.process_ai_upscale_only(
             media_converter=self.media_converter,
@@ -1709,6 +1710,7 @@ class FFMPEGAgentNode:
             encoding_preset=encoding_preset,
             upscale_model=upscale_model,
             upscale_scale=upscale_scale,
+            tile_size=tile_size,
             temp_video_from_images=temp_video_from_images,
             temp_video_with_audio=temp_video_with_audio,
             **kwargs,
