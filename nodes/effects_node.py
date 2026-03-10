@@ -135,6 +135,46 @@ _PRESETS = {
         "effect_1": "ken_burns",
         "effect_1_params": {"direction": "in", "amount": 1.3},
     },
+    "🎭 Remove Background": {
+        "effect_1": "remove_background",
+        "effect_1_params": {},
+    },
+    "🔍 AI Upscale (2x)": {
+        "effect_1": "ai_upscale",
+        "effect_1_params": {"scale_factor": 2},
+    },
+    "📹 Stabilize + Denoise": {
+        "effect_1": "deshake",
+        "effect_1_params": {},
+        "effect_2": "denoise",
+        "effect_2_params": {"strength": "medium"},
+    },
+    "🎬 Cinematic B&W": {
+        "effect_1": "black_and_white",
+        "effect_1_params": {},
+        "effect_2": "vignette",
+        "effect_2_params": {},
+        "effect_3": "film_grain",
+        "effect_3_params": {"intensity": "light"},
+        "effect_4": "letterbox",
+        "effect_4_params": {"ratio": "2.39:1"},
+    },
+    "📱 TikTok Ready": {
+        "effect_1": "aspect",
+        "effect_1_params": {"ratio": "9:16", "mode": "crop"},
+        "effect_2": "speed",
+        "effect_2_params": {"factor": 1.5},
+        "effect_3": "quality",
+        "effect_3_params": {"crf": 20, "preset": "medium"},
+    },
+    "🐢 Slow Motion + Fades": {
+        "effect_1": "slowmo",
+        "effect_1_params": {"factor": 0.5},
+        "effect_2": "fade",
+        "effect_2_params": {"type": "in", "duration": 1.0},
+        "effect_3": "fade",
+        "effect_3_params": {"type": "out", "duration": 1.0},
+    },
 }
 
 _PRESET_NAMES = list(_PRESETS.keys())
@@ -216,6 +256,16 @@ def _get_skills_cached() -> tuple[list[str], dict[str, str], dict[str, str]]:
     return _CACHED_SKILL_DATA
 
 
+def invalidate_skill_cache() -> None:
+    """Reset the cached skill data so it is recomputed on next access.
+
+    Call this after adding/removing custom skills to refresh
+    the Effects Builder dropdowns without restarting ComfyUI.
+    """
+    global _CACHED_SKILL_DATA
+    _CACHED_SKILL_DATA = None
+
+
 def _find_categorized_name(skill_name: str, skills_list: list[str]) -> str:
     """Find the full categorized name for a raw skill name.
 
@@ -265,6 +315,7 @@ class FFMPEGAEffectsNode:
             if n != "none"
         })
         _defaults_json = json.dumps(param_defaults)
+        _param_help_json = json.dumps(param_help)
 
         return {
             "required": {
@@ -309,6 +360,24 @@ class FFMPEGAEffectsNode:
                     "placeholder": '{"factor": 2.0}',
                     "tooltip": param_tooltip,
                 }),
+                "effect_4": (skills, {
+                    "default": "none",
+                    "tooltip": "Fourth effect (chained after effect 3).",
+                }),
+                "effect_4_params": ("STRING", {
+                    "default": "",
+                    "placeholder": '{"key": "value"}',
+                    "tooltip": param_tooltip,
+                }),
+                "effect_5": (skills, {
+                    "default": "none",
+                    "tooltip": "Fifth effect (chained after effect 4).",
+                }),
+                "effect_5_params": ("STRING", {
+                    "default": "",
+                    "placeholder": '{"key": "value"}',
+                    "tooltip": param_tooltip,
+                }),
                 "raw_ffmpeg": ("STRING", {
                     "default": "",
                     "multiline": True,
@@ -349,6 +418,11 @@ class FFMPEGAEffectsNode:
                     "multiline": False,
                     "tooltip": "Internal: param defaults data (hidden by JS).",
                 }),
+                "_param_help_json": ("STRING", {
+                    "default": _param_help_json,
+                    "multiline": False,
+                    "tooltip": "Internal: param help data (hidden by JS).",
+                }),
             },
         }
 
@@ -387,11 +461,16 @@ class FFMPEGAEffectsNode:
         effect_2_params: str = "",
         effect_3: str = "none",
         effect_3_params: str = "",
+        effect_4: str = "none",
+        effect_4_params: str = "",
+        effect_5: str = "none",
+        effect_5_params: str = "",
         raw_ffmpeg: str = "",
         sam3_target: str = "",
         sam3_effect: str = "blur",
         _presets_json: str = "",
         _defaults_json: str = "",
+        _param_help_json: str = "",
     ) -> tuple[str]:
         """Build the pipeline JSON from user selections."""
         pipeline_steps: list[dict[str, Any]] = []
@@ -401,6 +480,8 @@ class FFMPEGAEffectsNode:
             (effect_1, effect_1_params),
             (effect_2, effect_2_params),
             (effect_3, effect_3_params),
+            (effect_4, effect_4_params),
+            (effect_5, effect_5_params),
         ]:
             effect_name = self._strip_category(raw_name)
             if not effect_name or effect_name == "none":

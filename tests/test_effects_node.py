@@ -127,6 +127,21 @@ class TestFindCategorizedName:
         assert result == "none"
 
 
+class TestInvalidateCache:
+    """Tests for invalidate_skill_cache."""
+
+    def test_invalidate_clears_cache(self):
+        """invalidate_skill_cache should reset the module-level cache."""
+        # _mod is the effects_node module loaded at the top of this file
+        effects_mod = sys.modules["effects_node"]
+        # Ensure cache is populated
+        effects_mod._get_skills_cached()
+        assert effects_mod._CACHED_SKILL_DATA is not None
+        # Invalidate
+        effects_mod.invalidate_skill_cache()
+        assert effects_mod._CACHED_SKILL_DATA is None
+
+
 class TestStripCategory:
     """Tests for _strip_category."""
 
@@ -191,6 +206,37 @@ class TestBuildPipeline:
         assert data["pipeline"][1]["skill"] == "black_and_white"
         assert data["pipeline"][2]["skill"] == "speed"
         assert data["pipeline"][2]["params"]["factor"] == 2.0
+
+    def test_four_effects(self, node):
+        """Fourth effect slot should be processed correctly."""
+        result = node.build_pipeline(
+            effect_1="🎨 Visual/blur",
+            effect_2="🎨 Visual/black_and_white",
+            effect_3="⏱️ Temporal/speed",
+            effect_4="📐 Spatial/resize",
+            effect_4_params='{"width": 1280, "height": 720}',
+        )
+        data = json.loads(result[0])
+        assert data["effects_mode"] == "skills"
+        assert len(data["pipeline"]) == 4
+        assert data["pipeline"][3]["skill"] == "resize"
+        assert data["pipeline"][3]["params"]["width"] == 1280
+
+    def test_five_effects(self, node):
+        """Fifth effect slot should be processed correctly."""
+        result = node.build_pipeline(
+            effect_1="🎨 Visual/blur",
+            effect_2="🎨 Visual/vignette",
+            effect_3="⏱️ Temporal/speed",
+            effect_4="📐 Spatial/resize",
+            effect_5="📦 Encoding/quality",
+            effect_5_params='{"crf": 18}',
+        )
+        data = json.loads(result[0])
+        assert data["effects_mode"] == "skills"
+        assert len(data["pipeline"]) == 5
+        assert data["pipeline"][4]["skill"] == "quality"
+        assert data["pipeline"][4]["params"]["crf"] == 18
 
     def test_raw_ffmpeg_only(self, node):
         """Raw FFmpeg input only should produce raw mode."""
@@ -306,41 +352,14 @@ class TestPresets:
 
 
 class TestInjectEffectsHints:
-    """Tests for _inject_effects_hints (from agent_node)."""
+    """Tests for inject_effects_hints (from nollm_modes)."""
 
     @staticmethod
     def _get_inject_fn():
-        """Import _inject_effects_hints without importing all of agent_node."""
-        # Since agent_node imports ComfyUI-specific modules, we test the
-        # static method via the effects node's _strip_category as a proxy,
-        # and verify the hint injection logic here manually.
-        def inject(prompt, pipeline_json):
-            import json as _json
-            try:
-                data = _json.loads(pipeline_json)
-            except (ValueError, TypeError):
-                return prompt
-            steps = data.get("pipeline", [])
-            raw = data.get("raw_ffmpeg", "")
-            if not steps and not raw:
-                return prompt
-            hint_lines = [
-                "\n\n--- EFFECTS BUILDER (pre-selected by user) ---",
-                "The user has pre-selected the following effects. You MUST include",
-                "these EXACT skills in your pipeline with the specified parameters.",
-                "You may add additional skills if the user's prompt requires them.",
-            ]
-            for step in steps:
-                skill = step.get("skill", "")
-                params = step.get("params", {})
-                if skill:
-                    params_str = ", ".join(f"{k}={v}" for k, v in params.items()) if params else "defaults"
-                    hint_lines.append(f"  - {skill} ({params_str})")
-            if raw:
-                hint_lines.append(f"  - RAW FFMPEG FILTERS: {raw}")
-            hint_lines.append("--- END EFFECTS BUILDER ---")
-            return prompt + "\n".join(hint_lines)
-        return inject
+        """Import inject_effects_hints from nollm_modes."""
+        pytest.importorskip("torch")
+        from nodes.nollm_modes import inject_effects_hints
+        return inject_effects_hints
 
     def test_injects_skill_hints(self):
         inject = self._get_inject_fn()

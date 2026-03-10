@@ -451,17 +451,27 @@ export function registerAgentNode(
             const showMarigold = showAdvanced && mode === "marigold";
             const showVda = showAdvanced && mode === "video_depth";
             const showUpscale = showAdvanced && mode === "ai_upscale";
+            const showRembg = showAdvanced && mode === "rembg";
+            const showWhisper = showAdvanced && (mode === "transcribe" || mode === "karaoke_subtitles");
 
             const mw = node.widgets?.find((w: ComfyWidget) => w.name === "marigold_output_type");
             const ve = node.widgets?.find((w: ComfyWidget) => w.name === "video_depth_encoder");
             const vc = node.widgets?.find((w: ComfyWidget) => w.name === "video_depth_colormap");
             const um = node.widgets?.find((w: ComfyWidget) => w.name === "upscale_model");
             const us = node.widgets?.find((w: ComfyWidget) => w.name === "upscale_scale");
+            const rm = node.widgets?.find((w: ComfyWidget) => w.name === "rembg_model");
+            const rb = node.widgets?.find((w: ComfyWidget) => w.name === "rembg_background");
+            const wd = node.widgets?.find((w: ComfyWidget) => w.name === "whisper_device");
+            const wm = node.widgets?.find((w: ComfyWidget) => w.name === "whisper_model");
             if (mw) toggleWidget(mw, showMarigold);
             if (ve) toggleWidget(ve, showVda);
             if (vc) toggleWidget(vc, showVda);
             if (um) toggleWidget(um, showUpscale);
             if (us) toggleWidget(us, showUpscale);
+            if (rm) toggleWidget(rm, showRembg);
+            if (rb) toggleWidget(rb, showRembg);
+            if (wd) toggleWidget(wd, showWhisper);
+            if (wm) toggleWidget(wm, showWhisper);
         }
 
         function updateAdvancedVisibility(): void {
@@ -470,8 +480,6 @@ export function registerAgentNode(
             if (subtitleWidget) toggleWidget(subtitleWidget, show);
             if (crfWidget) toggleWidget(crfWidget, show);
             if (encodingWidget) toggleWidget(encodingWidget, show);
-            if (whisperDevWidget) toggleWidget(whisperDevWidget, show);
-            if (whisperModelWidget) toggleWidget(whisperModelWidget, show);
             if (sam3MaxObjWidget) toggleWidget(sam3MaxObjWidget, show);
             if (sam3ThreshWidget) toggleWidget(sam3ThreshWidget, show);
             if (maskTypeWidget) toggleWidget(maskTypeWidget, show);

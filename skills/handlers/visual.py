@@ -59,15 +59,18 @@ def _f_fade(p):
     start = float(p.get("start", 0))
     duration = float(p.get("duration", 1))
 
-    # When fade-out start is 0 (default/unset) and we're in a multi-clip
-    # pipeline, calculate correct start from total output duration so
-    # fade-out happens at the END of the combined video.
+    # When fade-out start is 0 (default/unset), calculate correct start
+    # from video duration so fade-out happens at the END of the clip.
     if fade_type in ("out", "both") and start == 0:
         clip_dur = float(p.get("_video_duration", 0))
         n_extra = int(p.get("_extra_input_count", 0))
         if n_extra > 0 and clip_dur > 0:
+            # Multi-clip: calculate total combined duration
             total_dur = _calc_multiclip_duration(p, clip_dur, n_extra)
             start = max(0, total_dur - duration)
+        elif clip_dur > 0:
+            # Single clip: fade out at end of clip
+            start = max(0, clip_dur - duration)
 
     vf = []
     if fade_type == "both":

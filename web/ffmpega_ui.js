@@ -365,8 +365,8 @@ function registerAgentNode(nodeType, nodeData) {
     const subtitleWidget = (_n = this.widgets) == null ? void 0 : _n.find((w) => w.name === "subtitle_path");
     (_o = this.widgets) == null ? void 0 : _o.find((w) => w.name === "use_vision");
     (_p = this.widgets) == null ? void 0 : _p.find((w) => w.name === "verify_output");
-    const whisperDevWidget = (_q = this.widgets) == null ? void 0 : _q.find((w) => w.name === "whisper_device");
-    const whisperModelWidget = (_r = this.widgets) == null ? void 0 : _r.find((w) => w.name === "whisper_model");
+    (_q = this.widgets) == null ? void 0 : _q.find((w) => w.name === "whisper_device");
+    (_r = this.widgets) == null ? void 0 : _r.find((w) => w.name === "whisper_model");
     const sam3MaxObjWidget = (_s = this.widgets) == null ? void 0 : _s.find((w) => w.name === "sam3_max_objects");
     const sam3ThreshWidget = (_t = this.widgets) == null ? void 0 : _t.find((w) => w.name === "sam3_det_threshold");
     const maskTypeWidget = (_u = this.widgets) == null ? void 0 : _u.find((w) => w.name === "mask_output_type");
@@ -383,7 +383,7 @@ function registerAgentNode(nodeType, nodeData) {
     (_F = this.widgets) == null ? void 0 : _F.find((w) => w.name === "video_depth_encoder");
     (_G = this.widgets) == null ? void 0 : _G.find((w) => w.name === "video_depth_colormap");
     function updateNoLlmModeVisibility() {
-      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2;
+      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2;
       const adv = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "advanced_options");
       const showAdvanced = Boolean(adv == null ? void 0 : adv.value);
       const llm = (_b2 = node.widgets) == null ? void 0 : _b2.find((w) => w.name === "llm_model");
@@ -393,16 +393,26 @@ function registerAgentNode(nodeType, nodeData) {
       const showMarigold = showAdvanced && mode === "marigold";
       const showVda = showAdvanced && mode === "video_depth";
       const showUpscale = showAdvanced && mode === "ai_upscale";
+      const showRembg = showAdvanced && mode === "rembg";
+      const showWhisper = showAdvanced && (mode === "transcribe" || mode === "karaoke_subtitles");
       const mw = (_d2 = node.widgets) == null ? void 0 : _d2.find((w) => w.name === "marigold_output_type");
       const ve = (_e2 = node.widgets) == null ? void 0 : _e2.find((w) => w.name === "video_depth_encoder");
       const vc = (_f2 = node.widgets) == null ? void 0 : _f2.find((w) => w.name === "video_depth_colormap");
       const um = (_g2 = node.widgets) == null ? void 0 : _g2.find((w) => w.name === "upscale_model");
       const us = (_h2 = node.widgets) == null ? void 0 : _h2.find((w) => w.name === "upscale_scale");
+      const rm = (_i2 = node.widgets) == null ? void 0 : _i2.find((w) => w.name === "rembg_model");
+      const rb = (_j2 = node.widgets) == null ? void 0 : _j2.find((w) => w.name === "rembg_background");
+      const wd = (_k2 = node.widgets) == null ? void 0 : _k2.find((w) => w.name === "whisper_device");
+      const wm = (_l2 = node.widgets) == null ? void 0 : _l2.find((w) => w.name === "whisper_model");
       if (mw) toggleWidget(mw, showMarigold);
       if (ve) toggleWidget(ve, showVda);
       if (vc) toggleWidget(vc, showVda);
       if (um) toggleWidget(um, showUpscale);
       if (us) toggleWidget(us, showUpscale);
+      if (rm) toggleWidget(rm, showRembg);
+      if (rb) toggleWidget(rb, showRembg);
+      if (wd) toggleWidget(wd, showWhisper);
+      if (wm) toggleWidget(wm, showWhisper);
     }
     function updateAdvancedVisibility() {
       var _a2;
@@ -411,8 +421,6 @@ function registerAgentNode(nodeType, nodeData) {
       if (subtitleWidget) toggleWidget(subtitleWidget, show);
       if (crfWidget) toggleWidget(crfWidget, show);
       if (encodingWidget) toggleWidget(encodingWidget, show);
-      if (whisperDevWidget) toggleWidget(whisperDevWidget, show);
-      if (whisperModelWidget) toggleWidget(whisperModelWidget, show);
       if (sam3MaxObjWidget) toggleWidget(sam3MaxObjWidget, show);
       if (sam3ThreshWidget) toggleWidget(sam3ThreshWidget, show);
       if (maskTypeWidget) toggleWidget(maskTypeWidget, show);

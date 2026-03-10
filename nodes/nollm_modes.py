@@ -1523,7 +1523,7 @@ async def process_minimax_remover_only(
             logger.info("MiniMax-Remover: generating SAM3 mask for '%s'", prompt)
             mask_video_path = sam3_mask(
                 video_path=effective_video_path,
-                text_prompt=prompt,
+                prompt=prompt,
             )
         except ImportError:
             logger.warning(
@@ -2004,3 +2004,175 @@ async def process_ai_upscale_only(
                 os.remove(upscale_output)
             except OSError:
                 pass
+
+
+# ====================================================================== #
+#  Rembg background removal (no LLM)                                      #
+# ====================================================================== #
+
+async def process_rembg_only(
+    # dependencies
+    media_converter,
+    # parameters
+    effective_video_path: str,
+    video_metadata,
+    save_output: bool,
+    output_path: str,
+    preview_mode: bool,
+    quality_preset: str,
+    crf: int,
+    encoding_preset: str,
+    rembg_model: str = "bria-rmbg",
+    rembg_background: str = "transparent",
+    temp_video_from_images: Optional[str] = None,
+    temp_video_with_audio: Optional[str] = None,
+    **kwargs,
+) -> tuple[torch.Tensor, dict, str, str, str, str]:
+    """Remove background from video/image using rembg without any LLM.
+
+    Uses the existing ``_f_remove_background`` skill handler to generate
+    per-frame alpha masks and composite via FFmpeg filter_complex.
+
+    Returns:
+        Standard 6-tuple: (images_tensor, audio_dict, output_path,
+                          ffmpeg_log, analysis_text, mask_overlay_path)
+    """
+    import asyncio
+
+    logger.info("Rembg mode: model=%s, background=%s", rembg_model, rembg_background)
+
+    # --- Build output path ---
+    output_path, temp_render_dir = build_output_path(
+        effective_video_path=effective_video_path,
+        save_output=save_output,
+        output_path=output_path,
+        preview_mode=preview_mode,
+    )
+
+    # For transparent bg, output must be WebM (VP9 with alpha)
+    is_transparent = rembg_background == "transparent"
+    if is_transparent:
+        base, _ = os.path.splitext(output_path)
+        output_path = base + ".webm"
+
+    mask_video_path = None
+    try:
+        # --- Import and call the remove_background handler ---
+        try:
+            from ..skills.handlers.visual import _f_remove_background
+        except ImportError:
+            from skills.handlers.visual import _f_remove_background  # type: ignore
+
+        # Use a dedicated dict so we can read the mask path back reliably
+        # without re-extracting from handler_params (reduces coupling).
+        metadata_ref: dict = {}
+        handler_params = {
+            "model": rembg_model,
+            "background": rembg_background,
+            "_input_path": effective_video_path,
+            "_metadata_ref": metadata_ref,
+        }
+
+        # Per-frame rembg inference is CPU/GPU-heavy — run in a thread
+        # so the event loop stays responsive.
+        result = await asyncio.to_thread(_f_remove_background, handler_params)
+
+        # Extract mask path for cleanup (written by the handler into
+        # our metadata_ref dict under "_mask_video_path").
+        mask_video_path = metadata_ref.get("_mask_video_path")
+
+        # HandlerResult is a dataclass, not a dict
+        fc = result.filter_complex
+        extra_opts = result.output_options
+
+        if not fc:
+            raise RuntimeError(
+                "rembg handler returned no filter_complex — "
+                "is rembg installed? (pip install 'comfyui-ffmpega[masking]')"
+            )
+
+        # --- Build FFmpeg command ---
+        ffmpeg_bin = _get_ffmpeg_bin()
+
+        effective_crf = crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23)
+        effective_preset = (
+            encoding_preset if encoding_preset != "auto"
+            else _PRESET_MAP.get(quality_preset, "medium")
+        )
+
+        cmd = [ffmpeg_bin, "-y", "-i", effective_video_path]
+
+        if is_transparent:
+            # VP9 with alpha — opts from handler already include codec flags
+            cmd += ["-filter_complex", fc]
+            cmd += extra_opts
+            cmd += [output_path]
+        else:
+            # Solid background — standard H.264
+            cmd += ["-filter_complex", fc]
+            cmd += [
+                "-c:v", "libx264",
+                "-crf", str(effective_crf),
+                "-preset", effective_preset,
+                "-pix_fmt", "yuv420p",
+            ]
+            # Preserve audio if present
+            has_audio = bool(
+                video_metadata and video_metadata.get("audio_codec")
+            )
+            if has_audio:
+                cmd += ["-c:a", "aac", "-b:a", "192k"]
+            else:
+                cmd += ["-an"]
+            cmd += [output_path]
+
+        logger.info("Rembg FFmpeg cmd: %s", " ".join(cmd))
+        # Run FFmpeg in a thread to avoid blocking the event loop
+        proc = await asyncio.to_thread(
+            subprocess.run, cmd, capture_output=True, text=True,
+        )
+        cmd_log = proc.stdout + proc.stderr
+
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"FFmpeg rembg render failed (exit {proc.returncode}):\n"
+                f"{proc.stderr[-500:]}"
+            )
+
+        # --- Collect frame/audio output ---
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=is_transparent,
+        )
+
+        analysis = (
+            f"Rembg Background Removal\n"
+            f"Model: {rembg_model}\n"
+            f"Background: {rembg_background}\n"
+            f"Input: {effective_video_path}\n"
+            f"Output: {output_path}"
+        )
+
+        return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
+
+    finally:
+        # Cleanup temp files
+        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        if mask_video_path and os.path.exists(mask_video_path):
+            try:
+                os.remove(mask_video_path)
+            except OSError:
+                pass
+        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+            if not os.listdir(temp_render_dir):
+                shutil.rmtree(temp_render_dir, ignore_errors=True)

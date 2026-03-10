@@ -19,7 +19,6 @@ NODE_CLASS_MAPPINGS = {
     "FFMPEGALoadVideoPath": LoadVideoPathNode,
     "FFMPEGASaveVideo": SaveVideoNode,
     "FFMPEGAMediaBridge": MediaBridgeNode,
-    "FFMPEGAVideoToPath": MediaBridgeNode,  # backward-compat alias for existing workflows
     "FFMPEGATextInput": TextInputNode,
     "FFMPEGAEffects": FFMPEGAEffectsNode,
 }

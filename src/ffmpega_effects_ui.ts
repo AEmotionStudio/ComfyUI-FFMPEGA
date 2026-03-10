@@ -41,6 +41,7 @@ interface ComfyNode {
     setSize(size: [number, number]): void;
     setDirtyCanvas(fg: boolean, bg: boolean): void;
     computeSize(size?: [number, number]): [number, number];
+    onConfigure?: (info: any) => void;
     _isFlashing?: boolean;
     _ffmpegaApplyCustomPreset?: (cfg: PresetConfig) => void;
     _ffmpegaApplyPreset?: (name: string) => void;
@@ -55,6 +56,10 @@ interface PresetConfig {
     effect_2_params?: string | Record<string, unknown>;
     effect_3?: string;
     effect_3_params?: string | Record<string, unknown>;
+    effect_4?: string;
+    effect_4_params?: string | Record<string, unknown>;
+    effect_5?: string;
+    effect_5_params?: string | Record<string, unknown>;
     sam3_target?: string;
     sam3_effect?: string;
     raw_ffmpeg?: string;
@@ -91,21 +96,30 @@ app.registerExtension({
             const params2 = findW("effect_2_params");
             const effect3 = findW("effect_3");
             const params3 = findW("effect_3_params");
+            const effect4 = findW("effect_4");
+            const params4 = findW("effect_4_params");
+            const effect5 = findW("effect_5");
+            const params5 = findW("effect_5_params");
             const rawFfmpeg = findW("raw_ffmpeg");
             const sam3Target = findW("sam3_target");
             const sam3Effect = findW("sam3_effect");
             const presetsJsonW = findW("_presets_json");
             const defaultsJsonW = findW("_defaults_json");
+            const paramHelpJsonW = findW("_param_help_json");
 
             // --- Parse hidden data ---
             let presetData: Record<string, PresetConfig> = {};
             let defaultsData: Record<string, string> = {};
+            let paramHelpData: Record<string, string> = {};
             try {
                 if (presetsJsonW?.value) presetData = JSON.parse(presetsJsonW.value as string);
             } catch (e) { console.warn("FFMPEGA Effects: failed to parse presets", e); }
             try {
                 if (defaultsJsonW?.value) defaultsData = JSON.parse(defaultsJsonW.value as string);
             } catch (e) { console.warn("FFMPEGA Effects: failed to parse defaults", e); }
+            try {
+                if (paramHelpJsonW?.value) paramHelpData = JSON.parse(paramHelpJsonW.value as string);
+            } catch (e) { console.warn("FFMPEGA Effects: failed to parse param help", e); }
 
             // --- Show/hide helpers ---
             function toggleWidget(widget: ComfyWidget | undefined, show: boolean): void {
@@ -171,12 +185,19 @@ app.registerExtension({
                     return;
                 }
                 paramWidget.options = paramWidget.options || {};
-                paramWidget.options.placeholder = `${skill} params (JSON)`;
+                // Use param help if available, otherwise just show skill name
+                const helpStr = paramHelpData[skill];
+                if (helpStr && helpStr !== "no parameters") {
+                    paramWidget.options.placeholder = `${skill}: ${helpStr}`;
+                } else {
+                    paramWidget.options.placeholder = `${skill} params (JSON)`;
+                }
             }
 
             // --- Hide internal widgets ---
             toggleWidget(presetsJsonW, false);
             toggleWidget(defaultsJsonW, false);
+            toggleWidget(paramHelpJsonW, false);
 
             // --- Preset auto-populate ---
             function applyPreset(presetName: string): void {
@@ -189,6 +210,8 @@ app.registerExtension({
                     ["effect_1", effect1, "effect_1_params", params1],
                     ["effect_2", effect2, "effect_2_params", params2],
                     ["effect_3", effect3, "effect_3_params", params3],
+                    ["effect_4", effect4, "effect_4_params", params4],
+                    ["effect_5", effect5, "effect_5_params", params5],
                 ];
 
                 for (const [eName, eW, pName, pW] of slots) {
@@ -223,6 +246,8 @@ app.registerExtension({
                     ["effect_1", effect1, "effect_1_params", params1],
                     ["effect_2", effect2, "effect_2_params", params2],
                     ["effect_3", effect3, "effect_3_params", params3],
+                    ["effect_4", effect4, "effect_4_params", params4],
+                    ["effect_5", effect5, "effect_5_params", params5],
                 ];
                 for (const [eName, eW, pName, pW] of slots) {
                     if (cfg[eName] !== undefined && eW) {
@@ -260,6 +285,8 @@ app.registerExtension({
                 const e1Active = hasEffect(effect1);
                 const e2Active = hasEffect(effect2);
                 const e3Active = hasEffect(effect3);
+                const e4Active = hasEffect(effect4);
+                const e5Active = hasEffect(effect5);
 
                 toggleWidget(params1, e1Active);
                 updateParamPlaceholder(effect1, params1);
@@ -271,6 +298,14 @@ app.registerExtension({
                 toggleWidget(effect3, e1Active && e2Active);
                 toggleWidget(params3, e1Active && e2Active && e3Active);
                 updateParamPlaceholder(effect3, params3);
+
+                toggleWidget(effect4, e1Active && e2Active && e3Active);
+                toggleWidget(params4, e1Active && e2Active && e3Active && e4Active);
+                updateParamPlaceholder(effect4, params4);
+
+                toggleWidget(effect5, e1Active && e2Active && e3Active && e4Active);
+                toggleWidget(params5, e1Active && e2Active && e3Active && e4Active && e5Active);
+                updateParamPlaceholder(effect5, params5);
 
                 const hasSam3 = sam3Target?.value && (sam3Target.value as string).trim();
                 toggleWidget(sam3Effect, !!hasSam3);
@@ -292,7 +327,10 @@ app.registerExtension({
             }
 
             // Effect dropdowns — update visibility + clear stale params + auto-fill
-            for (const [eW, pW] of [[effect1, params1], [effect2, params2], [effect3, params3]] as const) {
+            for (const [eW, pW] of [
+                [effect1, params1], [effect2, params2], [effect3, params3],
+                [effect4, params4], [effect5, params5],
+            ] as const) {
                 if (eW) {
                     const orig = eW.callback;
                     let prevSkill = stripCategory(eW.value as string);
@@ -328,6 +366,17 @@ app.registerExtension({
             node._ffmpegaApplyPreset = applyPreset;
             node._ffmpegaStripCategory = stripCategory;
 
+            // --- Re-run visibility after workflow restoration ---
+            // onNodeCreated fires BEFORE ComfyUI restores saved widget
+            // values, so the initial updateVisibility() sees defaults.
+            // onConfigure fires AFTER values are restored from the
+            // saved workflow, so we re-run visibility here.
+            const origOnConfigure = node.onConfigure;
+            node.onConfigure = function (info: any): void {
+                origOnConfigure?.apply(this, [info]);
+                updateVisibility();
+            };
+
             return result;
         };
 
@@ -362,8 +411,8 @@ app.registerExtension({
             const captureState = (): PresetConfig => {
                 const strip = self._ffmpegaStripCategory || ((n: string) => n);
                 const cfg: PresetConfig = {};
-                const slots = ["effect_1", "effect_2", "effect_3"];
-                const paramSlots = ["effect_1_params", "effect_2_params", "effect_3_params"];
+                const slots = ["effect_1", "effect_2", "effect_3", "effect_4", "effect_5"];
+                const paramSlots = ["effect_1_params", "effect_2_params", "effect_3_params", "effect_4_params", "effect_5_params"];
                 for (let i = 0; i < slots.length; i++) {
                     const eW = self.widgets?.find((w: ComfyWidget) => w.name === slots[i]);
                     const pW = self.widgets?.find((w: ComfyWidget) => w.name === paramSlots[i]);
@@ -422,9 +471,20 @@ app.registerExtension({
             // Built-in presets (from Python _PRESETS via dropdown)
             const presetW = self.widgets?.find((w: ComfyWidget) => w.name === "preset");
             const presetNames: string[] = (presetW?.options as any)?.values || [];
+
+            // Group presets by emoji category
+            const categoryMap: Record<string, any[]> = {};
+            const categoryOrder: string[] = [];
             for (const pName of presetNames) {
                 if (pName === "none") continue;
-                presetItems.push({
+                // Extract emoji prefix as category key (first character(s))
+                const match = pName.match(/^(\S+)\s/);
+                const cat = match ? match[1] : "Other";
+                if (!categoryMap[cat]) {
+                    categoryMap[cat] = [];
+                    categoryOrder.push(cat);
+                }
+                categoryMap[cat].push({
                     content: pName,
                     callback: () => {
                         if (presetW) presetW.value = pName;
@@ -432,6 +492,21 @@ app.registerExtension({
                         flashNode(self, "#4a7a4a");
                     },
                 });
+            }
+
+            // Build categorized submenu items
+            for (const cat of categoryOrder) {
+                const items = categoryMap[cat];
+                if (items.length === 1) {
+                    // Single item in category — add directly
+                    presetItems.push(items[0]);
+                } else {
+                    // Multiple items — group as submenu
+                    presetItems.push({
+                        content: `${cat} (${items.length})`,
+                        submenu: { options: items },
+                    });
+                }
             }
 
             // Custom presets
@@ -473,11 +548,11 @@ app.registerExtension({
                     content: "🧹 Clear All Effects",
                     callback: () => {
                         // Reset all effect slots + params + SAM3 + raw
-                        for (const name of ["effect_1", "effect_2", "effect_3"]) {
+                        for (const name of ["effect_1", "effect_2", "effect_3", "effect_4", "effect_5"]) {
                             const w = self.widgets?.find((ww: ComfyWidget) => ww.name === name);
                             if (w) w.value = "none";
                         }
-                        for (const name of ["effect_1_params", "effect_2_params", "effect_3_params", "raw_ffmpeg", "sam3_target"]) {
+                        for (const name of ["effect_1_params", "effect_2_params", "effect_3_params", "effect_4_params", "effect_5_params", "raw_ffmpeg", "sam3_target"]) {
                             const w = self.widgets?.find((ww: ComfyWidget) => ww.name === name);
                             if (w) w.value = "";
                         }
@@ -485,8 +560,11 @@ app.registerExtension({
                         if (sam3e) sam3e.value = "blur";
                         const pw = self.widgets?.find((ww: ComfyWidget) => ww.name === "preset");
                         if (pw) pw.value = "none";
-                        // Trigger visibility update
-                        self._ffmpegaApplyCustomPreset?.({});
+                        // Trigger effect callbacks to reset prevSkill tracking
+                        for (const name of ["effect_1", "effect_2", "effect_3", "effect_4", "effect_5"]) {
+                            const w = self.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                            if (w?.callback) w.callback(w.value);
+                        }
                         flashNode(self, "#4a7a4a");
                     },
                 },

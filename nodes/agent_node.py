@@ -143,7 +143,7 @@ class FFMPEGAgentNode:
                                "Select 'custom' to type any model name manually. "
                                "Select 'none' to skip the LLM entirely and use no_llm_mode instead (manual pipeline, SAM3, Whisper, or MMAudio).",
                 }),
-                "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles", "generate_audio", "lip_sync", "animate_portrait", "marigold", "video_depth", "flux_klein", "minimax_remover", "ai_upscale"], {
+                "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles", "generate_audio", "lip_sync", "animate_portrait", "marigold", "video_depth", "flux_klein", "minimax_remover", "ai_upscale", "rembg"], {
                     "default": "manual",
                     "tooltip": "What to do when llm_model is 'none'. "
                                "'manual' runs the Effects Builder pipeline directly (no AI). "
@@ -155,7 +155,8 @@ class FFMPEGAgentNode:
                                "'animate_portrait' uses LivePortrait to animate a face — connect driving video to video_a. "
                                "'marigold' runs Marigold dense vision analysis (depth/normals/intrinsics) — choose output via marigold_output_type. "
                                "'video_depth' runs Video Depth Anything for temporally-consistent depth — choose encoder via video_depth_encoder. "
-                               "'flux_klein' runs FLUX Klein editing directly — prompt is the edit instruction, works on images and videos (full-frame, no mask needed).",
+                               "'flux_klein' runs FLUX Klein editing directly — prompt is the edit instruction, works on images and videos (full-frame, no mask needed). "
+                               "'rembg' removes the video background using AI segmentation — choose model via rembg_model and background via rembg_background.",
                 }),
                 "quality_preset": (cls.QUALITY_PRESETS, {
                     "default": "standard",
@@ -373,6 +374,25 @@ class FFMPEGAgentNode:
                     "default": "4",
                     "tooltip": "AI upscale factor (used in 'ai_upscale' no_llm_mode). "
                                "'4' = 4× resolution. '2' = 2× resolution.",
+                }),
+
+                # ── Advanced: Rembg Background Removal ─────────────────────
+                "rembg_model": (["bria-rmbg", "birefnet-general", "birefnet-general-lite", "isnet-general-use", "u2net", "silueta"], {
+                    "default": "bria-rmbg",
+                    "tooltip": "Rembg model (used in 'rembg' no_llm_mode). "
+                               "'bria-rmbg' = BRIA RMBG (SotA quality, recommended). "
+                               "'birefnet-general' = BiRefNet high quality. "
+                               "'birefnet-general-lite' = BiRefNet fast. "
+                               "'isnet-general-use' = ISNet general. "
+                               "'u2net' = U²-Net classic. "
+                               "'silueta' = Silueta (fastest, lightweight).",
+                }),
+                "rembg_background": (["transparent", "green", "black", "white", "blue"], {
+                    "default": "transparent",
+                    "tooltip": "Background replacement (used in 'rembg' no_llm_mode). "
+                               "'transparent' = alpha channel (outputs VP9/WebM). "
+                               "'green' = green screen for compositing. "
+                               "Other colors fill the background with a solid color.",
                 }),
 
                 # ── Advanced: MMAudio ─────────────────────────────────────
@@ -910,7 +930,7 @@ class FFMPEGAgentNode:
 
         # --- Inject FFMPEGA Effects Builder pipeline if provided ---
         if pipeline_json and pipeline_json.strip():
-            prompt = self._inject_effects_hints(prompt, pipeline_json)
+            prompt = _nollm.inject_effects_hints(prompt, pipeline_json)
 
         # --- Batch mode ---
         if batch_mode:
@@ -990,7 +1010,7 @@ class FFMPEGAgentNode:
 
         if not prompt.strip():
             # manual + whisper + lip_sync modes don't need a prompt
-            if llm_model != "none" or no_llm_mode not in ("manual", "transcribe", "karaoke_subtitles", "generate_audio", "lip_sync", "animate_portrait", "marigold", "video_depth", "minimax_remover", "ai_upscale"):
+            if llm_model != "none" or no_llm_mode not in ("manual", "transcribe", "karaoke_subtitles", "generate_audio", "lip_sync", "animate_portrait", "marigold", "video_depth", "minimax_remover", "ai_upscale", "rembg"):
                 raise ValueError("Prompt cannot be empty")
 
         # --- Analyze input video ---
@@ -1203,6 +1223,23 @@ class FFMPEGAgentNode:
                     upscale_model=kwargs.pop("upscale_model", "realesrgan_x4plus"),
                     upscale_scale=int(kwargs.pop("upscale_scale", "4")),
                     tile_size=int(kwargs.pop("tile_size", "512")),
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    **kwargs,
+                )
+            # Rembg background removal mode
+            if no_llm_mode == "rembg":
+                return await self._process_rembg_only(
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
+                    rembg_model=kwargs.pop("rembg_model", "bria-rmbg"),
+                    rembg_background=kwargs.pop("rembg_background", "transparent"),
                     temp_video_from_images=temp_video_from_images,
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
@@ -1494,47 +1531,6 @@ class FFMPEGAgentNode:
     #  Effects Builder support                                             #
     # ------------------------------------------------------------------ #
 
-    @staticmethod
-    def _inject_effects_hints(prompt: str, pipeline_json: str) -> str:
-        """Append Effects Builder selections as explicit skill hints.
-
-        When an LLM is active and the Effects Builder is connected, the
-        selected skills are injected as anchors so the LLM doesn't have
-        to search through all skills — particularly helpful for smaller
-        models.
-        """
-        import json as _json
-        try:
-            data = _json.loads(pipeline_json)
-        except (ValueError, TypeError):
-            return prompt
-
-        steps = data.get("pipeline", [])
-        raw = data.get("raw_ffmpeg", "")
-        if not steps and not raw:
-            return prompt
-
-        hint_lines = [
-            "\n\n--- EFFECTS BUILDER (pre-selected by user) ---",
-            "The user has pre-selected the following effects. You MUST include",
-            "these EXACT skills in your pipeline with the specified parameters.",
-            "You may add additional skills if the user's prompt requires them.",
-        ]
-
-        for step in steps:
-            skill = step.get("skill", "")
-            params = step.get("params", {})
-            if skill:
-                params_str = ", ".join(f"{k}={v}" for k, v in params.items()) if params else "defaults"
-                hint_lines.append(f"  - {skill} ({params_str})")
-
-        if raw:
-            hint_lines.append(f"  - RAW FFMPEG FILTERS: {raw}")
-
-        hint_lines.append("--- END EFFECTS BUILDER ---")
-
-        return prompt + "\n".join(hint_lines)
-
     async def _process_effects_pipeline(self, pipeline_json, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, whisper_device="cpu", whisper_model="large-v3", sam3_device="gpu", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", use_flux_klein=False, use_minimax_remover=False, flux_smoothing="none", temp_video_from_images=None, temp_video_with_audio=None, image_a=None, audio_a=None, _all_video_paths=None, _all_image_paths=None, _all_text_inputs=None, **kwargs):
         """Delegate to nollm_modes module."""
         return await _nollm.process_effects_pipeline(
@@ -1752,6 +1748,26 @@ class FFMPEGAgentNode:
             flux_smoothing=flux_smoothing,
             image_a=image_a,
             _all_image_paths=_all_image_paths,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
+        )
+
+    # ------------------------------------------------------------------ #
+    #  Rembg background removal mode (no LLM)                              #
+    # ------------------------------------------------------------------ #
+
+    async def _process_rembg_only(self, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, rembg_model="bria-rmbg", rembg_background="transparent", temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+        """Delegate to nollm_modes module."""
+        return await _nollm.process_rembg_only(
+            media_converter=self.media_converter,
+            effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            rembg_model=rembg_model,
+            rembg_background=rembg_background,
             temp_video_from_images=temp_video_from_images,
             temp_video_with_audio=temp_video_with_audio,
             **kwargs,
