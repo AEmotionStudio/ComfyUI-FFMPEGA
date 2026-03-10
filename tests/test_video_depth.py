@@ -14,13 +14,6 @@ if _proj not in sys.path:
 
 from skills.registry import get_registry, SkillCategory
 
-# Pre-import so unittest.mock.patch("core.vda_synthesizer.xxx") can resolve
-# the dotted path in CI where the submodule may not yet be an attribute of
-# the ``core`` package.
-try:
-    import core.vda_synthesizer  # noqa: F401
-except ImportError:
-    pass
 
 
 # ------------------------------------------------------------------ #
@@ -98,7 +91,9 @@ class TestVideoDepthHandler:
     @patch("skills.handlers.video_depth.os.path.isfile", return_value=True)
     def test_success_returns_movie(self, mock_isfile):
         from skills.handlers.video_depth import _f_video_depth
-        with patch("core.vda_synthesizer.run_video_depth", return_value="/tmp/out.mp4"):
+        mock_vda = MagicMock()
+        mock_vda.run_video_depth = MagicMock(return_value="/tmp/out.mp4")
+        with patch.dict(sys.modules, {"core.vda_synthesizer": mock_vda}):
             result = _f_video_depth({
                 "_input_path": "/tmp/test.mp4",
                 "encoder": "vits",
@@ -109,10 +104,12 @@ class TestVideoDepthHandler:
     @patch("skills.handlers.video_depth.os.path.isfile", return_value=True)
     def test_default_encoder_is_vits(self, mock_isfile):
         from skills.handlers.video_depth import _f_video_depth
-        with patch("core.vda_synthesizer.run_video_depth", return_value="/tmp/out.mp4") as mock_run:
+        mock_vda = MagicMock()
+        mock_vda.run_video_depth = MagicMock(return_value="/tmp/out.mp4")
+        with patch.dict(sys.modules, {"core.vda_synthesizer": mock_vda}):
             _f_video_depth({"_input_path": "/tmp/test.mp4"})
-            mock_run.assert_called_once()
-            assert mock_run.call_args[1]["encoder"] == "vits"
+            mock_vda.run_video_depth.assert_called_once()
+            assert mock_vda.run_video_depth.call_args[1]["encoder"] == "vits"
 
 
 # ------------------------------------------------------------------ #

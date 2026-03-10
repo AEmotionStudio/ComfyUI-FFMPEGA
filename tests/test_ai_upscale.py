@@ -21,11 +21,6 @@ try:
 except (ImportError, RuntimeError):
     _has_torch = False
 
-# Pre-import so unittest.mock.patch("core.upscaler.xxx") can resolve the
-# dotted path — without this, Python may fail to find the attribute on the
-# ``core`` package if the submodule hasn't been imported yet (CI hit).
-if _has_torch:
-    import core.upscaler  # noqa: F401
 
 
 # ------------------------------------------------------------------ #
@@ -114,7 +109,10 @@ class TestAIUpscaleHandler:
     @patch("skills.handlers.upscale.os.path.isfile", return_value=True)
     def test_success_returns_movie_for_video(self, mock_isfile):
         from skills.handlers.upscale import _f_ai_upscale
-        with patch("core.upscaler.upscale_video", return_value="/tmp/out.mp4"):
+        mock_upscaler = MagicMock()
+        mock_upscaler.upscale_video = MagicMock(return_value="/tmp/out.mp4")
+        mock_upscaler.upscale_image = MagicMock(return_value="/tmp/out.png")
+        with patch.dict(sys.modules, {"core.upscaler": mock_upscaler}):
             result = _f_ai_upscale({
                 "_input_path": "/tmp/test.mp4",
                 "model": "realesrgan_x4plus",
@@ -125,7 +123,9 @@ class TestAIUpscaleHandler:
     @patch("skills.handlers.upscale.os.path.isfile", return_value=True)
     def test_success_returns_image_for_png(self, mock_isfile):
         from skills.handlers.upscale import _f_ai_upscale
-        with patch("core.upscaler.upscale_image", return_value="/tmp/out.png"):
+        mock_upscaler = MagicMock()
+        mock_upscaler.upscale_image = MagicMock(return_value="/tmp/out.png")
+        with patch.dict(sys.modules, {"core.upscaler": mock_upscaler}):
             result = _f_ai_upscale({
                 "_input_path": "/tmp/test.png",
                 "model": "realesrgan_x4plus",
@@ -136,10 +136,12 @@ class TestAIUpscaleHandler:
     @patch("skills.handlers.upscale.os.path.isfile", return_value=True)
     def test_default_model_is_realesrgan(self, mock_isfile):
         from skills.handlers.upscale import _f_ai_upscale
-        with patch("core.upscaler.upscale_video", return_value="/tmp/out.mp4") as mock_run:
+        mock_upscaler = MagicMock()
+        mock_upscaler.upscale_video = MagicMock(return_value="/tmp/out.mp4")
+        with patch.dict(sys.modules, {"core.upscaler": mock_upscaler}):
             _f_ai_upscale({"_input_path": "/tmp/test.mp4"})
-            mock_run.assert_called_once()
-            assert mock_run.call_args[1]["model_name"] == "realesrgan_x4plus"
+            mock_upscaler.upscale_video.assert_called_once()
+            assert mock_upscaler.upscale_video.call_args[1]["model_name"] == "realesrgan_x4plus"
 
 
 # ------------------------------------------------------------------ #

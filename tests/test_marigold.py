@@ -12,14 +12,6 @@ from unittest.mock import patch, MagicMock
 
 from skills.registry import get_registry, SkillCategory
 
-# Pre-import so unittest.mock.patch("core.marigold_synthesizer.xxx") can
-# resolve the dotted path in CI where the submodule may not yet be an
-# attribute of the ``core`` package.
-try:
-    import core.marigold_synthesizer  # noqa: F401
-except ImportError:
-    pass
-
 
 # ── Skill Registration ─────────────────────────────────────────────
 
@@ -101,20 +93,16 @@ class TestMarigoldHandler:
         from skills.handlers.marigold import _f_marigold
 
         mock_run = MagicMock(return_value="/tmp/output_marigold_depth.mp4")
-        with patch.dict(sys.modules, {
-            "core.marigold_synthesizer": MagicMock(run_marigold=mock_run),
-        }):
-            # Need to reload the module to pick up the mock
-            with patch("core.marigold_synthesizer.run_marigold", mock_run):
-                result = _f_marigold({
-                    "_input_path": "/tmp/test.mp4",
-                    "output_type": "depth",
-                    "num_steps": 4,
-                    "ensemble_size": 1,
-                })
+        mock_ms = MagicMock(run_marigold=mock_run)
+        with patch.dict(sys.modules, {"core.marigold_synthesizer": mock_ms}):
+            result = _f_marigold({
+                "_input_path": "/tmp/test.mp4",
+                "output_type": "depth",
+                "num_steps": 4,
+                "ensemble_size": 1,
+            })
 
         # Handler should attempt to call run_marigold
-        # (may fail if import path differs but the test validates flow)
         assert isinstance(result, dict)
 
     def test_default_output_type_is_depth(self):
