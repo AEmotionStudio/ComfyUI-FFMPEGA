@@ -981,6 +981,18 @@ def mask_video(
             _pre = torch.cuda.memory_allocated() / (1024**3)
             log.info("VRAM before load_video_model: %.2f GB", _pre)
 
+        # Suppress SAM3's noisy 'setting max_num_objects' and 'hitting
+        # max_num_objects' log lines.  These fire during build_sam3_video_model(),
+        # init_state(), and on every frame when the object limit is active.
+        # Must be set BEFORE load_video_model() to catch the build-time message.
+        import logging as _logging
+        _sam3_base_logger = _logging.getLogger("sam3.model.sam3_video_base")
+        _sam3_inf_logger = _logging.getLogger("sam3.model.sam3_video_inference")
+        _orig_level = _sam3_base_logger.level
+        _orig_inf_level = _sam3_inf_logger.level
+        _sam3_base_logger.setLevel(_logging.ERROR)
+        _sam3_inf_logger.setLevel(_logging.ERROR)
+
         video_model = load_video_model(device=device)
 
         import torch
@@ -1039,17 +1051,6 @@ def mask_video(
             else nullcontext()
         )
         inference_state = None  # declared here so finally block can always reach it
-
-        # Suppress SAM3's noisy 'hitting max_num_objects' warnings.
-        # These fire on every frame when the object limit is active,
-        # producing hundreds of log lines.
-        import logging as _logging
-        _sam3_base_logger = _logging.getLogger("sam3.model.sam3_video_base")
-        _sam3_inf_logger = _logging.getLogger("sam3.model.sam3_video_inference")
-        _orig_level = _sam3_base_logger.level
-        _orig_inf_level = _sam3_inf_logger.level
-        _sam3_base_logger.setLevel(_logging.ERROR)
-        _sam3_inf_logger.setLevel(_logging.ERROR)
 
         with torch.inference_mode(), autocast_ctx, _suppress_tqdm(), _patch_postprocess_keyerror():
             # init_state loads all frames
