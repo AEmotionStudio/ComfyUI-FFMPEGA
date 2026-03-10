@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import Optional
 
 try:
-    from ..core.sanitize import validate_video_path
+    from ..core.sanitize import validate_video_path, validate_output_path
 except ImportError:
-    from core.sanitize import validate_video_path  # type: ignore[no-redef]
+    from core.sanitize import validate_video_path, validate_output_path  # type: ignore[no-redef]
 
 logger = logging.getLogger("ffmpega")
 
@@ -856,7 +856,11 @@ def generate_audio_visualization(
         run_id = uuid.uuid4().hex[:8]
         out = node_dir / "_vision_frames" / f"audio_{run_id}"
     else:
-        out = Path(output_dir)
+        try:
+            valid_path = validate_output_path(str(output_dir))
+            out = Path(valid_path)
+        except Exception as e:
+            return {"error": str(e)}
     out.mkdir(parents=True, exist_ok=True)
 
     waveform_path: str | None = None
