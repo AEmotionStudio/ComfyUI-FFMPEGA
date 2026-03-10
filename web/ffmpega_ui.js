@@ -1721,6 +1721,8 @@ function openPointSelector(node, imgSrc, _videoSrc) {
   btnBar.appendChild(cancelBtn);
   overlay.appendChild(btnBar);
   document.body.appendChild(overlay);
+  overlay.tabIndex = -1;
+  overlay.focus();
   let pts = existing.points ? [...existing.points] : [];
   let lbls = existing.labels ? [...existing.labels] : [];
   let imgW = 0;
@@ -2947,6 +2949,8 @@ function openCropSelector(node, videoSrc) {
   btnBar.append(applyBtn, clearBtn, cancelBtn);
   overlay.appendChild(btnBar);
   document.body.appendChild(overlay);
+  overlay.tabIndex = -1;
+  overlay.focus();
   const cropOverlay = new CropOverlay({
     onCropChanged: (rect) => {
       if (rect) {
