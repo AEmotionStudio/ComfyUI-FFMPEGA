@@ -347,7 +347,9 @@ export function openCropSelector(
     btnBar.append(applyBtn, clearBtn, cancelBtn);
     overlay.appendChild(btnBar);
 
+    overlay.tabIndex = -1;
     document.body.appendChild(overlay);
+    overlay.focus();
 
     // ── Create CropOverlay ──
     let currentRect: { x: number; y: number; w: number; h: number } | null = existingRect;

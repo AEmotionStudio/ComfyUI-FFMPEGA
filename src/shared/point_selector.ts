@@ -183,7 +183,10 @@ export function openPointSelector(
     btnBar.appendChild(applyBtn);
     btnBar.appendChild(cancelBtn);
     overlay.appendChild(btnBar);
+
+    overlay.tabIndex = -1;
     document.body.appendChild(overlay);
+    overlay.focus();
 
     // ── State ──
     let pts: number[][] = existing.points ? [...existing.points] : [];
