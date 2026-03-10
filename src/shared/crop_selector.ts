@@ -347,8 +347,8 @@ export function openCropSelector(
     btnBar.append(applyBtn, clearBtn, cancelBtn);
     overlay.appendChild(btnBar);
 
-    document.body.appendChild(overlay);
     overlay.tabIndex = -1;
+    document.body.appendChild(overlay);
     overlay.focus();
 
     // ── Create CropOverlay ──

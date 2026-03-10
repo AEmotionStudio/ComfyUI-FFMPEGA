@@ -183,8 +183,9 @@ export function openPointSelector(
     btnBar.appendChild(applyBtn);
     btnBar.appendChild(cancelBtn);
     overlay.appendChild(btnBar);
-    document.body.appendChild(overlay);
+
     overlay.tabIndex = -1;
+    document.body.appendChild(overlay);
     overlay.focus();
 
     // ── State ──
