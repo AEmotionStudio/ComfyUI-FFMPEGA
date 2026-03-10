@@ -214,6 +214,7 @@ class TestAIUpscaleModelManager:
 #  Module imports
 # ------------------------------------------------------------------ #
 
+@pytest.mark.skipif(not _has_torch, reason="PyTorch not available")
 class TestAIUpscaleModuleImport:
     """Verify core modules can be imported."""
 

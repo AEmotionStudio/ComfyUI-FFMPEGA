@@ -174,6 +174,15 @@ class TestVideoDepthModelManager:
 #  Module imports
 # ------------------------------------------------------------------ #
 
+# cv2 guard — vda_synthesizer requires opencv at module level
+try:
+    import cv2  # noqa: F401
+    _has_cv2 = True
+except ImportError:
+    _has_cv2 = False
+
+
+@pytest.mark.skipif(not _has_cv2, reason="OpenCV not available")
 class TestVideoDepthModuleImport:
     """Verify core modules can be imported."""
 

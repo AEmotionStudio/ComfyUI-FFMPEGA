@@ -213,6 +213,15 @@ class TestMarigoldModelManager:
 # ── Module Import ─────────────────────────────────────────────────
 
 
+# PyTorch guard — marigold_synthesizer requires torch at module level
+try:
+    import torch  # noqa: F401
+    _has_torch = True
+except (ImportError, RuntimeError):
+    _has_torch = False
+
+
+@pytest.mark.skipif(not _has_torch, reason="PyTorch not available")
 class TestMarigoldModuleImport:
     """Verify core module can be imported."""
 
