@@ -5,7 +5,7 @@
 **The ultimate video editing suite for ComfyUI — edit with natural language or hands-on manual controls.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-2.14.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-2.15.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-2-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 [![Downloads](https://img.shields.io/badge/dynamic/json?color=blueviolet&label=Downloads&query=downloads.smart_count&url=https://raw.githubusercontent.com/AEmotionStudio/ComfyUI-FFMPEGA/refs/heads/badges/traffic_stats.json&style=for-the-badge&logo=github)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
@@ -24,18 +24,20 @@
 
 ---
 
-## 🚀 What's New in v2.14.0
+## 🚀 What's New in v2.15.0
 
-*   🎬 **Video Editor Node** — full interactive NLE editor inside ComfyUI with timeline, razor tool, crop overlay, transitions, text overlays, speed/volume controls, and keyboard shortcuts
-*   📡 **Seekable MP4 Preview** — new server route with HTTP Range support and LRU caching for instant in-editor video playback
-*   🧰 **Shared Utilities** — extracted `images_to_video` and UI helpers into reusable modules, reducing duplication across nodes
+*   🎭 **MiniMax-Remover** — new AI video object removal with 81-frame DiT inpainting, sliding-window batching for long videos, and automatic tiered fallback (MiniMax → FLUX Klein → LaMa → FFmpeg)
+*   🎛️ **5 New No-LLM Modes** — run `ai_upscale`, `video_depth`, `flux_klein`, `minimax_remover`, and `animate_portrait` directly from the dropdown without any LLM
+*   🧠 **Auto-VRAM Tile Sizing** — AI upscaler auto-calculates optimal tile dimensions from available GPU memory; new `tile_size` parameter for manual VRAM control
+*   ⚡ **VRAM Management Overhaul** — pipelines transfer to CPU before cleanup, only loaded modules are processed, consolidated FFmpeg binary paths across all synthesizers
+*   🎬 **NLE Editor & Upscaler Improvements** — video dimension padding, framerate compatibility fixes, 1-based frame indexing, dynamic mask fallback resolution
 
 <details>
 <summary><b>📋 Previous Releases</b></summary>
 
 | Version | Highlights |
 | :--- | :--- |
-| **v2.15.0** | MiniMax-Remover for high-quality object removal, toggleable with Flux Klein/LaMa fallback |
+| **v2.14.0** | Video Editor NLE node with timeline, razor, crop, transitions, text overlays, keyboard shortcuts |
 | **v2.13.0** | AI Background Removal (BRIA RMBG), FLUX Klein toggle, Edit FFmpeg fallback, smarter defaults |
 | **v2.12.0** | AI Face Animation (LivePortrait), MMAudio in-process inference, MCP progressive disclosure, LaMa safetensors conversion |
 | **v2.11.0** | MMAudio in-process migration, `generate_audio` no-LLM mode, MCP tools, CLI binary caching |
@@ -88,7 +90,7 @@ Works with **Ollama** (local, free), **OpenAI**, **Anthropic**, **Google Gemini*
 <td width="50%">
 
 ### 🎨 200+ Skills
-200+ video editing skills across visual effects, audio processing, spatial transforms, temporal edits, encoding, cinematic presets, vintage looks, social media, creative effects, text animations, editing & composition, audio visualization, multi-input operations, transitions, concat, split screen, and AI-powered skills (Whisper transcription, SAM3 masking, MMAudio generation, MuseTalk lip sync, LivePortrait face animation).
+200+ video editing skills across visual effects, audio processing, spatial transforms, temporal edits, encoding, cinematic presets, vintage looks, social media, creative effects, text animations, editing & composition, audio visualization, multi-input operations, transitions, concat, split screen, and AI-powered skills (Whisper transcription, SAM3 masking, MiniMax-Remover object removal, MMAudio generation, MuseTalk lip sync, LivePortrait face animation, Video Depth estimation, AI Upscaling, Marigold dense vision).
 
 </td>
 </tr>
@@ -506,6 +508,9 @@ All models are mirrored to first-party [AEmotionStudio](https://huggingface.co/A
 | **MMAudio** (Video-to-Audio) | ~5.5 GB | `ComfyUI/models/mmaudio/` | `generate_audio` skill | [AEmotionStudio/mmaudio-models](https://huggingface.co/AEmotionStudio/mmaudio-models) |
 | **MuseTalk** (Lip Sync) | ~1.6 GB (fp16) | `ComfyUI/models/musetalk/` | `lip_sync` skill | [AEmotionStudio/musetalk-models](https://huggingface.co/AEmotionStudio/musetalk-models) |
 | **LivePortrait** (Face Animation) | ~497 MB | `ComfyUI/models/liveportrait/` | `animate_portrait` skill, `animate_portrait` no-LLM mode | [AEmotionStudio/liveportrait-models](https://huggingface.co/AEmotionStudio/liveportrait-models) |
+| **Video Depth Anything** (Temporal Depth) | ~102–670 MB | `ComfyUI/models/video_depth/` | `video_depth` no-LLM mode | [AEmotionStudio/video-depth-anything](https://huggingface.co/AEmotionStudio/video-depth-anything) |
+| **Marigold** (Dense Vision) | ~2.5 GB per mode | Auto-downloaded by diffusers | `marigold` no-LLM mode (depth/normals/appearance/lighting) | [prs-eth/marigold-depth-v1-1](https://huggingface.co/prs-eth/marigold-depth-v1-1) |
+| **AI Upscaler** (Real-ESRGAN / HAT / DAT / SwinIR) | ~17–170 MB per model | `ComfyUI/models/upscale_models/` | `ai_upscale` skill, `ai_upscale` no-LLM mode | [AEmotionStudio/ai-upscale-models](https://huggingface.co/AEmotionStudio/ai-upscale-models) |
 | **BRIA RMBG** (rembg) | ~270 MB | `~/.u2net/` | `remove_background` skill | Install with `pip install 'comfyui-ffmpega[masking]'` — model auto-fetched by rembg |
 
 > [!NOTE]
@@ -534,7 +539,7 @@ FFMPEGA provides **9 nodes** that work together:
 | `video_path` | STRING | Absolute path to source video. Used as ffmpeg input unless `images_a` is connected. |
 | `prompt` | STRING | Natural language editing instruction (e.g. *"Add cinematic letterbox"*, *"Speed up 2x"*). Not required in `manual` mode. |
 | `llm_model` | DROPDOWN | AI model selection — local Ollama models, CLI tools, or cloud APIs. Select `none` for no-LLM mode. |
-| `no_llm_mode` | DROPDOWN | Mode when `llm_model` is `none`: `manual` (Effects Builder, default), `sam3_masking`, `transcribe`, `karaoke_subtitles`, `generate_audio`, `lip_sync`, `animate_portrait`, `minimax_remover`, `flux_klein`. |
+| `no_llm_mode` | DROPDOWN | Mode when `llm_model` is `none`: `manual` (Effects Builder, default), `sam3_masking`, `transcribe`, `karaoke_subtitles`, `generate_audio`, `lip_sync`, `animate_portrait`, `marigold`, `video_depth`, `flux_klein`, `minimax_remover`, `ai_upscale`. |
 | `quality_preset` | DROPDOWN | Output quality: `draft`, `standard`, `high`, `lossless`. |
 | `seed` | INT | Change to force re-execution with the same prompt. Supports randomize control. |
 
@@ -768,7 +773,7 @@ A full-featured non-linear editor built into ComfyUI. Open the editor modal from
 
 ## 🎯 Skill System
 
-FFMPEGA includes a comprehensive skill system with **212 operations** organized into categories. Use them in two ways: let the **AI agent** select skills from your prompt, or pick them yourself with the **Effects Builder** — no LLM needed.
+FFMPEGA includes a comprehensive skill system with **215 operations** organized into categories. Use them in two ways: let the **AI agent** select skills from your prompt, or pick them yourself with the **Effects Builder** — no LLM needed.
 
 > 📄 **See [SKILLS_REFERENCE.md](SKILLS_REFERENCE.md) for the complete skill reference with all parameters and example prompts.**
 >
@@ -1126,7 +1131,7 @@ FFMPEGA includes a comprehensive skill system with **212 operations** organized 
 </details>
 
 <details>
-<summary><b>🤖 AI-Powered (7 skills)</b></summary>
+<summary><b>🤖 AI-Powered (10 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -1137,6 +1142,9 @@ FFMPEGA includes a comprehensive skill system with **212 operations** organized 
 | `lip_sync` | AI lip sync with MuseTalk — synchronize lip movements to audio |
 | `animate_portrait` | AI face animation with LivePortrait — transfer expressions from driving video |
 | `remove_background` | AI background removal with BRIA RMBG — 6 model choices |
+| `ai_upscale` | AI super-resolution upscaling with Real-ESRGAN, HAT, DAT, or SwinIR — auto-VRAM tile sizing |
+| `video_depth` | Temporal depth estimation with Video Depth Anything — consistent depth maps across frames |
+| `marigold` | Dense vision analysis with Marigold — depth, normals, appearance, and lighting estimation |
 
 > ⚠️ **License Notice:** The `generate_audio` skill uses [MMAudio](https://github.com/hkchengrex/MMAudio) model weights which are licensed under **CC-BY-NC 4.0** (non-commercial use only). Model weights are downloaded on first use — by downloading them you accept the [CC-BY-NC 4.0 license](https://creativecommons.org/licenses/by-nc/4.0/). The FFMPEGA code itself remains GPL-3.0.
 
