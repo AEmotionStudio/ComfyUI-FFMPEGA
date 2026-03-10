@@ -5,6 +5,7 @@ escaping for text parameters embedded in FFMPEG filter strings.
 """
 
 import os
+import re
 from pathlib import Path
 
 from .errors import ValidationError
@@ -197,6 +198,9 @@ def validate_output_file_path(path: str) -> str:
     return validate_path(path, ALLOWED_EXTENSIONS, must_exist=False)
 
 
+# Must match ALL special chars in the .replace() chain below.
+_SANITIZE_RE = re.compile(r"[\0\\':;%,\[\]]")
+
 def sanitize_text_param(text: str) -> str:
     """Escape special characters in text for use in FFMPEG filter strings.
 
@@ -213,11 +217,15 @@ def sanitize_text_param(text: str) -> str:
     if not text:
         return text
 
+    # Optimization: fast path for clean text using compiled regex search
+    # This avoids iterating through the string multiple times for strings
+    # without any special characters.
+    if not _SANITIZE_RE.search(text):
+        return text
+
     if "\0" in text:
         raise ValidationError("Null byte found in text parameter")
 
-    # Optimization: check for special chars before replacing to avoid
-    # unnecessary string allocations in the common case (clean text).
     # Escape backslashes first (before adding more)
     if "\\" in text:
         text = text.replace("\\", "\\\\")
@@ -242,6 +250,8 @@ def sanitize_text_param(text: str) -> str:
     return text
 
 
+_ESCAPE_PATH_RE = re.compile(r"[\\':,\[\] ]")
+
 def ffmpeg_escape_path(s: str) -> str:
     """Escape special characters in a file path for ffmpeg filter options.
 
@@ -255,8 +265,12 @@ def ffmpeg_escape_path(s: str) -> str:
     Returns:
         Escaped path safe for use in ffmpeg filter option values.
     """
-    # Optimization: check for special chars before replacing to avoid
-    # unnecessary string allocations in the common case (clean text).
+    # Optimization: fast path for clean text using compiled regex search
+    # This avoids iterating through the string multiple times for strings
+    # without any special characters.
+    if not _ESCAPE_PATH_RE.search(s):
+        return s
+
     if "\\" in s:
         s = s.replace("\\", "\\\\")
     if "'" in s:
