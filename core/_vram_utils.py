@@ -85,10 +85,20 @@ def free_for_module(exclude: str = "") -> None:
         # nothing to free.  Using sys.modules avoids triggering a full
         # import (and loading heavy deps like torch/diffusers) for modules
         # the user never activated this session.
+        #
+        # Derive the package prefix from this module's own __name__ so
+        # the lookup works regardless of how ComfyUI registered the
+        # package (e.g. "core._vram_utils" vs
+        # "custom_nodes.ComfyUI-FFMPEGA.core._vram_utils").
+        _pkg = __name__.rsplit(".", 1)[0]  # e.g. "core" or full package path
         for mod_name in ALL_SYNTHESIZER_MODULES:
             if mod_name == exclude:
                 continue
-            mod = sys.modules.get(f"core.{mod_name}") or sys.modules.get(mod_name)
+            mod = (
+                sys.modules.get(f"{_pkg}.{mod_name}")
+                or sys.modules.get(f"core.{mod_name}")
+                or sys.modules.get(mod_name)
+            )
             if mod is None:
                 continue
             try:

@@ -19,6 +19,7 @@ License:
 import gc
 import logging
 import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -593,8 +594,30 @@ def upscale_video(
     fps = _get_video_fps(input_path)
 
     try:
+        # Rough disk-space check: frame extraction + upscaled output may
+        # need ~2× the raw frame data.  Estimate from input file size
+        # (undercount — PNGs are larger than compressed video) and warn.
+        try:
+            input_size = os.path.getsize(input_path)
+            # PNGs are roughly 5-15× larger than compressed video per frame.
+            estimated_bytes = input_size * 10 * 2  # extract + upscaled output
+            tmp_dir = os.path.dirname(frames_dir)
+            disk_stat = shutil.disk_usage(tmp_dir)
+            if estimated_bytes > disk_stat.free:
+                est_gb = estimated_bytes / (1024**3)
+                free_gb = disk_stat.free / (1024**3)
+                log.warning(
+                    "[Upscaler] ⚠️  Frame extraction may need ~%.1f GiB temp "
+                    "disk space but only %.1f GiB free in %s",
+                    est_gb, free_gb, tmp_dir,
+                )
+        except OSError:
+            pass  # disk_usage unavailable — proceed anyway
+
+        # Extract frames (ffmpeg numbers them starting at 000001.png)
         subprocess.run(
             [ffmpeg, "-i", input_path, "-q:v", "2",
+             "-start_number", "1",
              os.path.join(frames_dir, "%06d.png")],
             capture_output=True, check=True,
         )
@@ -623,7 +646,7 @@ def upscale_video(
                     mode="bicubic", align_corners=False,
                 ).clamp(0, 1)
 
-            out_frame = os.path.join(out_dir, f"{i:06d}.png")
+            out_frame = os.path.join(out_dir, f"{i + 1:06d}.png")
             _tensor_to_image(sr_tensor, out_frame)
             del sr_tensor
 
@@ -644,7 +667,7 @@ def upscale_video(
         encode_cmd = [
             ffmpeg, "-y",
             "-framerate", fps_str,
-            "-start_number", "0",
+            "-start_number", "1",
             "-i", os.path.join(out_dir, "%06d.png"),
             "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
             "-c:v", "libx264",
@@ -694,7 +717,6 @@ def upscale_video(
                 log.warning("[Upscaler] Audio mux failed — output is video-only")
 
     finally:
-        import shutil
         for d in (frames_dir, out_dir):
             try:
                 shutil.rmtree(d)
