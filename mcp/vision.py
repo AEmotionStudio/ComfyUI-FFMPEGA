@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import Optional
 
 try:
-    from ..core.sanitize import validate_video_path, validate_output_path
+    from ..core.sanitize import validate_video_path, validate_output_path, ValidationError
 except ImportError:
-    from core.sanitize import validate_video_path, validate_output_path  # type: ignore[no-redef]
+    from core.sanitize import validate_video_path, validate_output_path, ValidationError  # type: ignore[no-redef]
 
 logger = logging.getLogger("ffmpega")
 
@@ -859,7 +859,7 @@ def generate_audio_visualization(
         try:
             valid_path = validate_output_path(str(output_dir))
             out = Path(valid_path)
-        except Exception as e:
+        except (ValueError, ValidationError) as e:
             return {"error": str(e)}
     out.mkdir(parents=True, exist_ok=True)
 

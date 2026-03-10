@@ -50,3 +50,8 @@ def test_sensitive_dirs_in_unsafe_list():
 
     with pytest.raises(ValueError, match="Path targets unsafe system directory"):
         validate_output_path("/opt/app/config.json")
+
+def test_audio_vis_rejects_traversal_output_dir():
+    from mcp.vision import generate_audio_visualization
+    result = generate_audio_visualization("/tmp/test.mp4", output_dir="../../../tmp/evil")
+    assert "error" in result
