@@ -246,6 +246,14 @@ export class TextOverlayPanel {
     private _renderList(): void {
         this.listEl.innerHTML = '';
 
+        if (this.overlays.length === 0) {
+            const emptyMsg = document.createElement('div');
+            emptyMsg.className = 'veditor-text-empty-state';
+            emptyMsg.textContent = 'No text overlays. Click "Add Text" or choose a preset to begin.';
+            this.listEl.appendChild(emptyMsg);
+            return;
+        }
+
         this.overlays.forEach((ov, idx) => {
             const card = document.createElement('div');
             card.className = 'veditor-text-card';

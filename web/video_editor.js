@@ -386,6 +386,13 @@ class TextOverlayPanel {
   }
   _renderList() {
     this.listEl.innerHTML = "";
+    if (this.overlays.length === 0) {
+      const emptyMsg = document.createElement("div");
+      emptyMsg.className = "veditor-text-empty-state";
+      emptyMsg.textContent = 'No text overlays. Click "Add Text" or choose a preset to begin.';
+      this.listEl.appendChild(emptyMsg);
+      return;
+    }
     this.overlays.forEach((ov, idx) => {
       const card = document.createElement("div");
       card.className = "veditor-text-card";
@@ -1676,6 +1683,17 @@ const editorCSS = `/* ═══════════════════�
     overflow: hidden;
     text-overflow: ellipsis;
     line-height: 1.4;
+}
+
+.veditor-text-empty-state {
+    padding: 24px;
+    text-align: center;
+    color: var(--ve-text-muted);
+    font-style: italic;
+    font-size: 13px;
+    border: 1px dashed var(--ve-border);
+    border-radius: 6px;
+    margin-top: 8px;
 }
 
 /* ── Shared Button ────────────────────────────────────────────────── */

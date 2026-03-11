@@ -79,6 +79,17 @@
     line-height: 1.4;
 }
 
+.veditor-text-empty-state {
+    padding: 24px;
+    text-align: center;
+    color: var(--ve-text-muted);
+    font-style: italic;
+    font-size: 13px;
+    border: 1px dashed var(--ve-border);
+    border-radius: 6px;
+    margin-top: 8px;
+}
+
 /* ── Shared Button ────────────────────────────────────────────────── */
 
 .veditor-btn {
