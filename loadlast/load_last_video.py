@@ -106,6 +106,13 @@ _MAX_SERVER_STATE_ENTRIES = 100
 # when load() is never called (e.g. node disconnected from graph).
 _SERVER_STATE_TTL = 300  # 5 minutes
 
+# Rate-limit TTL eviction scans in IS_CHANGED (seconds).
+# IS_CHANGED is called on every scheduler poll; scanning all entries
+# each time is needlessly heavy.  This mirrors the _last_preview_cleanup_time
+# pattern used for file cleanup.
+_EVICTION_SCAN_INTERVAL = 30
+_last_eviction_scan_time: float = 0.0
+
 
 def _capped_insert(d: dict, key: str, value: dict) -> None:
     """Insert *value* under *key* into *d*, evicting the oldest entry if at cap."""
@@ -576,11 +583,15 @@ class LoadLastVideo:
 
         # Evict stale entries (TTL-based) to prevent state from lingering
         # when load() is never called (e.g. node disconnected from graph).
+        # Rate-limited to avoid scanning on every scheduler poll.
+        global _last_eviction_scan_time
         now = time.time()
-        for d in (_user_video_selections, _user_edit_states):
-            stale = [k for k, v in d.items() if now - v.get("ts", 0) > _SERVER_STATE_TTL]
-            for k in stale:
-                d.pop(k, None)
+        if now - _last_eviction_scan_time > _EVICTION_SCAN_INTERVAL:
+            _last_eviction_scan_time = now
+            for d in (_user_video_selections, _user_edit_states):
+                stale = [k for k, v in d.items() if now - v.get("ts", 0) > _SERVER_STATE_TTL]
+                for k in stale:
+                    d.pop(k, None)
 
         if uid and uid in _user_video_selections:
             return f"selected_{uid}_{time.time()}"
@@ -768,8 +779,11 @@ class LoadLastVideo:
                 edits.get("crop_rect", ""),
                 edits.get("speed_map", "{}"),
             )
-            # Reset _edit_action so the widget path doesn't re-apply on
-            # subsequent runs after the server-side state is consumed.
+            # Prevent the widget fallback (elif _edit_action == "passthrough")
+            # from firing later *in this same call*.  This only reassigns the
+            # local parameter — the widget value is unchanged, which is fine:
+            # on subsequent runs the server state will have been popped and
+            # the widget path is the correct fallback.
             _edit_action = "none"
         elif _edit_action == "passthrough":
             resolved_path = self._apply_edits(

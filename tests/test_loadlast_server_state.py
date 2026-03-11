@@ -48,6 +48,7 @@ def _clear_state():
     llv._user_video_selections.clear()
     llv._user_edit_states.clear()
     llv._fps_cache.clear()
+    llv._last_eviction_scan_time = 0.0
 
 
 # ═══════════════════════════════════════════════════════════════════
