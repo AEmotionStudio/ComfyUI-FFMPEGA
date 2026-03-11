@@ -372,6 +372,7 @@ app.registerExtension({
       videoEl.addEventListener("dblclick", (e) => {
         e.preventDefault();
         e.stopPropagation();
+        if (currentMode === VIEW_MODES.EDIT) return;
         if (videoEl.duration && isFinite(videoEl.duration)) {
           const ts = videoEl.currentTime;
           selections.toggle(currentMode, ts);
@@ -1367,10 +1368,13 @@ app.registerExtension({
         updatePlaybackMarkers();
       });
       let maxPlaybackTime = Infinity;
+      let rVFCHandle = null;
+      const supportsRVFC = "requestVideoFrameCallback" in HTMLVideoElement.prototype;
       function updateMaxPlaybackTime() {
         var _a2;
         const mfWidget = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "max_frames");
         const maxFrames = mfWidget ? Number(mfWidget.value) || 0 : 0;
+        const prevMax = maxPlaybackTime;
         if (maxFrames > 0 && videoEl.duration && isFinite(videoEl.duration)) {
           const totalFrames = Math.round(videoEl.duration * videoFps);
           if (maxFrames < totalFrames) {
@@ -1381,6 +1385,16 @@ app.registerExtension({
         } else {
           maxPlaybackTime = Infinity;
         }
+        if (supportsRVFC) {
+          const wasActive = prevMax < Infinity;
+          const isActive = maxPlaybackTime < Infinity;
+          if (isActive && !wasActive && rVFCHandle === null) {
+            schedulePlaybackCapFrame();
+          } else if (!isActive && rVFCHandle !== null) {
+            videoEl.cancelVideoFrameCallback(rVFCHandle);
+            rVFCHandle = null;
+          }
+        }
       }
       function checkPlaybackCap() {
         var _a2, _b2;
@@ -1389,13 +1403,17 @@ app.registerExtension({
           videoEl.currentTime = firstStart;
         }
       }
-      if ("requestVideoFrameCallback" in HTMLVideoElement.prototype) {
-        const onFrame = () => {
+      function schedulePlaybackCapFrame() {
+        rVFCHandle = videoEl.requestVideoFrameCallback(() => {
           checkPlaybackCap();
-          videoEl.requestVideoFrameCallback(onFrame);
-        };
-        videoEl.requestVideoFrameCallback(onFrame);
-      } else {
+          if (maxPlaybackTime < Infinity) {
+            schedulePlaybackCapFrame();
+          } else {
+            rVFCHandle = null;
+          }
+        });
+      }
+      if (!supportsRVFC) {
         videoEl.addEventListener("timeupdate", checkPlaybackCap);
       }
       const maxFramesWidget = (_a = node.widgets) == null ? void 0 : _a.find((w) => w.name === "max_frames");

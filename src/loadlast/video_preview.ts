@@ -212,6 +212,10 @@ app.registerExtension({
                 e.preventDefault();
                 e.stopPropagation();
 
+                // In EDIT mode, dblclick should not toggle frame selection —
+                // the user is doing NLE editing, not frame picking.
+                if (currentMode === VIEW_MODES.EDIT) return;
+
                 // Select the frame at the current playback time
                 if (videoEl.duration && isFinite(videoEl.duration)) {
                     const ts = videoEl.currentTime;
@@ -1362,10 +1366,13 @@ app.registerExtension({
             // Cap video playback at the time corresponding to max_frames
             // so the user sees exactly what will be decoded.
             let maxPlaybackTime = Infinity;
+            let rVFCHandle: number | null = null;
+            const supportsRVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
 
             function updateMaxPlaybackTime(): void {
                 const mfWidget = node.widgets?.find((w: any) => w.name === 'max_frames');
                 const maxFrames = mfWidget ? Number(mfWidget.value) || 0 : 0;
+                const prevMax = maxPlaybackTime;
                 if (maxFrames > 0 && videoEl.duration && isFinite(videoEl.duration)) {
                     const totalFrames = Math.round(videoEl.duration * videoFps);
                     if (maxFrames < totalFrames) {
@@ -1375,6 +1382,17 @@ app.registerExtension({
                     }
                 } else {
                     maxPlaybackTime = Infinity;
+                }
+                // Start or stop the rVFC loop when cap state changes
+                if (supportsRVFC) {
+                    const wasActive = prevMax < Infinity;
+                    const isActive = maxPlaybackTime < Infinity;
+                    if (isActive && !wasActive && rVFCHandle === null) {
+                        schedulePlaybackCapFrame();
+                    } else if (!isActive && rVFCHandle !== null) {
+                        (videoEl as any).cancelVideoFrameCallback(rVFCHandle);
+                        rVFCHandle = null;
+                    }
                 }
             }
 
@@ -1391,14 +1409,19 @@ app.registerExtension({
                 }
             }
 
-            if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
-                // Frame-precise: fires on every decoded frame
-                const onFrame = () => {
+            function schedulePlaybackCapFrame(): void {
+                rVFCHandle = (videoEl as any).requestVideoFrameCallback(() => {
                     checkPlaybackCap();
-                    (videoEl as any).requestVideoFrameCallback(onFrame);
-                };
-                (videoEl as any).requestVideoFrameCallback(onFrame);
-            } else {
+                    // Only keep scheduling if cap is still active
+                    if (maxPlaybackTime < Infinity) {
+                        schedulePlaybackCapFrame();
+                    } else {
+                        rVFCHandle = null;
+                    }
+                });
+            }
+
+            if (!supportsRVFC) {
                 // Fallback: ~4Hz, may overshoot by up to 6-7 frames at 24fps
                 videoEl.addEventListener('timeupdate', checkPlaybackCap);
             }
