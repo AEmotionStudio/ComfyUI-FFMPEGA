@@ -191,11 +191,15 @@ export class AudioMixer {
         resetBtn.setAttribute('data-tool-id', 'veditor-audio-reset');
         resetBtn.setAttribute('aria-label', 'Reset audio settings');
         resetBtn.addEventListener('click', () => {
-            this.reset();
+            // Fire callbacks BEFORE reset() — reset() calls clearSegmentSelection()
+            // which sets _selectedSegIndex = -1, and EditorModal's callbacks check
+            // that index to know which AudioSegment to update. If we reset first,
+            // the callbacks become no-ops and the segment data isn't actually reset.
             this.callbacks.onVolumeChanged(1.0);
             this.callbacks.onFadeInChanged?.(0);
             this.callbacks.onFadeOutChanged?.(0);
             this.callbacks.onEQChanged?.('flat');
+            this.reset();
         });
         resetRow.appendChild(resetBtn);
 

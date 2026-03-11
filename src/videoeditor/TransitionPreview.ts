@@ -65,7 +65,12 @@ export class TransitionPreview {
             return;
         }
 
-        // Incoming phase: just entered a new segment
+        // Incoming phase: just entered a new segment.
+        // NOTE: The caller (TransportBar._enforceSegments) passes the
+        // *previous* cut's transition for this phase, which is correct —
+        // the incoming half should match the outgoing half of the same cut.
+        // Wipe/slide directions are intentionally inverted in _applyIncoming
+        // to create a symmetric "wipe-out then wipe-in" visual effect.
         const timeFromStart = currentTime - segStart;
         if (isNewSegment || (timeFromStart <= halfDur && timeFromStart >= 0)) {
             // Progress: 1 (at cut point) → 0 (fully revealed)
@@ -146,7 +151,13 @@ export class TransitionPreview {
         }
     }
 
-    /** Apply incoming (fade-in / wipe-in / slide-in) effect */
+    /**
+     * Apply incoming (fade-in / wipe-in / slide-in) effect.
+     * Wipe/slide directions are intentionally inverted relative to the
+     * outgoing phase so the visual effect is symmetric across the cut:
+     *   - wipeleft outgoing clips from right → incoming clips from left
+     *   - slideright outgoing slides right → incoming slides from right
+     */
     private _applyIncoming(type: TransitionType, progress: number): void {
         if (!this.videoEl) return;
 

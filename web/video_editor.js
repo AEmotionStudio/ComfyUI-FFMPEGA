@@ -155,11 +155,11 @@ class AudioMixer {
     resetBtn.setAttribute("aria-label", "Reset audio settings");
     resetBtn.addEventListener("click", () => {
       var _a, _b, _c, _d, _e, _f;
-      this.reset();
       this.callbacks.onVolumeChanged(1);
       (_b = (_a = this.callbacks).onFadeInChanged) == null ? void 0 : _b.call(_a, 0);
       (_d = (_c = this.callbacks).onFadeOutChanged) == null ? void 0 : _d.call(_c, 0);
       (_f = (_e = this.callbacks).onEQChanged) == null ? void 0 : _f.call(_e, "flat");
+      this.reset();
     });
     resetRow.appendChild(resetBtn);
     this.container.append(volSection, fadeInSection, fadeOutSection, eqSection, resetRow);
@@ -1670,7 +1670,13 @@ class TransitionPreview {
         break;
     }
   }
-  /** Apply incoming (fade-in / wipe-in / slide-in) effect */
+  /**
+   * Apply incoming (fade-in / wipe-in / slide-in) effect.
+   * Wipe/slide directions are intentionally inverted relative to the
+   * outgoing phase so the visual effect is symmetric across the cut:
+   *   - wipeleft outgoing clips from right → incoming clips from left
+   *   - slideright outgoing slides right → incoming slides from right
+   */
   _applyIncoming(type, progress) {
     if (!this.videoEl) return;
     const safeType = this._baseClipPath ? "fade" : type;
