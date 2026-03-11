@@ -10,6 +10,9 @@ import { AudioEditManager, AudioSegment } from './AudioSegment';
 import { snapToEdges, collectEdges } from './SnapEngine';
 
 // ─── Constants ─────────────────────────────────────────────────────
+// Note: TRACK_H / HANDLE_W / PLAYHEAD_W are shared with EditTimeline.ts,
+// but TRACK_PAD differs intentionally: audio track uses 4 for a compact
+// NLE row; video track uses 12 for room for time labels below.
 const TRACK_H = 48;
 const TRACK_PAD = 4;
 const HANDLE_W = 8;
@@ -503,17 +506,21 @@ export class AudioTimeline {
 
         if (this.drag.type === 'none') {
             const hit = this._hitTest(cx, cy);
+            let newHover: string | null = null;
             if (hit.type === 'handle-left' || hit.type === 'handle-right') {
                 this.canvas.style.cursor = 'ew-resize';
-                this.hoveredHandle = hit.segId ? `${hit.segId}-${hit.type === 'handle-left' ? 'left' : 'right'}` : null;
+                newHover = hit.segId ? `${hit.segId}-${hit.type === 'handle-left' ? 'left' : 'right'}` : null;
             } else if (hit.type === 'playhead') {
                 this.canvas.style.cursor = 'col-resize';
-                this.hoveredHandle = null;
             } else {
                 this.canvas.style.cursor = 'pointer';
-                this.hoveredHandle = null;
             }
-            this.render();
+            // Only re-render when hover target actually changes — avoids
+            // expensive full waveform redraws on every mousemove (~60/sec).
+            if (newHover !== this.hoveredHandle) {
+                this.hoveredHandle = newHover;
+                this.render();
+            }
             return;
         }
 

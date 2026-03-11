@@ -683,6 +683,7 @@ app.registerExtension({
                     volume: 1.0,
                     textOverlays: [],
                     transitions: [],
+                    audioSegments: [],
                 };
             }
 

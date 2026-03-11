@@ -868,17 +868,19 @@ class EditTimeline {
     const { x, y } = this._canvasToTrack(e.clientX, e.clientY);
     if (this.drag.type === "none") {
       const hit = this._hitTest(x, y);
+      let newHover = null;
       if (hit.type === "handle-left" || hit.type === "handle-right") {
         this.canvas.style.cursor = "ew-resize";
-        this.hoveredHandle = hit.segId ? `${hit.segId}-${hit.type === "handle-left" ? "left" : "right"}` : null;
+        newHover = hit.segId ? `${hit.segId}-${hit.type === "handle-left" ? "left" : "right"}` : null;
       } else if (hit.type === "playhead") {
         this.canvas.style.cursor = "col-resize";
-        this.hoveredHandle = null;
       } else {
         this.canvas.style.cursor = "pointer";
-        this.hoveredHandle = null;
       }
-      this.render();
+      if (newHover !== this.hoveredHandle) {
+        this.hoveredHandle = newHover;
+        this.render();
+      }
       return;
     }
     if (!this.geometry) return;

@@ -4,7 +4,7 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { a as addDownloadOverlay } from "./_chunks/ui_helpers-CvUDB6-L.js";
-import { d as collectEdges, s as snapToEdges, E as EditManager, T as TransportBar, S as SpeedControl, a as EditToolbar, U as UndoManager, N as NLETimeline } from "./_chunks/UndoManager-UxbuvU0x.js";
+import { d as collectEdges, s as snapToEdges, E as EditManager, T as TransportBar, S as SpeedControl, a as EditToolbar, U as UndoManager, N as NLETimeline } from "./_chunks/UndoManager-Cuq-00Al.js";
 import { i as iconVolume, a as iconMuted, b as iconMusic, c as iconPlus, d as iconClose, e as iconBold, f as iconItalic, g as iconAlignLeft, h as iconAlignCenter, j as iconAlignRight, k as iconZoomOut, l as iconZoomIn, m as iconMaximize, n as iconShuffle, o as iconClapperboard, p as iconUndo, q as iconRedo, r as iconCheck, C as CropOverlay, s as iconCrop, t as iconGauge, u as iconText } from "./_chunks/CropOverlay-mJDFyTOH.js";
 class AudioMixer {
   constructor(callbacks) {
@@ -173,11 +173,10 @@ class AudioMixer {
    * Get the master volume (independent of per-segment editing).
    * Always returns the master volume, even when a segment is selected
    * and the slider shows the segment's volume.
+   *
+   * Note: per-segment volume/mute is handled by AudioEditManager,
+   * not by this getter.
    */
-  getVolume() {
-    return this._masterVolume;
-  }
-  /** Alias for getVolume() — makes call-site intent explicit */
   getMasterVolume() {
     return this._masterVolume;
   }
@@ -2256,17 +2255,19 @@ class AudioTimeline {
     const cy = e.clientY - rect.top;
     if (this.drag.type === "none") {
       const hit = this._hitTest(cx, cy);
+      let newHover = null;
       if (hit.type === "handle-left" || hit.type === "handle-right") {
         this.canvas.style.cursor = "ew-resize";
-        this.hoveredHandle = hit.segId ? `${hit.segId}-${hit.type === "handle-left" ? "left" : "right"}` : null;
+        newHover = hit.segId ? `${hit.segId}-${hit.type === "handle-left" ? "left" : "right"}` : null;
       } else if (hit.type === "playhead") {
         this.canvas.style.cursor = "col-resize";
-        this.hoveredHandle = null;
       } else {
         this.canvas.style.cursor = "pointer";
-        this.hoveredHandle = null;
       }
-      this.render();
+      if (newHover !== this.hoveredHandle) {
+        this.hoveredHandle = newHover;
+        this.render();
+      }
       return;
     }
     if (!this.geometry) return;

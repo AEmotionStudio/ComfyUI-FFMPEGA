@@ -216,12 +216,10 @@ export class AudioMixer {
      * Get the master volume (independent of per-segment editing).
      * Always returns the master volume, even when a segment is selected
      * and the slider shows the segment's volume.
+     *
+     * Note: per-segment volume/mute is handled by AudioEditManager,
+     * not by this getter.
      */
-    getVolume(): number {
-        return this._masterVolume;
-    }
-
-    /** Alias for getVolume() — makes call-site intent explicit */
     getMasterVolume(): number {
         return this._masterVolume;
     }

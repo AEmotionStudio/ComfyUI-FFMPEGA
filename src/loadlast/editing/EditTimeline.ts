@@ -11,6 +11,9 @@ import { fmtDuration } from '@ffmpega/shared/utils';
 import { snapToEdges, collectEdges } from '@ffmpega/videoeditor/SnapEngine';
 
 // ─── Constants ─────────────────────────────────────────────────────────
+// Note: TRACK_H / HANDLE_W / PLAYHEAD_W are shared with AudioTimeline.ts,
+// but TRACK_PAD differs intentionally: video track uses 12 to make room
+// for time labels below; audio track uses 4 for a compact NLE row.
 const TRACK_H = 48;
 const TRACK_PAD = 12;
 const HANDLE_W = 8;
@@ -312,17 +315,20 @@ export class EditTimeline {
         if (this.drag.type === 'none') {
             // Update cursor for hover
             const hit = this._hitTest(x, y);
+            let newHover: string | null = null;
             if (hit.type === 'handle-left' || hit.type === 'handle-right') {
                 this.canvas.style.cursor = 'ew-resize';
-                this.hoveredHandle = hit.segId ? `${hit.segId}-${hit.type === 'handle-left' ? 'left' : 'right'}` : null;
+                newHover = hit.segId ? `${hit.segId}-${hit.type === 'handle-left' ? 'left' : 'right'}` : null;
             } else if (hit.type === 'playhead') {
                 this.canvas.style.cursor = 'col-resize';
-                this.hoveredHandle = null;
             } else {
                 this.canvas.style.cursor = 'pointer';
-                this.hoveredHandle = null;
             }
-            this.render();
+            // Only re-render when hover target actually changes.
+            if (newHover !== this.hoveredHandle) {
+                this.hoveredHandle = newHover;
+                this.render();
+            }
             return;
         }
 
