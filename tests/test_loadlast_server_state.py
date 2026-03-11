@@ -246,16 +246,16 @@ class TestFilenameSanitization:
         assert os.path.basename("") == ""
 
     def test_traversal_subfolder_rejected(self):
-        """Subfolder containing '..' is rejected."""
-        sel = {
-            "filename": "innocent.mp4",
-            "subfolder": "../../../etc",
-            "type": "output",
-        }
-        # The load() method checks: if ".." in sel_subfolder.split(os.sep)
-        subfolder = sel["subfolder"]
-        has_traversal = ".." in subfolder.split(os.sep)
+        """Subfolder containing '..' is rejected (forward slashes)."""
+        subfolder = "../../../etc"
+        has_traversal = ".." in subfolder.replace("\\", "/").split("/")
         assert has_traversal, "Should detect '..' traversal in subfolder"
+
+    def test_traversal_subfolder_backslash(self):
+        """Subfolder with backslash separators is also caught."""
+        subfolder = "..\\..\\..\\etc"
+        has_traversal = ".." in subfolder.replace("\\", "/").split("/")
+        assert has_traversal, "Should detect '..' traversal with backslash separators"
 
     def test_traversal_filename_sanitized(self):
         """Filename with path separators is sanitized via basename."""

@@ -554,6 +554,11 @@ app.registerExtension({
                     applyBtn.setAttribute('data-tool-id', 'loadlast-apply-edits');
                     applyBtn.addEventListener('click', () => {
                         postEditState();
+                        // Reset _edit_action widget so the widget fallback
+                        // path doesn't re-apply stale edits on subsequent
+                        // runs — the server-side state takes precedence.
+                        const actWidget = node.widgets?.find((w: any) => w.name === '_edit_action');
+                        if (actWidget) actWidget.value = 'none';
                         // Visual feedback — flash green
                         applyBtn.style.background = '#4ade80';
                         applyBtn.style.color = '#000';

@@ -678,13 +678,14 @@ class LoadLastVideo:
         if resolved_path is None:
             # Check for user-selected video from browser strip (server-side state)
             sel_wrapper = _user_video_selections.pop(str(unique_id), None)
-            sel = sel_wrapper.get("data") if sel_wrapper else None
+            sel = (sel_wrapper.get("data") if isinstance(sel_wrapper, dict) else None)
             if sel:
                 sel_filename = os.path.basename(sel.get("filename", ""))
                 sel_subfolder = sel.get("subfolder", "")
                 sel_type = sel.get("type", "output")
                 # Reject path-traversal attempts in subfolder
-                if ".." in sel_subfolder.split(os.sep):
+                # Normalise both / and \ to catch traversal from any OS
+                if ".." in sel_subfolder.replace("\\", "/").split("/"):
                     logger.warning(
                         "[LoadLast] Subfolder contains '..', rejecting selection for node %s",
                         unique_id,
@@ -759,7 +760,7 @@ class LoadLastVideo:
         # subsequent runs fall through to the widget path.
         if unique_id and unique_id in _user_edit_states:
             edits_wrapper = _user_edit_states.pop(unique_id)
-            edits = edits_wrapper.get("data", {}) if edits_wrapper else {}
+            edits = edits_wrapper.get("data", {}) if isinstance(edits_wrapper, dict) else {}
             logger.info("[LoadLast] Consuming server-side edits for node %s", unique_id)
             resolved_path = self._apply_edits(
                 resolved_path,
@@ -767,6 +768,9 @@ class LoadLastVideo:
                 edits.get("crop_rect", ""),
                 edits.get("speed_map", "{}"),
             )
+            # Reset _edit_action so the widget path doesn't re-apply on
+            # subsequent runs after the server-side state is consumed.
+            _edit_action = "none"
         elif _edit_action == "passthrough":
             resolved_path = self._apply_edits(
                 resolved_path,

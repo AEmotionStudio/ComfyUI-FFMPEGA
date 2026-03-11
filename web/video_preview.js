@@ -660,7 +660,10 @@ app.registerExtension({
           applyBtn.style.cssText = "margin-left:auto;color:#4ade80;border:1px solid #4ade80;";
           applyBtn.setAttribute("data-tool-id", "loadlast-apply-edits");
           applyBtn.addEventListener("click", () => {
+            var _a3;
             postEditState();
+            const actWidget = (_a3 = node.widgets) == null ? void 0 : _a3.find((w) => w.name === "_edit_action");
+            if (actWidget) actWidget.value = "none";
             applyBtn.style.background = "#4ade80";
             applyBtn.style.color = "#000";
             applyBtn.textContent = "✅ Applied!";
