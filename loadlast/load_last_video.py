@@ -115,7 +115,12 @@ _last_eviction_scan_time: float = 0.0
 
 
 def _capped_insert(d: dict, key: str, value: dict) -> None:
-    """Insert *value* under *key* into *d*, evicting the oldest entry if at cap."""
+    """Insert *value* under *key* into *d*, evicting the oldest entry if at cap.
+
+    FIFO eviction relies on dict insertion-order preservation (guaranteed
+    since Python 3.7+, CPython 3.6+).  Do not replace *d* with a mapping
+    type that does not preserve insertion order.
+    """
     if len(d) >= _MAX_SERVER_STATE_ENTRIES and key not in d:
         oldest = next(iter(d))
         d.pop(oldest, None)
@@ -311,10 +316,18 @@ def _probe_fps_cached(video_info: dict) -> float | None:
             return None
 
         _fps_cache[full_path] = (fps, mtime)
-        # Limit cache size
+        # Limit cache size and purge entries for deleted files.
+        # Purging deleted paths prevents the cache from hoarding stale
+        # entries that would otherwise persist until evicted by the 200-
+        # entry cap via insertion-order FIFO.
         if len(_fps_cache) > 200:
-            oldest_key = next(iter(_fps_cache))
-            _fps_cache.pop(oldest_key, None)
+            stale_paths = [p for p in _fps_cache if not os.path.isfile(p)]
+            for p in stale_paths:
+                _fps_cache.pop(p, None)
+            # Still over cap after purge — evict oldest by insertion order
+            if len(_fps_cache) > 200:
+                oldest_key = next(iter(_fps_cache))
+                _fps_cache.pop(oldest_key, None)
         return fps
     except Exception:
         return None

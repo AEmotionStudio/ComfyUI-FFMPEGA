@@ -1378,16 +1378,30 @@ app.registerExtension({
                 }
             }
 
-            videoEl.addEventListener('timeupdate', () => {
-                // Only cap in non-edit mode — edit mode has its own segment enforcement
+            // Playback capping — loop back when currentTime exceeds maxPlaybackTime.
+            // Use requestVideoFrameCallback for frame-precise enforcement (fires
+            // every rendered frame), with a timeupdate fallback for browsers that
+            // lack rVFC support (~4Hz, may overshoot by a few frames).
+            function checkPlaybackCap(): void {
                 if (currentMode !== VIEW_MODES.EDIT &&
                     maxPlaybackTime < Infinity &&
                     videoEl.currentTime >= maxPlaybackTime) {
-                    // Respect the first edit segment's start if trimmed
                     const firstStart = editMgr?.segments?.[0]?.start ?? 0;
                     videoEl.currentTime = firstStart;
                 }
-            });
+            }
+
+            if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+                // Frame-precise: fires on every decoded frame
+                const onFrame = () => {
+                    checkPlaybackCap();
+                    (videoEl as any).requestVideoFrameCallback(onFrame);
+                };
+                (videoEl as any).requestVideoFrameCallback(onFrame);
+            } else {
+                // Fallback: ~4Hz, may overshoot by up to 6-7 frames at 24fps
+                videoEl.addEventListener('timeupdate', checkPlaybackCap);
+            }
 
             // updateMaxPlaybackTime is called from the loadedmetadata handler above
 

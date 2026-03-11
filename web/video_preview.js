@@ -1382,13 +1382,22 @@ app.registerExtension({
           maxPlaybackTime = Infinity;
         }
       }
-      videoEl.addEventListener("timeupdate", () => {
+      function checkPlaybackCap() {
         var _a2, _b2;
         if (currentMode !== VIEW_MODES.EDIT && maxPlaybackTime < Infinity && videoEl.currentTime >= maxPlaybackTime) {
           const firstStart = ((_b2 = (_a2 = editMgr == null ? void 0 : editMgr.segments) == null ? void 0 : _a2[0]) == null ? void 0 : _b2.start) ?? 0;
           videoEl.currentTime = firstStart;
         }
-      });
+      }
+      if ("requestVideoFrameCallback" in HTMLVideoElement.prototype) {
+        const onFrame = () => {
+          checkPlaybackCap();
+          videoEl.requestVideoFrameCallback(onFrame);
+        };
+        videoEl.requestVideoFrameCallback(onFrame);
+      } else {
+        videoEl.addEventListener("timeupdate", checkPlaybackCap);
+      }
       const maxFramesWidget = (_a = node.widgets) == null ? void 0 : _a.find((w) => w.name === "max_frames");
       if (maxFramesWidget) {
         const origCb = maxFramesWidget.callback;
