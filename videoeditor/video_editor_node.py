@@ -544,13 +544,24 @@ class VideoEditorNode:
 
     @staticmethod
     def _is_path_sandboxed(path: str) -> bool:
-        """Check if a path is within ComfyUI's allowed directories."""
+        """Check if a path is within ComfyUI's or system temp directories.
+
+        Extends the standard ComfyUI sandbox check to also accept the
+        system tempdir, because upstream FFMPEGA nodes (output_handler)
+        create preview-mode renders there via ``tempfile.mkdtemp``.
+        """
         try:
             from ..loadlast.discovery.path_utils import is_path_sandboxed
-            return is_path_sandboxed(path)
+            if is_path_sandboxed(path):
+                return True
         except ImportError:
-            # Fallback: deny if we can't verify (fail-closed, matches server.py)
-            return False
+            log.debug("path_utils.is_path_sandboxed unavailable — checking tempdir only for %r", path)
+
+        # Also accept paths inside the system temp directory — upstream
+        # FFMPEGA nodes write preview renders to /tmp/ffmpega_*/
+        real = os.path.realpath(path)
+        sys_tmp = os.path.realpath(tempfile.gettempdir())
+        return real == sys_tmp or real.startswith(sys_tmp + os.sep)
 
 
 # Clean up temp video files on process exit

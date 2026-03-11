@@ -25,16 +25,28 @@ web = server.web
 
 
 def _is_path_sandboxed(filepath: str) -> bool:
-    """Check that a resolved path is inside an allowed directory."""
+    """Check that a resolved path is inside an allowed directory.
+
+    Accepts ComfyUI's managed directories (output, temp, input) as well
+    as the system tempdir, where upstream FFMPEGA nodes create preview-mode
+    renders via ``tempfile.mkdtemp``.
+    """
     try:
         from .loadlast.discovery.path_utils import is_path_sandboxed
-        return is_path_sandboxed(filepath)
+        if is_path_sandboxed(filepath):
+            return True
     except ImportError:
         log.warning(
-            "path_utils.is_path_sandboxed unavailable — denying path %r",
+            "path_utils.is_path_sandboxed unavailable — checking tempdir only for %r",
             filepath,
         )
-        return False
+
+    # Also accept the system temp directory — upstream FFMPEGA nodes
+    # write preview renders to /tmp/ffmpega_*/
+    import tempfile
+    real = os.path.realpath(filepath)
+    sys_tmp = os.path.realpath(tempfile.gettempdir())
+    return real == sys_tmp or real.startswith(sys_tmp + os.sep)
 
 
 def _resolve_video_path(raw_path: str) -> str | None:
@@ -337,8 +349,8 @@ def _serve_file_with_ranges(file_path: str):
     """
     return web.FileResponse(
         file_path,
-        content_type="video/mp4",
         headers={
+            "Content-Type": "video/mp4",
             "Cache-Control": "public, max-age=60",
             "Content-Disposition": 'inline; filename="preview.mp4"',
         },

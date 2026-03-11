@@ -2809,6 +2809,7 @@ function _setupNode(node) {
   var _a;
   node.color = "#2a5a4a";
   node.bgcolor = "#1a4a3a";
+  _ensureHiddenWidgets(node);
   let videoPath = "";
   let editState = {
     segments: [],
@@ -2910,7 +2911,11 @@ function _setupNode(node) {
         previewContainer.style.display = "";
         resizeNode();
         const pauseW = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "pause_on_input");
-        if (pauseW == null ? void 0 : pauseW.value) app.queuePrompt(0, 1);
+        if (pauseW == null ? void 0 : pauseW.value) {
+          app.queuePrompt(0, 1).finally(() => _setW(node, "_edit_action", "none"));
+        } else {
+          _setW(node, "_edit_action", "none");
+        }
       },
       onCancel: () => {
       }
@@ -3068,7 +3073,11 @@ function _setupNode(node) {
             previewContainer.style.display = "";
             resizeNode();
             const pauseW2 = (_a3 = node.widgets) == null ? void 0 : _a3.find((w) => w.name === "pause_on_input");
-            if (pauseW2 == null ? void 0 : pauseW2.value) app.queuePrompt(0, 1);
+            if (pauseW2 == null ? void 0 : pauseW2.value) {
+              app.queuePrompt(0, 1).finally(() => _setW(node, "_edit_action", "none"));
+            } else {
+              _setW(node, "_edit_action", "none");
+            }
           },
           onCancel: () => {
           }
@@ -3109,10 +3118,39 @@ function _syncToWidgets(node, state) {
 function _setW(node, name, value) {
   var _a;
   const w = (_a = node.widgets) == null ? void 0 : _a.find((w2) => w2.name === name);
-  if (w) w.value = value;
-  else {
+  if (w) {
+    w.value = value;
+  } else {
     if (!node.properties) node.properties = {};
     node.properties[name] = value;
+  }
+}
+const HIDDEN_WIDGETS = [
+  ["_edit_segments", "[]"],
+  ["_edit_action", "none"],
+  ["_crop_rect", ""],
+  ["_speed_map", "{}"],
+  ["_volume", "1.0"],
+  ["_text_overlays", "[]"],
+  ["_transitions", "[]"]
+];
+function _ensureHiddenWidgets(node) {
+  var _a;
+  for (const [name, defaultVal] of HIDDEN_WIDGETS) {
+    let w = (_a = node.widgets) == null ? void 0 : _a.find((w2) => w2.name === name);
+    if (!w) {
+      w = node.addWidget(
+        "text",
+        name,
+        defaultVal,
+        () => {
+        },
+        { serialize: true }
+      );
+    }
+    w.computeSize = () => [0, -4];
+    w.draw = () => {
+    };
   }
 }
 function _getW(node, name, fb = "") {
@@ -3143,4 +3181,9 @@ function _loadStateFromWidgets(node, editState) {
   } catch {
   }
   editState.cropRect = _getW(node, "_crop_rect", "");
+  try {
+    const t = JSON.parse(_getW(node, "_transitions", "[]"));
+    if (Array.isArray(t)) editState.transitions = t;
+  } catch {
+  }
 }

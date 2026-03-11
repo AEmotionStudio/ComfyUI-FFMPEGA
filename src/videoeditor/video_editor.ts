@@ -84,6 +84,9 @@ function _setupNode(node: EditorNode): void {
     node.color = '#2a5a4a';
     node.bgcolor = '#1a4a3a';
 
+    // ── Ensure hidden widgets exist and are invisible ──
+    _ensureHiddenWidgets(node);
+
     // ── Closure-scoped state ──
     let videoPath = '';
     let editState: ModalEditState = {
@@ -184,7 +187,13 @@ function _setupNode(node: EditorNode): void {
                 resizeNode();
                 // Resume the paused workflow (only if it was actually paused)
                 const pauseW = node.widgets?.find((w: ComfyWidget) => w.name === 'pause_on_input');
-                if (pauseW?.value) app.queuePrompt(0, 1);
+                if (pauseW?.value) {
+                    // Reset _edit_action AFTER the prompt is serialized —
+                    // queuePrompt is async so we must wait for it.
+                    app.queuePrompt(0, 1).finally(() => _setW(node, '_edit_action', 'none'));
+                } else {
+                    _setW(node, '_edit_action', 'none');
+                }
             },
             onCancel: () => { },
         });
@@ -369,7 +378,11 @@ function _setupNode(node: EditorNode): void {
                         resizeNode();
                         // Resume the paused workflow (only if it was actually paused)
                         const pauseW2 = node.widgets?.find((w: ComfyWidget) => w.name === 'pause_on_input');
-                        if (pauseW2?.value) app.queuePrompt(0, 1);
+                        if (pauseW2?.value) {
+                            app.queuePrompt(0, 1).finally(() => _setW(node, '_edit_action', 'none'));
+                        } else {
+                            _setW(node, '_edit_action', 'none');
+                        }
                     },
                     onCancel: () => { },
                 });
@@ -413,8 +426,50 @@ function _syncToWidgets(node: ComfyNode, state: ModalEditState): void {
 
 function _setW(node: ComfyNode, name: string, value: unknown): void {
     const w = node.widgets?.find((w: ComfyWidget) => w.name === name);
-    if (w) w.value = value;
-    else { if (!node.properties) node.properties = {}; node.properties[name] = value; }
+    if (w) {
+        w.value = value;
+    } else {
+        // Fallback — store in properties (hidden widgets should exist from
+        // _ensureHiddenWidgets, but guard against edge cases).
+        if (!node.properties) node.properties = {};
+        node.properties[name] = value;
+    }
+}
+
+/** Hidden widget names and their defaults */
+const HIDDEN_WIDGETS: [string, string][] = [
+    ['_edit_segments', '[]'],
+    ['_edit_action', 'none'],
+    ['_crop_rect', ''],
+    ['_speed_map', '{}'],
+    ['_volume', '1.0'],
+    ['_text_overlays', '[]'],
+    ['_transitions', '[]'],
+];
+
+/**
+ * Ensure all hidden widgets exist on the node and are invisible.
+ *
+ * ComfyUI creates hidden widgets internally, but they may not always
+ * be present as widget objects (depends on version/timing). This
+ * function checks for each hidden widget and creates it if missing,
+ * using ComfyUI's `converted-widget` type to prevent rendering.
+ */
+function _ensureHiddenWidgets(node: ComfyNode): void {
+    for (const [name, defaultVal] of HIDDEN_WIDGETS) {
+        let w = node.widgets?.find((w: ComfyWidget) => w.name === name);
+        if (!w) {
+            w = node.addWidget(
+                'text', name, defaultVal,
+                () => { /* no-op */ },
+                { serialize: true },
+            );
+        }
+        // Visually hide: collapse height AND suppress draw.
+        // Don't change `type` — that breaks prompt serialization.
+        w.computeSize = () => [0, -4] as [number, number];
+        w.draw = () => { /* no-op: prevent LiteGraph from rendering */ };
+    }
 }
 
 function _getW(node: ComfyNode, name: string, fb: string = ''): string {
@@ -429,4 +484,5 @@ function _loadStateFromWidgets(node: ComfyNode, editState: ModalEditState): void
     try { const v = parseFloat(_getW(node, '_volume', '1.0')); if (!isNaN(v)) editState.volume = v; } catch { }
     try { const o = JSON.parse(_getW(node, '_text_overlays', '[]')); if (Array.isArray(o)) editState.textOverlays = o; } catch { }
     editState.cropRect = _getW(node, '_crop_rect', '');
+    try { const t = JSON.parse(_getW(node, '_transitions', '[]')); if (Array.isArray(t)) editState.transitions = t; } catch { }
 }
