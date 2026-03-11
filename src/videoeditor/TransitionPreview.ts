@@ -67,7 +67,7 @@ export class TransitionPreview {
 
         // Incoming phase: just entered a new segment
         const timeFromStart = currentTime - segStart;
-        if (isNewSegment || (timeFromStart <= halfDur && timeFromStart >= 0 && this._active)) {
+        if (isNewSegment || (timeFromStart <= halfDur && timeFromStart >= 0)) {
             // Progress: 1 (at cut point) → 0 (fully revealed)
             const progress = 1 - (timeFromStart / halfDur);
             if (progress > 0) {

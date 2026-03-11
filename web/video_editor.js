@@ -154,8 +154,12 @@ class AudioMixer {
     resetBtn.setAttribute("data-tool-id", "veditor-audio-reset");
     resetBtn.setAttribute("aria-label", "Reset audio settings");
     resetBtn.addEventListener("click", () => {
+      var _a, _b, _c, _d, _e, _f;
       this.reset();
       this.callbacks.onVolumeChanged(1);
+      (_b = (_a = this.callbacks).onFadeInChanged) == null ? void 0 : _b.call(_a, 0);
+      (_d = (_c = this.callbacks).onFadeOutChanged) == null ? void 0 : _d.call(_c, 0);
+      (_f = (_e = this.callbacks).onEQChanged) == null ? void 0 : _f.call(_e, "flat");
     });
     resetRow.appendChild(resetBtn);
     this.container.append(volSection, fadeInSection, fadeOutSection, eqSection, resetRow);
@@ -1606,7 +1610,7 @@ class TransitionPreview {
       return;
     }
     const timeFromStart = currentTime - segStart;
-    if (isNewSegment || timeFromStart <= halfDur && timeFromStart >= 0 && this._active) {
+    if (isNewSegment || timeFromStart <= halfDur && timeFromStart >= 0) {
       const progress = 1 - timeFromStart / halfDur;
       if (progress > 0) {
         this._applyIncoming(transition.type, Math.max(0, progress));
@@ -1752,7 +1756,7 @@ class AudioEditManager {
     );
     if (idx === -1) return false;
     const seg = this.segments[idx];
-    const left = { ...seg, id: seg.id, end: timestamp };
+    const left = { ...seg, id: genAudioId(), end: timestamp };
     const right = { ...seg, id: genAudioId(), start: timestamp };
     this.segments.splice(idx, 1, left, right);
     return true;
@@ -2223,7 +2227,7 @@ class AudioTimeline {
   }
 }
 const PEAK_COUNT = 2e3;
-const MAX_FETCH_SIZE = 200 * 1024 * 1024;
+const MAX_FETCH_SIZE = 50 * 1024 * 1024;
 const waveformCache = /* @__PURE__ */ new Map();
 async function extractWaveform(url) {
   const cached = waveformCache.get(url);

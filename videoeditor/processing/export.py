@@ -110,9 +110,11 @@ def render_edits(
             )
 
         # Fast path: no edits at all → copy source
+        # Note: has_audio_segments is intentionally excluded here —
+        # per-segment audio rendering is not yet implemented, so blocking
+        # the fast-path would force a full re-encode without applying them.
         if (not has_edits and not has_speed and not has_crop
-                and not has_text and not has_transitions
-                and not has_audio_segments):
+                and not has_text and not has_transitions):
             shutil.copy2(source_path, output_path)
             return _success(output_path)
 

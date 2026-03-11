@@ -73,7 +73,7 @@ export class AudioEditManager {
         if (idx === -1) return false;
 
         const seg = this.segments[idx];
-        const left: AudioSegment = { ...seg, id: seg.id, end: timestamp };
+        const left: AudioSegment = { ...seg, id: genAudioId(), end: timestamp };
         const right: AudioSegment = { ...seg, id: genAudioId(), start: timestamp };
 
         this.segments.splice(idx, 1, left, right);

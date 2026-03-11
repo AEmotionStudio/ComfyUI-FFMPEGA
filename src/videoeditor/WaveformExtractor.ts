@@ -12,9 +12,11 @@ const PEAK_COUNT = 2000;  // Number of peak bins for waveform display
 /**
  * Max file size (bytes) to attempt client-side waveform extraction.
  * Files larger than this are skipped to avoid browser OOM.
- * 200 MB is a safe threshold for most browser tab memory limits.
+ * The full video is loaded as an ArrayBuffer then decoded, consuming
+ * ~2–3× file size in memory. 50 MB keeps peak usage under ~150 MB.
+ * For larger files, consider a server-side waveform endpoint.
  */
-const MAX_FETCH_SIZE = 200 * 1024 * 1024;  // 200 MB
+const MAX_FETCH_SIZE = 50 * 1024 * 1024;  // 50 MB
 
 /** Cached waveform data (full WaveformData so duration/sampleRate survive cache hits) */
 const waveformCache = new Map<string, WaveformData>();

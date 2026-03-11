@@ -193,6 +193,9 @@ export class AudioMixer {
         resetBtn.addEventListener('click', () => {
             this.reset();
             this.callbacks.onVolumeChanged(1.0);
+            this.callbacks.onFadeInChanged?.(0);
+            this.callbacks.onFadeOutChanged?.(0);
+            this.callbacks.onEQChanged?.('flat');
         });
         resetRow.appendChild(resetBtn);
 
