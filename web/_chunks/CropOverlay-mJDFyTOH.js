@@ -476,18 +476,23 @@ class CropOverlay {
   }
   /** Apply CSS clip-path to video for live crop preview */
   _applyPreview() {
+    var _a, _b;
     if (!this.videoEl || !this.rect || !this.videoWidth || !this.videoHeight) return;
     const top = this.rect.y / this.videoHeight * 100;
     const right = (this.videoWidth - this.rect.x - this.rect.w) / this.videoWidth * 100;
     const bottom = (this.videoHeight - this.rect.y - this.rect.h) / this.videoHeight * 100;
     const left = this.rect.x / this.videoWidth * 100;
-    this.videoEl.style.clipPath = `inset(${top}% ${right}% ${bottom}% ${left}%)`;
+    const clipPath = `inset(${top}% ${right}% ${bottom}% ${left}%)`;
+    this.videoEl.style.clipPath = clipPath;
+    (_b = (_a = this.callbacks).onPreviewChanged) == null ? void 0 : _b.call(_a, clipPath);
   }
   /** Clear preview clip-path */
   _clearPreview() {
+    var _a, _b;
     if (this.videoEl) {
       this.videoEl.style.clipPath = "";
     }
+    (_b = (_a = this.callbacks).onPreviewChanged) == null ? void 0 : _b.call(_a, "");
   }
   _applyAspect(preset) {
     if (!this.rect) return;

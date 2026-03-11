@@ -424,6 +424,12 @@ export class EditorModal {
                         }),
                     );
                 }
+
+                // Load audio segments from initial state (after init() so we
+                // don't overwrite saved per-segment volume/fade/EQ/mute data)
+                if (initialState && initialState.audioSegments && initialState.audioSegments.length > 0) {
+                    this.audioEditManager.fromJSON(initialState.audioSegments as object[]);
+                }
             }
         } catch (e) {
             console.warn('[VideoEditor] Failed to fetch video info:', e);

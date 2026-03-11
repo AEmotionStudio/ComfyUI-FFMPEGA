@@ -152,10 +152,6 @@ export class NLETimeline {
             }
         }, { passive: false });
 
-        // Sync playhead on scroll
-        this.scrollWrapper.addEventListener('scroll', () => {
-            // Playhead is positioned relative to scrollInner, so it scrolls naturally
-        });
     }
 
     get element(): HTMLDivElement {

@@ -1,7 +1,7 @@
 var __defProp = Object.defineProperty;
 var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
-import { v as iconSkipStart, w as iconStepBack, x as iconPlay, y as iconStepForward, z as iconRepeat, A as iconPause, B as iconCursor, D as iconScissors, E as iconSplit, F as iconTrash, G as iconReset, H as iconReverse, I as iconCurve, J as iconFilm, t as iconGauge } from "./CropOverlay-BT3nuymY.js";
+import { v as iconSkipStart, w as iconStepBack, x as iconPlay, y as iconStepForward, z as iconRepeat, A as iconPause, B as iconCursor, D as iconScissors, E as iconSplit, F as iconTrash, G as iconReset, H as iconReverse, I as iconCurve, J as iconFilm, t as iconGauge } from "./CropOverlay-mJDFyTOH.js";
 function captureFrame(video, time) {
   return new Promise((resolve) => {
     video.currentTime = time;
@@ -1050,8 +1050,6 @@ class NLETimeline {
         this.scrollWrapper.scrollLeft = newCursorX - (e.clientX - wrapperRect.left);
       }
     }, { passive: false });
-    this.scrollWrapper.addEventListener("scroll", () => {
-    });
   }
   get element() {
     return this.container;

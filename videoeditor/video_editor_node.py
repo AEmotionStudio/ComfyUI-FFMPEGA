@@ -129,6 +129,7 @@ class VideoEditorNode:
                 "_volume": ("FLOAT", {"default": 1.0}),
                 "_text_overlays": ("STRING", {"default": "[]"}),
                 "_transitions": ("STRING", {"default": "[]"}),
+                "_audio_segments": ("STRING", {"default": "[]"}),
                 "unique_id": "UNIQUE_ID",
             },
         }
@@ -171,6 +172,7 @@ class VideoEditorNode:
         _volume: float = 1.0,
         _text_overlays: str = "[]",
         _transitions: str = "[]",
+        _audio_segments: str = "[]",
         unique_id=None,
     ):
         """Main execution method."""

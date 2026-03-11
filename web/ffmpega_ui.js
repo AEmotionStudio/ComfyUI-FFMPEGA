@@ -1,7 +1,7 @@
 import { app } from "../../scripts/app.js";
 import { u as updateDynamicSlots, S as SLOT_LABELS, s as setPrompt, R as RANDOM_PROMPTS, f as flashNode, h as handlePaste, c as createUploadButton, a as addDownloadOverlay, b as addVideoPreviewMenu } from "./_chunks/ui_helpers-CvUDB6-L.js";
 import { api } from "../../scripts/api.js";
-import { C as CropOverlay } from "./_chunks/CropOverlay-BT3nuymY.js";
+import { C as CropOverlay } from "./_chunks/CropOverlay-mJDFyTOH.js";
 const NODE_COLORS = {
   "FFMPEGAPreview": ["#3a5a3a", "#2a4a2a"],
   "FFMPEGAMediaBridge": ["#3a5a4a", "#2a4a3a"],

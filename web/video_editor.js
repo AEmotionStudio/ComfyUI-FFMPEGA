@@ -4,8 +4,8 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { a as addDownloadOverlay } from "./_chunks/ui_helpers-CvUDB6-L.js";
-import { d as collectEdges, s as snapToEdges, E as EditManager, T as TransportBar, S as SpeedControl, a as EditToolbar, U as UndoManager, N as NLETimeline } from "./_chunks/UndoManager-CHnrv6fb.js";
-import { i as iconVolume, a as iconMuted, b as iconMusic, c as iconPlus, d as iconClose, e as iconBold, f as iconItalic, g as iconAlignLeft, h as iconAlignCenter, j as iconAlignRight, k as iconZoomOut, l as iconZoomIn, m as iconMaximize, n as iconShuffle, o as iconClapperboard, p as iconUndo, q as iconRedo, r as iconCheck, C as CropOverlay, s as iconCrop, t as iconGauge, u as iconText } from "./_chunks/CropOverlay-BT3nuymY.js";
+import { d as collectEdges, s as snapToEdges, E as EditManager, T as TransportBar, S as SpeedControl, a as EditToolbar, U as UndoManager, N as NLETimeline } from "./_chunks/UndoManager-CK2asl7t.js";
+import { i as iconVolume, a as iconMuted, b as iconMusic, c as iconPlus, d as iconClose, e as iconBold, f as iconItalic, g as iconAlignLeft, h as iconAlignCenter, j as iconAlignRight, k as iconZoomOut, l as iconZoomIn, m as iconMaximize, n as iconShuffle, o as iconClapperboard, p as iconUndo, q as iconRedo, r as iconCheck, C as CropOverlay, s as iconCrop, t as iconGauge, u as iconText } from "./_chunks/CropOverlay-mJDFyTOH.js";
 class AudioMixer {
   constructor(callbacks) {
     __publicField(this, "container");
@@ -1369,6 +1369,7 @@ class TextPreviewOverlay {
     // Bound handlers (stored so destroy() can remove the exact same reference)
     __publicField(this, "_boundPointerMove", (e) => this._onPointerMove(e));
     __publicField(this, "_boundPointerUp", () => this._onPointerUp());
+    __publicField(this, "_listenersAttached", false);
     this.callbacks = callbacks;
     this.container = document.createElement("div");
     this.container.className = "veditor-text-preview-overlay";
@@ -1379,8 +1380,6 @@ class TextPreviewOverlay {
     this.container.style.height = "100%";
     this.container.style.pointerEvents = "none";
     this.container.style.overflow = "hidden";
-    document.addEventListener("pointermove", this._boundPointerMove);
-    document.addEventListener("pointerup", this._boundPointerUp);
   }
   get element() {
     return this.container;
@@ -1411,20 +1410,33 @@ class TextPreviewOverlay {
       this.container.appendChild(el);
     }
   }
-  /** Hide overlay without destroying event listeners (for close/reopen cycles) */
+  /** Hide overlay and detach global drag listeners */
   hide() {
     this.container.style.display = "none";
     this.container.innerHTML = "";
+    this._detachListeners();
   }
-  /** Show overlay (re-enable after hide) */
+  /** Show overlay and attach global drag listeners */
   show() {
     this.container.style.display = "";
+    this._attachListeners();
   }
   /** Final teardown — removes event listeners and detaches from DOM */
   destroy() {
+    this._detachListeners();
+    this.container.remove();
+  }
+  _attachListeners() {
+    if (this._listenersAttached) return;
+    document.addEventListener("pointermove", this._boundPointerMove);
+    document.addEventListener("pointerup", this._boundPointerUp);
+    this._listenersAttached = true;
+  }
+  _detachListeners() {
+    if (!this._listenersAttached) return;
     document.removeEventListener("pointermove", this._boundPointerMove);
     document.removeEventListener("pointerup", this._boundPointerUp);
-    this.container.remove();
+    this._listenersAttached = false;
   }
   // ── Private ──────────────────────────────────────────────────
   _createTextElement(ov, index) {
@@ -1561,6 +1573,7 @@ class TransitionPreview {
   constructor() {
     __publicField(this, "videoEl", null);
     __publicField(this, "_active", false);
+    __publicField(this, "_baseClipPath", "");
   }
   /** Bind the video element to apply CSS effects to */
   bind(video) {
@@ -1609,6 +1622,14 @@ class TransitionPreview {
   clear() {
     this._clearEffects();
   }
+  /**
+   * Set a base clip-path that should be preserved while transitions run.
+   * Used by CropOverlay to avoid clip-path conflicts.
+   * When set, wipe/slide transitions degrade to opacity-only.
+   */
+  setBaseClipPath(clipPath) {
+    this._baseClipPath = clipPath;
+  }
   /** Clean up: clear effects and release video reference */
   destroy() {
     this._clearEffects();
@@ -1618,11 +1639,11 @@ class TransitionPreview {
   /** Apply outgoing (fade-out / wipe-out / slide-out) effect */
   _applyOutgoing(type, progress) {
     if (!this.videoEl) return;
-    switch (type) {
+    const safeType = this._baseClipPath ? "fade" : type;
+    switch (safeType) {
       case "fade":
       case "dissolve":
         this.videoEl.style.opacity = String(1 - progress);
-        this.videoEl.style.clipPath = "";
         this.videoEl.style.transform = "";
         break;
       case "wipeleft":
@@ -1637,12 +1658,10 @@ class TransitionPreview {
         break;
       case "slideleft":
         this.videoEl.style.opacity = "";
-        this.videoEl.style.clipPath = "";
         this.videoEl.style.transform = `translateX(${-progress * 100}%)`;
         break;
       case "slideright":
         this.videoEl.style.opacity = "";
-        this.videoEl.style.clipPath = "";
         this.videoEl.style.transform = `translateX(${progress * 100}%)`;
         break;
     }
@@ -1650,11 +1669,11 @@ class TransitionPreview {
   /** Apply incoming (fade-in / wipe-in / slide-in) effect */
   _applyIncoming(type, progress) {
     if (!this.videoEl) return;
-    switch (type) {
+    const safeType = this._baseClipPath ? "fade" : type;
+    switch (safeType) {
       case "fade":
       case "dissolve":
         this.videoEl.style.opacity = String(1 - progress);
-        this.videoEl.style.clipPath = "";
         this.videoEl.style.transform = "";
         break;
       case "wipeleft":
@@ -1669,12 +1688,10 @@ class TransitionPreview {
         break;
       case "slideleft":
         this.videoEl.style.opacity = "";
-        this.videoEl.style.clipPath = "";
         this.videoEl.style.transform = `translateX(${progress * 100}%)`;
         break;
       case "slideright":
         this.videoEl.style.opacity = "";
-        this.videoEl.style.clipPath = "";
         this.videoEl.style.transform = `translateX(${-progress * 100}%)`;
         break;
     }
@@ -1683,7 +1700,7 @@ class TransitionPreview {
     if (!this.videoEl) return;
     if (this._active) {
       this.videoEl.style.opacity = "";
-      this.videoEl.style.clipPath = "";
+      this.videoEl.style.clipPath = this._baseClipPath;
       this.videoEl.style.transform = "";
       this._active = false;
     }
@@ -2403,7 +2420,8 @@ class EditorModal {
     this.transitionPreview.bind(this.video);
     this.transport.setTransitionPreview(this.transitionPreview);
     this.cropOverlay = new CropOverlay({
-      onCropChanged: () => this._pushUndo()
+      onCropChanged: () => this._pushUndo(),
+      onPreviewChanged: (clipPath) => this.transitionPreview.setBaseClipPath(clipPath)
     });
     this.cropOverlay.bindVideo(this.video);
     this.speedControl = new SpeedControl({
@@ -2423,8 +2441,6 @@ class EditorModal {
           this.audioEditManager.segments[idx].muted = vol < 0.01;
           (_a = this.audioTimeline) == null ? void 0 : _a.render();
         }
-        this.video.volume = Math.min(1, Math.max(0, vol));
-        this.video.muted = vol < 0.01;
         this._pushUndo();
       },
       onFadeInChanged: (sec) => {
@@ -2573,6 +2589,9 @@ class EditorModal {
             })
           );
         }
+        if (initialState && initialState.audioSegments && initialState.audioSegments.length > 0) {
+          this.audioEditManager.fromJSON(initialState.audioSegments);
+        }
       }
     } catch (e) {
       console.warn("[VideoEditor] Failed to fetch video info:", e);
@@ -2591,14 +2610,13 @@ class EditorModal {
       if (slot) {
         this.nleTimeline = new NLETimeline(this.editManager, {
           onSegmentsChanged: () => {
-            var _a, _b;
+            var _a;
             if (this.audioEditManager.linked) {
               this._syncAudioToVideo();
-              (_a = this.audioTimeline) == null ? void 0 : _a.render();
             }
             this._pushUndo();
             this.transitionEditor.refresh();
-            (_b = this.audioTimeline) == null ? void 0 : _b.render();
+            (_a = this.audioTimeline) == null ? void 0 : _a.render();
           },
           onPlayheadChanged: (time) => this.transport.seekTo(time),
           onTrimHandleDrag: (time) => this.transport.seekTo(time),
@@ -2761,6 +2779,7 @@ class EditorModal {
   }
   /** Sync audio segments to match video segments (linked mode) */
   _syncAudioToVideo() {
+    var _a;
     const videoSegs = this.editManager.segments;
     const audioMgr = this.audioEditManager;
     const newAudioSegs = videoSegs.map((vSeg) => {
@@ -2776,6 +2795,7 @@ class EditorModal {
       } : void 0);
     });
     audioMgr.replaceAll(newAudioSegs);
+    (_a = this.audioTimeline) == null ? void 0 : _a.render();
   }
   _refreshTextPreview() {
     const overlays = this.textPanel.getOverlays();
@@ -4060,7 +4080,8 @@ function _setupNode(node) {
     speedMap: {},
     volume: 1,
     textOverlays: [],
-    transitions: []
+    transitions: [],
+    audioSegments: []
   };
   const resizeNode = () => {
     var _a2;
@@ -4356,6 +4377,7 @@ function _syncToWidgets(node, state) {
   _setW(node, "_volume", state.volume);
   _setW(node, "_text_overlays", JSON.stringify(state.textOverlays));
   _setW(node, "_transitions", JSON.stringify(state.transitions));
+  _setW(node, "_audio_segments", JSON.stringify(state.audioSegments));
   _setW(node, "_edit_action", "passthrough");
 }
 function _setW(node, name, value) {
@@ -4375,7 +4397,8 @@ const HIDDEN_WIDGETS = [
   ["_speed_map", "{}"],
   ["_volume", "1.0"],
   ["_text_overlays", "[]"],
-  ["_transitions", "[]"]
+  ["_transitions", "[]"],
+  ["_audio_segments", "[]"]
 ];
 function _ensureHiddenWidgets(node) {
   var _a;
@@ -4427,6 +4450,11 @@ function _loadStateFromWidgets(node, editState) {
   try {
     const t = JSON.parse(_getW(node, "_transitions", "[]"));
     if (Array.isArray(t)) editState.transitions = t;
+  } catch {
+  }
+  try {
+    const a = JSON.parse(_getW(node, "_audio_segments", "[]"));
+    if (Array.isArray(a)) editState.audioSegments = a;
   } catch {
   }
 }
