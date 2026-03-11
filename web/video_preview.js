@@ -798,7 +798,7 @@ app.registerExtension({
         }
       }
       function syncEditToWidgets() {
-        var _a2, _b2, _c;
+        var _a2, _b2, _c, _d;
         const cropRect = editCropOverlay == null ? void 0 : editCropOverlay.getRect();
         const cropJson = cropRect ? JSON.stringify(cropRect) : "";
         const cropWidget = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "_crop_rect");
@@ -825,6 +825,11 @@ app.registerExtension({
           } else {
             if (!node.properties) node.properties = {};
             node.properties["_edit_action"] = "passthrough";
+          }
+        } else {
+          const actWidget = (_d = node.widgets) == null ? void 0 : _d.find((w) => w.name === "_edit_action");
+          if (actWidget && actWidget.value === "passthrough" && !editMgr.hasEdits()) {
+            actWidget.value = "none";
           }
         }
       }

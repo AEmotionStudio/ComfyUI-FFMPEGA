@@ -106,6 +106,14 @@ _MAX_SERVER_STATE_ENTRIES = 100
 # when load() is never called (e.g. node disconnected from graph).
 _SERVER_STATE_TTL = 300  # 5 minutes
 
+
+def _capped_insert(d: dict, key: str, value: dict) -> None:
+    """Insert *value* under *key* into *d*, evicting the oldest entry if at cap."""
+    if len(d) >= _MAX_SERVER_STATE_ENTRIES and key not in d:
+        oldest = next(iter(d))
+        d.pop(oldest, None)
+    d[key] = value
+
 # Allowed keys for video selection entries
 _ALLOWED_ENTRY_KEYS = {"filename", "subfolder", "type", "format"}
 _ALLOWED_SEL_TYPES = {"output", "temp"}
@@ -180,10 +188,7 @@ try:
             if not entry.get("filename"):
                 return web.json_response({"error": "filename required in entry"}, status=400)
             # Cap dict size — evict oldest if at limit
-            if len(_user_video_selections) >= _MAX_SERVER_STATE_ENTRIES and node_id not in _user_video_selections:
-                oldest = next(iter(_user_video_selections))
-                _user_video_selections.pop(oldest, None)
-            _user_video_selections[node_id] = {"data": entry, "ts": time.time()}
+            _capped_insert(_user_video_selections, node_id, {"data": entry, "ts": time.time()})
             logger.info("[LoadLast] Selection stored for node %s: %s", node_id, entry.get("filename", "?"))
         else:
             _user_video_selections.pop(node_id, None)
@@ -208,10 +213,7 @@ try:
             # Validate and sanitise: only keep known keys, coerce to str
             edits = {k: str(v) for k, v in edits.items() if k in _ALLOWED_EDIT_KEYS}
             # Cap dict size — evict oldest if at limit
-            if len(_user_edit_states) >= _MAX_SERVER_STATE_ENTRIES and node_id not in _user_edit_states:
-                oldest = next(iter(_user_edit_states))
-                _user_edit_states.pop(oldest, None)
-            _user_edit_states[node_id] = {"data": edits, "ts": time.time()}
+            _capped_insert(_user_edit_states, node_id, {"data": edits, "ts": time.time()})
             logger.info("[LoadLast] Edit state stored for node %s", node_id)
         else:
             _user_edit_states.pop(node_id, None)
@@ -678,7 +680,7 @@ class LoadLastVideo:
             sel_wrapper = _user_video_selections.pop(str(unique_id), None)
             sel = sel_wrapper.get("data") if sel_wrapper else None
             if sel:
-                sel_filename = sel.get("filename", "")
+                sel_filename = os.path.basename(sel.get("filename", ""))
                 sel_subfolder = sel.get("subfolder", "")
                 sel_type = sel.get("type", "output")
                 # Reject path-traversal attempts in subfolder

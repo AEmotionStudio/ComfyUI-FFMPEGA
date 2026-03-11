@@ -737,6 +737,12 @@ app.registerExtension({
                         if (!node.properties) node.properties = {};
                         node.properties['_edit_action'] = 'passthrough';
                     }
+                } else {
+                    // Reset to 'none' when no crop/speed AND no segment edits
+                    const actWidget = node.widgets?.find((w: any) => w.name === '_edit_action');
+                    if (actWidget && actWidget.value === 'passthrough' && !editMgr.hasEdits()) {
+                        actWidget.value = 'none';
+                    }
                 }
             }
 
