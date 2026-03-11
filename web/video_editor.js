@@ -1932,6 +1932,8 @@ class AudioTimeline {
     __publicField(this, "drag", { type: "none" });
     __publicField(this, "selectedSegmentIndex", -1);
     __publicField(this, "_snapping", true);
+    /** Last rendered playhead X position — used by _renderPlayheadOnly() to erase the old one */
+    __publicField(this, "_lastPlayheadX", -1);
     __publicField(this, "_boundMouseDown", this._onMouseDown.bind(this));
     __publicField(this, "_boundMouseMove", this._onMouseMove.bind(this));
     __publicField(this, "_boundMouseUp", this._onMouseUp.bind(this));
@@ -1953,10 +1955,10 @@ class AudioTimeline {
     this.waveformPeaks = peaks;
     this.render();
   }
-  /** Update playhead position */
+  /** Update playhead position (lightweight — only redraws the playhead line) */
   setPlayhead(time) {
     this.playhead = Math.max(0, Math.min(time, this.manager.videoDuration));
-    this.render();
+    this._renderPlayheadOnly();
   }
   /** Set the selected segment index */
   setSelectedIndex(index) {
@@ -2040,8 +2042,70 @@ class AudioTimeline {
     }
     this.geometry = { trackX, trackY, trackW, trackH, duration: dur, segments: segGeos };
     const phX = trackX + this.playhead / dur * trackW;
+    this._lastPlayheadX = phX;
     ctx.fillStyle = PLAYHEAD_COLOR;
     ctx.fillRect(phX - PLAYHEAD_W / 2, trackY - 2, PLAYHEAD_W, trackH + 4);
+  }
+  /**
+   * Lightweight playhead-only redraw.
+   * Erases the old playhead stripe and draws the new one without
+   * recomputing segments, waveforms, or stripe patterns.
+   * Falls back to a full render() if geometry isn't available yet.
+   */
+  _renderPlayheadOnly() {
+    if (!this.geometry) {
+      this.render();
+      return;
+    }
+    const ctx = this.canvas.getContext("2d");
+    if (!ctx) return;
+    const dpr = window.devicePixelRatio || 1;
+    const { trackX, trackY, trackW, trackH, duration } = this.geometry;
+    if (duration <= 0) return;
+    ctx.save();
+    ctx.scale(dpr, dpr);
+    if (this._lastPlayheadX >= 0) {
+      const eraseX = this._lastPlayheadX - PLAYHEAD_W / 2 - 1;
+      const eraseW = PLAYHEAD_W + 2;
+      const eraseY = trackY - 2;
+      ctx.beginPath();
+      ctx.rect(eraseX, eraseY, eraseW, trackH + 4);
+      ctx.clip();
+      ctx.fillStyle = TRACK_BG;
+      ctx.fillRect(eraseX, 0, eraseW, trackY + trackH + TRACK_PAD);
+      ctx.fillStyle = EXCLUDED_COLOR;
+      ctx.fillRect(eraseX, trackY, eraseW, trackH);
+      const h = trackH + TRACK_PAD * 2;
+      ctx.strokeStyle = EXCLUDED_STRIPE;
+      ctx.lineWidth = 1;
+      const stripeStart = Math.floor((eraseX - h) / 8) * 8;
+      for (let sx = stripeStart; sx < eraseX + eraseW; sx += 8) {
+        ctx.beginPath();
+        ctx.moveTo(sx, trackY);
+        ctx.lineTo(sx + h, trackY + trackH);
+        ctx.stroke();
+      }
+      for (const segGeo of this.geometry.segments) {
+        if (eraseX < segGeo.x + segGeo.w && eraseX + eraseW > segGeo.x) {
+          const seg = this.manager.segments.find((s) => s.id === segGeo.id);
+          if (seg) {
+            ctx.fillStyle = seg.muted ? SEG_MUTED_COLOR : SEG_COLOR;
+            ctx.fillRect(segGeo.x, trackY, segGeo.w, trackH);
+            if (this.waveformPeaks) {
+              this._drawWaveform(ctx, segGeo.x, trackY, segGeo.w, trackH, seg, seg.muted);
+            }
+          }
+        }
+      }
+      ctx.restore();
+      ctx.save();
+      ctx.scale(dpr, dpr);
+    }
+    const phX = trackX + this.playhead / duration * trackW;
+    this._lastPlayheadX = phX;
+    ctx.fillStyle = PLAYHEAD_COLOR;
+    ctx.fillRect(phX - PLAYHEAD_W / 2, trackY - 2, PLAYHEAD_W, trackH + 4);
+    ctx.restore();
   }
   destroy() {
     this.canvas.removeEventListener("mousedown", this._boundMouseDown);
@@ -2231,7 +2295,7 @@ class AudioTimeline {
     } else if (drag.type === "playhead") {
       this.playhead = Math.max(0, Math.min(duration, drag.origTime + dt));
       this.callbacks.onPlayheadChanged(this.playhead);
-      this.render();
+      this._renderPlayheadOnly();
     }
   }
   _onMouseUp() {
@@ -2801,6 +2865,9 @@ class EditorModal {
       segments: this.editManager.toJSON(),
       cropRect: JSON.stringify(this.cropOverlay.getRect() ?? {}),
       speedMap: this.speedControl.getSpeedMap(),
+      // Master volume — applied globally by the FFmpeg export pipeline.
+      // Per-segment volumes live independently in `audioSegments` below
+      // and are used for live preview only (FFmpeg rendering not yet implemented).
       volume: this.audioMixer.getMasterVolume(),
       textOverlays: this.textPanel.getOverlays(),
       transitions: [],

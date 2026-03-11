@@ -642,6 +642,9 @@ export class EditorModal {
             segments: this.editManager.toJSON(),
             cropRect: JSON.stringify(this.cropOverlay.getRect() ?? {}),
             speedMap: this.speedControl.getSpeedMap(),
+            // Master volume — applied globally by the FFmpeg export pipeline.
+            // Per-segment volumes live independently in `audioSegments` below
+            // and are used for live preview only (FFmpeg rendering not yet implemented).
             volume: this.audioMixer.getMasterVolume(),
             textOverlays: this.textPanel.getOverlays(),
             transitions: [],
