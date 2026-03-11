@@ -2084,9 +2084,10 @@ class AudioTimeline {
         ctx.lineTo(sx + h, trackY + trackH);
         ctx.stroke();
       }
-      for (const segGeo of this.geometry.segments) {
+      for (let i = 0; i < this.geometry.segments.length; i++) {
+        const segGeo = this.geometry.segments[i];
         if (eraseX < segGeo.x + segGeo.w && eraseX + eraseW > segGeo.x) {
-          const seg = this.manager.segments.find((s) => s.id === segGeo.id);
+          const seg = this.manager.segments[i];
           if (seg) {
             ctx.fillStyle = seg.muted ? SEG_MUTED_COLOR : SEG_COLOR;
             ctx.fillRect(segGeo.x, trackY, segGeo.w, trackH);

@@ -280,9 +280,12 @@ export class AudioTimeline {
             // _drawWaveform also paints fade overlays; the outer clip constrains
             // all drawing to the narrow erase strip.  Segment borders, volume
             // labels, and trim handles are omitted — invisible at 4 px.
-            for (const segGeo of this.geometry.segments) {
+            for (let i = 0; i < this.geometry.segments.length; i++) {
+                const segGeo = this.geometry.segments[i];
                 if (eraseX < segGeo.x + segGeo.w && eraseX + eraseW > segGeo.x) {
-                    const seg = this.manager.segments.find(s => s.id === segGeo.id);
+                    // Use index directly — geometry.segments is built in the
+                    // same order as manager.segments during render().
+                    const seg = this.manager.segments[i];
                     if (seg) {
                         ctx.fillStyle = seg.muted ? SEG_MUTED_COLOR : SEG_COLOR;
                         ctx.fillRect(segGeo.x, trackY, segGeo.w, trackH);

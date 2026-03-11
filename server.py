@@ -486,6 +486,7 @@ async def video_export(request):
     speed_map_json = json.dumps(body.get("speed_map", {}))
     text_overlays_json = json.dumps(body.get("text_overlays", []))
     transitions_json = json.dumps(body.get("transitions", []))
+    audio_segments_json = json.dumps(body.get("audio_segments", []))
     try:
         volume = float(body.get("volume", 1.0))
     except (ValueError, TypeError):
@@ -511,6 +512,7 @@ async def video_export(request):
             volume=volume,
             text_overlays_json=text_overlays_json,
             transitions_json=transitions_json,
+            audio_segments_json=audio_segments_json,
             cancel_event=cancel_event,
         )
 
@@ -564,7 +566,7 @@ async def waveform_peaks(request):
     raw_path = query.get("path", "").strip()
     filepath = _resolve_video_path(raw_path)
     if not filepath:
-        return web.json_response(FLAT_WAVEFORM, status=404)
+        return web.json_response(dict(FLAT_WAVEFORM), status=404)
 
     try:
         result = await asyncio.wait_for(
@@ -573,10 +575,10 @@ async def waveform_peaks(request):
         )
     except asyncio.TimeoutError:
         log.warning("[Waveform] Extraction timed out for %s", filepath)
-        return web.json_response(FLAT_WAVEFORM, status=504)
+        return web.json_response(dict(FLAT_WAVEFORM), status=504)
     except Exception as e:
         log.warning("[Waveform] Extraction error: %s", e)
-        return web.json_response(FLAT_WAVEFORM, status=500)
+        return web.json_response(dict(FLAT_WAVEFORM), status=500)
 
     return web.json_response(result)
 
