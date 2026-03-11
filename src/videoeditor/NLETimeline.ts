@@ -32,11 +32,11 @@ export class NLETimeline {
     private _snapping: boolean = true;
     private _zoom: number = 1;
     private _zoomLabel: HTMLSpanElement;
-    private _callbacks: EditTimelineCallbacks;
+
 
     constructor(manager: EditManager, callbacks: EditTimelineCallbacks) {
         this.manager = manager;
-        this._callbacks = callbacks;
+
 
         this.container = document.createElement('div');
         this.container.className = 'veditor-nle-timeline';

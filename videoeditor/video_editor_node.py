@@ -248,6 +248,7 @@ class VideoEditorNode:
                 or abs(_volume - 1.0) > 0.01
                 or (_text_overlays and _text_overlays != "[]")
                 or (_transitions and _transitions != "[]")
+                or (_audio_segments and _audio_segments != "[]")
             )
 
             if not has_real_edits:
@@ -282,6 +283,7 @@ class VideoEditorNode:
                 volume=_volume,
                 text_overlays_json=_text_overlays,
                 transitions_json=_transitions,
+                audio_segments_json=_audio_segments,
             )
 
             if not result.get("success"):

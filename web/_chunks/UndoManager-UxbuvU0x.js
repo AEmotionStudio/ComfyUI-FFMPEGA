@@ -966,9 +966,7 @@ class NLETimeline {
     __publicField(this, "_snapping", true);
     __publicField(this, "_zoom", 1);
     __publicField(this, "_zoomLabel");
-    __publicField(this, "_callbacks");
     this.manager = manager;
-    this._callbacks = callbacks;
     this.container = document.createElement("div");
     this.container.className = "veditor-nle-timeline";
     this.container.setAttribute("data-tool-id", "veditor-timeline");

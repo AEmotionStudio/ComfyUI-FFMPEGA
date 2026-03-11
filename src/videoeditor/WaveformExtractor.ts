@@ -9,6 +9,13 @@
 
 const PEAK_COUNT = 2000;  // Number of peak bins for waveform display
 
+/**
+ * Max file size (bytes) to attempt client-side waveform extraction.
+ * Files larger than this are skipped to avoid browser OOM.
+ * 200 MB is a safe threshold for most browser tab memory limits.
+ */
+const MAX_FETCH_SIZE = 200 * 1024 * 1024;  // 200 MB
+
 /** Cached waveform data (full WaveformData so duration/sampleRate survive cache hits) */
 const waveformCache = new Map<string, WaveformData>();
 
@@ -32,10 +39,29 @@ export async function extractWaveform(url: string): Promise<WaveformData> {
     }
 
     try {
-        // TODO: This fetches the entire video file into memory just to decode audio.
-        // For large videos (500MB+) this can OOM. Consider a server-side endpoint
-        // that serves only the audio track, or use MediaSource + createMediaElementSource
-        // for streaming decode.
+        // Pre-flight: check file size via HEAD to avoid OOM on large videos.
+        // Falls back gracefully if the server doesn't support HEAD or
+        // doesn't return Content-Length.
+        try {
+            const head = await fetch(url, { method: 'HEAD' });
+            const contentLength = head.headers.get('content-length');
+            if (contentLength) {
+                const size = parseInt(contentLength, 10);
+                if (size > MAX_FETCH_SIZE) {
+                    console.warn(
+                        `[WaveformExtractor] File too large for client-side extraction ` +
+                        `(${(size / 1024 / 1024).toFixed(0)}MB > ${MAX_FETCH_SIZE / 1024 / 1024}MB limit). ` +
+                        `Showing flat waveform. Consider a server-side waveform endpoint for large files.`,
+                    );
+                    // Don't cache — duration/sampleRate are unknown for skipped files.
+                    // Returning uncached lets the next editor open re-attempt if needed.
+                    return { peaks: new Float32Array(PEAK_COUNT).fill(0.1), duration: 0, sampleRate: 0 };
+                }
+            }
+        } catch {
+            // HEAD not supported or network error — proceed with GET
+        }
+
         const response = await fetch(url);
         if (!response.ok) {
             throw new Error(`Failed to fetch: ${response.status}`);

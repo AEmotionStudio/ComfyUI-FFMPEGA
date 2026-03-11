@@ -3,7 +3,7 @@ var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { en
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
-import { E as EditManager, f as fmtDuration, T as TransportBar, a as EditToolbar, S as SpeedControl, N as NLETimeline, U as UndoManager, c as captureFrames, b as captureFrame, v as viewUrl } from "./_chunks/UndoManager-CK2asl7t.js";
+import { E as EditManager, f as fmtDuration, T as TransportBar, a as EditToolbar, S as SpeedControl, N as NLETimeline, U as UndoManager, c as captureFrames, b as captureFrame, v as viewUrl } from "./_chunks/UndoManager-UxbuvU0x.js";
 import { C as CropOverlay } from "./_chunks/CropOverlay-mJDFyTOH.js";
 const VIEW_MODES = {
   PLAYBACK: "playback",

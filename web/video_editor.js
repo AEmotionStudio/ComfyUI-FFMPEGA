@@ -4,7 +4,7 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { a as addDownloadOverlay } from "./_chunks/ui_helpers-CvUDB6-L.js";
-import { d as collectEdges, s as snapToEdges, E as EditManager, T as TransportBar, S as SpeedControl, a as EditToolbar, U as UndoManager, N as NLETimeline } from "./_chunks/UndoManager-CK2asl7t.js";
+import { d as collectEdges, s as snapToEdges, E as EditManager, T as TransportBar, S as SpeedControl, a as EditToolbar, U as UndoManager, N as NLETimeline } from "./_chunks/UndoManager-UxbuvU0x.js";
 import { i as iconVolume, a as iconMuted, b as iconMusic, c as iconPlus, d as iconClose, e as iconBold, f as iconItalic, g as iconAlignLeft, h as iconAlignCenter, j as iconAlignRight, k as iconZoomOut, l as iconZoomIn, m as iconMaximize, n as iconShuffle, o as iconClapperboard, p as iconUndo, q as iconRedo, r as iconCheck, C as CropOverlay, s as iconCrop, t as iconGauge, u as iconText } from "./_chunks/CropOverlay-mJDFyTOH.js";
 class AudioMixer {
   constructor(callbacks) {
@@ -2223,6 +2223,7 @@ class AudioTimeline {
   }
 }
 const PEAK_COUNT = 2e3;
+const MAX_FETCH_SIZE = 200 * 1024 * 1024;
 const waveformCache = /* @__PURE__ */ new Map();
 async function extractWaveform(url) {
   const cached = waveformCache.get(url);
@@ -2230,6 +2231,20 @@ async function extractWaveform(url) {
     return cached;
   }
   try {
+    try {
+      const head = await fetch(url, { method: "HEAD" });
+      const contentLength = head.headers.get("content-length");
+      if (contentLength) {
+        const size = parseInt(contentLength, 10);
+        if (size > MAX_FETCH_SIZE) {
+          console.warn(
+            `[WaveformExtractor] File too large for client-side extraction (${(size / 1024 / 1024).toFixed(0)}MB > ${MAX_FETCH_SIZE / 1024 / 1024}MB limit). Showing flat waveform. Consider a server-side waveform endpoint for large files.`
+          );
+          return { peaks: new Float32Array(PEAK_COUNT).fill(0.1), duration: 0, sampleRate: 0 };
+        }
+      }
+    } catch {
+    }
     const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`Failed to fetch: ${response.status}`);
@@ -2444,23 +2459,29 @@ class EditorModal {
         this._pushUndo();
       },
       onFadeInChanged: (sec) => {
+        var _a;
         const idx = this.audioMixer.selectedSegmentIndex;
         if (idx >= 0 && this.audioEditManager.segments[idx]) {
           this.audioEditManager.segments[idx].fadeIn = sec;
+          (_a = this.audioTimeline) == null ? void 0 : _a.render();
         }
         this._pushUndo();
       },
       onFadeOutChanged: (sec) => {
+        var _a;
         const idx = this.audioMixer.selectedSegmentIndex;
         if (idx >= 0 && this.audioEditManager.segments[idx]) {
           this.audioEditManager.segments[idx].fadeOut = sec;
+          (_a = this.audioTimeline) == null ? void 0 : _a.render();
         }
         this._pushUndo();
       },
       onEQChanged: (preset) => {
+        var _a;
         const idx = this.audioMixer.selectedSegmentIndex;
         if (idx >= 0 && this.audioEditManager.segments[idx]) {
           this.audioEditManager.segments[idx].eq = preset;
+          (_a = this.audioTimeline) == null ? void 0 : _a.render();
         }
         this._pushUndo();
       }

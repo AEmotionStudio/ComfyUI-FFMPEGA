@@ -254,6 +254,7 @@ export class EditorModal {
                 const idx = this.audioMixer.selectedSegmentIndex;
                 if (idx >= 0 && this.audioEditManager.segments[idx]) {
                     this.audioEditManager.segments[idx].fadeIn = sec;
+                    this.audioTimeline?.render();
                 }
                 this._pushUndo();
             },
@@ -261,6 +262,7 @@ export class EditorModal {
                 const idx = this.audioMixer.selectedSegmentIndex;
                 if (idx >= 0 && this.audioEditManager.segments[idx]) {
                     this.audioEditManager.segments[idx].fadeOut = sec;
+                    this.audioTimeline?.render();
                 }
                 this._pushUndo();
             },
@@ -268,6 +270,7 @@ export class EditorModal {
                 const idx = this.audioMixer.selectedSegmentIndex;
                 if (idx >= 0 && this.audioEditManager.segments[idx]) {
                     this.audioEditManager.segments[idx].eq = preset;
+                    this.audioTimeline?.render();
                 }
                 this._pushUndo();
             },
