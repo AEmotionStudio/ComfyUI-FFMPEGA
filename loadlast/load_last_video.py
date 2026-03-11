@@ -85,6 +85,58 @@ def _cleanup_registered_temps() -> None:
 _last_preview_cleanup_time: float = 0.0
 _last_selected_cleanup_time: float = 0.0
 
+# ─── User Video Selections (server-side state) ──────────────────────────
+# Stores the user's explicit video selection from the browser strip,
+# keyed by node ID.  Set via POST /loadlast/select_video, consumed
+# (one-shot) by load().  Capped to prevent unbounded growth.
+# Each value is {"data": <entry dict>, "ts": <time.time()>}.
+_user_video_selections: dict[str, dict] = {}
+
+# ─── User Edit States (server-side state) ────────────────────────────
+# Stores the user's inline edit state (segments, crop, speed) from the
+# Apply Edits button, keyed by node ID.  Consumed one-shot by load().
+# Each value is {"data": <edits dict>, "ts": <time.time()>}.
+_user_edit_states: dict[str, dict] = {}
+
+# Max entries for server-side state dicts (prevents unbounded growth)
+_MAX_SERVER_STATE_ENTRIES = 100
+
+# TTL (seconds) for server-side state entries.  Entries older than this
+# are evicted in IS_CHANGED to prevent stale state from persisting
+# when load() is never called (e.g. node disconnected from graph).
+_SERVER_STATE_TTL = 300  # 5 minutes
+
+# Rate-limit TTL eviction scans in IS_CHANGED (seconds).
+# IS_CHANGED is called on every scheduler poll; scanning all entries
+# each time is needlessly heavy.  This mirrors the _last_preview_cleanup_time
+# pattern used for file cleanup.
+_EVICTION_SCAN_INTERVAL = 30
+_last_eviction_scan_time: float = 0.0
+
+
+def _capped_insert(d: dict, key: str, value: dict) -> None:
+    """Insert *value* under *key* into *d*, evicting the oldest entry if at cap.
+
+    FIFO eviction relies on dict insertion-order preservation (guaranteed
+    since Python 3.7+, CPython 3.6+).  Do not replace *d* with a mapping
+    type that does not preserve insertion order.
+    """
+    if len(d) >= _MAX_SERVER_STATE_ENTRIES and key not in d:
+        oldest = next(iter(d))
+        d.pop(oldest, None)
+    d[key] = value
+
+# Allowed keys for video selection entries
+_ALLOWED_ENTRY_KEYS = {"filename", "subfolder", "type", "format"}
+_ALLOWED_SEL_TYPES = {"output", "temp"}
+
+# Allowed keys for inline edit state entries
+_ALLOWED_EDIT_KEYS = {"segments", "crop_rect", "speed_map"}
+
+# ─── FPS cache for latest_video API ──────────────────────────────────
+# Caches {filepath: (fps, mtime)} to avoid repeated ffprobe calls.
+_fps_cache: dict[str, tuple[float, float]] = {}
+
 
 # ─── API Route ──────────────────────────────────────────────────────────
 # Returns JSON with the latest video's filename, subfolder, and type
@@ -106,6 +158,11 @@ try:
         if result is None:
             return web.json_response({"found": False})
 
+        # Include FPS from a cached lightweight ffprobe
+        fps = _probe_fps_cached(result)
+        if fps:
+            result["fps"] = fps
+
         return web.json_response({"found": True, **result})
 
     @PromptServer.instance.routes.get("/loadlast/video_list")
@@ -122,6 +179,59 @@ try:
 
         videos = _find_all_videos(scan_dirs, prefix, limit)
         return web.json_response({"videos": videos})
+
+    @PromptServer.instance.routes.post("/loadlast/select_video")
+    async def _api_select_video(request):
+        """Store the user's video selection for a specific node."""
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"error": "invalid JSON"}, status=400)
+
+        node_id = str(body.get("node_id", ""))
+        entry = body.get("entry")  # null to clear
+
+        if not node_id:
+            return web.json_response({"error": "node_id required"}, status=400)
+
+        if entry:
+            # Validate and sanitise: only keep known keys, coerce to str
+            entry = {k: str(v) for k, v in entry.items() if k in _ALLOWED_ENTRY_KEYS}
+            if not entry.get("filename"):
+                return web.json_response({"error": "filename required in entry"}, status=400)
+            # Cap dict size — evict oldest if at limit
+            _capped_insert(_user_video_selections, node_id, {"data": entry, "ts": time.time()})
+            logger.info("[LoadLast] Selection stored for node %s: %s", node_id, entry.get("filename", "?"))
+        else:
+            _user_video_selections.pop(node_id, None)
+            logger.debug("[LoadLast] Selection cleared for node %s", node_id)
+
+        return web.json_response({"ok": True})
+
+    @PromptServer.instance.routes.post("/loadlast/apply_edits")
+    async def _api_apply_edits(request):
+        """Store the user's inline edit state for a specific node."""
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"error": "invalid JSON"}, status=400)
+
+        node_id = str(body.get("node_id", ""))
+        if not node_id:
+            return web.json_response({"error": "node_id required"}, status=400)
+
+        edits = body.get("edits")  # null to clear
+        if edits:
+            # Validate and sanitise: only keep known keys, coerce to str
+            edits = {k: str(v) for k, v in edits.items() if k in _ALLOWED_EDIT_KEYS}
+            # Cap dict size — evict oldest if at limit
+            _capped_insert(_user_edit_states, node_id, {"data": edits, "ts": time.time()})
+            logger.info("[LoadLast] Edit state stored for node %s", node_id)
+        else:
+            _user_edit_states.pop(node_id, None)
+            logger.debug("[LoadLast] Edit state cleared for node %s", node_id)
+
+        return web.json_response({"ok": True})
 
 except (ImportError, AttributeError):
     # Running outside ComfyUI (e.g. pytest) — skip route registration
@@ -141,6 +251,86 @@ def _is_path_sandboxed(path: str) -> bool:
     """Check if a path is within ComfyUI's allowed directories."""
     from .discovery.path_utils import is_path_sandboxed
     return is_path_sandboxed(path)
+
+
+def _probe_fps_cached(video_info: dict) -> float | None:
+    """Return the FPS of a video file via a cached lightweight ffprobe.
+
+    Uses the filename + subfolder + type from video_info to resolve the
+    full path, then runs ffprobe for r_frame_rate.  Results are cached
+    by filepath + mtime to avoid repeated subprocess calls on polls.
+    Returns None if ffprobe fails or the file can't be located.
+    """
+    if folder_paths is None:
+        return None
+    try:
+        vtype = video_info.get("type", "output")
+        if vtype == "output":
+            base = folder_paths.get_output_directory()
+        else:
+            base = folder_paths.get_temp_directory()
+        subfolder = video_info.get("subfolder", "")
+        filename = video_info.get("filename", "")
+        if not filename:
+            return None
+        full_path = (
+            os.path.join(base, subfolder, filename)
+            if subfolder
+            else os.path.join(base, filename)
+        )
+        if not os.path.isfile(full_path):
+            return None
+        if not _is_path_sandboxed(full_path):
+            return None
+
+        mtime = os.path.getmtime(full_path)
+        cached = _fps_cache.get(full_path)
+        if cached and cached[1] == mtime:
+            return cached[0]
+
+        ffprobe = shutil.which("ffprobe") or "ffprobe"
+        result = subprocess.run(
+            [ffprobe, "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=r_frame_rate",
+             "-of", "json", full_path],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode != 0:
+            return None
+        data = json.loads(result.stdout)
+        streams = data.get("streams", [])
+        if not streams:
+            return None
+        fps_str = streams[0].get("r_frame_rate", "")
+        if "/" in fps_str:
+            num, den = fps_str.split("/", 1)
+            den_f = float(den)
+            fps = float(num) / den_f if den_f else 24.0
+        elif fps_str:
+            fps = float(fps_str)
+        else:
+            return None
+
+        # Cap unreasonable FPS values
+        if fps <= 0 or fps > 240:
+            return None
+
+        _fps_cache[full_path] = (fps, mtime)
+        # Limit cache size and purge entries for deleted files.
+        # Purging deleted paths prevents the cache from hoarding stale
+        # entries that would otherwise persist until evicted by the 200-
+        # entry cap via insertion-order FIFO.
+        if len(_fps_cache) > 200:
+            stale_paths = [p for p in _fps_cache if not os.path.isfile(p)]
+            for p in stale_paths:
+                _fps_cache.pop(p, None)
+            # Still over cap after purge — evict oldest by insertion order
+            if len(_fps_cache) > 200:
+                oldest_key = next(iter(_fps_cache))
+                _fps_cache.pop(oldest_key, None)
+        return fps
+    except Exception:
+        return None
 
 
 def _resolve_scan_dirs(source: str) -> list[str]:
@@ -326,6 +516,26 @@ class LoadLastVideo:
                     "default": "auto",
                     "tooltip": "auto: reload when latest video changes. manual: only on input change.",
                 }),
+                "frame_select_mode": (FRAME_SELECT_MODES, {
+                    "default": "manual",
+                    "tooltip": (
+                        "How to select frames. 'manual' = user clicks in preview. "
+                        "Other modes auto-select frames based on the chosen strategy."
+                    ),
+                }),
+                "auto_timestamps": ("STRING", {
+                    "default": "",
+                    "tooltip": "Comma-separated timestamps for 'timestamps' mode (e.g., '0.5,1.0,2.5').",
+                }),
+                "pause_for_selection": ("BOOLEAN", {
+                    "default": False,
+                    "label_on": "pause",
+                    "label_off": "run",
+                    "tooltip": (
+                        "When ON and frame_select_mode is 'manual', blocks execution "
+                        "if no frames are selected. Select frames, then re-queue."
+                    ),
+                }),
             },
             "optional": {
                 "source_folder": ("STRING", {
@@ -358,28 +568,9 @@ class LoadLastVideo:
                     "forceInput": True,
                     "tooltip": "Override: path to a video file. Overrides auto-discovery.",
                 }),
-                "frame_select_mode": (FRAME_SELECT_MODES, {
-                    "default": "manual",
-                    "tooltip": (
-                        "How to select frames. 'manual' = user clicks in preview. "
-                        "Other modes auto-select frames based on the chosen strategy."
-                    ),
-                }),
-                "auto_timestamps": ("STRING", {
-                    "default": "",
-                    "tooltip": "Comma-separated timestamps for 'timestamps' mode (e.g., '0.5,1.0,2.5').",
-                }),
-                "pause_for_selection": ("BOOLEAN", {
-                    "default": False,
-                    "label_on": "pause",
-                    "label_off": "run",
-                    "tooltip": (
-                        "When ON and frame_select_mode is 'manual', blocks execution "
-                        "if no frames are selected. Select frames, then re-queue."
-                    ),
-                }),
             },
             "hidden": {
+                "unique_id": "UNIQUE_ID",
                 "_selected_timestamps": ("STRING", {"default": "[]"}),
                 "_edit_segments": ("STRING", {"default": "[]"}),
                 "_edit_action": ("STRING", {"default": "none"}),
@@ -394,8 +585,32 @@ class LoadLastVideo:
 
         In auto mode, returns a hash based on the latest video's filename
         and mtime so the node only re-runs when a new video is generated.
-        In manual mode, returns a constant so it never auto-reruns.
+        In manual mode, returns a constant so it never auto-reruns —
+        unless the user has explicitly selected a video or applied edits
+        via the server-side routes.
         """
+        # Check for pending server state first — works in both modes.
+        # If the user clicked a video in the browser strip or pressed
+        # "Apply Edits", we must force a re-run regardless of refresh_mode.
+        uid = str(kwargs.get("unique_id", ""))
+
+        # Evict stale entries (TTL-based) to prevent state from lingering
+        # when load() is never called (e.g. node disconnected from graph).
+        # Rate-limited to avoid scanning on every scheduler poll.
+        global _last_eviction_scan_time
+        now = time.time()
+        if now - _last_eviction_scan_time > _EVICTION_SCAN_INTERVAL:
+            _last_eviction_scan_time = now
+            for d in (_user_video_selections, _user_edit_states):
+                stale = [k for k, v in d.items() if now - v.get("ts", 0) > _SERVER_STATE_TTL]
+                for k in stale:
+                    d.pop(k, None)
+
+        if uid and uid in _user_video_selections:
+            return f"selected_{uid}_{time.time()}"
+        if uid and uid in _user_edit_states:
+            return f"edits_{uid}_{time.time()}"
+
         if refresh_mode == "manual":
             return ""
 
@@ -436,6 +651,7 @@ class LoadLastVideo:
         frame_select_mode: str = "manual",
         auto_timestamps: str = "",
         pause_for_selection: bool = False,
+        unique_id: str = "",
         _selected_timestamps: str = "[]",
         _edit_segments: str = "[]",
         _edit_action: str = "none",
@@ -484,6 +700,55 @@ class LoadLastVideo:
                 logger.warning("[LoadLast] video_path does not exist: %s", vp)
 
         if resolved_path is None:
+            # Check for user-selected video from browser strip (server-side state)
+            sel_wrapper = _user_video_selections.pop(str(unique_id), None)
+            sel = (sel_wrapper.get("data") if isinstance(sel_wrapper, dict) else None)
+            if sel:
+                sel_filename = os.path.basename(sel.get("filename", ""))
+                sel_subfolder = sel.get("subfolder", "")
+                sel_type = sel.get("type", "output")
+                # Reject path-traversal attempts in subfolder
+                # Normalise both / and \ to catch traversal from any OS
+                if ".." in sel_subfolder.replace("\\", "/").split("/"):
+                    logger.warning(
+                        "[LoadLast] Subfolder contains '..', rejecting selection for node %s",
+                        unique_id,
+                    )
+                    sel_filename = ""
+                if sel_type not in _ALLOWED_SEL_TYPES:
+                    logger.warning(
+                        "[LoadLast] Invalid selection type '%s' for node %s, skipping",
+                        sel_type, unique_id,
+                    )
+                    sel_filename = ""  # skip this selection
+                if sel_filename:
+                    if sel_type == "output":
+                        base = folder_paths.get_output_directory()
+                    else:
+                        base = folder_paths.get_temp_directory()
+                    candidate = (
+                        os.path.join(base, sel_subfolder, sel_filename)
+                        if sel_subfolder
+                        else os.path.join(base, sel_filename)
+                    )
+                    if _is_path_sandboxed(candidate) and os.path.isfile(candidate):
+                        resolved_path = candidate
+                        info = {
+                            "filename": sel_filename,
+                            "subfolder": sel_subfolder,
+                            "type": sel_type,
+                            "format": sel.get("format", "video/mp4"),
+                        }
+                        logger.info(
+                            "[LoadLast] Using user-selected video: %s", resolved_path
+                        )
+                    else:
+                        logger.warning(
+                            "[LoadLast] Selected video not found or outside sandbox: %s",
+                            candidate,
+                        )
+
+        if resolved_path is None:
             # Auto-discover latest video (default behavior)
             scan_dirs = _resolve_scan_dirs(source_folder)
 
@@ -509,7 +774,31 @@ class LoadLastVideo:
         logger.info("[LoadLast] Loading video: %s", resolved_path)
 
         # --- Apply inline edits (trim/crop/speed) if present ---
-        if _edit_action == "passthrough":
+        # Precedence chain for edit state:
+        #   1. Server-side state (from "Apply Edits" button → POST /loadlast/apply_edits)
+        #      — consumed one-shot via pop(), so it only applies once.
+        #   2. Hidden widget values (from syncEditToWidgets in the frontend)
+        #      — persist across runs as fallback when no server state exists.
+        # If the user clicks "Apply Edits" and then modifies a widget before
+        # re-queueing, the server state (if still present) wins; once consumed,
+        # subsequent runs fall through to the widget path.
+        if unique_id and unique_id in _user_edit_states:
+            edits_wrapper = _user_edit_states.pop(unique_id)
+            edits = edits_wrapper.get("data", {}) if isinstance(edits_wrapper, dict) else {}
+            logger.info("[LoadLast] Consuming server-side edits for node %s", unique_id)
+            resolved_path = self._apply_edits(
+                resolved_path,
+                edits.get("segments", "[]"),
+                edits.get("crop_rect", ""),
+                edits.get("speed_map", "{}"),
+            )
+            # Prevent the widget fallback (elif _edit_action == "passthrough")
+            # from firing later *in this same call*.  This only reassigns the
+            # local parameter — the widget value is unchanged, which is fine:
+            # on subsequent runs the server state will have been popped and
+            # the widget path is the correct fallback.
+            _edit_action = "none"
+        elif _edit_action == "passthrough":
             resolved_path = self._apply_edits(
                 resolved_path,
                 _edit_segments, _crop_rect, _speed_map,

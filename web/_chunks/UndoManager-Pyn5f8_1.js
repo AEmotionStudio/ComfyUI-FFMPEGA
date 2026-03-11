@@ -1,7 +1,7 @@
 var __defProp = Object.defineProperty;
 var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
-import { v as iconSkipStart, w as iconStepBack, x as iconPlay, y as iconStepForward, z as iconRepeat, A as iconPause, B as iconCursor, D as iconScissors, E as iconSplit, F as iconTrash, G as iconReset, H as iconReverse, I as iconCurve, J as iconFilm, t as iconGauge } from "./CropOverlay-mJDFyTOH.js";
+import { v as iconSkipStart, w as iconStepBack, x as iconPlay, y as iconStepForward, z as iconRepeat, A as iconPause, B as iconCursor, D as iconSplit, E as iconTrash, F as iconReset, G as iconReverse, H as iconCurve, I as iconFilm, t as iconGauge } from "./CropOverlay-Chz7vM7Z.js";
 function captureFrame(video, time) {
   return new Promise((resolve) => {
     video.currentTime = time;
@@ -1233,15 +1233,7 @@ class EditToolbar {
     );
     selectBtn.classList.add("active");
     this.modeButtons.set("select", selectBtn);
-    const razorBtn = this._makeToolBtn(
-      iconScissors,
-      "Razor",
-      "Razor tool — click on timeline to cut (C)",
-      "veditor-tool-razor",
-      () => this.setMode("razor")
-    );
-    this.modeButtons.set("razor", razorBtn);
-    modeGroup.append(selectBtn, razorBtn);
+    modeGroup.append(selectBtn);
     const sep1 = document.createElement("div");
     sep1.className = "veditor-toolbar-sep";
     const actionGroup = document.createElement("div");
@@ -1292,9 +1284,6 @@ class EditToolbar {
     switch (key.toLowerCase()) {
       case "v":
         this.setMode("select");
-        return true;
-      case "c":
-        this.setMode("razor");
         return true;
       case "s":
         this.callbacks.onSplitRequested();

@@ -63,6 +63,7 @@ app.registerExtension({
             let currentMode: ViewMode = VIEW_MODES.PLAYBACK;
             let modeGeometry: ModeGeometry | null = null;
             let lastFilename = '';
+            let videoFps = 24; // updated from backend /loadlast/latest_video response
 
             // ─── Edit mode state ──────────────────────────────────
             const editMgr = new EditManager();
@@ -206,6 +207,23 @@ app.registerExtension({
             videoEl.setAttribute('aria-label', 'Last video preview');
             videoEl.className = 'll_video';
 
+            // Prevent native double-click fullscreen — reserve for frame selection
+            videoEl.addEventListener('dblclick', (e: MouseEvent) => {
+                e.preventDefault();
+                e.stopPropagation();
+
+                // In EDIT mode, dblclick should not toggle frame selection —
+                // the user is doing NLE editing, not frame picking.
+                if (currentMode === VIEW_MODES.EDIT) return;
+
+                // Select the frame at the current playback time
+                if (videoEl.duration && isFinite(videoEl.duration)) {
+                    const ts = videoEl.currentTime;
+                    selections.toggle(currentMode, ts);
+                    updateSelectionUI();
+                }
+            });
+
             // ─── Canvas element ───────────────────────────────────
             const canvasEl = document.createElement('canvas');
             canvasEl.className = 'll_canvas';
@@ -335,7 +353,7 @@ app.registerExtension({
                 // toolbar(32) + infoBar(22) + markerBar(14) + browserStrip+scrollbar(100)
                 let chrome = 32 + 22 + 14 + (allVideos.length > 1 ? 100 : 0);
                 if (currentMode === VIEW_MODES.FILMSTRIP) chrome += 50;
-                if (currentMode === VIEW_MODES.EDIT) chrome += 180; // transport + timeline + controls
+                if (currentMode === VIEW_MODES.EDIT) chrome += 280; // transport + toolbar + speed + NLE timeline (ruler + V1 + A1)
                 if (this.aspectRatio) {
                     const h = (node.size[0] - 20) / this.aspectRatio;
                     return [width, Math.max(h, 80) + chrome];
@@ -504,14 +522,58 @@ app.registerExtension({
                         editCropEnabled = !editCropEnabled;
                         cropToggle.classList.toggle('active', editCropEnabled);
                         if (editCropOverlay) {
-                            editCropOverlay.canvasElement.style.display = editCropEnabled ? 'block' : 'none';
                             if (editCropEnabled) {
+                                editCropOverlay.canvasElement.style.display = 'block';
                                 editCropOverlay.setVideoDimensions(videoEl.videoWidth, videoEl.videoHeight);
+                                // Create a default crop rect if none exists (80% centered)
+                                if (!editCropOverlay.getRect()) {
+                                    const vw = videoEl.videoWidth;
+                                    const vh = videoEl.videoHeight;
+                                    editCropOverlay.setRect({
+                                        x: Math.round(vw * 0.1),
+                                        y: Math.round(vh * 0.1),
+                                        w: Math.round(vw * 0.8),
+                                        h: Math.round(vh * 0.8),
+                                    });
+                                }
                                 editCropOverlay.render();
+                                syncEditToWidgets();
+                                pushUndoState();
+                            } else {
+                                editCropOverlay.setRect(null);
+                                editCropOverlay.canvasElement.style.display = 'none';
+                                syncEditToWidgets();
+                                pushUndoState();
                             }
                         }
                     });
                     editToolbar.element.appendChild(cropToggle);
+
+                    // ── Apply Edits button ──
+                    const applyBtn = document.createElement('button');
+                    applyBtn.className = 'veditor-tool-btn';
+                    applyBtn.textContent = '✅ Apply Edits';
+                    applyBtn.title = 'Stage edits for next Run';
+                    applyBtn.style.cssText = 'margin-left:auto;color:#4ade80;border:1px solid #4ade80;';
+                    applyBtn.setAttribute('data-tool-id', 'loadlast-apply-edits');
+                    applyBtn.addEventListener('click', () => {
+                        postEditState();
+                        // Reset _edit_action widget so the widget fallback
+                        // path doesn't re-apply stale edits on subsequent
+                        // runs — the server-side state takes precedence.
+                        const actWidget = node.widgets?.find((w: any) => w.name === '_edit_action');
+                        if (actWidget) actWidget.value = 'none';
+                        // Visual feedback — flash green
+                        applyBtn.style.background = '#4ade80';
+                        applyBtn.style.color = '#000';
+                        applyBtn.textContent = '✅ Applied!';
+                        setTimeout(() => {
+                            applyBtn.style.background = '';
+                            applyBtn.style.color = '#4ade80';
+                            applyBtn.textContent = '✅ Apply Edits';
+                        }, 1200);
+                    });
+                    editToolbar.element.appendChild(applyBtn);
                     editWrapper.appendChild(editToolbar.element);
 
                     // ── Speed control (compact) ──
@@ -671,6 +733,25 @@ app.registerExtension({
                 } else {
                     if (!node.properties) node.properties = {};
                     node.properties['_speed_map'] = speedJson;
+                }
+
+                // If crop or speed edits exist, ensure _edit_action is 'passthrough'
+                // (editMgr.syncToWidget only checks segment edits)
+                const hasCropOrSpeed = !!cropRect || Object.keys(speedMap).length > 0;
+                if (hasCropOrSpeed) {
+                    const actWidget = node.widgets?.find((w: any) => w.name === '_edit_action');
+                    if (actWidget) {
+                        actWidget.value = 'passthrough';
+                    } else {
+                        if (!node.properties) node.properties = {};
+                        node.properties['_edit_action'] = 'passthrough';
+                    }
+                } else {
+                    // Reset to 'none' when no crop/speed AND no segment edits
+                    const actWidget = node.widgets?.find((w: any) => w.name === '_edit_action');
+                    if (actWidget && actWidget.value === 'passthrough' && !editMgr.hasEdits()) {
+                        actWidget.value = 'none';
+                    }
                 }
             }
 
@@ -1112,6 +1193,19 @@ app.registerExtension({
                 const d = fmtDuration(videoEl.duration);
                 if (d) parts.push(d);
                 if (lastFilename) parts.push(lastFilename);
+
+                // Show estimated frame count based on max_frames
+                if (videoEl.duration && isFinite(videoEl.duration)) {
+                    const totalFrames = Math.round(videoEl.duration * videoFps);
+                    const mfWidget = node.widgets?.find((w: any) => w.name === 'max_frames');
+                    const maxFrames = mfWidget ? Number(mfWidget.value) || 0 : 0;
+                    if (maxFrames > 0 && maxFrames < totalFrames) {
+                        parts.push(`${maxFrames}/${totalFrames}f`);
+                    } else {
+                        parts.push(`${totalFrames}f`);
+                    }
+                }
+
                 return parts.join(' │ ') || 'Video loaded';
             }
 
@@ -1132,6 +1226,10 @@ app.registerExtension({
                     const resp = await api.fetchApi('/loadlast/latest_video');
                     const data = await resp.json();
                     if (data.found) {
+                        // Update FPS from backend if available
+                        if (data.fps && data.fps > 0) {
+                            videoFps = data.fps;
+                        }
                         const entry: VideoEntry = {
                             filename: data.filename,
                             subfolder: data.subfolder || '',
@@ -1153,6 +1251,45 @@ app.registerExtension({
                     lastFilename = entry.filename;
                     infoEl.textContent = `Loading ${entry.filename}...`;
                 }
+            }
+
+            /** POST the user's video selection to the server so the Python
+             *  backend can use it in load(). Pass null to clear. */
+            function postVideoSelection(entry: VideoEntry | null): void {
+                const body = entry
+                    ? { node_id: node.id, entry: {
+                        filename: entry.filename,
+                        subfolder: entry.subfolder,
+                        type: entry.type,
+                        format: entry.format,
+                    }}
+                    : { node_id: node.id, entry: null };
+                api.fetchApi('/loadlast/select_video', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                }).catch((e: unknown) => console.warn('[LoadLast] Failed to post selection:', e));
+            }
+
+            /** POST current edit state to server for reliable backend consumption */
+            function postEditState(): void {
+                const segments = editMgr.toJSON();
+                const cropRect = editCropOverlay?.getRect();
+                const speedMap = editSpeedCtrl?.getSpeedMap() ?? {};
+
+                const body = {
+                    node_id: node.id,
+                    edits: {
+                        segments: JSON.stringify(segments),
+                        crop_rect: cropRect ? JSON.stringify(cropRect) : '',
+                        speed_map: JSON.stringify(speedMap),
+                    },
+                };
+                api.fetchApi('/loadlast/apply_edits', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                }).catch((e: unknown) => console.warn('[LoadLast] Failed to post edits:', e));
             }
 
             // ─── Video browser strip ──────────────────────────────
@@ -1201,7 +1338,9 @@ app.registerExtension({
 
                     thumb.addEventListener('click', (e: Event) => {
                         e.stopPropagation();
+                        userHasSelected = true;
                         loadVideo(entry);
+                        postVideoSelection(entry);
                         renderBrowserStrip();
                     });
                     // Hover styles handled by CSS .ll_thumb:hover
@@ -1214,6 +1353,7 @@ app.registerExtension({
             videoEl.addEventListener('loadedmetadata', () => {
                 previewWidget.aspectRatio =
                     videoEl.videoWidth / videoEl.videoHeight;
+                updateMaxPlaybackTime();
                 infoEl.textContent = buildInfoText();
                 fitNode();
                 if (currentMode !== VIEW_MODES.PLAYBACK) {
@@ -1222,16 +1362,114 @@ app.registerExtension({
                 updatePlaybackMarkers();
             });
 
+            // ─── max_frames playback capping ──────────────────────
+            // Cap video playback at the time corresponding to max_frames
+            // so the user sees exactly what will be decoded.
+            let maxPlaybackTime = Infinity;
+            let rVFCHandle: number | null = null;
+            const supportsRVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
+
+            function updateMaxPlaybackTime(): void {
+                const mfWidget = node.widgets?.find((w: any) => w.name === 'max_frames');
+                const maxFrames = mfWidget ? Number(mfWidget.value) || 0 : 0;
+                const prevMax = maxPlaybackTime;
+                if (maxFrames > 0 && videoEl.duration && isFinite(videoEl.duration)) {
+                    const totalFrames = Math.round(videoEl.duration * videoFps);
+                    if (maxFrames < totalFrames) {
+                        maxPlaybackTime = maxFrames / videoFps;
+                    } else {
+                        maxPlaybackTime = Infinity;
+                    }
+                } else {
+                    maxPlaybackTime = Infinity;
+                }
+                // Start or stop the rVFC loop when cap state changes
+                if (supportsRVFC) {
+                    const wasActive = prevMax < Infinity;
+                    const isActive = maxPlaybackTime < Infinity;
+                    if (isActive && !wasActive && rVFCHandle === null) {
+                        schedulePlaybackCapFrame();
+                    } else if (!isActive && rVFCHandle !== null) {
+                        (videoEl as any).cancelVideoFrameCallback(rVFCHandle);
+                        rVFCHandle = null;
+                    }
+                }
+            }
+
+            // Playback capping — loop back when currentTime exceeds maxPlaybackTime.
+            // Use requestVideoFrameCallback for frame-precise enforcement (fires
+            // every rendered frame), with a timeupdate fallback for browsers that
+            // lack rVFC support (~4Hz, may overshoot by a few frames).
+            function checkPlaybackCap(): void {
+                if (currentMode !== VIEW_MODES.EDIT &&
+                    maxPlaybackTime < Infinity &&
+                    videoEl.currentTime >= maxPlaybackTime) {
+                    const firstStart = editMgr?.segments?.[0]?.start ?? 0;
+                    videoEl.currentTime = firstStart;
+                }
+            }
+
+            function schedulePlaybackCapFrame(): void {
+                rVFCHandle = (videoEl as any).requestVideoFrameCallback(() => {
+                    checkPlaybackCap();
+                    // Only keep scheduling if cap is still active
+                    if (maxPlaybackTime < Infinity) {
+                        schedulePlaybackCapFrame();
+                    } else {
+                        rVFCHandle = null;
+                    }
+                });
+            }
+
+            if (!supportsRVFC) {
+                // Fallback: ~4Hz, may overshoot by up to 6-7 frames at 24fps
+                videoEl.addEventListener('timeupdate', checkPlaybackCap);
+            }
+
+            // updateMaxPlaybackTime is called from the loadedmetadata handler above
+
+            const maxFramesWidget = node.widgets?.find((w: any) => w.name === 'max_frames');
+            if (maxFramesWidget) {
+                const origCb = maxFramesWidget.callback;
+                maxFramesWidget.callback = function (...args: any[]) {
+                    origCb?.apply(this, args);
+                    updateMaxPlaybackTime();
+                    infoEl.textContent = buildInfoText();
+                };
+            }
+
             // ─── Auto-refresh ─────────────────────────────────────
+            // Track whether the user has explicitly selected a video
+            // from the browser strip.  While true, the preview stays on
+            // the user's choice but the browser strip still updates.
+            let userHasSelected = false;
+
             const refreshWidget = node.widgets?.find((w: any) => w.name === 'refresh_mode');
             if (refreshWidget?.value === 'auto' || !refreshWidget) {
                 fetchLatestVideo();
             }
 
             api.addEventListener('executed', (data: any) => {
-                if (data?.detail?.output?.gifs?.length > 0) {
-                    fetchLatestVideo();
-                } else if (data?.detail?.output?.video?.length > 0) {
+                const rw = node.widgets?.find((w: any) => w.name === 'refresh_mode');
+                if (rw?.value === 'manual') return;
+
+                const hasVideoOutput = data?.detail?.output?.gifs?.length > 0 ||
+                                       data?.detail?.output?.video?.length > 0;
+                if (!hasVideoOutput) return;
+
+                // If THIS node just executed, the selection was consumed —
+                // clear the flag so auto-refresh resumes for the preview.
+                const execNodeId = data?.detail?.node;
+                if (execNodeId != null && String(execNodeId) === String(node.id)) {
+                    userHasSelected = false;
+                }
+
+                if (userHasSelected) {
+                    // User has a selection — still update the strip thumbnails
+                    // but don't change the preview video.
+                    fetchVideoList();
+                } else {
+                    // No user selection — full auto-refresh (preview + strip).
                     fetchLatestVideo();
                 }
             });

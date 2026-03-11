@@ -26,9 +26,6 @@ const iconRepeat = L(
 const iconCursor = L(
   '<path d="M12.586 12.586 19 19"/><path d="M3.688 3.037a.497.497 0 0 0-.651.651l6.5 15.999a.501.501 0 0 0 .947-.062l1.569-6.083a2 2 0 0 1 1.448-1.479l6.124-1.579a.5.5 0 0 0 .063-.947z"/>'
 );
-const iconScissors = L(
-  '<circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/>'
-);
 const iconSplit = L(
   '<path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/><path d="m15 9 6-6"/>'
 );
@@ -561,13 +558,12 @@ export {
   iconPause as A,
   iconCursor as B,
   CropOverlay as C,
-  iconScissors as D,
-  iconSplit as E,
-  iconTrash as F,
-  iconReset as G,
-  iconReverse as H,
-  iconCurve as I,
-  iconFilm as J,
+  iconSplit as D,
+  iconTrash as E,
+  iconReset as F,
+  iconReverse as G,
+  iconCurve as H,
+  iconFilm as I,
   iconMuted as a,
   iconMusic as b,
   iconPlus as c,

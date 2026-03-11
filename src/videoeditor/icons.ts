@@ -70,15 +70,6 @@ export const iconCursor = L(
     '<path d="M3.688 3.037a.497.497 0 0 0-.651.651l6.5 15.999a.501.501 0 0 0 .947-.062l1.569-6.083a2 2 0 0 1 1.448-1.479l6.124-1.579a.5.5 0 0 0 .063-.947z"/>'
 );
 
-/** Scissors / Razor — lucide/scissors */
-export const iconScissors = L(
-    '<circle cx="6" cy="6" r="3"/>' +
-    '<path d="M8.12 8.12 12 12"/>' +
-    '<path d="M20 4 8.12 15.88"/>' +
-    '<circle cx="6" cy="18" r="3"/>' +
-    '<path d="M14.8 14.8 20 20"/>'
-);
-
 /** Split — lucide/split */
 export const iconSplit = L(
     '<path d="M16 3h5v5"/>' +
