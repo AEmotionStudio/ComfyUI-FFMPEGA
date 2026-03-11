@@ -248,7 +248,10 @@ class VideoEditorNode:
                 or abs(_volume - 1.0) > 0.01
                 or (_text_overlays and _text_overlays != "[]")
                 or (_transitions and _transitions != "[]")
-                or (_audio_segments and _audio_segments != "[]")
+                # Note: _audio_segments intentionally excluded — per-segment
+                # audio rendering is not yet implemented in the FFmpeg export
+                # pipeline.  Including them would trigger a full re-encode
+                # with no audible change.  Audio segments are preview-only.
             )
 
             if not has_real_edits:

@@ -513,9 +513,9 @@ export class EditorModal {
                 });
                 this.nleTimeline.setAudioTimeline(this.audioTimeline);
 
-                // Fetch waveform in background
+                // Fetch waveform in background (server-side first, client fallback)
                 const videoUrl = `${PREVIEW_ROUTE}?path=${encodeURIComponent(this.videoPath)}`;
-                extractWaveform(videoUrl).then(wf => {
+                extractWaveform(this.videoPath, videoUrl).then(wf => {
                     this.audioTimeline?.setWaveform(wf.peaks);
                 }).catch(e => {
                     console.warn('[VideoEditor] Waveform extraction failed:', e);

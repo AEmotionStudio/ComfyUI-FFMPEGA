@@ -2318,29 +2318,67 @@ class AudioTimeline {
   }
 }
 const PEAK_COUNT = 2e3;
+const WAVEFORM_ROUTE = "/ffmpega/waveform";
 const MAX_FETCH_SIZE = 50 * 1024 * 1024;
 const waveformCache = /* @__PURE__ */ new Map();
-async function extractWaveform(url) {
-  const cached = waveformCache.get(url);
+async function extractWaveform(videoPath, previewUrl) {
+  const cached = waveformCache.get(videoPath);
   if (cached) {
     return cached;
   }
   try {
+    const result = await _fetchServerWaveform(videoPath);
+    if (result) {
+      waveformCache.set(videoPath, result);
+      return result;
+    }
+  } catch (e) {
+    console.warn("[WaveformExtractor] Server extraction failed, trying client-side:", e);
+  }
+  const fallbackUrl = previewUrl || videoPath;
+  const fallbackResult = await _extractClientSide(fallbackUrl);
+  waveformCache.set(videoPath, fallbackResult);
+  return fallbackResult;
+}
+async function _fetchServerWaveform(videoPath) {
+  const url = `${WAVEFORM_ROUTE}?path=${encodeURIComponent(videoPath)}`;
+  const resp = await fetch(url);
+  if (!resp.ok) {
+    return null;
+  }
+  const data = await resp.json();
+  if (!data.peaks || !Array.isArray(data.peaks) || data.peaks.length === 0) {
+    return null;
+  }
+  const peaks = new Float32Array(data.peaks);
+  return {
+    peaks,
+    duration: data.duration || 0,
+    sampleRate: data.sampleRate || 0
+  };
+}
+async function _extractClientSide(fetchUrl) {
+  const flat = {
+    peaks: new Float32Array(PEAK_COUNT).fill(0.1),
+    duration: 0,
+    sampleRate: 0
+  };
+  try {
     try {
-      const head = await fetch(url, { method: "HEAD" });
+      const head = await fetch(fetchUrl, { method: "HEAD" });
       const contentLength = head.headers.get("content-length");
       if (contentLength) {
         const size = parseInt(contentLength, 10);
         if (size > MAX_FETCH_SIZE) {
           console.warn(
-            `[WaveformExtractor] File too large for client-side extraction (${(size / 1024 / 1024).toFixed(0)}MB > ${MAX_FETCH_SIZE / 1024 / 1024}MB limit). Showing flat waveform. Consider a server-side waveform endpoint for large files.`
+            `[WaveformExtractor] File too large for client-side extraction (${(size / 1024 / 1024).toFixed(0)}MB > ${MAX_FETCH_SIZE / 1024 / 1024}MB limit). Showing flat waveform.`
           );
-          return { peaks: new Float32Array(PEAK_COUNT).fill(0.1), duration: 0, sampleRate: 0 };
+          return flat;
         }
       }
     } catch {
     }
-    const response = await fetch(url);
+    const response = await fetch(fetchUrl);
     if (!response.ok) {
       throw new Error(`Failed to fetch: ${response.status}`);
     }
@@ -2359,12 +2397,10 @@ async function extractWaveform(url) {
       duration: audioBuffer.duration,
       sampleRate: audioBuffer.sampleRate
     };
-    waveformCache.set(url, result);
     return result;
   } catch (e) {
-    console.warn("[WaveformExtractor] Failed to extract waveform:", e);
-    const fallback = new Float32Array(PEAK_COUNT).fill(0.1);
-    return { peaks: fallback, duration: 0, sampleRate: 0 };
+    console.warn("[WaveformExtractor] Client-side extraction failed:", e);
+    return flat;
   }
 }
 function downsamplePeaks(channelData, binCount) {
@@ -2770,7 +2806,7 @@ class EditorModal {
         });
         this.nleTimeline.setAudioTimeline(this.audioTimeline);
         const videoUrl = `${PREVIEW_ROUTE$1}?path=${encodeURIComponent(this.videoPath)}`;
-        extractWaveform(videoUrl).then((wf) => {
+        extractWaveform(this.videoPath, videoUrl).then((wf) => {
           var _a;
           (_a = this.audioTimeline) == null ? void 0 : _a.setWaveform(wf.peaks);
         }).catch((e) => {

@@ -542,6 +542,45 @@ async def video_export(request):
     return web.json_response(result, status=status)
 
 
+# ── Waveform extraction ─────────────────────────────────────────────
+
+
+@server.PromptServer.instance.routes.get("/ffmpega/waveform")
+async def waveform_peaks(request):
+    """Extract audio waveform peaks from a video file.
+
+    Query params:
+        path — absolute or ComfyUI-relative path to the video (required)
+
+    Returns JSON:
+        { "peaks": [float, ...], "duration": float, "sampleRate": int }
+
+    Peaks are 2000 bins normalised to 0–1. On failure, returns flat
+    peaks (all 0.1) with duration/sampleRate = 0.
+    """
+    from .videoeditor.processing.waveform import FLAT_WAVEFORM, extract_waveform_peaks
+
+    query = request.rel_url.query
+    raw_path = query.get("path", "").strip()
+    filepath = _resolve_video_path(raw_path)
+    if not filepath:
+        return web.json_response(FLAT_WAVEFORM, status=404)
+
+    try:
+        result = await asyncio.wait_for(
+            extract_waveform_peaks(filepath),
+            timeout=60,
+        )
+    except asyncio.TimeoutError:
+        log.warning("[Waveform] Extraction timed out for %s", filepath)
+        return web.json_response(FLAT_WAVEFORM, status=504)
+    except Exception as e:
+        log.warning("[Waveform] Extraction error: %s", e)
+        return web.json_response(FLAT_WAVEFORM, status=500)
+
+    return web.json_response(result)
+
+
 # ── Text Presets ─────────────────────────────────────────────────────
 
 _PRESETS_FILE = os.path.join(os.path.dirname(__file__), "text_presets.json")

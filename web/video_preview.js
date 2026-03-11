@@ -780,7 +780,8 @@ app.registerExtension({
           speedMap: (editSpeedCtrl == null ? void 0 : editSpeedCtrl.getSpeedMap()) ?? {},
           volume: 1,
           textOverlays: [],
-          transitions: []
+          transitions: [],
+          audioSegments: []
         };
       }
       function pushUndoState() {

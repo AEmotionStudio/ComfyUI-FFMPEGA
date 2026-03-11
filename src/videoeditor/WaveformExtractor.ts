@@ -1,24 +1,24 @@
 /**
- * WaveformExtractor — extract audio waveform peaks from a video file
- * using the Web Audio API.
+ * WaveformExtractor — extract audio waveform peaks from a video file.
  *
- * Fetches the video as an ArrayBuffer, decodes the audio track,
- * and downsamples to a fixed number of peak bins for efficient rendering.
- * Results are cached by URL to avoid re-decoding on subsequent opens.
+ * Tries the server-side `/ffmpega/waveform` endpoint first (lightweight —
+ * returns ~8 KB of JSON peaks without the client downloading the full
+ * video).  Falls back to client-side Web Audio API extraction if the
+ * server endpoint is unavailable.
+ *
+ * Results are cached by video path to avoid re-extraction on subsequent opens.
  */
 
 const PEAK_COUNT = 2000;  // Number of peak bins for waveform display
+const WAVEFORM_ROUTE = '/ffmpega/waveform';
 
 /**
- * Max file size (bytes) to attempt client-side waveform extraction.
- * Files larger than this are skipped to avoid browser OOM.
- * The full video is loaded as an ArrayBuffer then decoded, consuming
- * ~2–3× file size in memory. 50 MB keeps peak usage under ~150 MB.
- * For larger files, consider a server-side waveform endpoint.
+ * Max file size (bytes) for client-side fallback extraction.
+ * Only used when the server endpoint fails.
  */
 const MAX_FETCH_SIZE = 50 * 1024 * 1024;  // 50 MB
 
-/** Cached waveform data (full WaveformData so duration/sampleRate survive cache hits) */
+/** Cached waveform data keyed by video path */
 const waveformCache = new Map<string, WaveformData>();
 
 export interface WaveformData {
@@ -28,24 +28,89 @@ export interface WaveformData {
 }
 
 /**
- * Extract waveform peaks from a video/audio URL.
+ * Extract waveform peaks for a video at the given path.
  *
- * @param url - URL to fetch the media from (e.g., /ffmpega/preview?path=...)
+ * Tries server-side extraction first (efficient — only audio is processed
+ * server-side via FFmpeg), then falls back to client-side Web Audio API.
+ *
+ * @param videoPath - raw video path (as passed to /ffmpega/preview?path=...)
+ * @param previewUrl - optional preview URL for client-side fallback
  * @returns WaveformData with normalized peaks (0–1)
  */
-export async function extractWaveform(url: string): Promise<WaveformData> {
-    // Check cache first
-    const cached = waveformCache.get(url);
+export async function extractWaveform(
+    videoPath: string,
+    previewUrl?: string,
+): Promise<WaveformData> {
+    // Check cache first (keyed by videoPath)
+    const cached = waveformCache.get(videoPath);
     if (cached) {
         return cached;
     }
 
+    // Try server-side extraction first
+    try {
+        const result = await _fetchServerWaveform(videoPath);
+        if (result) {
+            waveformCache.set(videoPath, result);
+            return result;
+        }
+    } catch (e) {
+        console.warn('[WaveformExtractor] Server extraction failed, trying client-side:', e);
+    }
+
+    // Fall back to client-side extraction.
+    // Cache the result even if it's a flat fallback — this prevents
+    // repeated futile fetch attempts for files where both paths fail.
+    const fallbackUrl = previewUrl || videoPath;
+    const fallbackResult = await _extractClientSide(fallbackUrl);
+    waveformCache.set(videoPath, fallbackResult);
+    return fallbackResult;
+}
+
+/**
+ * Fetch waveform peaks from the server-side endpoint.
+ * Returns null if the endpoint is unavailable or fails.
+ */
+async function _fetchServerWaveform(videoPath: string): Promise<WaveformData | null> {
+    const url = `${WAVEFORM_ROUTE}?path=${encodeURIComponent(videoPath)}`;
+    const resp = await fetch(url);
+
+    if (!resp.ok) {
+        return null;
+    }
+
+    const data = await resp.json();
+    if (!data.peaks || !Array.isArray(data.peaks) || data.peaks.length === 0) {
+        return null;
+    }
+
+    // Convert JSON array to Float32Array
+    const peaks = new Float32Array(data.peaks);
+
+    return {
+        peaks,
+        duration: data.duration || 0,
+        sampleRate: data.sampleRate || 0,
+    };
+}
+
+/**
+ * Client-side fallback: fetch the full video and decode audio via Web Audio API.
+ * Only used when the server endpoint is unavailable.
+ */
+async function _extractClientSide(
+    fetchUrl: string,
+): Promise<WaveformData> {
+    const flat: WaveformData = {
+        peaks: new Float32Array(PEAK_COUNT).fill(0.1),
+        duration: 0,
+        sampleRate: 0,
+    };
+
     try {
         // Pre-flight: check file size via HEAD to avoid OOM on large videos.
-        // Falls back gracefully if the server doesn't support HEAD or
-        // doesn't return Content-Length.
         try {
-            const head = await fetch(url, { method: 'HEAD' });
+            const head = await fetch(fetchUrl, { method: 'HEAD' });
             const contentLength = head.headers.get('content-length');
             if (contentLength) {
                 const size = parseInt(contentLength, 10);
@@ -53,18 +118,16 @@ export async function extractWaveform(url: string): Promise<WaveformData> {
                     console.warn(
                         `[WaveformExtractor] File too large for client-side extraction ` +
                         `(${(size / 1024 / 1024).toFixed(0)}MB > ${MAX_FETCH_SIZE / 1024 / 1024}MB limit). ` +
-                        `Showing flat waveform. Consider a server-side waveform endpoint for large files.`,
+                        `Showing flat waveform.`,
                     );
-                    // Don't cache — duration/sampleRate are unknown for skipped files.
-                    // Returning uncached lets the next editor open re-attempt if needed.
-                    return { peaks: new Float32Array(PEAK_COUNT).fill(0.1), duration: 0, sampleRate: 0 };
+                    return flat;
                 }
             }
         } catch {
             // HEAD not supported or network error — proceed with GET
         }
 
-        const response = await fetch(url);
+        const response = await fetch(fetchUrl);
         if (!response.ok) {
             throw new Error(`Failed to fetch: ${response.status}`);
         }
@@ -83,20 +146,16 @@ export async function extractWaveform(url: string): Promise<WaveformData> {
         const channelData = audioBuffer.getChannelData(0);
         const peaks = downsamplePeaks(channelData, PEAK_COUNT);
 
-        // Cache the full result (including duration/sampleRate)
         const result: WaveformData = {
             peaks,
             duration: audioBuffer.duration,
             sampleRate: audioBuffer.sampleRate,
         };
-        waveformCache.set(url, result);
 
         return result;
     } catch (e) {
-        console.warn('[WaveformExtractor] Failed to extract waveform:', e);
-        // Return a flat waveform as fallback
-        const fallback = new Float32Array(PEAK_COUNT).fill(0.1);
-        return { peaks: fallback, duration: 0, sampleRate: 0 };
+        console.warn('[WaveformExtractor] Client-side extraction failed:', e);
+        return flat;
     }
 }
 
