@@ -4,8 +4,8 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { a as addDownloadOverlay } from "./_chunks/ui_helpers-CvUDB6-L.js";
-import { d as collectEdges, s as snapToEdges, E as EditManager, T as TransportBar, S as SpeedControl, a as EditToolbar, U as UndoManager, N as NLETimeline } from "./_chunks/UndoManager-Cuq-00Al.js";
-import { i as iconVolume, a as iconMuted, b as iconMusic, c as iconPlus, d as iconClose, e as iconBold, f as iconItalic, g as iconAlignLeft, h as iconAlignCenter, j as iconAlignRight, k as iconZoomOut, l as iconZoomIn, m as iconMaximize, n as iconShuffle, o as iconClapperboard, p as iconUndo, q as iconRedo, r as iconCheck, C as CropOverlay, s as iconCrop, t as iconGauge, u as iconText } from "./_chunks/CropOverlay-mJDFyTOH.js";
+import { d as collectEdges, s as snapToEdges, E as EditManager, T as TransportBar, S as SpeedControl, a as EditToolbar, U as UndoManager, N as NLETimeline } from "./_chunks/UndoManager-Pyn5f8_1.js";
+import { i as iconVolume, a as iconMuted, b as iconMusic, c as iconPlus, d as iconClose, e as iconBold, f as iconItalic, g as iconAlignLeft, h as iconAlignCenter, j as iconAlignRight, k as iconZoomOut, l as iconZoomIn, m as iconMaximize, n as iconShuffle, o as iconClapperboard, p as iconUndo, q as iconRedo, r as iconCheck, C as CropOverlay, s as iconCrop, t as iconGauge, u as iconText } from "./_chunks/CropOverlay-Chz7vM7Z.js";
 class AudioMixer {
   constructor(callbacks) {
     __publicField(this, "container");
@@ -1095,7 +1095,6 @@ const CATEGORIES = [
     title: "Tools",
     shortcuts: [
       { key: "V", desc: "Select tool" },
-      { key: "C", desc: "Razor tool" },
       { key: "S", desc: "Split at playhead" },
       { key: "Del", desc: "Delete segment" },
       { key: "R", desc: "Reset all segments" }
@@ -2494,7 +2493,6 @@ class EditorModal {
       "<kbd>Space</kbd> Play",
       "<kbd>S</kbd> Split",
       "<kbd>V</kbd> Select",
-      "<kbd>C</kbd> Razor",
       "<kbd>1-5</kbd> Tool Tabs",
       "<kbd>?</kbd> Shortcuts"
     ].join("  ·  ");

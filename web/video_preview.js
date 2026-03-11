@@ -3,8 +3,8 @@ var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { en
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
-import { E as EditManager, f as fmtDuration, T as TransportBar, a as EditToolbar, S as SpeedControl, N as NLETimeline, U as UndoManager, c as captureFrames, b as captureFrame, v as viewUrl } from "./_chunks/UndoManager-Cuq-00Al.js";
-import { C as CropOverlay } from "./_chunks/CropOverlay-mJDFyTOH.js";
+import { E as EditManager, f as fmtDuration, T as TransportBar, a as EditToolbar, S as SpeedControl, N as NLETimeline, U as UndoManager, c as captureFrames, b as captureFrame, v as viewUrl } from "./_chunks/UndoManager-Pyn5f8_1.js";
+import { C as CropOverlay } from "./_chunks/CropOverlay-Chz7vM7Z.js";
 const VIEW_MODES = {
   PLAYBACK: "playback",
   GRID: "grid",
@@ -247,7 +247,7 @@ app.registerExtension({
     if ((nodeData == null ? void 0 : nodeData.name) !== "LoadLastVideo") return;
     const origCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function() {
-      var _a;
+      var _a, _b;
       origCreated == null ? void 0 : origCreated.apply(this, arguments);
       const node = this;
       const selections = new SelectionManager();
@@ -255,6 +255,7 @@ app.registerExtension({
       let currentMode = VIEW_MODES.PLAYBACK;
       let modeGeometry = null;
       let lastFilename = "";
+      let videoFps = 24;
       const editMgr = new EditManager();
       editMgr.bind(node);
       let editWrapper = null;
@@ -368,6 +369,15 @@ app.registerExtension({
       videoEl.autoplay = true;
       videoEl.setAttribute("aria-label", "Last video preview");
       videoEl.className = "ll_video";
+      videoEl.addEventListener("dblclick", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (videoEl.duration && isFinite(videoEl.duration)) {
+          const ts = videoEl.currentTime;
+          selections.toggle(currentMode, ts);
+          updateSelectionUI();
+        }
+      });
       const canvasEl = document.createElement("canvas");
       canvasEl.className = "ll_canvas";
       canvasEl.addEventListener("click", (e) => {
@@ -469,7 +479,7 @@ app.registerExtension({
         if (container.style.display === "none") return [width, 0];
         let chrome = 32 + 22 + 14 + (allVideos.length > 1 ? 100 : 0);
         if (currentMode === VIEW_MODES.FILMSTRIP) chrome += 50;
-        if (currentMode === VIEW_MODES.EDIT) chrome += 180;
+        if (currentMode === VIEW_MODES.EDIT) chrome += 280;
         if (this.aspectRatio) {
           const h = (node.size[0] - 20) / this.aspectRatio;
           return [width, Math.max(h, 80) + chrome];
@@ -618,14 +628,49 @@ app.registerExtension({
             editCropEnabled = !editCropEnabled;
             cropToggle.classList.toggle("active", editCropEnabled);
             if (editCropOverlay) {
-              editCropOverlay.canvasElement.style.display = editCropEnabled ? "block" : "none";
               if (editCropEnabled) {
+                editCropOverlay.canvasElement.style.display = "block";
                 editCropOverlay.setVideoDimensions(videoEl.videoWidth, videoEl.videoHeight);
+                if (!editCropOverlay.getRect()) {
+                  const vw = videoEl.videoWidth;
+                  const vh = videoEl.videoHeight;
+                  editCropOverlay.setRect({
+                    x: Math.round(vw * 0.1),
+                    y: Math.round(vh * 0.1),
+                    w: Math.round(vw * 0.8),
+                    h: Math.round(vh * 0.8)
+                  });
+                }
                 editCropOverlay.render();
+                syncEditToWidgets();
+                pushUndoState();
+              } else {
+                editCropOverlay.setRect(null);
+                editCropOverlay.canvasElement.style.display = "none";
+                syncEditToWidgets();
+                pushUndoState();
               }
             }
           });
           editToolbar.element.appendChild(cropToggle);
+          const applyBtn = document.createElement("button");
+          applyBtn.className = "veditor-tool-btn";
+          applyBtn.textContent = "✅ Apply Edits";
+          applyBtn.title = "Stage edits for next Run";
+          applyBtn.style.cssText = "margin-left:auto;color:#4ade80;border:1px solid #4ade80;";
+          applyBtn.setAttribute("data-tool-id", "loadlast-apply-edits");
+          applyBtn.addEventListener("click", () => {
+            postEditState();
+            applyBtn.style.background = "#4ade80";
+            applyBtn.style.color = "#000";
+            applyBtn.textContent = "✅ Applied!";
+            setTimeout(() => {
+              applyBtn.style.background = "";
+              applyBtn.style.color = "#4ade80";
+              applyBtn.textContent = "✅ Apply Edits";
+            }, 1200);
+          });
+          editToolbar.element.appendChild(applyBtn);
           editWrapper.appendChild(editToolbar.element);
           editSpeedCtrl = new SpeedControl({
             onSpeedChanged: (_segIdx, _speed) => {
@@ -753,7 +798,7 @@ app.registerExtension({
         }
       }
       function syncEditToWidgets() {
-        var _a2, _b;
+        var _a2, _b2, _c;
         const cropRect = editCropOverlay == null ? void 0 : editCropOverlay.getRect();
         const cropJson = cropRect ? JSON.stringify(cropRect) : "";
         const cropWidget = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "_crop_rect");
@@ -765,12 +810,22 @@ app.registerExtension({
         }
         const speedMap = (editSpeedCtrl == null ? void 0 : editSpeedCtrl.getSpeedMap()) ?? {};
         const speedJson = JSON.stringify(speedMap);
-        const speedWidget = (_b = node.widgets) == null ? void 0 : _b.find((w) => w.name === "_speed_map");
+        const speedWidget = (_b2 = node.widgets) == null ? void 0 : _b2.find((w) => w.name === "_speed_map");
         if (speedWidget) {
           speedWidget.value = speedJson;
         } else {
           if (!node.properties) node.properties = {};
           node.properties["_speed_map"] = speedJson;
+        }
+        const hasCropOrSpeed = !!cropRect || Object.keys(speedMap).length > 0;
+        if (hasCropOrSpeed) {
+          const actWidget = (_c = node.widgets) == null ? void 0 : _c.find((w) => w.name === "_edit_action");
+          if (actWidget) {
+            actWidget.value = "passthrough";
+          } else {
+            if (!node.properties) node.properties = {};
+            node.properties["_edit_action"] = "passthrough";
+          }
         }
       }
       function getEditState() {
@@ -1156,20 +1211,31 @@ app.registerExtension({
         }
       }
       function buildInfoText() {
+        var _a2;
         const parts = [];
         if (videoEl.videoWidth && videoEl.videoHeight)
           parts.push(`${videoEl.videoWidth}×${videoEl.videoHeight}`);
         const d = fmtDuration(videoEl.duration);
         if (d) parts.push(d);
         if (lastFilename) parts.push(lastFilename);
+        if (videoEl.duration && isFinite(videoEl.duration)) {
+          const totalFrames = Math.round(videoEl.duration * videoFps);
+          const mfWidget = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "max_frames");
+          const maxFrames = mfWidget ? Number(mfWidget.value) || 0 : 0;
+          if (maxFrames > 0 && maxFrames < totalFrames) {
+            parts.push(`${maxFrames}/${totalFrames}f`);
+          } else {
+            parts.push(`${totalFrames}f`);
+          }
+        }
         return parts.join(" │ ") || "Video loaded";
       }
       function fitNode() {
-        var _a2, _b, _c;
+        var _a2, _b2, _c;
         const sz = (_a2 = previewWidget.computeSize) == null ? void 0 : _a2.call(previewWidget, node.size[0]);
         if (sz) {
           node.size[1] = sz[1] + 40;
-          (_b = node.onResize) == null ? void 0 : _b.call(node, node.size);
+          (_b2 = node.onResize) == null ? void 0 : _b2.call(node, node.size);
           node.setDirtyCanvas(true, true);
           (_c = node.graph) == null ? void 0 : _c.setDirtyCanvas(true, true);
         }
@@ -1180,6 +1246,9 @@ app.registerExtension({
           const resp = await api.fetchApi("/loadlast/latest_video");
           const data = await resp.json();
           if (data.found) {
+            if (data.fps && data.fps > 0) {
+              videoFps = data.fps;
+            }
             const entry = {
               filename: data.filename,
               subfolder: data.subfolder || "",
@@ -1200,6 +1269,37 @@ app.registerExtension({
           lastFilename = entry.filename;
           infoEl.textContent = `Loading ${entry.filename}...`;
         }
+      }
+      function postVideoSelection(entry) {
+        const body = entry ? { node_id: node.id, entry: {
+          filename: entry.filename,
+          subfolder: entry.subfolder,
+          type: entry.type,
+          format: entry.format
+        } } : { node_id: node.id, entry: null };
+        api.fetchApi("/loadlast/select_video", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        }).catch((e) => console.warn("[LoadLast] Failed to post selection:", e));
+      }
+      function postEditState() {
+        const segments = editMgr.toJSON();
+        const cropRect = editCropOverlay == null ? void 0 : editCropOverlay.getRect();
+        const speedMap = (editSpeedCtrl == null ? void 0 : editSpeedCtrl.getSpeedMap()) ?? {};
+        const body = {
+          node_id: node.id,
+          edits: {
+            segments: JSON.stringify(segments),
+            crop_rect: cropRect ? JSON.stringify(cropRect) : "",
+            speed_map: JSON.stringify(speedMap)
+          }
+        };
+        api.fetchApi("/loadlast/apply_edits", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        }).catch((e) => console.warn("[LoadLast] Failed to post edits:", e));
       }
       async function fetchVideoList() {
         try {
@@ -1240,7 +1340,9 @@ app.registerExtension({
           thumb.appendChild(label);
           thumb.addEventListener("click", (e) => {
             e.stopPropagation();
+            userHasSelected = true;
             loadVideo(entry);
+            postVideoSelection(entry);
             renderBrowserStrip();
           });
           browserStrip.appendChild(thumb);
@@ -1248,6 +1350,7 @@ app.registerExtension({
       }
       videoEl.addEventListener("loadedmetadata", () => {
         previewWidget.aspectRatio = videoEl.videoWidth / videoEl.videoHeight;
+        updateMaxPlaybackTime();
         infoEl.textContent = buildInfoText();
         fitNode();
         if (currentMode !== VIEW_MODES.PLAYBACK) {
@@ -1255,15 +1358,56 @@ app.registerExtension({
         }
         updatePlaybackMarkers();
       });
-      const refreshWidget = (_a = node.widgets) == null ? void 0 : _a.find((w) => w.name === "refresh_mode");
+      let maxPlaybackTime = Infinity;
+      function updateMaxPlaybackTime() {
+        var _a2;
+        const mfWidget = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "max_frames");
+        const maxFrames = mfWidget ? Number(mfWidget.value) || 0 : 0;
+        if (maxFrames > 0 && videoEl.duration && isFinite(videoEl.duration)) {
+          const totalFrames = Math.round(videoEl.duration * videoFps);
+          if (maxFrames < totalFrames) {
+            maxPlaybackTime = maxFrames / videoFps;
+          } else {
+            maxPlaybackTime = Infinity;
+          }
+        } else {
+          maxPlaybackTime = Infinity;
+        }
+      }
+      videoEl.addEventListener("timeupdate", () => {
+        var _a2, _b2;
+        if (currentMode !== VIEW_MODES.EDIT && maxPlaybackTime < Infinity && videoEl.currentTime >= maxPlaybackTime) {
+          const firstStart = ((_b2 = (_a2 = editMgr == null ? void 0 : editMgr.segments) == null ? void 0 : _a2[0]) == null ? void 0 : _b2.start) ?? 0;
+          videoEl.currentTime = firstStart;
+        }
+      });
+      const maxFramesWidget = (_a = node.widgets) == null ? void 0 : _a.find((w) => w.name === "max_frames");
+      if (maxFramesWidget) {
+        const origCb = maxFramesWidget.callback;
+        maxFramesWidget.callback = function(...args) {
+          origCb == null ? void 0 : origCb.apply(this, args);
+          updateMaxPlaybackTime();
+          infoEl.textContent = buildInfoText();
+        };
+      }
+      let userHasSelected = false;
+      const refreshWidget = (_b = node.widgets) == null ? void 0 : _b.find((w) => w.name === "refresh_mode");
       if ((refreshWidget == null ? void 0 : refreshWidget.value) === "auto" || !refreshWidget) {
         fetchLatestVideo();
       }
       api.addEventListener("executed", (data) => {
-        var _a2, _b, _c, _d, _e, _f;
-        if (((_c = (_b = (_a2 = data == null ? void 0 : data.detail) == null ? void 0 : _a2.output) == null ? void 0 : _b.gifs) == null ? void 0 : _c.length) > 0) {
-          fetchLatestVideo();
-        } else if (((_f = (_e = (_d = data == null ? void 0 : data.detail) == null ? void 0 : _d.output) == null ? void 0 : _e.video) == null ? void 0 : _f.length) > 0) {
+        var _a2, _b2, _c, _d, _e, _f, _g, _h;
+        const rw = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "refresh_mode");
+        if ((rw == null ? void 0 : rw.value) === "manual") return;
+        const hasVideoOutput = ((_d = (_c = (_b2 = data == null ? void 0 : data.detail) == null ? void 0 : _b2.output) == null ? void 0 : _c.gifs) == null ? void 0 : _d.length) > 0 || ((_g = (_f = (_e = data == null ? void 0 : data.detail) == null ? void 0 : _e.output) == null ? void 0 : _f.video) == null ? void 0 : _g.length) > 0;
+        if (!hasVideoOutput) return;
+        const execNodeId = (_h = data == null ? void 0 : data.detail) == null ? void 0 : _h.node;
+        if (execNodeId != null && String(execNodeId) === String(node.id)) {
+          userHasSelected = false;
+        }
+        if (userHasSelected) {
+          fetchVideoList();
+        } else {
           fetchLatestVideo();
         }
       });

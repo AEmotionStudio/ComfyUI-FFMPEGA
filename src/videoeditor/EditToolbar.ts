@@ -1,14 +1,14 @@
 /**
  * EditToolbar — editing tool bar between transport and timeline.
  *
- * Provides mode-based tool selection (Select, Razor) and action buttons
+ * Provides mode-based tool selection (Select) and action buttons
  * (Split, Delete). All buttons are agent-discoverable via data-tool-id
  * and aria-label attributes.
  */
 
-import { iconCursor, iconScissors, iconSplit, iconTrash, iconReset } from './icons';
+import { iconCursor, iconSplit, iconTrash, iconReset } from './icons';
 
-export type ToolMode = 'select' | 'razor';
+export type ToolMode = 'select';
 
 export interface EditToolbarCallbacks {
     onToolChanged: (mode: ToolMode) => void;
@@ -43,13 +43,7 @@ export class EditToolbar {
         selectBtn.classList.add('active');
         this.modeButtons.set('select', selectBtn);
 
-        const razorBtn = this._makeToolBtn(
-            iconScissors, 'Razor', 'Razor tool — click on timeline to cut (C)',
-            'veditor-tool-razor', () => this.setMode('razor'),
-        );
-        this.modeButtons.set('razor', razorBtn);
-
-        modeGroup.append(selectBtn, razorBtn);
+        modeGroup.append(selectBtn);
 
         // ── Separator ──
         const sep1 = document.createElement('div');
@@ -108,9 +102,6 @@ export class EditToolbar {
         switch (key.toLowerCase()) {
             case 'v':
                 this.setMode('select');
-                return true;
-            case 'c':
-                this.setMode('razor');
                 return true;
             case 's':
                 this.callbacks.onSplitRequested();

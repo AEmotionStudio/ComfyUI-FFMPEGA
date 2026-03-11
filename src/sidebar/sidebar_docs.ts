@@ -217,7 +217,7 @@ export const NODE_DOCS: NodeDoc[] = [
             "Interactive NLE (Non-Linear Editor) for hands-on video editing directly inside ComfyUI. Full-screen modal with timeline, transport controls, and editing tools — no LLM required.",
         tips: [
             "Press '?' in the editor to see all keyboard shortcuts.",
-            "Use the Razor tool (R) to split segments at the playhead.",
+            "Use 'S' to split segments at the playhead.",
             "Speed control supports 0.25x–4x per segment.",
             "Text overlays support configurable font size, color, and timing.",
             "Transitions (crossfade, dip-to-black) are added between segments.",
@@ -298,7 +298,7 @@ export const EDITOR_SHORTCUTS: Shortcut[] = [
     { key: "O", action: "Mark Out point" },
     { key: "←", action: "Step back 1 frame" },
     { key: "→", action: "Step forward 1 frame" },
-    { key: "R", action: "Razor tool (split at playhead)" },
+    { key: "S", action: "Split at playhead" },
     { key: "V", action: "Select tool" },
     { key: "Delete", action: "Delete selected segment" },
     { key: "Ctrl+Z", action: "Undo" },

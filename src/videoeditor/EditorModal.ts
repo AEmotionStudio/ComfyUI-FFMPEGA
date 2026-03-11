@@ -127,7 +127,6 @@ export class EditorModal {
             '<kbd>Space</kbd> Play',
             '<kbd>S</kbd> Split',
             '<kbd>V</kbd> Select',
-            '<kbd>C</kbd> Razor',
             '<kbd>1-5</kbd> Tool Tabs',
             '<kbd>?</kbd> Shortcuts',
         ].join('  ·  ');
@@ -575,7 +574,7 @@ export class EditorModal {
                 return;
             }
 
-            // Toolbar shortcuts (V, C, S, Delete/Backspace)
+            // Toolbar shortcuts (V, S, Delete/Backspace)
             if (this.editToolbar.handleKey(e.key)) {
                 e.preventDefault();
                 return;

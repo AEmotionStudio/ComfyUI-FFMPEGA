@@ -25,7 +25,6 @@ const CATEGORIES: ShortcutCategory[] = [
         title: 'Tools',
         shortcuts: [
             { key: 'V', desc: 'Select tool' },
-            { key: 'C', desc: 'Razor tool' },
             { key: 'S', desc: 'Split at playhead' },
             { key: 'Del', desc: 'Delete segment' },
             { key: 'R', desc: 'Reset all segments' },
