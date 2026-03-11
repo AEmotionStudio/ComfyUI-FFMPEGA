@@ -316,7 +316,7 @@ class LoadLastVideo:
     OUTPUT_NODE = True
 
     RETURN_TYPES = ("IMAGE", "IMAGE", "AUDIO", "STRING", "STRING", "INT", "FLOAT", "FLOAT")
-    RETURN_NAMES = ("IMAGE", "SELECTED_FRAMES", "AUDIO", "video_path", "image_paths", "frame_count", "fps", "duration")
+    RETURN_NAMES = ("images", "selected_frames", "audio", "video_path", "image_paths", "frame_count", "fps", "duration")
 
     @classmethod
     def INPUT_TYPES(cls):

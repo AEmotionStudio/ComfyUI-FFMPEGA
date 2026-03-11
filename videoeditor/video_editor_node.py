@@ -59,8 +59,8 @@ class VideoEditorNode:
     FUNCTION = "process"
     OUTPUT_NODE = True
 
-    RETURN_TYPES = ("IMAGE", "STRING", "AUDIO", "FLOAT", "INT")
-    RETURN_NAMES = ("IMAGE", "video_path", "AUDIO", "fps", "frame_count")
+    RETURN_TYPES = ("IMAGE", "STRING", "AUDIO", "FLOAT", "INT", "STRING")
+    RETURN_NAMES = ("images", "video_path", "audio", "fps", "frame_count", "mask_points")
 
     # Class-level cache for tensor-to-file conversions (keyed by node_id)
     # Stores (file_path, content_hash) so re-execution with different
@@ -112,6 +112,14 @@ class VideoEditorNode:
                     "forceInput": True,
                     "tooltip": "Framerate for IMAGE tensor input. 0 = auto-detect from source.",
                 }),
+                "mask_points": ("STRING", {
+                    "forceInput": True,
+                    "tooltip": (
+                        "Optional upstream mask_points pass-through. "
+                        "Forwarded as-is to the mask_points output "
+                        "for downstream nodes."
+                    ),
+                }),
             },
             "hidden": {
                 "_edit_segments": ("STRING", {"default": "[]"}),
@@ -155,6 +163,7 @@ class VideoEditorNode:
         video_path: str = "",
         audio=None,
         fps: float = 0.0,
+        mask_points: str = "",
         _edit_segments: str = "[]",
         _edit_action: str = "none",
         _crop_rect: str = "",
@@ -204,7 +213,7 @@ class VideoEditorNode:
             log.info("[VideoEditor] No input connected")
             return {
                 "ui": {"text": ["Connect a video path or IMAGE tensor"]},
-                "result": (empty_frames, "", silent_audio, 0.0, 0),
+                "result": (empty_frames, "", silent_audio, 0.0, 0, mask_points or ""),
             }
 
         # --- Extract audio from video file if no upstream audio ---
@@ -220,12 +229,12 @@ class VideoEditorNode:
                 audio = silent_audio
             return {
                 "ui": {},
-                "result": (frames, resolved_path, audio, actual_fps, frame_count),
+                "result": (frames, resolved_path, audio, actual_fps, frame_count, mask_points or ""),
             }
 
         # --- Pause mode: ExecutionBlocker if no edits yet ---
         if _edit_action == "none":
-            return self._return_blocked(resolved_path, folder_paths)
+            return self._return_blocked(resolved_path, folder_paths, mask_points)
 
         # --- Apply edits (user clicked Continue) ---
         if _edit_action == "passthrough":
@@ -250,7 +259,7 @@ class VideoEditorNode:
                     "ui": {},
                     "result": (
                         frames, resolved_path, audio,
-                        actual_fps, frame_count,
+                        actual_fps, frame_count, mask_points or "",
                     ),
                 }
 
@@ -292,7 +301,7 @@ class VideoEditorNode:
                 "ui": {},
                 "result": (
                     frames, output_path, audio,
-                    actual_fps, frame_count,
+                    actual_fps, frame_count, mask_points or "",
                 ),
             }
 
@@ -304,7 +313,7 @@ class VideoEditorNode:
             audio = silent_audio
         return {
             "ui": {},
-            "result": (frames, resolved_path, audio, actual_fps, frame_count),
+            "result": (frames, resolved_path, audio, actual_fps, frame_count, mask_points or ""),
         }
 
     # ─── Private helpers ────────────────────────────────────────────
@@ -376,7 +385,7 @@ class VideoEditorNode:
         from ..core.images_to_video import images_to_video
         images_to_video(images, output_path, fps=fps)
 
-    def _return_blocked(self, resolved_path: str, folder_paths):
+    def _return_blocked(self, resolved_path: str, folder_paths, mask_points: str = ""):
         """Return ExecutionBlocker to pause the workflow for editing."""
         try:
             from comfy_execution.graph import ExecutionBlocker
@@ -387,7 +396,7 @@ class VideoEditorNode:
                 "ui": {
                     "video_path": [resolved_path],
                 },
-                "result": tuple(blocked for _ in range(5)),
+                "result": tuple(blocked for _ in range(6)),
             }
         except ImportError:
             log.warning(
@@ -405,7 +414,7 @@ class VideoEditorNode:
                 "ui": {},
                 "result": (
                     frames, resolved_path, silent_audio,
-                    actual_fps, frame_count,
+                    actual_fps, frame_count, mask_points or "",
                 ),
             }
 

@@ -48,6 +48,20 @@ export const iconStepForward = L(
     '<path d="M6.029 4.285A2 2 0 0 0 3 6v12a2 2 0 0 0 3.029 1.715l9.997-5.998a2 2 0 0 0 .003-3.432z"/>'
 );
 
+/** Skip to start — lucide/skip-back (bar + triangle) */
+export const iconSkipStart = L(
+    '<path d="M19 20 9 12l10-8z"/>' +
+    '<line x1="5" x2="5" y1="19" y2="5"/>'
+);
+
+/** Repeat / Loop — lucide/repeat */
+export const iconRepeat = L(
+    '<path d="m17 2 4 4-4 4"/>' +
+    '<path d="M3 11v-1a4 4 0 0 1 4-4h14"/>' +
+    '<path d="m7 22-4-4 4-4"/>' +
+    '<path d="M21 13v1a4 4 0 0 1-4 4H3"/>'
+);
+
 // ── Toolbar ────────────────────────────────────────────────────────
 
 /** Mouse pointer / Select — lucide/mouse-pointer */

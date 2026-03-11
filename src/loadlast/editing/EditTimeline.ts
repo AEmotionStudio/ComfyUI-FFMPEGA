@@ -8,6 +8,7 @@
 import type { EditSegment, EditTimelineGeometry } from '@ffmpega/types/loadlast';
 import type { EditManager } from './EditManager';
 import { fmtDuration } from '@ffmpega/shared/utils';
+import { snapToEdges, collectEdges } from '@ffmpega/videoeditor/SnapEngine';
 
 // ─── Constants ─────────────────────────────────────────────────────────
 const TRACK_H = 48;
@@ -49,6 +50,7 @@ export class EditTimeline {
     public playhead: number = 0;
     private hoveredHandle: string | null = null;
     private drag: DragState = { type: 'none' };
+    private _snapping: boolean = true;
 
     // Bound handlers (stored so destroy() can remove the exact same reference)
     private _boundMouseDown = this._onMouseDown.bind(this);
@@ -81,6 +83,11 @@ export class EditTimeline {
     setPlayhead(time: number): void {
         this.playhead = Math.max(0, Math.min(time, this.manager.videoDuration));
         this.render();
+    }
+
+    /** Set snapping enabled/disabled */
+    setSnapping(enabled: boolean): void {
+        this._snapping = enabled;
     }
 
     /** Full render pass */
@@ -326,13 +333,23 @@ export class EditTimeline {
         const dt = (dx / trackW) * duration;
 
         if (drag.type === 'handle-left') {
-            const newStart = Math.max(0, drag.origStart + dt);
+            let newStart = Math.max(0, drag.origStart + dt);
+            if (this._snapping) {
+                const edges = collectEdges(this.manager.segments, drag.segId, 'start');
+                const snap = snapToEdges(newStart, edges, 8, trackW, duration);
+                newStart = snap.time;
+            }
             const seg = this.manager.segments.find(s => s.id === drag.segId);
             if (seg) this.manager.updateSegment(drag.segId, newStart, seg.end);
             this.callbacks.onTrimHandleDrag(newStart);
             this.render();
         } else if (drag.type === 'handle-right') {
-            const newEnd = Math.min(duration, drag.origEnd + dt);
+            let newEnd = Math.min(duration, drag.origEnd + dt);
+            if (this._snapping) {
+                const edges = collectEdges(this.manager.segments, drag.segId, 'end');
+                const snap = snapToEdges(newEnd, edges, 8, trackW, duration);
+                newEnd = snap.time;
+            }
             const seg = this.manager.segments.find(s => s.id === drag.segId);
             if (seg) this.manager.updateSegment(drag.segId, seg.start, newEnd);
             this.callbacks.onTrimHandleDrag(newEnd);

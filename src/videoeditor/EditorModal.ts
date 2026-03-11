@@ -27,6 +27,11 @@ import { NLETimeline } from './NLETimeline';
 import { MonitorCanvas } from './MonitorCanvas';
 import { ShortcutOverlay } from './ShortcutOverlay';
 import { TransitionEditor } from './TransitionEditor';
+import { TextPreviewOverlay } from './TextPreviewOverlay';
+import { TransitionPreview } from './TransitionPreview';
+import { AudioEditManager } from './AudioSegment';
+import { AudioTimeline } from './AudioTimeline';
+import { extractWaveform } from './WaveformExtractor';
 
 const INFO_ROUTE = '/ffmpega/video_info';
 const PREVIEW_ROUTE = '/ffmpega/preview';
@@ -39,6 +44,7 @@ export interface ModalEditState {
     volume: number;
     textOverlays: TextOverlay[];
     transitions: unknown[];
+    audioSegments: object[];
 }
 
 export interface EditorModalCallbacks {
@@ -54,6 +60,8 @@ export class EditorModal {
     private video: HTMLVideoElement;
     private editManager: EditManager;
     private nleTimeline: NLETimeline | null = null;
+    private audioEditManager: AudioEditManager;
+    private audioTimeline: AudioTimeline | null = null;
     private transport: TransportBar;
     private cropOverlay: CropOverlay;
     private speedControl: SpeedControl;
@@ -65,9 +73,12 @@ export class EditorModal {
     private monitorCanvas: MonitorCanvas;
     private shortcutOverlay: ShortcutOverlay;
     private transitionEditor: TransitionEditor;
+    private textPreview: TextPreviewOverlay;
+    private transitionPreview: TransitionPreview;
     private callbacks: EditorModalCallbacks;
     private videoPath: string = '';
     private _escHandler: ((e: KeyboardEvent) => void) | null = null;
+    private _timeupdateHandler: (() => void) | null = null;
     private _isOpen = false;
     private _currentToolMode: ToolMode = 'select';
     private _userDragging: boolean = false;
@@ -86,10 +97,6 @@ export class EditorModal {
         this.dialog.setAttribute('aria-label', 'Video Editor');
         this.dialog.setAttribute('role', 'dialog');
         this.dialog.setAttribute('aria-modal', 'true');
-        this.dialog.addEventListener('click', (e) => {
-            // Only close if clicking the backdrop itself, not the panel or its children
-            if (e.target === this.dialog) this._cancel();
-        });
 
         // ── Panel (CSS Grid) ──
         this.panel = document.createElement('div');
@@ -197,6 +204,7 @@ export class EditorModal {
             onTimeUpdate: (time) => {
                 if (!this._userDragging) {
                     this.nleTimeline?.setPlayhead(time);
+                    this.nleTimeline?.scrollToTime(time);
                 }
             },
             onPlayStateChange: () => { },
@@ -205,29 +213,94 @@ export class EditorModal {
         this.transport.bindVideo(this.video);
         transportWrap.appendChild(this.transport.element);
 
+        // Transition preview
+        this.transitionPreview = new TransitionPreview();
+        this.transitionPreview.bind(this.video);
+        this.transport.setTransitionPreview(this.transitionPreview);
+
         // ═══════════════════════════════════════════════════════════
         // TOOLS PANEL (tabbed sidebar)
         // ═══════════════════════════════════════════════════════════
         this.cropOverlay = new CropOverlay({
             onCropChanged: () => this._pushUndo(),
+            onPreviewChanged: (clipPath) => this.transitionPreview.setBaseClipPath(clipPath),
         });
+        this.cropOverlay.bindVideo(this.video);
 
         this.speedControl = new SpeedControl({
-            onSpeedChanged: () => this._pushUndo(),
+            onSpeedChanged: (_segIdx, speed) => {
+                this._pushUndo();
+                // Live preview: update video playback rate
+                this.transport.setPlaybackRate(speed);
+            },
         });
+
+        this.audioEditManager = new AudioEditManager();
+        this.transport.setAudioEditManager(this.audioEditManager);
 
         this.audioMixer = new AudioMixer({
             onVolumeChanged: (vol) => {
-                this.video.volume = Math.min(1, vol);
+                const idx = this.audioMixer.selectedSegmentIndex;
+                if (idx >= 0 && this.audioEditManager.segments[idx]) {
+                    this.audioEditManager.segments[idx].volume = vol;
+                    this.audioEditManager.segments[idx].muted = vol < 0.01;
+                    this.audioTimeline?.render();
+                }
+                // Live volume is enforced by TransportBar's rAF loop
+                // via AudioEditManager.getVolumeAtTime() — no need to set here.
+                this._pushUndo();
+            },
+            onFadeInChanged: (sec) => {
+                const idx = this.audioMixer.selectedSegmentIndex;
+                if (idx >= 0 && this.audioEditManager.segments[idx]) {
+                    this.audioEditManager.segments[idx].fadeIn = sec;
+                }
+                this._pushUndo();
+            },
+            onFadeOutChanged: (sec) => {
+                const idx = this.audioMixer.selectedSegmentIndex;
+                if (idx >= 0 && this.audioEditManager.segments[idx]) {
+                    this.audioEditManager.segments[idx].fadeOut = sec;
+                }
+                this._pushUndo();
+            },
+            onEQChanged: (preset) => {
+                const idx = this.audioMixer.selectedSegmentIndex;
+                if (idx >= 0 && this.audioEditManager.segments[idx]) {
+                    this.audioEditManager.segments[idx].eq = preset;
+                }
+                this._pushUndo();
+            },
+        });
+
+        this.textPreview = new TextPreviewOverlay({
+            onTextDragged: (index, x, y) => {
+                const overlays = this.textPanel.getOverlays();
+                if (overlays[index]) {
+                    overlays[index].x = x;
+                    overlays[index].y = y;
+                    this.textPanel.loadOverlays(overlays);
+                    this._pushUndo();
+                    this._refreshTextPreview();
+                }
+            },
+            onTextSelected: (index) => {
+                this.textPreview.setSelectedIndex(index);
             },
         });
 
         this.textPanel = new TextOverlayPanel({
-            onOverlaysChanged: () => this._pushUndo(),
+            onOverlaysChanged: () => {
+                this._pushUndo();
+                this._refreshTextPreview();
+            },
         });
 
         this.transitionEditor = new TransitionEditor(this.editManager, {
-            onTransitionsChanged: () => this._pushUndo(),
+            onTransitionsChanged: () => {
+                this._pushUndo();
+                this.transport.setTransitions(this.transitionEditor.transitions);
+            },
         });
 
         this.toolsPanel = new ToolsPanel([
@@ -238,8 +311,9 @@ export class EditorModal {
             { id: 'transitions', label: 'Trans', icon: iconShuffle, content: this.transitionEditor.element },
         ]);
 
-        // Mount crop canvas overlay on the monitor content (zoom/pans with video)
+        // Mount crop canvas and text preview overlays on the monitor content
         this.monitorCanvas.contentElement.appendChild(this.cropOverlay.canvasElement);
+        this.monitorCanvas.contentElement.appendChild(this.textPreview.element);
 
         // ═══════════════════════════════════════════════════════════
         // EDIT TOOLBAR
@@ -270,6 +344,8 @@ export class EditorModal {
             },
             onResetRequested: () => {
                 this.editManager.reset();
+                this.audioEditManager.reset();
+                this.audioMixer.clearSegmentSelection();
                 this._pushUndo();
                 this.nleTimeline?.render();
             },
@@ -334,7 +410,9 @@ export class EditorModal {
             if (resp.ok) {
                 const info = await resp.json();
                 this.editManager.init(info.duration || 1);
+                this.audioEditManager.init(info.duration || 1);
                 this.cropOverlay.setVideoDimensions(info.width || 640, info.height || 480);
+                this.textPreview.setVideoDimensions(info.width || 640, info.height || 480);
 
                 // Load segments from initial state
                 if (initialState && initialState.segments.length > 0) {
@@ -355,6 +433,9 @@ export class EditorModal {
         this.video.src = `${PREVIEW_ROUTE}?path=${encodeURIComponent(videoPath)}`;
         this.video.load();
 
+        // Restore overlays hidden by previous close()
+        this.textPreview.show();
+
         // Show modal
         this.dialog.style.display = 'flex';
 
@@ -363,14 +444,26 @@ export class EditorModal {
             this.monitorCanvas.fitToView();
         }, { once: true });
 
+        // Live text preview: refresh on time updates for time-gating
+        this._timeupdateHandler = () => this._refreshTextPreview();
+        this.video.addEventListener('timeupdate', this._timeupdateHandler);
+
+        // Live audio volume is handled in TransportBar's ~60Hz rAF loop
+        // via setAudioEditManager() for smooth fades and gap muting.
+
         // Build NLE timeline after DOM insertion (needs layout)
         requestAnimationFrame(() => {
             const slot = this.panel.querySelector('#veditor-timeline-slot');
             if (slot) {
                 this.nleTimeline = new NLETimeline(this.editManager, {
                     onSegmentsChanged: () => {
+                        // Linked splitting: mirror video edits to audio
+                        if (this.audioEditManager.linked) {
+                            this._syncAudioToVideo();
+                        }
                         this._pushUndo();
                         this.transitionEditor.refresh();
+                        this.audioTimeline?.render();
                     },
                     onPlayheadChanged: (time) => this.transport.seekTo(time),
                     onTrimHandleDrag: (time) => this.transport.seekTo(time),
@@ -382,6 +475,32 @@ export class EditorModal {
                     onDragEnd: () => {
                         this._userDragging = false;
                     },
+                });
+
+                // Create and mount AudioTimeline
+                this.audioTimeline = new AudioTimeline(this.audioEditManager, {
+                    onAudioSegmentsChanged: () => {
+                        this._pushUndo();
+                    },
+                    onAudioSegmentSelected: (index) => {
+                        const seg = this.audioEditManager.segments[index];
+                        if (seg) {
+                            this.audioMixer.loadSegment(seg, index);
+                            this.audioTimeline?.setSelectedIndex(index);
+                            // Switch to audio tab
+                            this.toolsPanel.activateTab('audio');
+                        }
+                    },
+                    onPlayheadChanged: (time) => this.transport.seekTo(time),
+                });
+                this.nleTimeline.setAudioTimeline(this.audioTimeline);
+
+                // Fetch waveform in background
+                const videoUrl = `${PREVIEW_ROUTE}?path=${encodeURIComponent(this.videoPath)}`;
+                extractWaveform(videoUrl).then(wf => {
+                    this.audioTimeline?.setWaveform(wf.peaks);
+                }).catch(e => {
+                    console.warn('[VideoEditor] Waveform extraction failed:', e);
                 });
                 slot.innerHTML = '';
                 slot.appendChild(this.nleTimeline.element);
@@ -469,6 +588,19 @@ export class EditorModal {
             this.nleTimeline = null;
         }
 
+        if (this.audioTimeline) {
+            this.audioTimeline.destroy();
+            this.audioTimeline = null;
+        }
+
+        this.textPreview.hide();
+        this.transitionPreview.clear();
+
+        if (this._timeupdateHandler) {
+            this.video.removeEventListener('timeupdate', this._timeupdateHandler);
+            this._timeupdateHandler = null;
+        }
+
         if (this._escHandler) {
             document.removeEventListener('keydown', this._escHandler);
             this._escHandler = null;
@@ -491,6 +623,7 @@ export class EditorModal {
             volume: this.audioMixer.getVolume(),
             textOverlays: this.textPanel.getOverlays(),
             transitions: [],
+            audioSegments: this.audioEditManager.toJSON(),
         };
     }
 
@@ -525,8 +658,47 @@ export class EditorModal {
         // Volume
         this.audioMixer.setVolume(state.volume);
 
+        // Audio segments
+        if (state.audioSegments && Array.isArray(state.audioSegments) && state.audioSegments.length > 0) {
+            this.audioEditManager.fromJSON(state.audioSegments as object[]);
+            this.audioMixer.clearSegmentSelection();
+            this.audioTimeline?.setSelectedIndex(-1);
+            this.audioTimeline?.render();
+        }
+
         // Text
         this.textPanel.loadOverlays(state.textOverlays as TextOverlay[]);
+        this._refreshTextPreview();
+    }
+
+    /** Sync audio segments to match video segments (linked mode) */
+    private _syncAudioToVideo(): void {
+        const videoSegs = this.editManager.segments;
+        const audioMgr = this.audioEditManager;
+
+        // Rebuild audio segments to match video segment boundaries
+        // Preserve audio properties for overlapping regions
+        const newAudioSegs = videoSegs.map(vSeg => {
+            // Find existing audio segment that best overlaps this video segment
+            const existing = audioMgr.segments.find(
+                a => a.start < vSeg.end && a.end > vSeg.start,
+            );
+            return audioMgr.createSegment(vSeg.start, vSeg.end, existing ? {
+                volume: existing.volume,
+                fadeIn: existing.fadeIn,
+                fadeOut: existing.fadeOut,
+                eq: existing.eq,
+                muted: existing.muted,
+            } : undefined);
+        });
+        audioMgr.replaceAll(newAudioSegs);
+        this.audioTimeline?.render();
+    }
+
+    private _refreshTextPreview(): void {
+        const overlays = this.textPanel.getOverlays();
+        const currentTime = this.video.currentTime;
+        this.textPreview.refresh(overlays, currentTime);
     }
 
     private _apply(): void {
@@ -537,6 +709,7 @@ export class EditorModal {
             volume: this.audioMixer.getVolume(),
             textOverlays: this.textPanel.getOverlays() as TextOverlay[],
             transitions: [],
+            audioSegments: this.audioEditManager.toJSON(),
         };
         this.close();
         this.callbacks.onApply(state);

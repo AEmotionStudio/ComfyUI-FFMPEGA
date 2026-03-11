@@ -11,6 +11,7 @@ export interface EditorState {
     volume: number;
     textOverlays: unknown[];
     transitions: unknown[];
+    audioSegments: unknown[];
 }
 
 export interface UndoManagerCallbacks {

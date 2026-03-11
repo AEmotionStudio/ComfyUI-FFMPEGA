@@ -3,6 +3,7 @@
  */
 
 import { iconVolume, iconMuted, iconMusic } from './icons';
+import type { AudioSegment } from './AudioSegment';
 
 export type EQPreset = 'flat' | 'voice' | 'music' | 'bass-boost';
 
@@ -26,6 +27,8 @@ export class AudioMixer {
     private eqSelect: HTMLSelectElement;
     private isMuted: boolean = false;
     private lastVolume: number = 1.0;
+    private segmentHeader: HTMLDivElement;
+    private _selectedSegIndex: number = -1;
 
     constructor(callbacks: AudioMixerCallbacks) {
         this.callbacks = callbacks;
@@ -34,6 +37,17 @@ export class AudioMixer {
         this.container.className = 'veditor-audio';
         this.container.setAttribute('data-tool-id', 'veditor-audio-mixer');
         this.container.setAttribute('aria-label', 'Audio controls');
+
+        // ── Segment Header ──
+        this.segmentHeader = document.createElement('div');
+        this.segmentHeader.className = 'veditor-section-label';
+        this.segmentHeader.textContent = 'Master Audio';
+        this.segmentHeader.style.marginBottom = '8px';
+        this.segmentHeader.style.textTransform = 'none';
+        this.segmentHeader.style.letterSpacing = 'normal';
+        this.segmentHeader.style.fontWeight = '500';
+        this.segmentHeader.style.color = 'var(--ve-text-primary)';
+        this.container.appendChild(this.segmentHeader);
 
         // ── Volume Section ──
         const volSection = this._makeSection('Volume');
@@ -166,7 +180,23 @@ export class AudioMixer {
         eqRow.append(eqIcon, this.eqSelect);
         eqSection.appendChild(eqRow);
 
-        this.container.append(volSection, fadeInSection, fadeOutSection, eqSection);
+        // ── Reset Section ──
+        const resetRow = document.createElement('div');
+        resetRow.className = 'veditor-control-row';
+
+        const resetBtn = document.createElement('button');
+        resetBtn.className = 'veditor-btn veditor-toggle-btn';
+        resetBtn.innerHTML = `${iconVolume} Reset Audio`;
+        resetBtn.title = 'Reset all audio settings to defaults';
+        resetBtn.setAttribute('data-tool-id', 'veditor-audio-reset');
+        resetBtn.setAttribute('aria-label', 'Reset audio settings');
+        resetBtn.addEventListener('click', () => {
+            this.reset();
+            this.callbacks.onVolumeChanged(1.0);
+        });
+        resetRow.appendChild(resetBtn);
+
+        this.container.append(volSection, fadeInSection, fadeOutSection, eqSection, resetRow);
     }
 
     get element(): HTMLDivElement {
@@ -185,6 +215,44 @@ export class AudioMixer {
         this.label.textContent = `${Math.round(volume * 100)}%`;
     }
 
+    /** Load values from an AudioSegment for per-segment editing */
+    loadSegment(seg: AudioSegment, index: number): void {
+        this._selectedSegIndex = index;
+        this.segmentHeader.textContent = `Audio Segment ${index + 1}`;
+        this.segmentHeader.style.color = 'var(--ve-success)';
+
+        this.setVolume(seg.volume);
+        this.fadeInSlider.value = String(seg.fadeIn);
+        this.fadeInLabel.textContent = `${seg.fadeIn.toFixed(1)}s`;
+        this.fadeOutSlider.value = String(seg.fadeOut);
+        this.fadeOutLabel.textContent = `${seg.fadeOut.toFixed(1)}s`;
+        this.eqSelect.value = seg.eq;
+        this.isMuted = seg.muted;
+        this.muteBtn.innerHTML = seg.muted ? iconMuted : iconVolume;
+    }
+
+    /** Clear segment selection and show master label */
+    clearSegmentSelection(): void {
+        this._selectedSegIndex = -1;
+        this.segmentHeader.textContent = 'Master Audio';
+        this.segmentHeader.style.color = 'var(--ve-text-primary)';
+    }
+
+    /** Get current control values for saving to a segment */
+    getSegmentProps(): { volume: number; fadeIn: number; fadeOut: number; eq: EQPreset; muted: boolean } {
+        return {
+            volume: parseFloat(this.slider.value),
+            fadeIn: parseFloat(this.fadeInSlider.value),
+            fadeOut: parseFloat(this.fadeOutSlider.value),
+            eq: this.eqSelect.value as EQPreset,
+            muted: this.isMuted,
+        };
+    }
+
+    get selectedSegmentIndex(): number {
+        return this._selectedSegIndex;
+    }
+
     getFadeIn(): number {
         return parseFloat(this.fadeInSlider.value);
     }
@@ -195,6 +263,19 @@ export class AudioMixer {
 
     getEQPreset(): EQPreset {
         return this.eqSelect.value as EQPreset;
+    }
+
+    /** Reset all audio settings to defaults */
+    reset(): void {
+        this.setVolume(1.0);
+        this.fadeInSlider.value = '0';
+        this.fadeInLabel.textContent = '0.0s';
+        this.fadeOutSlider.value = '0';
+        this.fadeOutLabel.textContent = '0.0s';
+        this.eqSelect.value = 'flat';
+        this.isMuted = false;
+        this.muteBtn.innerHTML = iconVolume;
+        this.clearSegmentSelection();
     }
 
     destroy(): void {

@@ -4,8 +4,8 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { a as addDownloadOverlay } from "./_chunks/ui_helpers-CvUDB6-L.js";
-import { E as EditManager, T as TransportBar, S as SpeedControl, a as EditToolbar, U as UndoManager, N as NLETimeline } from "./_chunks/UndoManager-DCdZdNls.js";
-import { i as iconVolume, a as iconMuted, b as iconMusic, c as iconPlus, d as iconClose, e as iconBold, f as iconItalic, g as iconAlignLeft, h as iconAlignCenter, j as iconAlignRight, k as iconZoomOut, l as iconZoomIn, m as iconMaximize, n as iconShuffle, o as iconClapperboard, p as iconUndo, q as iconRedo, r as iconCheck, C as CropOverlay, s as iconCrop, t as iconGauge, u as iconText } from "./_chunks/CropOverlay-RBSIEwzt.js";
+import { d as collectEdges, s as snapToEdges, E as EditManager, T as TransportBar, S as SpeedControl, a as EditToolbar, U as UndoManager, N as NLETimeline } from "./_chunks/UndoManager-CHnrv6fb.js";
+import { i as iconVolume, a as iconMuted, b as iconMusic, c as iconPlus, d as iconClose, e as iconBold, f as iconItalic, g as iconAlignLeft, h as iconAlignCenter, j as iconAlignRight, k as iconZoomOut, l as iconZoomIn, m as iconMaximize, n as iconShuffle, o as iconClapperboard, p as iconUndo, q as iconRedo, r as iconCheck, C as CropOverlay, s as iconCrop, t as iconGauge, u as iconText } from "./_chunks/CropOverlay-BT3nuymY.js";
 class AudioMixer {
   constructor(callbacks) {
     __publicField(this, "container");
@@ -20,11 +20,22 @@ class AudioMixer {
     __publicField(this, "eqSelect");
     __publicField(this, "isMuted", false);
     __publicField(this, "lastVolume", 1);
+    __publicField(this, "segmentHeader");
+    __publicField(this, "_selectedSegIndex", -1);
     this.callbacks = callbacks;
     this.container = document.createElement("div");
     this.container.className = "veditor-audio";
     this.container.setAttribute("data-tool-id", "veditor-audio-mixer");
     this.container.setAttribute("aria-label", "Audio controls");
+    this.segmentHeader = document.createElement("div");
+    this.segmentHeader.className = "veditor-section-label";
+    this.segmentHeader.textContent = "Master Audio";
+    this.segmentHeader.style.marginBottom = "8px";
+    this.segmentHeader.style.textTransform = "none";
+    this.segmentHeader.style.letterSpacing = "normal";
+    this.segmentHeader.style.fontWeight = "500";
+    this.segmentHeader.style.color = "var(--ve-text-primary)";
+    this.container.appendChild(this.segmentHeader);
     const volSection = this._makeSection("Volume");
     const volRow = document.createElement("div");
     volRow.className = "veditor-control-row";
@@ -134,7 +145,20 @@ class AudioMixer {
     });
     eqRow.append(eqIcon, this.eqSelect);
     eqSection.appendChild(eqRow);
-    this.container.append(volSection, fadeInSection, fadeOutSection, eqSection);
+    const resetRow = document.createElement("div");
+    resetRow.className = "veditor-control-row";
+    const resetBtn = document.createElement("button");
+    resetBtn.className = "veditor-btn veditor-toggle-btn";
+    resetBtn.innerHTML = `${iconVolume} Reset Audio`;
+    resetBtn.title = "Reset all audio settings to defaults";
+    resetBtn.setAttribute("data-tool-id", "veditor-audio-reset");
+    resetBtn.setAttribute("aria-label", "Reset audio settings");
+    resetBtn.addEventListener("click", () => {
+      this.reset();
+      this.callbacks.onVolumeChanged(1);
+    });
+    resetRow.appendChild(resetBtn);
+    this.container.append(volSection, fadeInSection, fadeOutSection, eqSection, resetRow);
   }
   get element() {
     return this.container;
@@ -149,6 +173,39 @@ class AudioMixer {
     this.muteBtn.innerHTML = this.isMuted ? iconMuted : iconVolume;
     this.label.textContent = `${Math.round(volume * 100)}%`;
   }
+  /** Load values from an AudioSegment for per-segment editing */
+  loadSegment(seg, index) {
+    this._selectedSegIndex = index;
+    this.segmentHeader.textContent = `Audio Segment ${index + 1}`;
+    this.segmentHeader.style.color = "var(--ve-success)";
+    this.setVolume(seg.volume);
+    this.fadeInSlider.value = String(seg.fadeIn);
+    this.fadeInLabel.textContent = `${seg.fadeIn.toFixed(1)}s`;
+    this.fadeOutSlider.value = String(seg.fadeOut);
+    this.fadeOutLabel.textContent = `${seg.fadeOut.toFixed(1)}s`;
+    this.eqSelect.value = seg.eq;
+    this.isMuted = seg.muted;
+    this.muteBtn.innerHTML = seg.muted ? iconMuted : iconVolume;
+  }
+  /** Clear segment selection and show master label */
+  clearSegmentSelection() {
+    this._selectedSegIndex = -1;
+    this.segmentHeader.textContent = "Master Audio";
+    this.segmentHeader.style.color = "var(--ve-text-primary)";
+  }
+  /** Get current control values for saving to a segment */
+  getSegmentProps() {
+    return {
+      volume: parseFloat(this.slider.value),
+      fadeIn: parseFloat(this.fadeInSlider.value),
+      fadeOut: parseFloat(this.fadeOutSlider.value),
+      eq: this.eqSelect.value,
+      muted: this.isMuted
+    };
+  }
+  get selectedSegmentIndex() {
+    return this._selectedSegIndex;
+  }
   getFadeIn() {
     return parseFloat(this.fadeInSlider.value);
   }
@@ -157,6 +214,18 @@ class AudioMixer {
   }
   getEQPreset() {
     return this.eqSelect.value;
+  }
+  /** Reset all audio settings to defaults */
+  reset() {
+    this.setVolume(1);
+    this.fadeInSlider.value = "0";
+    this.fadeInLabel.textContent = "0.0s";
+    this.fadeOutSlider.value = "0";
+    this.fadeOutLabel.textContent = "0.0s";
+    this.eqSelect.value = "flat";
+    this.isMuted = false;
+    this.muteBtn.innerHTML = iconVolume;
+    this.clearSegmentSelection();
   }
   destroy() {
     this.container.remove();
@@ -489,6 +558,46 @@ class TextOverlayPanel {
         posRow.appendChild(btn);
       });
       posRow.prepend(posLabel);
+      const pxRow = document.createElement("div");
+      pxRow.className = "veditor-control-row";
+      const xLabel = document.createElement("span");
+      xLabel.className = "veditor-control-label";
+      xLabel.textContent = "X";
+      const xInput = document.createElement("input");
+      xInput.type = "text";
+      xInput.className = "veditor-input";
+      xInput.value = ov.x;
+      xInput.placeholder = "center";
+      xInput.style.width = "70px";
+      xInput.setAttribute("data-tool-id", `veditor-text-px-x-${idx}`);
+      xInput.setAttribute("aria-label", "X position (pixels or preset)");
+      xInput.addEventListener("change", () => {
+        ov.x = xInput.value;
+        this._renderList();
+        this._notify();
+      });
+      const yLabel = document.createElement("span");
+      yLabel.className = "veditor-control-label";
+      yLabel.textContent = "Y";
+      const yInput = document.createElement("input");
+      yInput.type = "text";
+      yInput.className = "veditor-input";
+      yInput.value = ov.y;
+      yInput.placeholder = "bottom";
+      yInput.style.width = "70px";
+      yInput.setAttribute("data-tool-id", `veditor-text-px-y-${idx}`);
+      yInput.setAttribute("aria-label", "Y position (pixels or preset)");
+      yInput.addEventListener("change", () => {
+        ov.y = yInput.value;
+        this._renderList();
+        this._notify();
+      });
+      const dragHint = document.createElement("span");
+      dragHint.className = "veditor-text-dim";
+      dragHint.textContent = "Drag on monitor to place";
+      dragHint.style.fontSize = "11px";
+      dragHint.style.color = "var(--ve-text-dim)";
+      pxRow.append(xLabel, xInput, yLabel, yInput, dragHint);
       const bgRow = document.createElement("div");
       bgRow.className = "veditor-control-row veditor-bg-row";
       const bgLabel = document.createElement("label");
@@ -550,9 +659,9 @@ class TextOverlayPanel {
         opacityLabel.textContent = `${Math.round(ov.backgroundOpacity * 100)}%`;
         bgColorRow.append(bgColorInput, opacitySlider, opacityLabel);
         bgRow.after(bgColorRow);
-        card.append(cardHeader, textInput, fontRow, styleRow, posRow, bgRow, bgColorRow);
+        card.append(cardHeader, textInput, fontRow, styleRow, posRow, pxRow, bgRow, bgColorRow);
       } else {
-        card.append(cardHeader, textInput, fontRow, styleRow, posRow, bgRow);
+        card.append(cardHeader, textInput, fontRow, styleRow, posRow, pxRow, bgRow);
       }
       if (ov.outlineColor !== null) {
         const outlineRow = document.createElement("div");
@@ -1130,6 +1239,27 @@ class TransitionEditor {
     }
     this.emptyMsg.style.display = cutCount > 0 ? "none" : "block";
     this.listEl.innerHTML = "";
+    if (cutCount > 0) {
+      const clearAllRow = document.createElement("div");
+      clearAllRow.className = "veditor-control-row";
+      clearAllRow.style.padding = "4px 0";
+      const clearAllBtn = document.createElement("button");
+      clearAllBtn.className = "veditor-btn veditor-toggle-btn";
+      clearAllBtn.innerHTML = `${iconShuffle} Clear All Transitions`;
+      clearAllBtn.title = "Reset all transitions to hard cuts";
+      clearAllBtn.setAttribute("data-tool-id", "veditor-transition-clear-all");
+      clearAllBtn.setAttribute("aria-label", "Clear all transitions");
+      clearAllBtn.addEventListener("click", () => {
+        for (const t of this._transitions) {
+          t.type = "none";
+          t.duration = 0.5;
+        }
+        this.callbacks.onTransitionsChanged();
+        this.refresh();
+      });
+      clearAllRow.appendChild(clearAllBtn);
+      this.listEl.appendChild(clearAllRow);
+    }
     for (let i = 0; i < cutCount; i++) {
       this.listEl.appendChild(this._makeCard(i, segs[i], segs[i + 1]));
     }
@@ -1145,7 +1275,20 @@ class TransitionEditor {
     const timeLabel = document.createElement("span");
     timeLabel.className = "veditor-time-unit";
     timeLabel.textContent = `${segA.end.toFixed(1)}s → ${segB.start.toFixed(1)}s`;
-    header.append(title, timeLabel);
+    const clearBtn = document.createElement("button");
+    clearBtn.className = "veditor-btn";
+    clearBtn.innerHTML = "×";
+    clearBtn.title = "Clear transition (set to hard cut)";
+    clearBtn.setAttribute("data-tool-id", `veditor-transition-clear-${index}`);
+    clearBtn.setAttribute("aria-label", `Clear transition at cut ${index + 1}`);
+    clearBtn.style.cssText = "padding:2px 6px;font-size:14px;line-height:1;min-width:22px;margin-left:auto;";
+    clearBtn.addEventListener("click", () => {
+      this._transitions[index].type = "none";
+      this._transitions[index].duration = 0.5;
+      this.callbacks.onTransitionsChanged();
+      this.refresh();
+    });
+    header.append(title, timeLabel, clearBtn);
     const typeSection = this._makeSection("Type");
     const typeRow = document.createElement("div");
     typeRow.className = "veditor-control-row";
@@ -1209,6 +1352,924 @@ class TransitionEditor {
     this.container.remove();
   }
 }
+class TextPreviewOverlay {
+  constructor(callbacks) {
+    __publicField(this, "container");
+    __publicField(this, "callbacks");
+    __publicField(this, "videoWidth", 0);
+    __publicField(this, "videoHeight", 0);
+    __publicField(this, "overlays", []);
+    __publicField(this, "selectedIndex", -1);
+    // Drag state
+    __publicField(this, "_dragIndex", -1);
+    __publicField(this, "_dragStartX", 0);
+    __publicField(this, "_dragStartY", 0);
+    __publicField(this, "_dragOrigX", 0);
+    __publicField(this, "_dragOrigY", 0);
+    // Bound handlers (stored so destroy() can remove the exact same reference)
+    __publicField(this, "_boundPointerMove", (e) => this._onPointerMove(e));
+    __publicField(this, "_boundPointerUp", () => this._onPointerUp());
+    this.callbacks = callbacks;
+    this.container = document.createElement("div");
+    this.container.className = "veditor-text-preview-overlay";
+    this.container.style.position = "absolute";
+    this.container.style.top = "0";
+    this.container.style.left = "0";
+    this.container.style.width = "100%";
+    this.container.style.height = "100%";
+    this.container.style.pointerEvents = "none";
+    this.container.style.overflow = "hidden";
+    document.addEventListener("pointermove", this._boundPointerMove);
+    document.addEventListener("pointerup", this._boundPointerUp);
+  }
+  get element() {
+    return this.container;
+  }
+  setVideoDimensions(width, height) {
+    this.videoWidth = width;
+    this.videoHeight = height;
+    this.container.style.width = `${width}px`;
+    this.container.style.height = `${height}px`;
+  }
+  setSelectedIndex(index) {
+    this.selectedIndex = index;
+    this._updateSelection();
+  }
+  /**
+   * Refresh the overlay rendering.
+   * @param overlays Current overlay data
+   * @param currentTime Current video time (for time-gating)
+   */
+  refresh(overlays, currentTime) {
+    this.overlays = overlays;
+    this.container.innerHTML = "";
+    for (let i = 0; i < overlays.length; i++) {
+      const ov = overlays[i];
+      if (ov.start_time !== null && currentTime < ov.start_time) continue;
+      if (ov.end_time !== null && currentTime > ov.end_time) continue;
+      const el = this._createTextElement(ov, i);
+      this.container.appendChild(el);
+    }
+  }
+  /** Hide overlay without destroying event listeners (for close/reopen cycles) */
+  hide() {
+    this.container.style.display = "none";
+    this.container.innerHTML = "";
+  }
+  /** Show overlay (re-enable after hide) */
+  show() {
+    this.container.style.display = "";
+  }
+  /** Final teardown — removes event listeners and detaches from DOM */
+  destroy() {
+    document.removeEventListener("pointermove", this._boundPointerMove);
+    document.removeEventListener("pointerup", this._boundPointerUp);
+    this.container.remove();
+  }
+  // ── Private ──────────────────────────────────────────────────
+  _createTextElement(ov, index) {
+    const el = document.createElement("div");
+    el.className = "veditor-text-preview-item";
+    el.setAttribute("data-text-index", String(index));
+    el.style.pointerEvents = "auto";
+    el.style.cursor = "move";
+    el.style.position = "absolute";
+    el.style.userSelect = "none";
+    el.style.whiteSpace = "pre-wrap";
+    el.style.maxWidth = "90%";
+    el.textContent = ov.text;
+    el.style.fontFamily = ov.font || "sans-serif";
+    el.style.fontSize = `${ov.font_size}px`;
+    el.style.color = ov.color;
+    el.style.fontWeight = ov.bold ? "bold" : "normal";
+    el.style.fontStyle = ov.italic ? "italic" : "normal";
+    el.style.textAlign = ov.alignment || "center";
+    el.style.lineHeight = "1.2";
+    if (ov.backgroundColor) {
+      const bgOpacity = Math.round((ov.backgroundOpacity ?? 0.6) * 255);
+      const hex = bgOpacity.toString(16).padStart(2, "0");
+      el.style.backgroundColor = `${ov.backgroundColor}${hex}`;
+      el.style.padding = "4px 8px";
+      el.style.borderRadius = "4px";
+    }
+    if (ov.outlineColor && ov.outlineWidth > 0) {
+      const ow = ov.outlineWidth;
+      const oc = ov.outlineColor;
+      el.style.textShadow = [
+        `${ow}px ${ow}px 0 ${oc}`,
+        `${-ow}px ${ow}px 0 ${oc}`,
+        `${ow}px ${-ow}px 0 ${oc}`,
+        `${-ow}px ${-ow}px 0 ${oc}`,
+        `0 ${ow}px 0 ${oc}`,
+        `0 ${-ow}px 0 ${oc}`,
+        `${ow}px 0 0 ${oc}`,
+        `${-ow}px 0 0 ${oc}`
+      ].join(", ");
+    }
+    this._applyPosition(el, ov);
+    if (index === this.selectedIndex) {
+      el.style.outline = "2px solid #6366f1";
+      el.style.outlineOffset = "4px";
+    }
+    el.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this._dragIndex = index;
+      this._dragStartX = e.clientX;
+      this._dragStartY = e.clientY;
+      const rect = el.getBoundingClientRect();
+      const containerRect = this.container.getBoundingClientRect();
+      const scaleX = this.videoWidth / containerRect.width;
+      const scaleY = this.videoHeight / containerRect.height;
+      this._dragOrigX = (rect.left - containerRect.left) * scaleX;
+      this._dragOrigY = (rect.top - containerRect.top) * scaleY;
+      this.selectedIndex = index;
+      this.callbacks.onTextSelected(index);
+      this._updateSelection();
+    });
+    return el;
+  }
+  _applyPosition(el, ov) {
+    const x = ov.x;
+    const y = ov.y;
+    if (x === "center") {
+      el.style.left = "50%";
+      el.style.transform = "translateX(-50%)";
+    } else if (x === "left") {
+      el.style.left = "5%";
+      el.style.transform = "";
+    } else if (x === "right") {
+      el.style.right = "5%";
+      el.style.transform = "";
+    } else if (x.endsWith("%")) {
+      el.style.left = x;
+      el.style.transform = "translateX(-50%)";
+    } else {
+      const px = parseFloat(x);
+      if (!isNaN(px)) {
+        el.style.left = `${px / this.videoWidth * 100}%`;
+        el.style.transform = "";
+      }
+    }
+    if (y === "center") {
+      el.style.top = "50%";
+      el.style.transform = (el.style.transform || "") + (el.style.transform ? " translateY(-50%)" : "translateY(-50%)");
+    } else if (y === "top") {
+      el.style.top = "5%";
+    } else if (y === "bottom") {
+      el.style.bottom = "5%";
+    } else if (y.endsWith("%")) {
+      el.style.top = y;
+    } else {
+      const px = parseFloat(y);
+      if (!isNaN(px)) {
+        el.style.top = `${px / this.videoHeight * 100}%`;
+      }
+    }
+  }
+  _onPointerMove(e) {
+    if (this._dragIndex < 0) return;
+    const containerRect = this.container.getBoundingClientRect();
+    const scaleX = this.videoWidth / containerRect.width;
+    const scaleY = this.videoHeight / containerRect.height;
+    const dx = (e.clientX - this._dragStartX) * scaleX;
+    const dy = (e.clientY - this._dragStartY) * scaleY;
+    let newX = Math.round(this._dragOrigX + dx);
+    let newY = Math.round(this._dragOrigY + dy);
+    newX = Math.max(0, Math.min(this.videoWidth - 20, newX));
+    newY = Math.max(0, Math.min(this.videoHeight - 20, newY));
+    this.callbacks.onTextDragged(this._dragIndex, String(newX), String(newY));
+  }
+  _onPointerUp() {
+    this._dragIndex = -1;
+  }
+  _updateSelection() {
+    const items = this.container.querySelectorAll(".veditor-text-preview-item");
+    items.forEach((item, i) => {
+      const el = item;
+      if (i === this.selectedIndex) {
+        el.style.outline = "2px solid #6366f1";
+        el.style.outlineOffset = "4px";
+      } else {
+        el.style.outline = "";
+        el.style.outlineOffset = "";
+      }
+    });
+  }
+}
+class TransitionPreview {
+  constructor() {
+    __publicField(this, "videoEl", null);
+    __publicField(this, "_active", false);
+  }
+  /** Bind the video element to apply CSS effects to */
+  bind(video) {
+    this.videoEl = video;
+    video.style.transition = "none";
+  }
+  /**
+   * Called every frame (~60Hz) from the segment polling loop.
+   * Computes transition progress and applies CSS effects.
+   *
+   * @param currentTime - current video time
+   * @param segEnd - end time of the current segment
+   * @param segStart - start time of the current segment  
+   * @param transition - the transition def for THIS cut (null if none or last segment)
+   * @param isNewSegment - true on the first frame after jumping to a new segment
+   */
+  update(currentTime, segEnd, segStart, transition, isNewSegment) {
+    if (!this.videoEl) return;
+    if (!transition || transition.type === "none") {
+      this._clearEffects();
+      return;
+    }
+    const dur = transition.duration;
+    const halfDur = dur / 2;
+    const timeToEnd = segEnd - currentTime;
+    if (timeToEnd <= halfDur && timeToEnd > 0) {
+      const progress = 1 - timeToEnd / halfDur;
+      this._applyOutgoing(transition.type, progress);
+      this._active = true;
+      return;
+    }
+    const timeFromStart = currentTime - segStart;
+    if (isNewSegment || timeFromStart <= halfDur && timeFromStart >= 0 && this._active) {
+      const progress = 1 - timeFromStart / halfDur;
+      if (progress > 0) {
+        this._applyIncoming(transition.type, Math.max(0, progress));
+        this._active = true;
+        return;
+      }
+    }
+    if (this._active) {
+      this._clearEffects();
+    }
+  }
+  /** Clear all transition effects */
+  clear() {
+    this._clearEffects();
+  }
+  /** Clean up: clear effects and release video reference */
+  destroy() {
+    this._clearEffects();
+    this.videoEl = null;
+  }
+  // ── Private ──────────────────────────────────────────────────
+  /** Apply outgoing (fade-out / wipe-out / slide-out) effect */
+  _applyOutgoing(type, progress) {
+    if (!this.videoEl) return;
+    switch (type) {
+      case "fade":
+      case "dissolve":
+        this.videoEl.style.opacity = String(1 - progress);
+        this.videoEl.style.clipPath = "";
+        this.videoEl.style.transform = "";
+        break;
+      case "wipeleft":
+        this.videoEl.style.opacity = "";
+        this.videoEl.style.clipPath = `inset(0 ${progress * 100}% 0 0)`;
+        this.videoEl.style.transform = "";
+        break;
+      case "wiperight":
+        this.videoEl.style.opacity = "";
+        this.videoEl.style.clipPath = `inset(0 0 0 ${progress * 100}%)`;
+        this.videoEl.style.transform = "";
+        break;
+      case "slideleft":
+        this.videoEl.style.opacity = "";
+        this.videoEl.style.clipPath = "";
+        this.videoEl.style.transform = `translateX(${-progress * 100}%)`;
+        break;
+      case "slideright":
+        this.videoEl.style.opacity = "";
+        this.videoEl.style.clipPath = "";
+        this.videoEl.style.transform = `translateX(${progress * 100}%)`;
+        break;
+    }
+  }
+  /** Apply incoming (fade-in / wipe-in / slide-in) effect */
+  _applyIncoming(type, progress) {
+    if (!this.videoEl) return;
+    switch (type) {
+      case "fade":
+      case "dissolve":
+        this.videoEl.style.opacity = String(1 - progress);
+        this.videoEl.style.clipPath = "";
+        this.videoEl.style.transform = "";
+        break;
+      case "wipeleft":
+        this.videoEl.style.opacity = "";
+        this.videoEl.style.clipPath = `inset(0 0 0 ${progress * 100}%)`;
+        this.videoEl.style.transform = "";
+        break;
+      case "wiperight":
+        this.videoEl.style.opacity = "";
+        this.videoEl.style.clipPath = `inset(0 ${progress * 100}% 0 0)`;
+        this.videoEl.style.transform = "";
+        break;
+      case "slideleft":
+        this.videoEl.style.opacity = "";
+        this.videoEl.style.clipPath = "";
+        this.videoEl.style.transform = `translateX(${progress * 100}%)`;
+        break;
+      case "slideright":
+        this.videoEl.style.opacity = "";
+        this.videoEl.style.clipPath = "";
+        this.videoEl.style.transform = `translateX(${-progress * 100}%)`;
+        break;
+    }
+  }
+  _clearEffects() {
+    if (!this.videoEl) return;
+    if (this._active) {
+      this.videoEl.style.opacity = "";
+      this.videoEl.style.clipPath = "";
+      this.videoEl.style.transform = "";
+      this._active = false;
+    }
+  }
+}
+let _nextAudioId = 0;
+function genAudioId() {
+  return `aseg_${++_nextAudioId}_${Date.now()}`;
+}
+class AudioEditManager {
+  constructor() {
+    __publicField(this, "segments", []);
+    __publicField(this, "videoDuration", 0);
+    __publicField(this, "linked", true);
+  }
+  // linked to video segments by default
+  /** Initialize with a single segment spanning the full video */
+  init(duration) {
+    this.videoDuration = duration;
+    this.segments = [{
+      id: genAudioId(),
+      start: 0,
+      end: duration,
+      volume: 1,
+      fadeIn: 0,
+      fadeOut: 0,
+      eq: "flat",
+      muted: false
+    }];
+  }
+  /** Create an audio segment with defaults, optionally overridden */
+  createSegment(start, end, overrides) {
+    return {
+      id: genAudioId(),
+      start,
+      end,
+      volume: 1,
+      fadeIn: 0,
+      fadeOut: 0,
+      eq: "flat",
+      muted: false,
+      ...overrides
+    };
+  }
+  /** Split the segment containing the given timestamp into two */
+  splitAt(timestamp) {
+    const idx = this.segments.findIndex(
+      (s) => timestamp > s.start && timestamp < s.end
+    );
+    if (idx === -1) return false;
+    const seg = this.segments[idx];
+    const left = { ...seg, id: seg.id, end: timestamp };
+    const right = { ...seg, id: genAudioId(), start: timestamp };
+    this.segments.splice(idx, 1, left, right);
+    return true;
+  }
+  /** Add a new segment */
+  addSegment(start, end) {
+    start = Math.max(0, start);
+    end = Math.min(this.videoDuration, end);
+    if (end <= start) {
+      throw new Error(`Invalid audio segment: end (${end}) <= start (${start})`);
+    }
+    const seg = this.createSegment(start, end);
+    const idx = this.segments.findIndex((s) => s.start > start);
+    if (idx === -1) {
+      this.segments.push(seg);
+    } else {
+      this.segments.splice(idx, 0, seg);
+    }
+    return seg;
+  }
+  /** Remove a segment by ID */
+  removeSegment(id) {
+    const idx = this.segments.findIndex((s) => s.id === id);
+    if (idx === -1) return false;
+    this.segments.splice(idx, 1);
+    return true;
+  }
+  /** Update a segment's time range */
+  updateSegment(id, start, end) {
+    const seg = this.segments.find((s) => s.id === id);
+    if (!seg) return false;
+    start = Math.max(0, start);
+    end = Math.min(this.videoDuration, end);
+    if (end <= start + 0.05) return false;
+    seg.start = start;
+    seg.end = end;
+    return true;
+  }
+  /** Update audio properties of a segment */
+  updateSegmentAudio(id, props) {
+    const seg = this.segments.find((s) => s.id === id);
+    if (!seg) return false;
+    Object.assign(seg, props);
+    return true;
+  }
+  /** Move a segment from one position to another */
+  reorderSegments(fromIdx, toIdx) {
+    if (fromIdx < 0 || fromIdx >= this.segments.length) return false;
+    if (toIdx < 0 || toIdx >= this.segments.length) return false;
+    if (fromIdx === toIdx) return false;
+    const [seg] = this.segments.splice(fromIdx, 1);
+    this.segments.splice(toIdx, 0, seg);
+    return true;
+  }
+  /** Replace all segments at once (e.g. when syncing from video segments) */
+  replaceAll(newSegments) {
+    this.segments = newSegments;
+  }
+  /** Reset to a single full-length segment */
+  reset() {
+    this.segments = [this.createSegment(0, this.videoDuration)];
+  }
+  /** Get the volume at a given source time (for live preview) */
+  getVolumeAtTime(time) {
+    for (const seg of this.segments) {
+      if (time >= seg.start && time <= seg.end) {
+        if (seg.muted) return 0;
+        let vol = seg.volume;
+        if (seg.fadeIn > 0) {
+          const elapsed = time - seg.start;
+          if (elapsed < seg.fadeIn) {
+            vol *= elapsed / seg.fadeIn;
+          }
+        }
+        if (seg.fadeOut > 0) {
+          const remaining = seg.end - time;
+          if (remaining < seg.fadeOut) {
+            vol *= remaining / seg.fadeOut;
+          }
+        }
+        return vol;
+      }
+    }
+    return 0;
+  }
+  /** Total output duration of all segments */
+  getOutputDuration() {
+    return this.segments.reduce((sum, s) => sum + (s.end - s.start), 0);
+  }
+  /** Check if segments differ from a full unedited video */
+  hasEdits() {
+    if (this.segments.length !== 1) return true;
+    const s = this.segments[0];
+    return Math.abs(s.start) > 0.01 || Math.abs(s.end - this.videoDuration) > 0.01 || Math.abs(s.volume - 1) > 0.01 || s.fadeIn > 0 || s.fadeOut > 0 || s.eq !== "flat" || s.muted;
+  }
+  /** Serialize */
+  toJSON() {
+    return this.segments.map((s) => ({
+      start: s.start,
+      end: s.end,
+      volume: s.volume,
+      fadeIn: s.fadeIn,
+      fadeOut: s.fadeOut,
+      eq: s.eq,
+      muted: s.muted
+    }));
+  }
+  /** Deserialize */
+  fromJSON(data) {
+    this.segments = data.map((d) => ({
+      id: genAudioId(),
+      start: d.start ?? 0,
+      end: d.end ?? this.videoDuration,
+      volume: d.volume ?? 1,
+      fadeIn: d.fadeIn ?? 0,
+      fadeOut: d.fadeOut ?? 0,
+      eq: d.eq ?? "flat",
+      muted: d.muted ?? false
+    }));
+  }
+}
+const TRACK_H = 48;
+const TRACK_PAD = 4;
+const HANDLE_W = 8;
+const PLAYHEAD_W = 2;
+const SEG_COLOR = "rgba(34, 197, 94, 0.35)";
+const SEG_BORDER = "rgba(34, 197, 94, 0.7)";
+const SEG_MUTED_COLOR = "rgba(100, 100, 100, 0.3)";
+const EXCLUDED_COLOR = "rgba(20, 20, 20, 0.85)";
+const EXCLUDED_STRIPE = "rgba(50, 50, 50, 0.5)";
+const HANDLE_COLOR = "#fff";
+const HANDLE_HOVER = "#4ade80";
+const PLAYHEAD_COLOR = "#ff5555";
+const WAVE_COLOR = "rgba(34, 197, 94, 0.6)";
+const WAVE_MUTED_COLOR = "rgba(100, 100, 100, 0.3)";
+const TRACK_BG = "#111";
+class AudioTimeline {
+  constructor(manager, callbacks) {
+    __publicField(this, "canvas");
+    __publicField(this, "container");
+    __publicField(this, "manager");
+    __publicField(this, "callbacks");
+    __publicField(this, "geometry", null);
+    __publicField(this, "waveformPeaks", null);
+    __publicField(this, "playhead", 0);
+    __publicField(this, "hoveredHandle", null);
+    __publicField(this, "drag", { type: "none" });
+    __publicField(this, "selectedSegmentIndex", -1);
+    __publicField(this, "_snapping", true);
+    __publicField(this, "_boundMouseDown", this._onMouseDown.bind(this));
+    __publicField(this, "_boundMouseMove", this._onMouseMove.bind(this));
+    __publicField(this, "_boundMouseUp", this._onMouseUp.bind(this));
+    __publicField(this, "_boundDblClick", this._onDoubleClick.bind(this));
+    this.manager = manager;
+    this.callbacks = callbacks;
+    this.container = document.createElement("div");
+    this.container.className = "veditor-audio-timeline";
+    this.canvas = document.createElement("canvas");
+    this.canvas.style.cssText = "width:100%;cursor:pointer;border-radius:4px;";
+    this.container.appendChild(this.canvas);
+    this._bindEvents();
+  }
+  get element() {
+    return this.container;
+  }
+  /** Set waveform peak data for rendering */
+  setWaveform(peaks) {
+    this.waveformPeaks = peaks;
+    this.render();
+  }
+  /** Update playhead position */
+  setPlayhead(time) {
+    this.playhead = Math.max(0, Math.min(time, this.manager.videoDuration));
+    this.render();
+  }
+  /** Set the selected segment index */
+  setSelectedIndex(index) {
+    this.selectedSegmentIndex = index;
+    this.render();
+  }
+  /** Set snapping enabled/disabled */
+  setSnapping(enabled) {
+    this._snapping = enabled;
+  }
+  /** Full render pass */
+  render() {
+    var _a;
+    const dur = this.manager.videoDuration;
+    if (dur <= 0) return;
+    const rect = (_a = this.canvas.parentElement) == null ? void 0 : _a.getBoundingClientRect();
+    const w = rect ? rect.width : 400;
+    const h = TRACK_H + TRACK_PAD * 2;
+    const dpr = window.devicePixelRatio || 1;
+    this.canvas.width = w * dpr;
+    this.canvas.height = h * dpr;
+    this.canvas.style.height = `${h}px`;
+    const ctx = this.canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.scale(dpr, dpr);
+    const trackX = TRACK_PAD;
+    const trackY = TRACK_PAD;
+    const trackW = w - TRACK_PAD * 2;
+    const trackH = TRACK_H;
+    ctx.fillStyle = TRACK_BG;
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = EXCLUDED_COLOR;
+    ctx.fillRect(trackX, trackY, trackW, trackH);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(trackX, trackY, trackW, trackH);
+    ctx.clip();
+    ctx.strokeStyle = EXCLUDED_STRIPE;
+    ctx.lineWidth = 1;
+    for (let x = -h; x < w + h; x += 8) {
+      ctx.beginPath();
+      ctx.moveTo(x, trackY);
+      ctx.lineTo(x + h, trackY + trackH);
+      ctx.stroke();
+    }
+    ctx.restore();
+    const segGeos = [];
+    for (let i = 0; i < this.manager.segments.length; i++) {
+      const seg = this.manager.segments[i];
+      const x = trackX + seg.start / dur * trackW;
+      const segW = (seg.end - seg.start) / dur * trackW;
+      const isMuted = seg.muted;
+      const isSelected = i === this.selectedSegmentIndex;
+      ctx.fillStyle = isMuted ? SEG_MUTED_COLOR : SEG_COLOR;
+      ctx.fillRect(x, trackY, segW, trackH);
+      if (this.waveformPeaks) {
+        this._drawWaveform(ctx, x, trackY, segW, trackH, seg, isMuted);
+      }
+      ctx.strokeStyle = isSelected ? "#4ade80" : SEG_BORDER;
+      ctx.lineWidth = isSelected ? 2 : 1;
+      ctx.strokeRect(x, trackY, segW, trackH);
+      if (segW > 50) {
+        const volLabel = isMuted ? "MUTED" : `${Math.round(seg.volume * 100)}%`;
+        ctx.font = "9px monospace";
+        ctx.fillStyle = isMuted ? "#888" : "#ccc";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "bottom";
+        ctx.fillText(volLabel, x + segW / 2, trackY + trackH - 3);
+      }
+      const isHoveredL = this.hoveredHandle === `${seg.id}-left`;
+      const isHoveredR = this.hoveredHandle === `${seg.id}-right`;
+      ctx.fillStyle = isHoveredL ? HANDLE_HOVER : HANDLE_COLOR;
+      ctx.fillRect(x, trackY, HANDLE_W, trackH);
+      ctx.fillStyle = "#333";
+      ctx.fillRect(x + 3, trackY + trackH / 2 - 6, 2, 12);
+      ctx.fillStyle = isHoveredR ? HANDLE_HOVER : HANDLE_COLOR;
+      ctx.fillRect(x + segW - HANDLE_W, trackY, HANDLE_W, trackH);
+      ctx.fillStyle = "#333";
+      ctx.fillRect(x + segW - HANDLE_W + 3, trackY + trackH / 2 - 6, 2, 12);
+      segGeos.push({ id: seg.id, x, w: segW, start: seg.start, end: seg.end });
+    }
+    this.geometry = { trackX, trackY, trackW, trackH, duration: dur, segments: segGeos };
+    const phX = trackX + this.playhead / dur * trackW;
+    ctx.fillStyle = PLAYHEAD_COLOR;
+    ctx.fillRect(phX - PLAYHEAD_W / 2, trackY - 2, PLAYHEAD_W, trackH + 4);
+  }
+  destroy() {
+    this.canvas.removeEventListener("mousedown", this._boundMouseDown);
+    this.canvas.removeEventListener("mousemove", this._boundMouseMove);
+    document.removeEventListener("mouseup", this._boundMouseUp);
+    this.canvas.removeEventListener("dblclick", this._boundDblClick);
+  }
+  // ── Waveform rendering ──────────────────────────────────────
+  _drawWaveform(ctx, segX, segY, segW, segH, seg, isMuted) {
+    if (!this.waveformPeaks) return;
+    const dur = this.manager.videoDuration;
+    const peakCount = this.waveformPeaks.length;
+    const startBin = Math.floor(seg.start / dur * peakCount);
+    const endBin = Math.ceil(seg.end / dur * peakCount);
+    const binRange = endBin - startBin;
+    if (binRange <= 0) return;
+    const segDur = seg.end - seg.start;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(segX, segY, segW, segH);
+    ctx.clip();
+    ctx.fillStyle = isMuted ? WAVE_MUTED_COLOR : WAVE_COLOR;
+    const centerY = segY + segH / 2;
+    const maxAmplitude = segH * 0.4;
+    const barWidth = Math.max(1, segW / binRange);
+    for (let i = 0; i < binRange; i++) {
+      const peakIdx = startBin + i;
+      if (peakIdx >= peakCount) break;
+      const barTime = i / binRange * segDur;
+      let fadeFactor = 1;
+      if (seg.fadeIn > 0 && barTime < seg.fadeIn) {
+        fadeFactor *= barTime / seg.fadeIn;
+      }
+      const timeFromEnd = segDur - barTime;
+      if (seg.fadeOut > 0 && timeFromEnd < seg.fadeOut) {
+        fadeFactor *= timeFromEnd / seg.fadeOut;
+      }
+      const peak = this.waveformPeaks[peakIdx] * (isMuted ? 0.3 : seg.volume) * fadeFactor;
+      const barH = Math.max(1, peak * maxAmplitude);
+      const barX = segX + i / binRange * segW;
+      ctx.fillRect(barX, centerY - barH, barWidth, barH * 2);
+    }
+    if (seg.fadeIn > 0 && !isMuted) {
+      const fadeInW = seg.fadeIn / segDur * segW;
+      const grad = ctx.createLinearGradient(segX, 0, segX + fadeInW, 0);
+      grad.addColorStop(0, "rgba(34, 197, 94, 0.25)");
+      grad.addColorStop(1, "rgba(34, 197, 94, 0)");
+      ctx.fillStyle = grad;
+      ctx.fillRect(segX, segY, fadeInW, segH);
+      ctx.strokeStyle = "rgba(34, 197, 94, 0.6)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(segX + fadeInW, segY);
+      ctx.lineTo(segX + fadeInW, segY + segH);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (seg.fadeOut > 0 && !isMuted) {
+      const fadeOutW = seg.fadeOut / segDur * segW;
+      const fadeOutX = segX + segW - fadeOutW;
+      const grad = ctx.createLinearGradient(fadeOutX, 0, segX + segW, 0);
+      grad.addColorStop(0, "rgba(34, 197, 94, 0)");
+      grad.addColorStop(1, "rgba(34, 197, 94, 0.25)");
+      ctx.fillStyle = grad;
+      ctx.fillRect(fadeOutX, segY, fadeOutW, segH);
+      ctx.strokeStyle = "rgba(34, 197, 94, 0.6)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(fadeOutX, segY);
+      ctx.lineTo(fadeOutX, segY + segH);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+  // ── Events ──────────────────────────────────────────────────
+  _bindEvents() {
+    this.canvas.addEventListener("mousedown", this._boundMouseDown);
+    this.canvas.addEventListener("mousemove", this._boundMouseMove);
+    document.addEventListener("mouseup", this._boundMouseUp);
+    this.canvas.addEventListener("dblclick", this._boundDblClick);
+  }
+  _canvasToTrack(clientX) {
+    const rect = this.canvas.getBoundingClientRect();
+    return clientX - rect.left;
+  }
+  _xToTime(x) {
+    if (!this.geometry) return 0;
+    const { trackX, trackW, duration } = this.geometry;
+    return Math.max(0, Math.min(duration, (x - trackX) / trackW * duration));
+  }
+  _hitTest(cx, cy) {
+    if (!this.geometry) return { type: "none" };
+    const { trackX, trackW, trackY, trackH, duration } = this.geometry;
+    if (cy < trackY - 4 || cy > trackY + trackH + 4) return { type: "none" };
+    const phX = trackX + this.playhead / duration * trackW;
+    if (Math.abs(cx - phX) < 6) return { type: "playhead" };
+    for (let i = 0; i < this.geometry.segments.length; i++) {
+      const seg = this.geometry.segments[i];
+      if (cx >= seg.x - 2 && cx <= seg.x + HANDLE_W + 2 && cy >= trackY && cy <= trackY + trackH) {
+        return { type: "handle-left", segId: seg.id, segIndex: i };
+      }
+      if (cx >= seg.x + seg.w - HANDLE_W - 2 && cx <= seg.x + seg.w + 2 && cy >= trackY && cy <= trackY + trackH) {
+        return { type: "handle-right", segId: seg.id, segIndex: i };
+      }
+    }
+    for (let i = 0; i < this.geometry.segments.length; i++) {
+      const seg = this.geometry.segments[i];
+      if (cx >= seg.x && cx <= seg.x + seg.w) {
+        return { type: "track", segIndex: i };
+      }
+    }
+    return { type: "track" };
+  }
+  _onMouseDown(e) {
+    e.stopPropagation();
+    const cx = this._canvasToTrack(e.clientX);
+    const rect = this.canvas.getBoundingClientRect();
+    const cy = e.clientY - rect.top;
+    const hit = this._hitTest(cx, cy);
+    if (hit.type === "handle-left" && hit.segId) {
+      const seg = this.manager.segments.find((s) => s.id === hit.segId);
+      if (seg) {
+        this.drag = { type: "handle-left", segId: hit.segId, startX: e.clientX, origStart: seg.start };
+      }
+    } else if (hit.type === "handle-right" && hit.segId) {
+      const seg = this.manager.segments.find((s) => s.id === hit.segId);
+      if (seg) {
+        this.drag = { type: "handle-right", segId: hit.segId, startX: e.clientX, origEnd: seg.end };
+      }
+    } else if (hit.type === "playhead") {
+      this.drag = { type: "playhead", startX: e.clientX, origTime: this.playhead };
+    } else if (hit.type === "track") {
+      if (hit.segIndex !== void 0) {
+        this.selectedSegmentIndex = hit.segIndex;
+        this.callbacks.onAudioSegmentSelected(hit.segIndex);
+      }
+      const time = this._xToTime(cx);
+      this.callbacks.onPlayheadChanged(time);
+      this.render();
+    }
+  }
+  _onMouseMove(e) {
+    const cx = this._canvasToTrack(e.clientX);
+    const rect = this.canvas.getBoundingClientRect();
+    const cy = e.clientY - rect.top;
+    if (this.drag.type === "none") {
+      const hit = this._hitTest(cx, cy);
+      if (hit.type === "handle-left" || hit.type === "handle-right") {
+        this.canvas.style.cursor = "ew-resize";
+        this.hoveredHandle = hit.segId ? `${hit.segId}-${hit.type === "handle-left" ? "left" : "right"}` : null;
+      } else if (hit.type === "playhead") {
+        this.canvas.style.cursor = "col-resize";
+        this.hoveredHandle = null;
+      } else {
+        this.canvas.style.cursor = "pointer";
+        this.hoveredHandle = null;
+      }
+      this.render();
+      return;
+    }
+    if (!this.geometry) return;
+    const { trackW, duration } = this.geometry;
+    const drag = this.drag;
+    const dx = e.clientX - drag.startX;
+    const dt = dx / trackW * duration;
+    if (drag.type === "handle-left") {
+      let newStart = Math.max(0, drag.origStart + dt);
+      if (this._snapping) {
+        const edges = collectEdges(this.manager.segments, drag.segId, "start");
+        const snap = snapToEdges(newStart, edges, 8, trackW, duration);
+        newStart = snap.time;
+      }
+      this.manager.updateSegment(drag.segId, newStart, this.manager.segments.find((s) => s.id === drag.segId).end);
+      this.render();
+    } else if (drag.type === "handle-right") {
+      let newEnd = Math.min(duration, drag.origEnd + dt);
+      if (this._snapping) {
+        const edges = collectEdges(this.manager.segments, drag.segId, "end");
+        const snap = snapToEdges(newEnd, edges, 8, trackW, duration);
+        newEnd = snap.time;
+      }
+      this.manager.updateSegment(drag.segId, this.manager.segments.find((s) => s.id === drag.segId).start, newEnd);
+      this.render();
+    } else if (drag.type === "playhead") {
+      this.playhead = Math.max(0, Math.min(duration, drag.origTime + dt));
+      this.callbacks.onPlayheadChanged(this.playhead);
+      this.render();
+    }
+  }
+  _onMouseUp() {
+    if (this.drag.type !== "none") {
+      if (this.drag.type === "handle-left" || this.drag.type === "handle-right") {
+        this.callbacks.onAudioSegmentsChanged();
+      }
+      this.drag = { type: "none" };
+    }
+  }
+  _onDoubleClick(e) {
+    e.stopPropagation();
+    const cx = this._canvasToTrack(e.clientX);
+    const time = this._xToTime(cx);
+    if (this.manager.splitAt(time)) {
+      this.callbacks.onAudioSegmentsChanged();
+      this.render();
+    }
+  }
+}
+const PEAK_COUNT = 2e3;
+const waveformCache = /* @__PURE__ */ new Map();
+async function extractWaveform(url) {
+  const cached = waveformCache.get(url);
+  if (cached) {
+    return cached;
+  }
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch: ${response.status}`);
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let audioBuffer;
+    try {
+      audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    } finally {
+      audioCtx.close();
+    }
+    const channelData = audioBuffer.getChannelData(0);
+    const peaks = downsamplePeaks(channelData, PEAK_COUNT);
+    const result = {
+      peaks,
+      duration: audioBuffer.duration,
+      sampleRate: audioBuffer.sampleRate
+    };
+    waveformCache.set(url, result);
+    return result;
+  } catch (e) {
+    console.warn("[WaveformExtractor] Failed to extract waveform:", e);
+    const fallback = new Float32Array(PEAK_COUNT).fill(0.1);
+    return { peaks: fallback, duration: 0, sampleRate: 0 };
+  }
+}
+function downsamplePeaks(channelData, binCount) {
+  const peaks = new Float32Array(binCount);
+  const samplesPerBin = Math.floor(channelData.length / binCount);
+  if (samplesPerBin === 0) {
+    for (let i = 0; i < Math.min(channelData.length, binCount); i++) {
+      peaks[i] = Math.abs(channelData[i]);
+    }
+    return peaks;
+  }
+  for (let bin = 0; bin < binCount; bin++) {
+    const start = bin * samplesPerBin;
+    const end = Math.min(start + samplesPerBin, channelData.length);
+    let max = 0;
+    for (let i = start; i < end; i++) {
+      const abs = Math.abs(channelData[i]);
+      if (abs > max) max = abs;
+    }
+    peaks[bin] = max;
+  }
+  let globalMax = 0;
+  for (let i = 0; i < binCount; i++) {
+    if (peaks[i] > globalMax) globalMax = peaks[i];
+  }
+  if (globalMax > 0) {
+    for (let i = 0; i < binCount; i++) {
+      peaks[i] /= globalMax;
+    }
+  }
+  return peaks;
+}
 const INFO_ROUTE = "/ffmpega/video_info";
 const PREVIEW_ROUTE$1 = "/ffmpega/preview";
 class EditorModal {
@@ -1218,6 +2279,8 @@ class EditorModal {
     __publicField(this, "video");
     __publicField(this, "editManager");
     __publicField(this, "nleTimeline", null);
+    __publicField(this, "audioEditManager");
+    __publicField(this, "audioTimeline", null);
     __publicField(this, "transport");
     __publicField(this, "cropOverlay");
     __publicField(this, "speedControl");
@@ -1229,9 +2292,12 @@ class EditorModal {
     __publicField(this, "monitorCanvas");
     __publicField(this, "shortcutOverlay");
     __publicField(this, "transitionEditor");
+    __publicField(this, "textPreview");
+    __publicField(this, "transitionPreview");
     __publicField(this, "callbacks");
     __publicField(this, "videoPath", "");
     __publicField(this, "_escHandler", null);
+    __publicField(this, "_timeupdateHandler", null);
     __publicField(this, "_isOpen", false);
     __publicField(this, "_currentToolMode", "select");
     __publicField(this, "_userDragging", false);
@@ -1244,9 +2310,6 @@ class EditorModal {
     this.dialog.setAttribute("aria-label", "Video Editor");
     this.dialog.setAttribute("role", "dialog");
     this.dialog.setAttribute("aria-modal", "true");
-    this.dialog.addEventListener("click", (e) => {
-      if (e.target === this.dialog) this._cancel();
-    });
     this.panel = document.createElement("div");
     this.panel.className = "veditor-modal-panel";
     this.panel.setAttribute("data-tool-id", "veditor-panel");
@@ -1324,9 +2387,10 @@ class EditorModal {
     this.editManager = new EditManager();
     this.transport = new TransportBar({
       onTimeUpdate: (time) => {
-        var _a;
+        var _a, _b;
         if (!this._userDragging) {
           (_a = this.nleTimeline) == null ? void 0 : _a.setPlayhead(time);
+          (_b = this.nleTimeline) == null ? void 0 : _b.scrollToTime(time);
         }
       },
       onPlayStateChange: () => {
@@ -1335,22 +2399,82 @@ class EditorModal {
     this.transport.setEditManager(this.editManager);
     this.transport.bindVideo(this.video);
     transportWrap.appendChild(this.transport.element);
+    this.transitionPreview = new TransitionPreview();
+    this.transitionPreview.bind(this.video);
+    this.transport.setTransitionPreview(this.transitionPreview);
     this.cropOverlay = new CropOverlay({
       onCropChanged: () => this._pushUndo()
     });
+    this.cropOverlay.bindVideo(this.video);
     this.speedControl = new SpeedControl({
-      onSpeedChanged: () => this._pushUndo()
+      onSpeedChanged: (_segIdx, speed) => {
+        this._pushUndo();
+        this.transport.setPlaybackRate(speed);
+      }
     });
+    this.audioEditManager = new AudioEditManager();
+    this.transport.setAudioEditManager(this.audioEditManager);
     this.audioMixer = new AudioMixer({
       onVolumeChanged: (vol) => {
-        this.video.volume = Math.min(1, vol);
+        var _a;
+        const idx = this.audioMixer.selectedSegmentIndex;
+        if (idx >= 0 && this.audioEditManager.segments[idx]) {
+          this.audioEditManager.segments[idx].volume = vol;
+          this.audioEditManager.segments[idx].muted = vol < 0.01;
+          (_a = this.audioTimeline) == null ? void 0 : _a.render();
+        }
+        this.video.volume = Math.min(1, Math.max(0, vol));
+        this.video.muted = vol < 0.01;
+        this._pushUndo();
+      },
+      onFadeInChanged: (sec) => {
+        const idx = this.audioMixer.selectedSegmentIndex;
+        if (idx >= 0 && this.audioEditManager.segments[idx]) {
+          this.audioEditManager.segments[idx].fadeIn = sec;
+        }
+        this._pushUndo();
+      },
+      onFadeOutChanged: (sec) => {
+        const idx = this.audioMixer.selectedSegmentIndex;
+        if (idx >= 0 && this.audioEditManager.segments[idx]) {
+          this.audioEditManager.segments[idx].fadeOut = sec;
+        }
+        this._pushUndo();
+      },
+      onEQChanged: (preset) => {
+        const idx = this.audioMixer.selectedSegmentIndex;
+        if (idx >= 0 && this.audioEditManager.segments[idx]) {
+          this.audioEditManager.segments[idx].eq = preset;
+        }
+        this._pushUndo();
+      }
+    });
+    this.textPreview = new TextPreviewOverlay({
+      onTextDragged: (index, x, y) => {
+        const overlays = this.textPanel.getOverlays();
+        if (overlays[index]) {
+          overlays[index].x = x;
+          overlays[index].y = y;
+          this.textPanel.loadOverlays(overlays);
+          this._pushUndo();
+          this._refreshTextPreview();
+        }
+      },
+      onTextSelected: (index) => {
+        this.textPreview.setSelectedIndex(index);
       }
     });
     this.textPanel = new TextOverlayPanel({
-      onOverlaysChanged: () => this._pushUndo()
+      onOverlaysChanged: () => {
+        this._pushUndo();
+        this._refreshTextPreview();
+      }
     });
     this.transitionEditor = new TransitionEditor(this.editManager, {
-      onTransitionsChanged: () => this._pushUndo()
+      onTransitionsChanged: () => {
+        this._pushUndo();
+        this.transport.setTransitions(this.transitionEditor.transitions);
+      }
     });
     this.toolsPanel = new ToolsPanel([
       { id: "crop", label: "Crop", icon: iconCrop, content: this.cropOverlay.element },
@@ -1360,6 +2484,7 @@ class EditorModal {
       { id: "transitions", label: "Trans", icon: iconShuffle, content: this.transitionEditor.element }
     ]);
     this.monitorCanvas.contentElement.appendChild(this.cropOverlay.canvasElement);
+    this.monitorCanvas.contentElement.appendChild(this.textPreview.element);
     this.editToolbar = new EditToolbar({
       onToolChanged: (mode) => {
         this._currentToolMode = mode;
@@ -1389,6 +2514,8 @@ class EditorModal {
       onResetRequested: () => {
         var _a;
         this.editManager.reset();
+        this.audioEditManager.reset();
+        this.audioMixer.clearSegmentSelection();
         this._pushUndo();
         (_a = this.nleTimeline) == null ? void 0 : _a.render();
       }
@@ -1434,7 +2561,9 @@ class EditorModal {
       if (resp.ok) {
         const info = await resp.json();
         this.editManager.init(info.duration || 1);
+        this.audioEditManager.init(info.duration || 1);
         this.cropOverlay.setVideoDimensions(info.width || 640, info.height || 480);
+        this.textPreview.setVideoDimensions(info.width || 640, info.height || 480);
         if (initialState && initialState.segments.length > 0) {
           this.editManager.segments = initialState.segments.map(
             ([start, end], i) => ({
@@ -1450,17 +2579,26 @@ class EditorModal {
     }
     this.video.src = `${PREVIEW_ROUTE$1}?path=${encodeURIComponent(videoPath)}`;
     this.video.load();
+    this.textPreview.show();
     this.dialog.style.display = "flex";
     this.video.addEventListener("loadeddata", () => {
       this.monitorCanvas.fitToView();
     }, { once: true });
+    this._timeupdateHandler = () => this._refreshTextPreview();
+    this.video.addEventListener("timeupdate", this._timeupdateHandler);
     requestAnimationFrame(() => {
       const slot = this.panel.querySelector("#veditor-timeline-slot");
       if (slot) {
         this.nleTimeline = new NLETimeline(this.editManager, {
           onSegmentsChanged: () => {
+            var _a, _b;
+            if (this.audioEditManager.linked) {
+              this._syncAudioToVideo();
+              (_a = this.audioTimeline) == null ? void 0 : _a.render();
+            }
             this._pushUndo();
             this.transitionEditor.refresh();
+            (_b = this.audioTimeline) == null ? void 0 : _b.render();
           },
           onPlayheadChanged: (time) => this.transport.seekTo(time),
           onTrimHandleDrag: (time) => this.transport.seekTo(time),
@@ -1473,6 +2611,29 @@ class EditorModal {
           onDragEnd: () => {
             this._userDragging = false;
           }
+        });
+        this.audioTimeline = new AudioTimeline(this.audioEditManager, {
+          onAudioSegmentsChanged: () => {
+            this._pushUndo();
+          },
+          onAudioSegmentSelected: (index) => {
+            var _a;
+            const seg = this.audioEditManager.segments[index];
+            if (seg) {
+              this.audioMixer.loadSegment(seg, index);
+              (_a = this.audioTimeline) == null ? void 0 : _a.setSelectedIndex(index);
+              this.toolsPanel.activateTab("audio");
+            }
+          },
+          onPlayheadChanged: (time) => this.transport.seekTo(time)
+        });
+        this.nleTimeline.setAudioTimeline(this.audioTimeline);
+        const videoUrl = `${PREVIEW_ROUTE$1}?path=${encodeURIComponent(this.videoPath)}`;
+        extractWaveform(videoUrl).then((wf) => {
+          var _a;
+          (_a = this.audioTimeline) == null ? void 0 : _a.setWaveform(wf.peaks);
+        }).catch((e) => {
+          console.warn("[VideoEditor] Waveform extraction failed:", e);
         });
         slot.innerHTML = "";
         slot.appendChild(this.nleTimeline.element);
@@ -1535,6 +2696,16 @@ class EditorModal {
       this.nleTimeline.destroy();
       this.nleTimeline = null;
     }
+    if (this.audioTimeline) {
+      this.audioTimeline.destroy();
+      this.audioTimeline = null;
+    }
+    this.textPreview.hide();
+    this.transitionPreview.clear();
+    if (this._timeupdateHandler) {
+      this.video.removeEventListener("timeupdate", this._timeupdateHandler);
+      this._timeupdateHandler = null;
+    }
     if (this._escHandler) {
       document.removeEventListener("keydown", this._escHandler);
       this._escHandler = null;
@@ -1552,14 +2723,15 @@ class EditorModal {
       speedMap: this.speedControl.getSpeedMap(),
       volume: this.audioMixer.getVolume(),
       textOverlays: this.textPanel.getOverlays(),
-      transitions: []
+      transitions: [],
+      audioSegments: this.audioEditManager.toJSON()
     };
   }
   _pushUndo() {
     this.undoManager.push(this._getState());
   }
   _restoreState(state) {
-    var _a;
+    var _a, _b, _c;
     this.editManager.segments = state.segments.map(([start, end], i) => ({
       id: `restored_${i}`,
       start,
@@ -1578,7 +2750,37 @@ class EditorModal {
     }
     this.speedControl.loadSpeedMap(state.speedMap);
     this.audioMixer.setVolume(state.volume);
+    if (state.audioSegments && Array.isArray(state.audioSegments) && state.audioSegments.length > 0) {
+      this.audioEditManager.fromJSON(state.audioSegments);
+      this.audioMixer.clearSegmentSelection();
+      (_b = this.audioTimeline) == null ? void 0 : _b.setSelectedIndex(-1);
+      (_c = this.audioTimeline) == null ? void 0 : _c.render();
+    }
     this.textPanel.loadOverlays(state.textOverlays);
+    this._refreshTextPreview();
+  }
+  /** Sync audio segments to match video segments (linked mode) */
+  _syncAudioToVideo() {
+    const videoSegs = this.editManager.segments;
+    const audioMgr = this.audioEditManager;
+    const newAudioSegs = videoSegs.map((vSeg) => {
+      const existing = audioMgr.segments.find(
+        (a) => a.start < vSeg.end && a.end > vSeg.start
+      );
+      return audioMgr.createSegment(vSeg.start, vSeg.end, existing ? {
+        volume: existing.volume,
+        fadeIn: existing.fadeIn,
+        fadeOut: existing.fadeOut,
+        eq: existing.eq,
+        muted: existing.muted
+      } : void 0);
+    });
+    audioMgr.replaceAll(newAudioSegs);
+  }
+  _refreshTextPreview() {
+    const overlays = this.textPanel.getOverlays();
+    const currentTime = this.video.currentTime;
+    this.textPreview.refresh(overlays, currentTime);
   }
   _apply() {
     const state = {
@@ -1587,7 +2789,8 @@ class EditorModal {
       speedMap: this.speedControl.getSpeedMap(),
       volume: this.audioMixer.getVolume(),
       textOverlays: this.textPanel.getOverlays(),
-      transitions: []
+      transitions: [],
+      audioSegments: this.audioEditManager.toJSON()
     };
     this.close();
     this.callbacks.onApply(state);
@@ -1607,19 +2810,23 @@ const editorCSS = `/* ═══════════════════�
  * ═══════════════════════════════════════════════════════════════════ */
 
 /* ── Variables ───────────────────────────────────────────────────── */
+/* Maps to ComfyUI's theme variables with standalone fallbacks */
 
 :root {
-    --ve-bg-deep: #0f0f1a;
-    --ve-bg-primary: #161625;
-    --ve-bg-secondary: #1c1c30;
-    --ve-bg-surface: #22223a;
-    --ve-bg-elevated: #2a2a45;
-    --ve-border: rgba(255, 255, 255, 0.06);
+    /* Background hierarchy — derived from ComfyUI's --bg-color and --comfy-menu-bg */
+    --ve-bg-deep: var(--bg-color, #0f0f1a);
+    --ve-bg-primary: var(--bg-color, #161625);
+    --ve-bg-secondary: var(--comfy-menu-bg, #1c1c30);
+    --ve-bg-surface: var(--comfy-menu-bg, #22223a);
+    --ve-bg-elevated: var(--comfy-input-bg, #2a2a45);
+    --ve-border: var(--border-color, rgba(255, 255, 255, 0.06));
     --ve-border-hover: rgba(255, 255, 255, 0.12);
     --ve-border-glow: rgba(99, 102, 241, 0.3);
-    --ve-text-primary: #e8e8f0;
-    --ve-text-secondary: #9898b0;
+    /* Text — derived from ComfyUI's --fg-color and --input-text */
+    --ve-text-primary: var(--fg-color, #e8e8f0);
+    --ve-text-secondary: var(--input-text, #9898b0);
     --ve-text-dim: #686880;
+    /* Accents — keep our brand purple/green */
     --ve-accent: #6366f1;
     --ve-accent-hover: #818cf8;
     --ve-accent-glow: rgba(99, 102, 241, 0.25);
@@ -1711,6 +2918,13 @@ const editorCSS = `/* ═══════════════════�
 .veditor-btn:focus-visible {
     border-color: var(--ve-accent);
     box-shadow: 0 0 0 2px var(--ve-accent-glow);
+}
+
+.veditor-btn.active {
+    background: var(--ve-accent);
+    color: #fff;
+    border-color: var(--ve-accent);
+    box-shadow: 0 0 10px var(--ve-accent-glow);
 }
 
 .veditor-btn-accent {
@@ -2592,6 +3806,35 @@ const editorCSS = `/* ═══════════════════�
     pointer-events: none;
     z-index: 10;
     box-shadow: 0 0 6px rgba(249, 115, 22, 0.4);
+}
+
+/* Timeline scroll wrapper */
+.veditor-timeline-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+
+.veditor-timeline-scroll::-webkit-scrollbar {
+    height: 6px;
+}
+
+.veditor-timeline-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.veditor-timeline-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.15);
+    border-radius: 3px;
+}
+
+.veditor-timeline-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,255,255,0.25);
+}
+
+/* Timeline toolbar */
+.veditor-timeline-toolbar {
+    background: var(--ve-bg-secondary);
+    border-bottom: 1px solid var(--ve-border);
 }
 
 .veditor-playhead::before {
