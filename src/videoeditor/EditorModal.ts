@@ -79,6 +79,7 @@ export class EditorModal {
     private videoPath: string = '';
     private _escHandler: ((e: KeyboardEvent) => void) | null = null;
     private _timeupdateHandler: (() => void) | null = null;
+    private _textPreviewTimer: ReturnType<typeof setTimeout> | null = null;
     private _isOpen = false;
     private _currentToolMode: ToolMode = 'select';
     private _userDragging: boolean = false;
@@ -399,7 +400,7 @@ export class EditorModal {
         // Load initial state
         if (initialState) {
             this.speedControl.loadSpeedMap(initialState.speedMap);
-            this.audioMixer.setVolume(initialState.volume);
+            this.audioMixer.setMasterVolume(initialState.volume);
             this.textPanel.loadOverlays(initialState.textOverlays);
             try {
                 const crop = JSON.parse(initialState.cropRect);
@@ -453,8 +454,16 @@ export class EditorModal {
             this.monitorCanvas.fitToView();
         }, { once: true });
 
-        // Live text preview: refresh on time updates for time-gating
-        this._timeupdateHandler = () => this._refreshTextPreview();
+        // Live text preview: debounced refresh on time updates for time-gating.
+        // timeupdate fires ~4Hz; debouncing to 200ms avoids rebuilding the DOM
+        // on every event while still keeping the preview responsive.
+        this._timeupdateHandler = () => {
+            if (this._textPreviewTimer) return;
+            this._textPreviewTimer = setTimeout(() => {
+                this._textPreviewTimer = null;
+                this._refreshTextPreview();
+            }, 200);
+        };
         this.video.addEventListener('timeupdate', this._timeupdateHandler);
 
         // Live audio volume is handled in TransportBar's ~60Hz rAF loop
@@ -609,6 +618,10 @@ export class EditorModal {
             this.video.removeEventListener('timeupdate', this._timeupdateHandler);
             this._timeupdateHandler = null;
         }
+        if (this._textPreviewTimer) {
+            clearTimeout(this._textPreviewTimer);
+            this._textPreviewTimer = null;
+        }
 
         if (this._escHandler) {
             document.removeEventListener('keydown', this._escHandler);
@@ -629,7 +642,7 @@ export class EditorModal {
             segments: this.editManager.toJSON(),
             cropRect: JSON.stringify(this.cropOverlay.getRect() ?? {}),
             speedMap: this.speedControl.getSpeedMap(),
-            volume: this.audioMixer.getVolume(),
+            volume: this.audioMixer.getMasterVolume(),
             textOverlays: this.textPanel.getOverlays(),
             transitions: [],
             audioSegments: this.audioEditManager.toJSON(),
@@ -665,7 +678,7 @@ export class EditorModal {
         this.speedControl.loadSpeedMap(state.speedMap);
 
         // Volume
-        this.audioMixer.setVolume(state.volume);
+        this.audioMixer.setMasterVolume(state.volume);
 
         // Audio segments
         if (state.audioSegments && Array.isArray(state.audioSegments) && state.audioSegments.length > 0) {
@@ -715,7 +728,7 @@ export class EditorModal {
             segments: this.editManager.toJSON(),
             cropRect: JSON.stringify(this.cropOverlay.getRect() ?? {}),
             speedMap: this.speedControl.getSpeedMap(),
-            volume: this.audioMixer.getVolume(),
+            volume: this.audioMixer.getMasterVolume(),
             textOverlays: this.textPanel.getOverlays() as TextOverlay[],
             transitions: [],
             audioSegments: this.audioEditManager.toJSON(),

@@ -27,6 +27,8 @@ export class AudioMixer {
     private eqSelect: HTMLSelectElement;
     private isMuted: boolean = false;
     private lastVolume: number = 1.0;
+    /** Dedicated master volume — persists independently of per-segment editing */
+    private _masterVolume: number = 1.0;
     private segmentHeader: HTMLDivElement;
     private _selectedSegIndex: number = -1;
 
@@ -210,8 +212,27 @@ export class AudioMixer {
         return this.container;
     }
 
+    /**
+     * Get the master volume (independent of per-segment editing).
+     * Always returns the master volume, even when a segment is selected
+     * and the slider shows the segment's volume.
+     */
     getVolume(): number {
-        return this.isMuted ? 0 : parseFloat(this.slider.value);
+        return this._masterVolume;
+    }
+
+    /** Alias for getVolume() — makes call-site intent explicit */
+    getMasterVolume(): number {
+        return this._masterVolume;
+    }
+
+    /** Set the master volume and update the slider (if no segment is selected) */
+    setMasterVolume(volume: number): void {
+        this._masterVolume = volume;
+        // Only update UI if we're showing master controls
+        if (this._selectedSegIndex < 0) {
+            this.setVolume(volume);
+        }
     }
 
     setVolume(volume: number): void {
@@ -238,11 +259,13 @@ export class AudioMixer {
         this.muteBtn.innerHTML = seg.muted ? iconMuted : iconVolume;
     }
 
-    /** Clear segment selection and show master label */
+    /** Clear segment selection, restore master volume to slider, and show master label */
     clearSegmentSelection(): void {
         this._selectedSegIndex = -1;
         this.segmentHeader.textContent = 'Master Audio';
         this.segmentHeader.style.color = 'var(--ve-text-primary)';
+        // Restore master volume to the slider UI
+        this.setVolume(this._masterVolume);
     }
 
     /** Get current control values for saving to a segment */
@@ -274,6 +297,7 @@ export class AudioMixer {
 
     /** Reset all audio settings to defaults */
     reset(): void {
+        this._masterVolume = 1.0;
         this.setVolume(1.0);
         this.fadeInSlider.value = '0';
         this.fadeInLabel.textContent = '0.0s';

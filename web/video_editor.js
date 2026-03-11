@@ -20,6 +20,8 @@ class AudioMixer {
     __publicField(this, "eqSelect");
     __publicField(this, "isMuted", false);
     __publicField(this, "lastVolume", 1);
+    /** Dedicated master volume — persists independently of per-segment editing */
+    __publicField(this, "_masterVolume", 1);
     __publicField(this, "segmentHeader");
     __publicField(this, "_selectedSegIndex", -1);
     this.callbacks = callbacks;
@@ -167,8 +169,24 @@ class AudioMixer {
   get element() {
     return this.container;
   }
+  /**
+   * Get the master volume (independent of per-segment editing).
+   * Always returns the master volume, even when a segment is selected
+   * and the slider shows the segment's volume.
+   */
   getVolume() {
-    return this.isMuted ? 0 : parseFloat(this.slider.value);
+    return this._masterVolume;
+  }
+  /** Alias for getVolume() — makes call-site intent explicit */
+  getMasterVolume() {
+    return this._masterVolume;
+  }
+  /** Set the master volume and update the slider (if no segment is selected) */
+  setMasterVolume(volume) {
+    this._masterVolume = volume;
+    if (this._selectedSegIndex < 0) {
+      this.setVolume(volume);
+    }
   }
   setVolume(volume) {
     this.slider.value = String(volume);
@@ -191,11 +209,12 @@ class AudioMixer {
     this.isMuted = seg.muted;
     this.muteBtn.innerHTML = seg.muted ? iconMuted : iconVolume;
   }
-  /** Clear segment selection and show master label */
+  /** Clear segment selection, restore master volume to slider, and show master label */
   clearSegmentSelection() {
     this._selectedSegIndex = -1;
     this.segmentHeader.textContent = "Master Audio";
     this.segmentHeader.style.color = "var(--ve-text-primary)";
+    this.setVolume(this._masterVolume);
   }
   /** Get current control values for saving to a segment */
   getSegmentProps() {
@@ -221,6 +240,7 @@ class AudioMixer {
   }
   /** Reset all audio settings to defaults */
   reset() {
+    this._masterVolume = 1;
     this.setVolume(1);
     this.fadeInSlider.value = "0";
     this.fadeInLabel.textContent = "0.0s";
@@ -2340,6 +2360,7 @@ class EditorModal {
     __publicField(this, "videoPath", "");
     __publicField(this, "_escHandler", null);
     __publicField(this, "_timeupdateHandler", null);
+    __publicField(this, "_textPreviewTimer", null);
     __publicField(this, "_isOpen", false);
     __publicField(this, "_currentToolMode", "select");
     __publicField(this, "_userDragging", false);
@@ -2595,7 +2616,7 @@ class EditorModal {
     this.videoPath = videoPath;
     if (initialState) {
       this.speedControl.loadSpeedMap(initialState.speedMap);
-      this.audioMixer.setVolume(initialState.volume);
+      this.audioMixer.setMasterVolume(initialState.volume);
       this.textPanel.loadOverlays(initialState.textOverlays);
       try {
         const crop = JSON.parse(initialState.cropRect);
@@ -2634,7 +2655,13 @@ class EditorModal {
     this.video.addEventListener("loadeddata", () => {
       this.monitorCanvas.fitToView();
     }, { once: true });
-    this._timeupdateHandler = () => this._refreshTextPreview();
+    this._timeupdateHandler = () => {
+      if (this._textPreviewTimer) return;
+      this._textPreviewTimer = setTimeout(() => {
+        this._textPreviewTimer = null;
+        this._refreshTextPreview();
+      }, 200);
+    };
     this.video.addEventListener("timeupdate", this._timeupdateHandler);
     requestAnimationFrame(() => {
       const slot = this.panel.querySelector("#veditor-timeline-slot");
@@ -2755,6 +2782,10 @@ class EditorModal {
       this.video.removeEventListener("timeupdate", this._timeupdateHandler);
       this._timeupdateHandler = null;
     }
+    if (this._textPreviewTimer) {
+      clearTimeout(this._textPreviewTimer);
+      this._textPreviewTimer = null;
+    }
     if (this._escHandler) {
       document.removeEventListener("keydown", this._escHandler);
       this._escHandler = null;
@@ -2770,7 +2801,7 @@ class EditorModal {
       segments: this.editManager.toJSON(),
       cropRect: JSON.stringify(this.cropOverlay.getRect() ?? {}),
       speedMap: this.speedControl.getSpeedMap(),
-      volume: this.audioMixer.getVolume(),
+      volume: this.audioMixer.getMasterVolume(),
       textOverlays: this.textPanel.getOverlays(),
       transitions: [],
       audioSegments: this.audioEditManager.toJSON()
@@ -2798,7 +2829,7 @@ class EditorModal {
       this.cropOverlay.setRect(null);
     }
     this.speedControl.loadSpeedMap(state.speedMap);
-    this.audioMixer.setVolume(state.volume);
+    this.audioMixer.setMasterVolume(state.volume);
     if (state.audioSegments && Array.isArray(state.audioSegments) && state.audioSegments.length > 0) {
       this.audioEditManager.fromJSON(state.audioSegments);
       this.audioMixer.clearSegmentSelection();
@@ -2838,7 +2869,7 @@ class EditorModal {
       segments: this.editManager.toJSON(),
       cropRect: JSON.stringify(this.cropOverlay.getRect() ?? {}),
       speedMap: this.speedControl.getSpeedMap(),
-      volume: this.audioMixer.getVolume(),
+      volume: this.audioMixer.getMasterVolume(),
       textOverlays: this.textPanel.getOverlays(),
       transitions: [],
       audioSegments: this.audioEditManager.toJSON()
