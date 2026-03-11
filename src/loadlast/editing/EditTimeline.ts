@@ -8,8 +8,12 @@
 import type { EditSegment, EditTimelineGeometry } from '@ffmpega/types/loadlast';
 import type { EditManager } from './EditManager';
 import { fmtDuration } from '@ffmpega/shared/utils';
+import { snapToEdges, collectEdges } from '@ffmpega/videoeditor/SnapEngine';
 
 // ─── Constants ─────────────────────────────────────────────────────────
+// Note: TRACK_H / HANDLE_W / PLAYHEAD_W are shared with AudioTimeline.ts,
+// but TRACK_PAD differs intentionally: video track uses 12 to make room
+// for time labels below; audio track uses 4 for a compact NLE row.
 const TRACK_H = 48;
 const TRACK_PAD = 12;
 const HANDLE_W = 8;
@@ -49,6 +53,7 @@ export class EditTimeline {
     public playhead: number = 0;
     private hoveredHandle: string | null = null;
     private drag: DragState = { type: 'none' };
+    private _snapping: boolean = true;
 
     // Bound handlers (stored so destroy() can remove the exact same reference)
     private _boundMouseDown = this._onMouseDown.bind(this);
@@ -81,6 +86,11 @@ export class EditTimeline {
     setPlayhead(time: number): void {
         this.playhead = Math.max(0, Math.min(time, this.manager.videoDuration));
         this.render();
+    }
+
+    /** Set snapping enabled/disabled */
+    setSnapping(enabled: boolean): void {
+        this._snapping = enabled;
     }
 
     /** Full render pass */
@@ -305,17 +315,20 @@ export class EditTimeline {
         if (this.drag.type === 'none') {
             // Update cursor for hover
             const hit = this._hitTest(x, y);
+            let newHover: string | null = null;
             if (hit.type === 'handle-left' || hit.type === 'handle-right') {
                 this.canvas.style.cursor = 'ew-resize';
-                this.hoveredHandle = hit.segId ? `${hit.segId}-${hit.type === 'handle-left' ? 'left' : 'right'}` : null;
+                newHover = hit.segId ? `${hit.segId}-${hit.type === 'handle-left' ? 'left' : 'right'}` : null;
             } else if (hit.type === 'playhead') {
                 this.canvas.style.cursor = 'col-resize';
-                this.hoveredHandle = null;
             } else {
                 this.canvas.style.cursor = 'pointer';
-                this.hoveredHandle = null;
             }
-            this.render();
+            // Only re-render when hover target actually changes.
+            if (newHover !== this.hoveredHandle) {
+                this.hoveredHandle = newHover;
+                this.render();
+            }
             return;
         }
 
@@ -326,13 +339,23 @@ export class EditTimeline {
         const dt = (dx / trackW) * duration;
 
         if (drag.type === 'handle-left') {
-            const newStart = Math.max(0, drag.origStart + dt);
+            let newStart = Math.max(0, drag.origStart + dt);
+            if (this._snapping) {
+                const edges = collectEdges(this.manager.segments, drag.segId, 'start');
+                const snap = snapToEdges(newStart, edges, 8, trackW, duration);
+                newStart = snap.time;
+            }
             const seg = this.manager.segments.find(s => s.id === drag.segId);
             if (seg) this.manager.updateSegment(drag.segId, newStart, seg.end);
             this.callbacks.onTrimHandleDrag(newStart);
             this.render();
         } else if (drag.type === 'handle-right') {
-            const newEnd = Math.min(duration, drag.origEnd + dt);
+            let newEnd = Math.min(duration, drag.origEnd + dt);
+            if (this._snapping) {
+                const edges = collectEdges(this.manager.segments, drag.segId, 'end');
+                const snap = snapToEdges(newEnd, edges, 8, trackW, duration);
+                newEnd = snap.time;
+            }
             const seg = this.manager.segments.find(s => s.id === drag.segId);
             if (seg) this.manager.updateSegment(drag.segId, seg.start, newEnd);
             this.callbacks.onTrimHandleDrag(newEnd);

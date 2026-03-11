@@ -175,7 +175,23 @@ export class SpeedControl {
         interpRow.append(interpIcon, interpLabel, this.interpToggle);
         interpSection.appendChild(interpRow);
 
-        this.container.append(speedSection, reverseSection, curveSection, interpSection);
+        // ── Reset Section ──
+        const resetRow = document.createElement('div');
+        resetRow.className = 'veditor-control-row';
+
+        const resetBtn = document.createElement('button');
+        resetBtn.className = 'veditor-btn veditor-toggle-btn';
+        resetBtn.innerHTML = `${iconGauge} Reset Speed`;
+        resetBtn.title = 'Reset all speed settings to defaults';
+        resetBtn.setAttribute('data-tool-id', 'veditor-speed-reset');
+        resetBtn.setAttribute('aria-label', 'Reset speed settings');
+        resetBtn.addEventListener('click', () => {
+            this.reset();
+            this.callbacks.onSpeedChanged(this.currentSegment, 1.0);
+        });
+        resetRow.appendChild(resetBtn);
+
+        this.container.append(speedSection, reverseSection, curveSection, interpSection, resetRow);
     }
 
     get element(): HTMLDivElement {

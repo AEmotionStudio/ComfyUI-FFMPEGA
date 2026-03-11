@@ -17,6 +17,12 @@ const iconStepBack = L(
 const iconStepForward = L(
   '<path d="M21 4v16"/><path d="M6.029 4.285A2 2 0 0 0 3 6v12a2 2 0 0 0 3.029 1.715l9.997-5.998a2 2 0 0 0 .003-3.432z"/>'
 );
+const iconSkipStart = L(
+  '<path d="M19 20 9 12l10-8z"/><line x1="5" x2="5" y1="19" y2="5"/>'
+);
+const iconRepeat = L(
+  '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>'
+);
 const iconCursor = L(
   '<path d="M12.586 12.586 19 19"/><path d="M3.688 3.037a.497.497 0 0 0-.651.651l6.5 15.999a.501.501 0 0 0 .947-.062l1.569-6.083a2 2 0 0 1 1.448-1.479l6.124-1.579a.5.5 0 0 0 .063-.947z"/>'
 );
@@ -116,6 +122,9 @@ class CropOverlay {
     __publicField(this, "dragStart", { x: 0, y: 0 });
     __publicField(this, "origRect", { x: 0, y: 0, w: 0, h: 0 });
     __publicField(this, "enabled", false);
+    __publicField(this, "previewEnabled", false);
+    __publicField(this, "videoEl", null);
+    __publicField(this, "previewBtn");
     // Numeric input fields
     __publicField(this, "inputX");
     __publicField(this, "inputY");
@@ -163,6 +172,7 @@ class CropOverlay {
       if (!this.enabled) {
         this.rect = null;
         this.callbacks.onCropChanged(null);
+        this._clearPreview();
       }
       this._updateInputs();
       this.render();
@@ -275,12 +285,33 @@ class CropOverlay {
       this.rect = null;
       this.enabled = false;
       toggleBtn.classList.remove("active");
+      this._clearPreview();
+      this.previewBtn.classList.remove("active");
+      this.previewEnabled = false;
       this._updateInputs();
       this.callbacks.onCropChanged(null);
       this.render();
     });
     resetRow.appendChild(resetBtn);
-    this.controls.append(toggleSection, numSection, outputSection, resetRow);
+    const previewRow = document.createElement("div");
+    previewRow.className = "veditor-control-row";
+    this.previewBtn = document.createElement("button");
+    this.previewBtn.className = "veditor-btn veditor-toggle-btn";
+    this.previewBtn.innerHTML = `${iconCrop} Preview Crop`;
+    this.previewBtn.title = "Toggle live crop preview";
+    this.previewBtn.setAttribute("data-tool-id", "veditor-crop-preview");
+    this.previewBtn.setAttribute("aria-label", "Toggle live crop preview");
+    this.previewBtn.addEventListener("click", () => {
+      this.previewEnabled = !this.previewEnabled;
+      this.previewBtn.classList.toggle("active", this.previewEnabled);
+      if (this.previewEnabled) {
+        this._applyPreview();
+      } else {
+        this._clearPreview();
+      }
+    });
+    previewRow.appendChild(this.previewBtn);
+    this.controls.append(toggleSection, numSection, outputSection, resetRow, previewRow);
     this.canvas.addEventListener("mousedown", (e) => this._onMouseDown(e));
     document.addEventListener("mousemove", (e) => this._onMouseMove(e));
     document.addEventListener("mouseup", () => this._onMouseUp());
@@ -348,10 +379,18 @@ class CropOverlay {
     for (const [cx, cy] of corners) {
       ctx.fillRect(cx - HANDLE_SIZE / 2, cy - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE);
     }
+    if (this.previewEnabled) {
+      this._applyPreview();
+    }
   }
   destroy() {
+    this._clearPreview();
     this.canvasWrapper.remove();
     this.controls.remove();
+  }
+  /** Bind the video element for preview clip-path */
+  bindVideo(video) {
+    this.videoEl = video;
   }
   // ── Private ──────────────────────────────────────────────────
   _updateInputs() {
@@ -435,6 +474,26 @@ class CropOverlay {
     if (mx > x && mx < x + w && my > y && my < y + h) return "move";
     return "none";
   }
+  /** Apply CSS clip-path to video for live crop preview */
+  _applyPreview() {
+    var _a, _b;
+    if (!this.videoEl || !this.rect || !this.videoWidth || !this.videoHeight) return;
+    const top = this.rect.y / this.videoHeight * 100;
+    const right = (this.videoWidth - this.rect.x - this.rect.w) / this.videoWidth * 100;
+    const bottom = (this.videoHeight - this.rect.y - this.rect.h) / this.videoHeight * 100;
+    const left = this.rect.x / this.videoWidth * 100;
+    const clipPath = `inset(${top}% ${right}% ${bottom}% ${left}%)`;
+    this.videoEl.style.clipPath = clipPath;
+    (_b = (_a = this.callbacks).onPreviewChanged) == null ? void 0 : _b.call(_a, clipPath);
+  }
+  /** Clear preview clip-path */
+  _clearPreview() {
+    var _a, _b;
+    if (this.videoEl) {
+      this.videoEl.style.clipPath = "";
+    }
+    (_b = (_a = this.callbacks).onPreviewChanged) == null ? void 0 : _b.call(_a, "");
+  }
   _applyAspect(preset) {
     if (!this.rect) return;
     let ratio;
@@ -499,14 +558,16 @@ class CropOverlay {
   }
 }
 export {
-  iconScissors as A,
-  iconSplit as B,
+  iconPause as A,
+  iconCursor as B,
   CropOverlay as C,
-  iconTrash as D,
-  iconReset as E,
-  iconReverse as F,
-  iconCurve as G,
-  iconFilm as H,
+  iconScissors as D,
+  iconSplit as E,
+  iconTrash as F,
+  iconReset as G,
+  iconReverse as H,
+  iconCurve as I,
+  iconFilm as J,
   iconMuted as a,
   iconMusic as b,
   iconPlus as c,
@@ -528,9 +589,9 @@ export {
   iconCrop as s,
   iconGauge as t,
   iconText as u,
-  iconStepBack as v,
-  iconPlay as w,
-  iconStepForward as x,
-  iconPause as y,
-  iconCursor as z
+  iconSkipStart as v,
+  iconStepBack as w,
+  iconPlay as x,
+  iconStepForward as y,
+  iconRepeat as z
 };

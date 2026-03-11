@@ -455,8 +455,8 @@ class FFMPEGAgentNode:
             },
         }
 
-    RETURN_TYPES = ("IMAGE", "AUDIO", "STRING", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("images", "audio", "video_path", "command_log", "analysis", "mask_overlay_path")
+    RETURN_TYPES = ("IMAGE", "AUDIO", "STRING", "STRING", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("images", "audio", "video_path", "command_log", "analysis", "mask_overlay_path", "mask_points")
     OUTPUT_TOOLTIPS = (
         "Image frames from the output video. Returns ALL frames automatically when connected to a downstream node (e.g. VHS Video Combine). Returns only a thumbnail when unconnected (zero-memory preview).",
         "Audio extracted from the output video (or passed through from audio_a) in ComfyUI AUDIO format.",
@@ -464,6 +464,7 @@ class FFMPEGAgentNode:
         "The ffmpeg command that was executed.",
         "LLM interpretation, estimated changes, pipeline steps, and any warnings.",
         "Path to a mask overlay preview video with SAM3-style colored contours. Connect to Save Video (FFMPEGA) to view.",
+        "Pass-through of upstream mask_points data for downstream nodes.",
     )
     FUNCTION = "process"
     CATEGORY = "FFMPEGA"
@@ -899,7 +900,7 @@ class FFMPEGAgentNode:
         log_usage: bool = False,
         allow_model_downloads: bool = True,
         **kwargs,  # hidden: prompt (PROMPT dict), extra_pnginfo (EXTRA_PNGINFO)
-    ) -> tuple[torch.Tensor, dict, str, str, str, str]:
+    ) -> tuple[torch.Tensor, dict, str, str, str, str, str]:
         """Process the video based on the natural language prompt.
 
         Args:
@@ -934,7 +935,7 @@ class FFMPEGAgentNode:
 
         # --- Batch mode ---
         if batch_mode:
-            return await self._process_batch(
+            result6 = await self._process_batch(
                 video_folder=video_folder,
                 file_pattern=file_pattern,
                 prompt=prompt,
@@ -959,6 +960,7 @@ class FFMPEGAgentNode:
                 flux_smoothing=flux_smoothing,
                 pipeline_json=pipeline_json,
             )
+            return result6 + (mask_points or "",)
 
         # --- Resolve inputs ---
         (
@@ -1023,7 +1025,7 @@ class FFMPEGAgentNode:
         if llm_model == "none":
             # Effects Builder connected → execute its pipeline directly
             if pipeline_json and pipeline_json.strip():
-                return await self._process_effects_pipeline(
+                result6 = await self._process_effects_pipeline(
                     pipeline_json=pipeline_json,
                     prompt=prompt,
                     effective_video_path=effective_video_path,
@@ -1052,9 +1054,10 @@ class FFMPEGAgentNode:
                     _all_text_inputs=_all_text_inputs,
                     **kwargs,
                 )
+                return result6 + (mask_points or "",)
             # Whisper-only mode (transcribe or karaoke)
             if no_llm_mode in ("transcribe", "karaoke_subtitles"):
-                return await self._process_whisper_only(
+                result6 = await self._process_whisper_only(
                     mode=no_llm_mode,
                     effective_video_path=effective_video_path,
                     video_metadata=video_metadata,
@@ -1070,9 +1073,10 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
+                return result6 + (mask_points or "",)
             # SAM3-only mode (prompt = text target)
             if no_llm_mode == "sam3_masking":
-                return await self._process_sam3_only(
+                result6 = await self._process_sam3_only(
                     prompt=prompt,
                     effective_video_path=effective_video_path,
                     video_metadata=video_metadata,
@@ -1090,9 +1094,10 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
+                return result6 + (mask_points or "",)
             # MMAudio-only mode (generate_audio from video/prompt)
             if no_llm_mode == "generate_audio":
-                return await self._process_mmaudio_only(
+                result6 = await self._process_mmaudio_only(
                     prompt=prompt,
                     mmaudio_mode=mmaudio_mode,
                     effective_video_path=effective_video_path,
@@ -1107,9 +1112,10 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
+                return result6 + (mask_points or "",)
             # Lip sync mode (MuseTalk from connected audio_a)
             if no_llm_mode == "lip_sync":
-                return await self._process_lip_sync_only(
+                result6 = await self._process_lip_sync_only(
                     effective_video_path=effective_video_path,
                     video_metadata=video_metadata,
                     save_output=save_output,
@@ -1123,11 +1129,12 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
+                return result6 + (mask_points or "",)
             # Animate portrait mode (LivePortrait from connected video_a)
             if no_llm_mode == "animate_portrait":
                 # video_a is the driving video
                 driving_video = _all_video_paths[0] if _all_video_paths else ""
-                return await self._process_animate_portrait_only(
+                result6 = await self._process_animate_portrait_only(
                     effective_video_path=effective_video_path,
                     video_metadata=video_metadata,
                     save_output=save_output,
@@ -1141,9 +1148,10 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
+                return result6 + (mask_points or "",)
             # Marigold mode (dense vision analysis)
             if no_llm_mode == "marigold":
-                return await self._process_marigold_only(
+                result6 = await self._process_marigold_only(
                     effective_video_path=effective_video_path,
                     video_metadata=video_metadata,
                     save_output=save_output,
@@ -1157,9 +1165,10 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
+                return result6 + (mask_points or "",)
             # Video Depth Anything mode (temporal depth estimation)
             if no_llm_mode == "video_depth":
-                return await self._process_video_depth_only(
+                result6 = await self._process_video_depth_only(
                     effective_video_path=effective_video_path,
                     video_metadata=video_metadata,
                     save_output=save_output,
@@ -1174,9 +1183,10 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
+                return result6 + (mask_points or "",)
             # MiniMax-Remover mode (direct removal, no SAM3)
             if no_llm_mode == "minimax_remover":
-                return await self._process_minimax_remover_only(
+                result6 = await self._process_minimax_remover_only(
                     prompt=prompt,
                     effective_video_path=effective_video_path,
                     video_metadata=video_metadata,
@@ -1190,9 +1200,10 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
+                return result6 + (mask_points or "",)
             # FLUX Klein mode (direct editing, no SAM3)
             if no_llm_mode == "flux_klein":
-                return await self._process_flux_klein_only(
+                result6 = await self._process_flux_klein_only(
                     prompt=prompt,
                     effective_video_path=effective_video_path,
                     video_metadata=video_metadata,
@@ -1209,9 +1220,10 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
+                return result6 + (mask_points or "",)
             # AI Upscale mode (spandrel-based super-resolution)
             if no_llm_mode == "ai_upscale":
-                return await self._process_ai_upscale_only(
+                result6 = await self._process_ai_upscale_only(
                     effective_video_path=effective_video_path,
                     video_metadata=video_metadata,
                     save_output=save_output,
@@ -1227,9 +1239,10 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
+                return result6 + (mask_points or "",)
             # Rembg background removal mode
             if no_llm_mode == "rembg":
-                return await self._process_rembg_only(
+                result6 = await self._process_rembg_only(
                     effective_video_path=effective_video_path,
                     video_metadata=video_metadata,
                     save_output=save_output,
@@ -1244,6 +1257,7 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
+                return result6 + (mask_points or "",)
             # Text inputs connected → build a text overlay pipeline
             if _all_text_inputs:
                 # Auto-generate a pipeline from text inputs
@@ -1274,7 +1288,7 @@ class FFMPEGAgentNode:
 
                 synth_pipeline = json.dumps({"steps": text_steps})
                 logger.info("No-LLM: auto-generated text pipeline from %d text input(s)", len(_all_text_inputs))
-                return await self._process_effects_pipeline(
+                result6 = await self._process_effects_pipeline(
                     pipeline_json=synth_pipeline,
                     prompt=prompt,
                     effective_video_path=effective_video_path,
@@ -1303,6 +1317,7 @@ class FFMPEGAgentNode:
                     _all_text_inputs=_all_text_inputs,
                     **kwargs,
                 )
+                return result6 + (mask_points or "",)
             # manual mode without Effects Builder or text
             raise RuntimeError(
                 "No-LLM 'manual' mode requires an Effects Builder node or "
@@ -1417,7 +1432,7 @@ class FFMPEGAgentNode:
             analysis = f"AI Skill produced video: {os.path.basename(movie_override)}"
             if hasattr(connector, 'close'):
                 await connector.close()
-            return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
+            return (images_tensor, audio_out, output_path, cmd_log, analysis, "", mask_points or "")
 
         # --- Execute ---
         result, pipeline, command = await self._execute_pipeline(
@@ -1525,7 +1540,7 @@ class FFMPEGAgentNode:
             save_output=save_output,
         )
 
-        return (images_tensor, audio_out, output_path, command.to_string(), analysis, mask_overlay_path)
+        return (images_tensor, audio_out, output_path, command.to_string(), analysis, mask_overlay_path, mask_points or "")
 
     # ------------------------------------------------------------------ #
     #  Effects Builder support                                             #

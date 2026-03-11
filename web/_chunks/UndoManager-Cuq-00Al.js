@@ -1,7 +1,7 @@
 var __defProp = Object.defineProperty;
 var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
-import { v as iconStepBack, w as iconPlay, x as iconStepForward, y as iconPause, z as iconCursor, A as iconScissors, B as iconSplit, D as iconTrash, E as iconReset, F as iconReverse, G as iconCurve, H as iconFilm } from "./CropOverlay-RBSIEwzt.js";
+import { v as iconSkipStart, w as iconStepBack, x as iconPlay, y as iconStepForward, z as iconRepeat, A as iconPause, B as iconCursor, D as iconScissors, E as iconSplit, F as iconTrash, G as iconReset, H as iconReverse, I as iconCurve, J as iconFilm, t as iconGauge } from "./CropOverlay-mJDFyTOH.js";
 function captureFrame(video, time) {
   return new Promise((resolve) => {
     video.currentTime = time;
@@ -198,7 +198,9 @@ class TransportBar {
     __publicField(this, "callbacks");
     __publicField(this, "timeDisplay");
     __publicField(this, "playBtn");
+    __publicField(this, "loopBtn");
     __publicField(this, "shuttleSpeed", 1);
+    __publicField(this, "_loopEnabled", true);
     __publicField(this, "_keyHandler", null);
     __publicField(this, "_editManager", null);
     __publicField(this, "_animFrameId", null);
@@ -206,12 +208,17 @@ class TransportBar {
     __publicField(this, "_seekLock", false);
     /** When a seek is pending, this holds the desired time */
     __publicField(this, "_targetTime", null);
+    __publicField(this, "_transitionPreview", null);
+    __publicField(this, "_transitions", []);
+    __publicField(this, "_lastSegIdx", -1);
+    __publicField(this, "_audioEditManager", null);
     this.callbacks = callbacks;
     this.container = document.createElement("div");
     this.container.className = "veditor-transport";
     this.container.setAttribute("data-tool-id", "veditor-transport");
     this.container.setAttribute("aria-label", "Video transport controls");
     this.container.setAttribute("role", "toolbar");
+    const goStart = this._makeBtn(iconSkipStart, "Go to start (Home)", () => this._goToStart(), "veditor-go-start");
     const stepBack = this._makeBtn(iconStepBack, "Step back 1 frame (←)", () => this._stepFrame(-1), "veditor-step-back");
     this.playBtn = this._makeBtn(iconPlay, "Play / Pause (Space or K)", () => this._togglePlay(), "veditor-play-btn");
     const stepFwd = this._makeBtn(iconStepForward, "Step forward 1 frame (→)", () => this._stepFrame(1), "veditor-step-forward");
@@ -221,7 +228,10 @@ class TransportBar {
     this.timeDisplay.setAttribute("data-tool-id", "veditor-timecode");
     this.timeDisplay.setAttribute("aria-label", "Current time / total duration");
     this.timeDisplay.setAttribute("aria-live", "polite");
-    this.container.append(stepBack, this.playBtn, stepFwd, this.timeDisplay);
+    this.loopBtn = this._makeBtn(iconRepeat, "Toggle loop playback", () => this._toggleLoop(), "veditor-loop-btn");
+    this.loopBtn.classList.add("active");
+    this.loopBtn.setAttribute("aria-pressed", "true");
+    this.container.append(goStart, stepBack, this.playBtn, stepFwd, this.timeDisplay, this.loopBtn);
     this._keyHandler = (e) => this._onKeyDown(e);
     document.addEventListener("keydown", this._keyHandler);
   }
@@ -261,12 +271,24 @@ class TransportBar {
       this._startSegmentPolling();
     });
     video.addEventListener("pause", () => {
+      var _a;
       this.playBtn.innerHTML = iconPlay;
       this.callbacks.onPlayStateChange(false);
       this._stopSegmentPolling();
+      (_a = this._transitionPreview) == null ? void 0 : _a.clear();
     });
     video.addEventListener("loadedmetadata", () => {
       this._updateTimeDisplay();
+    });
+    video.addEventListener("ended", () => {
+      if (this._loopEnabled && this._editManager) {
+        const segs = this._editManager.segments;
+        if (segs.length > 0) {
+          this._currentSegIdx = 0;
+          this.video.currentTime = segs[0].start;
+          this.video.play();
+        }
+      }
     });
   }
   seekTo(time) {
@@ -311,6 +333,25 @@ class TransportBar {
     this._currentSegIdx = 0;
     if (segs.length > 0) {
       this.video.currentTime = segs[0].start;
+    }
+  }
+  /** Bind transition data for live preview */
+  setTransitions(transitions) {
+    this._transitions = transitions;
+  }
+  /** Bind the transition preview engine */
+  setTransitionPreview(preview) {
+    this._transitionPreview = preview;
+  }
+  /** Bind the audio edit manager for live volume enforcement */
+  setAudioEditManager(mgr) {
+    this._audioEditManager = mgr;
+  }
+  /** Update playback rate live (used by speed controls for preview). */
+  setPlaybackRate(rate) {
+    this.shuttleSpeed = rate;
+    if (this.video && !this.video.paused) {
+      this.video.playbackRate = rate;
     }
   }
   destroy() {
@@ -376,14 +417,39 @@ class TransportBar {
         this.video.currentTime = segs[nextIdx].start;
       } else {
         this._currentSegIdx = 0;
-        if (!this.video.paused) {
+        if (this._loopEnabled) {
           this.video.currentTime = segs[0].start;
+        } else {
+          this.video.pause();
+          this.video.currentTime = segs[segs.length - 1].end - 0.02;
         }
       }
       return;
     }
     if (t < seg.start - 0.05) {
       this.video.currentTime = seg.start;
+    }
+    if (this._transitionPreview) {
+      const isNewSeg = this._lastSegIdx !== this._currentSegIdx;
+      this._lastSegIdx = this._currentSegIdx;
+      const outTransition = this._currentSegIdx < this._transitions.length ? this._transitions[this._currentSegIdx] : null;
+      const inTransition = this._currentSegIdx > 0 && this._currentSegIdx - 1 < this._transitions.length ? this._transitions[this._currentSegIdx - 1] : null;
+      const timeToEnd = seg.end - t;
+      const timeFromStart = t - seg.start;
+      const outHalf = outTransition ? outTransition.duration / 2 : 0;
+      const inHalf = inTransition ? inTransition.duration / 2 : 0;
+      if (outTransition && timeToEnd <= outHalf) {
+        this._transitionPreview.update(t, seg.end, seg.start, outTransition, false);
+      } else if (inTransition && timeFromStart <= inHalf) {
+        this._transitionPreview.update(t, seg.end, seg.start, inTransition, isNewSeg);
+      } else {
+        this._transitionPreview.clear();
+      }
+    }
+    if (this._audioEditManager && this.video) {
+      const vol = this._audioEditManager.getVolumeAtTime(t);
+      this.video.volume = Math.min(1, Math.max(0, vol));
+      this.video.muted = vol < 0.01;
     }
   }
   /**
@@ -454,6 +520,26 @@ class TransportBar {
     }
     this.video.currentTime = Math.max(0, newTime);
   }
+  /** Toggle loop on/off */
+  _toggleLoop() {
+    this._loopEnabled = !this._loopEnabled;
+    this.loopBtn.classList.toggle("active", this._loopEnabled);
+    this.loopBtn.setAttribute("aria-pressed", String(this._loopEnabled));
+  }
+  /** Jump to start of first segment (or time 0). */
+  _goToStart() {
+    if (!this.video) return;
+    this.video.pause();
+    this._currentSegIdx = 0;
+    if (this._editManager) {
+      const segs = this._editManager.segments;
+      if (segs.length > 0) {
+        this.seekTo(segs[0].start);
+        return;
+      }
+    }
+    this.seekTo(0);
+  }
   _onKeyDown(e) {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
       return;
@@ -484,6 +570,10 @@ class TransportBar {
       case " ":
         e.preventDefault();
         this._togglePlay();
+        break;
+      case "home":
+        e.preventDefault();
+        this._goToStart();
         break;
     }
   }
@@ -533,6 +623,36 @@ class TransportBar {
     return btn;
   }
 }
+const DEFAULT_SNAP_THRESHOLD_PX = 8;
+function snapToEdges(time, edges, thresholdPx = DEFAULT_SNAP_THRESHOLD_PX, trackW = 1, duration = 1) {
+  const thresholdTime = thresholdPx / trackW * duration;
+  let closest = null;
+  let closestDist = Infinity;
+  for (const edge of edges) {
+    const dist = Math.abs(time - edge);
+    if (dist < thresholdTime && dist < closestDist) {
+      closest = edge;
+      closestDist = dist;
+    }
+  }
+  if (closest !== null) {
+    return { time: closest, snapped: true, snapTarget: closest };
+  }
+  return { time, snapped: false };
+}
+function collectEdges(segments, excludeId, excludeSide) {
+  const edges = [];
+  for (const seg of segments) {
+    if (seg.id === excludeId) {
+      if (excludeSide !== "start") edges.push(seg.start);
+      if (excludeSide !== "end") edges.push(seg.end);
+    } else {
+      edges.push(seg.start, seg.end);
+    }
+  }
+  edges.push(0);
+  return edges;
+}
 const TRACK_H = 48;
 const TRACK_PAD = 12;
 const HANDLE_W = 8;
@@ -555,6 +675,7 @@ class EditTimeline {
     __publicField(this, "playhead", 0);
     __publicField(this, "hoveredHandle", null);
     __publicField(this, "drag", { type: "none" });
+    __publicField(this, "_snapping", true);
     // Bound handlers (stored so destroy() can remove the exact same reference)
     __publicField(this, "_boundMouseDown", this._onMouseDown.bind(this));
     __publicField(this, "_boundMouseMove", this._onMouseMove.bind(this));
@@ -577,6 +698,10 @@ class EditTimeline {
   setPlayhead(time) {
     this.playhead = Math.max(0, Math.min(time, this.manager.videoDuration));
     this.render();
+  }
+  /** Set snapping enabled/disabled */
+  setSnapping(enabled) {
+    this._snapping = enabled;
   }
   /** Full render pass */
   render() {
@@ -743,17 +868,19 @@ class EditTimeline {
     const { x, y } = this._canvasToTrack(e.clientX, e.clientY);
     if (this.drag.type === "none") {
       const hit = this._hitTest(x, y);
+      let newHover = null;
       if (hit.type === "handle-left" || hit.type === "handle-right") {
         this.canvas.style.cursor = "ew-resize";
-        this.hoveredHandle = hit.segId ? `${hit.segId}-${hit.type === "handle-left" ? "left" : "right"}` : null;
+        newHover = hit.segId ? `${hit.segId}-${hit.type === "handle-left" ? "left" : "right"}` : null;
       } else if (hit.type === "playhead") {
         this.canvas.style.cursor = "col-resize";
-        this.hoveredHandle = null;
       } else {
         this.canvas.style.cursor = "pointer";
-        this.hoveredHandle = null;
       }
-      this.render();
+      if (newHover !== this.hoveredHandle) {
+        this.hoveredHandle = newHover;
+        this.render();
+      }
       return;
     }
     if (!this.geometry) return;
@@ -762,13 +889,23 @@ class EditTimeline {
     const dx = e.clientX - drag.startX;
     const dt = dx / trackW * duration;
     if (drag.type === "handle-left") {
-      const newStart = Math.max(0, drag.origStart + dt);
+      let newStart = Math.max(0, drag.origStart + dt);
+      if (this._snapping) {
+        const edges = collectEdges(this.manager.segments, drag.segId, "start");
+        const snap = snapToEdges(newStart, edges, 8, trackW, duration);
+        newStart = snap.time;
+      }
       const seg = this.manager.segments.find((s) => s.id === drag.segId);
       if (seg) this.manager.updateSegment(drag.segId, newStart, seg.end);
       this.callbacks.onTrimHandleDrag(newStart);
       this.render();
     } else if (drag.type === "handle-right") {
-      const newEnd = Math.min(duration, drag.origEnd + dt);
+      let newEnd = Math.min(duration, drag.origEnd + dt);
+      if (this._snapping) {
+        const edges = collectEdges(this.manager.segments, drag.segId, "end");
+        const snap = snapToEdges(newEnd, edges, 8, trackW, duration);
+        newEnd = snap.time;
+      }
       const seg = this.manager.segments.find((s) => s.id === drag.segId);
       if (seg) this.manager.updateSegment(drag.segId, seg.start, newEnd);
       this.callbacks.onTrimHandleDrag(newEnd);
@@ -811,22 +948,65 @@ class EditTimeline {
     this.canvas.removeEventListener("dblclick", this._boundDblClick);
   }
 }
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 20;
+const ZOOM_STEP = 1.25;
+const HEADER_W = 56;
 class NLETimeline {
   constructor(manager, callbacks) {
     __publicField(this, "container");
+    __publicField(this, "scrollWrapper");
+    __publicField(this, "scrollInner");
     __publicField(this, "ruler");
     __publicField(this, "tracksContainer");
     __publicField(this, "videoTrack");
     __publicField(this, "audioTrack");
     __publicField(this, "editTimeline");
+    __publicField(this, "audioTimeline", null);
     __publicField(this, "manager");
     __publicField(this, "playheadEl");
+    __publicField(this, "_snapping", true);
+    __publicField(this, "_zoom", 1);
+    __publicField(this, "_zoomLabel");
     this.manager = manager;
     this.container = document.createElement("div");
     this.container.className = "veditor-nle-timeline";
     this.container.setAttribute("data-tool-id", "veditor-timeline");
     this.container.setAttribute("aria-label", "Multi-track editing timeline");
     this.container.setAttribute("role", "region");
+    const toolbar = document.createElement("div");
+    toolbar.className = "veditor-timeline-toolbar";
+    toolbar.style.cssText = "display:flex;align-items:center;justify-content:space-between;padding:2px 4px;gap:4px;flex-shrink:0;";
+    const snapBtn = document.createElement("button");
+    snapBtn.className = "veditor-btn veditor-snap-btn active";
+    snapBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg> Snap`;
+    snapBtn.title = "Toggle clip snapping (S)";
+    snapBtn.setAttribute("data-tool-id", "veditor-snap-toggle");
+    snapBtn.setAttribute("aria-label", "Toggle clip snapping");
+    snapBtn.style.cssText = "font-size:11px;padding:2px 8px;border-radius:4px;";
+    snapBtn.addEventListener("click", () => {
+      var _a;
+      this._snapping = !this._snapping;
+      snapBtn.classList.toggle("active", this._snapping);
+      this.editTimeline.setSnapping(this._snapping);
+      (_a = this.audioTimeline) == null ? void 0 : _a.setSnapping(this._snapping);
+    });
+    const zoomGroup = document.createElement("div");
+    zoomGroup.style.cssText = "display:flex;align-items:center;gap:2px;";
+    const zoomOutBtn = this._makeToolbarBtn("−", "Zoom out timeline", "veditor-tl-zoom-out", () => this.setZoom(this._zoom / ZOOM_STEP));
+    const zoomInBtn = this._makeToolbarBtn("+", "Zoom in timeline", "veditor-tl-zoom-in", () => this.setZoom(this._zoom * ZOOM_STEP));
+    const zoomFitBtn = this._makeToolbarBtn("Fit", "Fit timeline to view", "veditor-tl-zoom-fit", () => this.setZoom(1));
+    this._zoomLabel = document.createElement("span");
+    this._zoomLabel.style.cssText = "font-size:10px;color:rgba(255,255,255,0.4);min-width:36px;text-align:center;font-variant-numeric:tabular-nums;";
+    this._zoomLabel.textContent = "1.0×";
+    zoomGroup.append(zoomOutBtn, this._zoomLabel, zoomInBtn, zoomFitBtn);
+    toolbar.append(snapBtn, zoomGroup);
+    this.scrollWrapper = document.createElement("div");
+    this.scrollWrapper.className = "veditor-timeline-scroll";
+    this.scrollWrapper.style.cssText = "flex:1;overflow-x:auto;overflow-y:hidden;min-height:0;position:relative;";
+    this.scrollInner = document.createElement("div");
+    this.scrollInner.className = "veditor-timeline-scroll-inner";
+    this.scrollInner.style.cssText = "min-width:100%;position:relative;display:flex;flex-direction:column;";
     this.ruler = document.createElement("div");
     this.ruler.className = "veditor-timeline-ruler";
     this.ruler.setAttribute("data-tool-id", "veditor-timeline-ruler");
@@ -841,45 +1021,15 @@ class NLETimeline {
       canvasWrap.appendChild(this.editTimeline.element);
     }
     this.audioTrack = this._createTrack("A1", "audio");
-    const audioCanvasWrap = this.audioTrack.querySelector(".veditor-track-canvas-wrap");
-    if (audioCanvasWrap) {
-      const audioBar = document.createElement("div");
-      audioBar.style.cssText = `
-                width: 100%;
-                height: 100%;
-                background: linear-gradient(90deg,
-                    rgba(34, 197, 94, 0.15) 0%,
-                    rgba(34, 197, 94, 0.25) 50%,
-                    rgba(34, 197, 94, 0.15) 100%
-                );
-                border-radius: 4px;
-                position: relative;
-            `;
-      audioBar.setAttribute("data-tool-id", "veditor-audio-track-content");
-      audioBar.setAttribute("aria-label", "Audio track (visual placeholder)");
-      const waveform = document.createElement("div");
-      waveform.style.cssText = `
-                position: absolute;
-                inset: 8px 4px;
-                background: repeating-linear-gradient(
-                    90deg,
-                    rgba(34, 197, 94, 0.4) 0px,
-                    rgba(34, 197, 94, 0.1) 2px,
-                    rgba(34, 197, 94, 0.3) 4px
-                );
-                border-radius: 2px;
-                opacity: 0.6;
-            `;
-      audioBar.appendChild(waveform);
-      audioCanvasWrap.appendChild(audioBar);
-    }
     this.playheadEl = document.createElement("div");
     this.playheadEl.className = "veditor-playhead";
-    this.playheadEl.style.left = "56px";
+    this.playheadEl.style.left = `${HEADER_W}px`;
     this.playheadEl.setAttribute("data-tool-id", "veditor-playhead");
     this.playheadEl.setAttribute("aria-label", "Playhead position indicator");
     this.tracksContainer.append(this.videoTrack, this.audioTrack);
-    this.container.append(this.ruler, this.tracksContainer, this.playheadEl);
+    this.scrollInner.append(this.ruler, this.tracksContainer, this.playheadEl);
+    this.scrollWrapper.appendChild(this.scrollInner);
+    this.container.append(toolbar, this.scrollWrapper);
     this.ruler.addEventListener("pointerdown", (e) => {
       e.stopPropagation();
       const time = this._rulerXToTime(e.clientX);
@@ -888,6 +1038,18 @@ class NLETimeline {
         callbacks.onPlayheadChanged(time);
       }
     });
+    this.scrollWrapper.addEventListener("wheel", (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const factor = e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
+        const wrapperRect = this.scrollWrapper.getBoundingClientRect();
+        const cursorX = e.clientX - wrapperRect.left + this.scrollWrapper.scrollLeft;
+        const cursorFrac = cursorX / this.scrollInner.clientWidth;
+        this.setZoom(this._zoom * factor);
+        const newCursorX = cursorFrac * this.scrollInner.clientWidth;
+        this.scrollWrapper.scrollLeft = newCursorX - (e.clientX - wrapperRect.left);
+      }
+    }, { passive: false });
   }
   get element() {
     return this.container;
@@ -896,12 +1058,53 @@ class NLETimeline {
     return this.editTimeline;
   }
   setPlayhead(time) {
+    var _a;
     this.editTimeline.setPlayhead(time);
+    (_a = this.audioTimeline) == null ? void 0 : _a.setPlayhead(time);
     this._updatePlayheadPosition(time);
   }
+  setZoom(zoom) {
+    this._zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
+    this._zoomLabel.textContent = `${this._zoom.toFixed(1)}×`;
+    const baseW = this.scrollWrapper.clientWidth;
+    const innerW = Math.max(baseW, baseW * this._zoom);
+    this.scrollInner.style.width = `${innerW}px`;
+    this.render();
+  }
   render() {
+    var _a;
     this.editTimeline.render();
+    (_a = this.audioTimeline) == null ? void 0 : _a.render();
     this._renderRuler();
+    if (this.editTimeline.playhead > 0) {
+      this._updatePlayheadPosition(this.editTimeline.playhead);
+    }
+  }
+  /** Mount an AudioTimeline in the A1 track */
+  setAudioTimeline(at) {
+    this.audioTimeline = at;
+    at.setSnapping(this._snapping);
+    const wrap = this.audioTrack.querySelector(".veditor-track-canvas-wrap");
+    if (wrap) {
+      wrap.innerHTML = "";
+      wrap.appendChild(at.element);
+    }
+  }
+  /** Scroll to keep a time value visible */
+  scrollToTime(time) {
+    const dur = this.manager.videoDuration;
+    if (dur <= 0) return;
+    const innerW = this.scrollInner.clientWidth;
+    const trackW = innerW - HEADER_W;
+    const x = HEADER_W + time / dur * trackW;
+    const wrapW = this.scrollWrapper.clientWidth;
+    const scrollLeft = this.scrollWrapper.scrollLeft;
+    const margin = wrapW * 0.1;
+    if (x < scrollLeft + margin) {
+      this.scrollWrapper.scrollLeft = Math.max(0, x - margin);
+    } else if (x > scrollLeft + wrapW - margin) {
+      this.scrollWrapper.scrollLeft = x - wrapW + margin;
+    }
   }
   destroy() {
     this.editTimeline.destroy();
@@ -925,26 +1128,28 @@ class NLETimeline {
   _updatePlayheadPosition(time) {
     const dur = this.manager.videoDuration;
     if (dur <= 0) return;
-    const headerW = 56;
-    const containerW = this.tracksContainer.clientWidth;
-    const trackW = containerW - headerW;
-    const x = headerW + time / dur * trackW;
+    const innerW = this.scrollInner.clientWidth;
+    const trackW = innerW - HEADER_W;
+    const x = HEADER_W + time / dur * trackW;
     this.playheadEl.style.left = `${x}px`;
   }
   _renderRuler() {
     const dur = this.manager.videoDuration;
     if (dur <= 0) return;
     this.ruler.innerHTML = "";
-    const headerW = 56;
-    const containerW = this.container.clientWidth;
-    const trackW = containerW - headerW;
-    let interval = 1;
-    if (dur > 60) interval = 10;
-    else if (dur > 30) interval = 5;
-    else if (dur > 10) interval = 2;
+    const innerW = this.scrollInner.clientWidth;
+    const trackW = innerW - HEADER_W;
+    const pxPerSec = trackW / dur;
+    let interval;
+    if (pxPerSec > 100) interval = 0.5;
+    else if (pxPerSec > 50) interval = 1;
+    else if (pxPerSec > 20) interval = 2;
+    else if (pxPerSec > 10) interval = 5;
+    else if (pxPerSec > 4) interval = 10;
+    else interval = 30;
     for (let t = 0; t <= dur; t += interval) {
       const marker = document.createElement("div");
-      const x = headerW + t / dur * trackW;
+      const x = HEADER_W + t / dur * trackW;
       marker.style.cssText = `
                 position: absolute;
                 left: ${x}px;
@@ -968,10 +1173,16 @@ class NLETimeline {
                 color: rgba(255,255,255,0.3);
                 font-variant-numeric: tabular-nums;
                 transform: translateX(-50%);
+                white-space: nowrap;
             `;
       const mins = Math.floor(t / 60);
       const secs = Math.floor(t % 60);
-      label.textContent = `${mins}:${secs.toString().padStart(2, "0")}`;
+      const frac = t % 1;
+      if (frac > 0.01) {
+        label.textContent = `${mins}:${secs.toString().padStart(2, "0")}.${Math.round(frac * 10)}`;
+      } else {
+        label.textContent = `${mins}:${secs.toString().padStart(2, "0")}`;
+      }
       marker.append(label, tick);
       this.ruler.appendChild(marker);
     }
@@ -980,13 +1191,23 @@ class NLETimeline {
   _rulerXToTime(clientX) {
     const dur = this.manager.videoDuration;
     if (dur <= 0) return -1;
-    const headerW = 56;
-    const containerRect = this.container.getBoundingClientRect();
-    const containerW = containerRect.width;
-    const trackW = containerW - headerW;
-    const x = clientX - containerRect.left - headerW;
+    const innerRect = this.scrollInner.getBoundingClientRect();
+    const innerW = this.scrollInner.clientWidth;
+    const trackW = innerW - HEADER_W;
+    const x = clientX - innerRect.left - HEADER_W;
     if (x < 0 || x > trackW) return -1;
     return x / trackW * dur;
+  }
+  _makeToolbarBtn(text, title, toolId, onClick) {
+    const btn = document.createElement("button");
+    btn.className = "veditor-btn";
+    btn.textContent = text;
+    btn.title = title;
+    btn.setAttribute("data-tool-id", toolId);
+    btn.setAttribute("aria-label", title);
+    btn.style.cssText = "font-size:11px;padding:2px 8px;border-radius:4px;min-width:24px;";
+    btn.addEventListener("click", () => onClick());
+    return btn;
   }
 }
 class EditToolbar {
@@ -1235,7 +1456,20 @@ class SpeedControl {
     });
     interpRow.append(interpIcon, interpLabel, this.interpToggle);
     interpSection.appendChild(interpRow);
-    this.container.append(speedSection, reverseSection, curveSection, interpSection);
+    const resetRow = document.createElement("div");
+    resetRow.className = "veditor-control-row";
+    const resetBtn = document.createElement("button");
+    resetBtn.className = "veditor-btn veditor-toggle-btn";
+    resetBtn.innerHTML = `${iconGauge} Reset Speed`;
+    resetBtn.title = "Reset all speed settings to defaults";
+    resetBtn.setAttribute("data-tool-id", "veditor-speed-reset");
+    resetBtn.setAttribute("aria-label", "Reset speed settings");
+    resetBtn.addEventListener("click", () => {
+      this.reset();
+      this.callbacks.onSpeedChanged(this.currentSegment, 1);
+    });
+    resetRow.appendChild(resetBtn);
+    this.container.append(speedSection, reverseSection, curveSection, interpSection, resetRow);
   }
   get element() {
     return this.container;
@@ -1397,6 +1631,8 @@ export {
   EditToolbar as a,
   captureFrame as b,
   captureFrames as c,
+  collectEdges as d,
   fmtDuration as f,
+  snapToEdges as s,
   viewUrl as v
 };

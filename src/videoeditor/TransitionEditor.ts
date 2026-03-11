@@ -86,6 +86,30 @@ export class TransitionEditor {
         this.emptyMsg.style.display = cutCount > 0 ? 'none' : 'block';
         this.listEl.innerHTML = '';
 
+        if (cutCount > 0) {
+            // Clear all button
+            const clearAllRow = document.createElement('div');
+            clearAllRow.className = 'veditor-control-row';
+            clearAllRow.style.padding = '4px 0';
+
+            const clearAllBtn = document.createElement('button');
+            clearAllBtn.className = 'veditor-btn veditor-toggle-btn';
+            clearAllBtn.innerHTML = `${iconShuffle} Clear All Transitions`;
+            clearAllBtn.title = 'Reset all transitions to hard cuts';
+            clearAllBtn.setAttribute('data-tool-id', 'veditor-transition-clear-all');
+            clearAllBtn.setAttribute('aria-label', 'Clear all transitions');
+            clearAllBtn.addEventListener('click', () => {
+                for (const t of this._transitions) {
+                    t.type = 'none';
+                    t.duration = 0.5;
+                }
+                this.callbacks.onTransitionsChanged();
+                this.refresh();
+            });
+            clearAllRow.appendChild(clearAllBtn);
+            this.listEl.appendChild(clearAllRow);
+        }
+
         for (let i = 0; i < cutCount; i++) {
             this.listEl.appendChild(this._makeCard(i, segs[i], segs[i + 1]));
         }
@@ -109,7 +133,23 @@ export class TransitionEditor {
         timeLabel.className = 'veditor-time-unit';
         timeLabel.textContent = `${segA.end.toFixed(1)}s → ${segB.start.toFixed(1)}s`;
 
-        header.append(title, timeLabel);
+
+        // Clear button
+        const clearBtn = document.createElement('button');
+        clearBtn.className = 'veditor-btn';
+        clearBtn.innerHTML = '×';
+        clearBtn.title = 'Clear transition (set to hard cut)';
+        clearBtn.setAttribute('data-tool-id', `veditor-transition-clear-${index}`);
+        clearBtn.setAttribute('aria-label', `Clear transition at cut ${index + 1}`);
+        clearBtn.style.cssText = 'padding:2px 6px;font-size:14px;line-height:1;min-width:22px;margin-left:auto;';
+        clearBtn.addEventListener('click', () => {
+            this._transitions[index].type = 'none';
+            this._transitions[index].duration = 0.5;
+            this.callbacks.onTransitionsChanged();
+            this.refresh();
+        });
+
+        header.append(title, timeLabel, clearBtn);
 
         // Type selector
         const typeSection = this._makeSection('Type');

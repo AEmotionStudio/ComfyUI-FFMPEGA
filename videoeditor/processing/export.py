@@ -36,6 +36,7 @@ def render_edits(
     volume: float = 1.0,
     text_overlays_json: str = "[]",
     transitions_json: str = "[]",
+    audio_segments_json: str = "[]",
     cancel_event: threading.Event | None = None,
 ) -> dict:
     """Apply all edits and render to *output_path*.
@@ -58,6 +59,8 @@ def render_edits(
         JSON array of text overlay configs.
     transitions_json:
         JSON array of transition configs.
+    audio_segments_json:
+        JSON array of per-segment audio configs (volume, fade, EQ, mute).
 
     Returns
     -------
@@ -81,7 +84,35 @@ def render_edits(
         transitions = parse_transitions(transitions_json)
         has_transitions = bool(transitions)
 
+        # Parse per-segment audio edits
+        has_audio_segments = False
+        try:
+            if audio_segments_json and audio_segments_json.strip() and audio_segments_json != "[]":
+                audio_segs = json.loads(audio_segments_json)
+                if isinstance(audio_segs, list) and audio_segs:
+                    has_audio_segments = any(
+                        abs(s.get('volume', 1.0) - 1.0) > 0.01
+                        or s.get('fadeIn', 0) > 0
+                        or s.get('fadeOut', 0) > 0
+                        or s.get('eq', 'flat') != 'flat'
+                        or s.get('muted', False)
+                        for s in audio_segs
+                    )
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        if has_audio_segments:
+            log.info(
+                "[VideoEditor] Per-segment audio edits detected "
+                "(volume/fade/EQ/mute) — these are stored for the UI "
+                "but per-segment FFmpeg rendering is not yet implemented. "
+                "Master volume is still applied."
+            )
+
         # Fast path: no edits at all → copy source
+        # Note: has_audio_segments is intentionally excluded here —
+        # per-segment audio rendering is not yet implemented, so blocking
+        # the fast-path would force a full re-encode without applying them.
         if (not has_edits and not has_speed and not has_crop
                 and not has_text and not has_transitions):
             shutil.copy2(source_path, output_path)

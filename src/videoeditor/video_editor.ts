@@ -96,6 +96,7 @@ function _setupNode(node: EditorNode): void {
         volume: 1.0,
         textOverlays: [],
         transitions: [],
+        audioSegments: [],
     };
 
     // ── Resize helper ──
@@ -421,6 +422,7 @@ function _syncToWidgets(node: ComfyNode, state: ModalEditState): void {
     _setW(node, '_volume', state.volume);
     _setW(node, '_text_overlays', JSON.stringify(state.textOverlays));
     _setW(node, '_transitions', JSON.stringify(state.transitions));
+    _setW(node, '_audio_segments', JSON.stringify(state.audioSegments));
     _setW(node, '_edit_action', 'passthrough');
 }
 
@@ -445,6 +447,7 @@ const HIDDEN_WIDGETS: [string, string][] = [
     ['_volume', '1.0'],
     ['_text_overlays', '[]'],
     ['_transitions', '[]'],
+    ['_audio_segments', '[]'],
 ];
 
 /**
@@ -485,4 +488,5 @@ function _loadStateFromWidgets(node: ComfyNode, editState: ModalEditState): void
     try { const o = JSON.parse(_getW(node, '_text_overlays', '[]')); if (Array.isArray(o)) editState.textOverlays = o; } catch { }
     editState.cropRect = _getW(node, '_crop_rect', '');
     try { const t = JSON.parse(_getW(node, '_transitions', '[]')); if (Array.isArray(t)) editState.transitions = t; } catch { }
+    try { const a = JSON.parse(_getW(node, '_audio_segments', '[]')); if (Array.isArray(a)) editState.audioSegments = a; } catch { }
 }

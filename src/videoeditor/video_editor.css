@@ -8,19 +8,23 @@
  * ═══════════════════════════════════════════════════════════════════ */
 
 /* ── Variables ───────────────────────────────────────────────────── */
+/* Maps to ComfyUI's theme variables with standalone fallbacks */
 
 :root {
-    --ve-bg-deep: #0f0f1a;
-    --ve-bg-primary: #161625;
-    --ve-bg-secondary: #1c1c30;
-    --ve-bg-surface: #22223a;
-    --ve-bg-elevated: #2a2a45;
-    --ve-border: rgba(255, 255, 255, 0.06);
+    /* Background hierarchy — derived from ComfyUI's --bg-color and --comfy-menu-bg */
+    --ve-bg-deep: var(--bg-color, #0f0f1a);
+    --ve-bg-primary: var(--bg-color, #161625);
+    --ve-bg-secondary: var(--comfy-menu-bg, #1c1c30);
+    --ve-bg-surface: var(--comfy-menu-bg, #22223a);
+    --ve-bg-elevated: var(--comfy-input-bg, #2a2a45);
+    --ve-border: var(--border-color, rgba(255, 255, 255, 0.06));
     --ve-border-hover: rgba(255, 255, 255, 0.12);
     --ve-border-glow: rgba(99, 102, 241, 0.3);
-    --ve-text-primary: #e8e8f0;
-    --ve-text-secondary: #9898b0;
+    /* Text — derived from ComfyUI's --fg-color and --input-text */
+    --ve-text-primary: var(--fg-color, #e8e8f0);
+    --ve-text-secondary: var(--input-text, #9898b0);
     --ve-text-dim: #686880;
+    /* Accents — keep our brand purple/green */
     --ve-accent: #6366f1;
     --ve-accent-hover: #818cf8;
     --ve-accent-glow: rgba(99, 102, 241, 0.25);
@@ -112,6 +116,13 @@
 .veditor-btn:focus-visible {
     border-color: var(--ve-accent);
     box-shadow: 0 0 0 2px var(--ve-accent-glow);
+}
+
+.veditor-btn.active {
+    background: var(--ve-accent);
+    color: #fff;
+    border-color: var(--ve-accent);
+    box-shadow: 0 0 10px var(--ve-accent-glow);
 }
 
 .veditor-btn-accent {
@@ -993,6 +1004,35 @@
     pointer-events: none;
     z-index: 10;
     box-shadow: 0 0 6px rgba(249, 115, 22, 0.4);
+}
+
+/* Timeline scroll wrapper */
+.veditor-timeline-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+
+.veditor-timeline-scroll::-webkit-scrollbar {
+    height: 6px;
+}
+
+.veditor-timeline-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.veditor-timeline-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.15);
+    border-radius: 3px;
+}
+
+.veditor-timeline-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,255,255,0.25);
+}
+
+/* Timeline toolbar */
+.veditor-timeline-toolbar {
+    background: var(--ve-bg-secondary);
+    border-bottom: 1px solid var(--ve-border);
 }
 
 .veditor-playhead::before {

@@ -486,6 +486,7 @@ async def video_export(request):
     speed_map_json = json.dumps(body.get("speed_map", {}))
     text_overlays_json = json.dumps(body.get("text_overlays", []))
     transitions_json = json.dumps(body.get("transitions", []))
+    audio_segments_json = json.dumps(body.get("audio_segments", []))
     try:
         volume = float(body.get("volume", 1.0))
     except (ValueError, TypeError):
@@ -511,6 +512,7 @@ async def video_export(request):
             volume=volume,
             text_overlays_json=text_overlays_json,
             transitions_json=transitions_json,
+            audio_segments_json=audio_segments_json,
             cancel_event=cancel_event,
         )
 
@@ -540,6 +542,45 @@ async def video_export(request):
 
     status = 200 if result.get("success") else 500
     return web.json_response(result, status=status)
+
+
+# ── Waveform extraction ─────────────────────────────────────────────
+
+
+@server.PromptServer.instance.routes.get("/ffmpega/waveform")
+async def waveform_peaks(request):
+    """Extract audio waveform peaks from a video file.
+
+    Query params:
+        path — absolute or ComfyUI-relative path to the video (required)
+
+    Returns JSON:
+        { "peaks": [float, ...], "duration": float, "sampleRate": int }
+
+    Peaks are 2000 bins normalised to 0–1. On failure, returns flat
+    peaks (all 0.1) with duration/sampleRate = 0.
+    """
+    from .videoeditor.processing.waveform import FLAT_WAVEFORM, extract_waveform_peaks
+
+    query = request.rel_url.query
+    raw_path = query.get("path", "").strip()
+    filepath = _resolve_video_path(raw_path)
+    if not filepath:
+        return web.json_response(dict(FLAT_WAVEFORM), status=404)
+
+    try:
+        result = await asyncio.wait_for(
+            extract_waveform_peaks(filepath),
+            timeout=60,
+        )
+    except asyncio.TimeoutError:
+        log.warning("[Waveform] Extraction timed out for %s", filepath)
+        return web.json_response(dict(FLAT_WAVEFORM), status=504)
+    except Exception as e:
+        log.warning("[Waveform] Extraction error: %s", e)
+        return web.json_response(dict(FLAT_WAVEFORM), status=500)
+
+    return web.json_response(result)
 
 
 # ── Text Presets ─────────────────────────────────────────────────────

@@ -370,6 +370,54 @@ export class TextOverlayPanel {
 
             posRow.prepend(posLabel);
 
+            // Pixel coordinate inputs
+            const pxRow = document.createElement('div');
+            pxRow.className = 'veditor-control-row';
+
+            const xLabel = document.createElement('span');
+            xLabel.className = 'veditor-control-label';
+            xLabel.textContent = 'X';
+
+            const xInput = document.createElement('input');
+            xInput.type = 'text';
+            xInput.className = 'veditor-input';
+            xInput.value = ov.x;
+            xInput.placeholder = 'center';
+            xInput.style.width = '70px';
+            xInput.setAttribute('data-tool-id', `veditor-text-px-x-${idx}`);
+            xInput.setAttribute('aria-label', 'X position (pixels or preset)');
+            xInput.addEventListener('change', () => {
+                ov.x = xInput.value;
+                this._renderList();
+                this._notify();
+            });
+
+            const yLabel = document.createElement('span');
+            yLabel.className = 'veditor-control-label';
+            yLabel.textContent = 'Y';
+
+            const yInput = document.createElement('input');
+            yInput.type = 'text';
+            yInput.className = 'veditor-input';
+            yInput.value = ov.y;
+            yInput.placeholder = 'bottom';
+            yInput.style.width = '70px';
+            yInput.setAttribute('data-tool-id', `veditor-text-px-y-${idx}`);
+            yInput.setAttribute('aria-label', 'Y position (pixels or preset)');
+            yInput.addEventListener('change', () => {
+                ov.y = yInput.value;
+                this._renderList();
+                this._notify();
+            });
+
+            const dragHint = document.createElement('span');
+            dragHint.className = 'veditor-text-dim';
+            dragHint.textContent = 'Drag on monitor to place';
+            dragHint.style.fontSize = '11px';
+            dragHint.style.color = 'var(--ve-text-dim)';
+
+            pxRow.append(xLabel, xInput, yLabel, yInput, dragHint);
+
             // ── Background & Outline ──
             const bgRow = document.createElement('div');
             bgRow.className = 'veditor-control-row veditor-bg-row';
@@ -445,9 +493,9 @@ export class TextOverlayPanel {
 
                 bgColorRow.append(bgColorInput, opacitySlider, opacityLabel);
                 bgRow.after(bgColorRow);
-                card.append(cardHeader, textInput, fontRow, styleRow, posRow, bgRow, bgColorRow);
+                card.append(cardHeader, textInput, fontRow, styleRow, posRow, pxRow, bgRow, bgColorRow);
             } else {
-                card.append(cardHeader, textInput, fontRow, styleRow, posRow, bgRow);
+                card.append(cardHeader, textInput, fontRow, styleRow, posRow, pxRow, bgRow);
             }
 
             // Outline color if enabled

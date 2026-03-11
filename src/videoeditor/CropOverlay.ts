@@ -17,6 +17,8 @@ export interface CropRect {
 
 export interface CropOverlayCallbacks {
     onCropChanged: (rect: CropRect | null) => void;
+    /** Fired when crop preview clip-path changes ('' when cleared) */
+    onPreviewChanged?: (clipPath: string) => void;
 }
 
 type AspectPreset = '16:9' | '9:16' | '4:3' | '1:1' | 'free';
@@ -37,6 +39,9 @@ export class CropOverlay {
     private dragStart: { x: number; y: number } = { x: 0, y: 0 };
     private origRect: CropRect = { x: 0, y: 0, w: 0, h: 0 };
     private enabled: boolean = false;
+    private previewEnabled: boolean = false;
+    private videoEl: HTMLVideoElement | null = null;
+    private previewBtn: HTMLButtonElement;
 
     // Numeric input fields
     private inputX: HTMLInputElement;
@@ -95,6 +100,7 @@ export class CropOverlay {
             if (!this.enabled) {
                 this.rect = null;
                 this.callbacks.onCropChanged(null);
+                this._clearPreview();
             }
             this._updateInputs();
             this.render();
@@ -221,6 +227,9 @@ export class CropOverlay {
             this.rect = null;
             this.enabled = false;
             toggleBtn.classList.remove('active');
+            this._clearPreview();
+            this.previewBtn.classList.remove('active');
+            this.previewEnabled = false;
             this._updateInputs();
             this.callbacks.onCropChanged(null);
             this.render();
@@ -228,7 +237,28 @@ export class CropOverlay {
 
         resetRow.appendChild(resetBtn);
 
-        this.controls.append(toggleSection, numSection, outputSection, resetRow);
+        // ── Preview Toggle ──
+        const previewRow = document.createElement('div');
+        previewRow.className = 'veditor-control-row';
+
+        this.previewBtn = document.createElement('button');
+        this.previewBtn.className = 'veditor-btn veditor-toggle-btn';
+        this.previewBtn.innerHTML = `${iconCrop} Preview Crop`;
+        this.previewBtn.title = 'Toggle live crop preview';
+        this.previewBtn.setAttribute('data-tool-id', 'veditor-crop-preview');
+        this.previewBtn.setAttribute('aria-label', 'Toggle live crop preview');
+        this.previewBtn.addEventListener('click', () => {
+            this.previewEnabled = !this.previewEnabled;
+            this.previewBtn.classList.toggle('active', this.previewEnabled);
+            if (this.previewEnabled) {
+                this._applyPreview();
+            } else {
+                this._clearPreview();
+            }
+        });
+        previewRow.appendChild(this.previewBtn);
+
+        this.controls.append(toggleSection, numSection, outputSection, resetRow, previewRow);
 
         // Bind events
         this.canvas.addEventListener('mousedown', (e) => this._onMouseDown(e));
@@ -312,11 +342,22 @@ export class CropOverlay {
         for (const [cx, cy] of corners) {
             ctx.fillRect(cx - HANDLE_SIZE / 2, cy - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE);
         }
+
+        // Update live preview if enabled
+        if (this.previewEnabled) {
+            this._applyPreview();
+        }
     }
 
     destroy(): void {
+        this._clearPreview();
         this.canvasWrapper.remove();
         this.controls.remove();
+    }
+
+    /** Bind the video element for preview clip-path */
+    bindVideo(video: HTMLVideoElement): void {
+        this.videoEl = video;
     }
 
     // ── Private ──────────────────────────────────────────────────
@@ -414,6 +455,28 @@ export class CropOverlay {
         if (mx > x && mx < x + w && my > y && my < y + h) return 'move';
 
         return 'none';
+    }
+
+    /** Apply CSS clip-path to video for live crop preview */
+    private _applyPreview(): void {
+        if (!this.videoEl || !this.rect || !this.videoWidth || !this.videoHeight) return;
+
+        const top = (this.rect.y / this.videoHeight) * 100;
+        const right = ((this.videoWidth - this.rect.x - this.rect.w) / this.videoWidth) * 100;
+        const bottom = ((this.videoHeight - this.rect.y - this.rect.h) / this.videoHeight) * 100;
+        const left = (this.rect.x / this.videoWidth) * 100;
+
+        const clipPath = `inset(${top}% ${right}% ${bottom}% ${left}%)`;
+        this.videoEl.style.clipPath = clipPath;
+        this.callbacks.onPreviewChanged?.(clipPath);
+    }
+
+    /** Clear preview clip-path */
+    private _clearPreview(): void {
+        if (this.videoEl) {
+            this.videoEl.style.clipPath = '';
+        }
+        this.callbacks.onPreviewChanged?.('');
     }
 
     private _applyAspect(preset: AspectPreset): void {
