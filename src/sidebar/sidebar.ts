@@ -286,6 +286,34 @@ function renderSidebar(container: HTMLElement): void {
         .map((l) => l.label).join(" ").toLowerCase();
     content.appendChild(linksSection);
 
+    // Empty state for search
+    const emptyState = el("div", "ffmpega-empty-state ffmpega-hidden");
+    emptyState.innerHTML = `
+        <div style="text-align: center; padding: 32px 16px; color: #888;">
+            <div style="font-size: 24px; margin-bottom: 8px;">🔍</div>
+            <div style="font-size: 14px; font-weight: 600; color: #ccc; margin-bottom: 4px;">No results found</div>
+            <div style="font-size: 12px; line-height: 1.4;">Try adjusting your search term</div>
+            <button class="ffmpega-clear-search-btn" style="
+                margin-top: 12px;
+                padding: 6px 12px;
+                background: rgba(255,255,255,0.1);
+                border: 1px solid rgba(255,255,255,0.2);
+                color: #ccc;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 12px;
+                transition: background 0.2s;
+            " onmouseover="this.style.background='rgba(255,255,255,0.15)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">Clear Search</button>
+        </div>
+    `;
+    const clearBtn = emptyState.querySelector(".ffmpega-clear-search-btn") as HTMLButtonElement;
+    clearBtn.addEventListener("click", () => {
+        searchInput.value = "";
+        searchInput.dispatchEvent(new Event("input"));
+        searchInput.focus();
+    });
+    content.appendChild(emptyState);
+
     sidebar.appendChild(content);
     container.appendChild(sidebar);
 
@@ -298,8 +326,11 @@ function renderSidebar(container: HTMLElement): void {
         if (!query) {
             sections.forEach((s) => s.classList.remove("ffmpega-hidden"));
             groupTitles.forEach((g) => g.classList.remove("ffmpega-hidden"));
+            emptyState.classList.add("ffmpega-hidden");
             return;
         }
+
+        let hasAnyVisible = false;
 
         // Hide/show sections based on search text
         sections.forEach((s) => {
@@ -308,6 +339,7 @@ function renderSidebar(container: HTMLElement): void {
             s.classList.toggle("ffmpega-hidden", !matches);
             // Auto-expand matching sections
             if (matches) {
+                hasAnyVisible = true;
                 s.querySelector(".ffmpega-section-header")?.classList.remove("collapsed");
                 s.querySelector(".ffmpega-section-body")?.classList.remove("collapsed");
             }
@@ -326,6 +358,9 @@ function renderSidebar(container: HTMLElement): void {
             }
             g.classList.toggle("ffmpega-hidden", !hasVisible);
         });
+
+        // Toggle empty state
+        emptyState.classList.toggle("ffmpega-hidden", hasAnyVisible);
     });
 
     // ── Start polling for selected node
