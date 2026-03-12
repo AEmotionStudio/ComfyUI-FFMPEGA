@@ -119,7 +119,11 @@ class SkillParameter:
             if self.choices:
                 # ⚡ Perf: Use O(1) map lookup instead of O(N) list search.
                 # _choice_map contains exact matches, lowercase, and normalized variants.
-                val_str = str(value)
+                # ⚡ Bolt: Avoid redundant str() allocation if already a string
+                if isinstance(value, str):
+                    val_str = value
+                else:
+                    val_str = str(value)
                 if val_str in self._choice_map:
                     match = self._choice_map[val_str]
                     if match == value:

@@ -34,9 +34,11 @@ class Filter:
                     kv_pairs.append(k)
                 else:
                     # Sanitize value to escape characters like :, ', etc.
-                    val_str = str(v)
+                    # ⚡ Bolt: Avoid redundant str() allocation if already a string
                     if isinstance(v, str):
-                        val_str = sanitize_text_param(val_str)
+                        val_str = sanitize_text_param(v)
+                    else:
+                        val_str = str(v)
                     kv_pairs.append(f"{k}={val_str}")
 
             param_str = ":".join(kv_pairs)
