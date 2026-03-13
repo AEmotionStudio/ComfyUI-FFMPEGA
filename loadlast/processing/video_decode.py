@@ -300,6 +300,7 @@ class VideoDecoder:
 
     def _probe_video(self, path: str) -> dict:
         """Probe video metadata using ffprobe."""
+        from core.bin_paths import get_ffprobe_bin
         metadata = {
             "fps": 24,
             "duration": 0.0,
@@ -314,7 +315,7 @@ class VideoDecoder:
 
         try:
             cmd = [
-                "ffprobe", "-v", "quiet",
+                get_ffprobe_bin(), "-v", "quiet",
                 "-print_format", "json",
                 "-show_format", "-show_streams",
                 path
@@ -416,8 +417,9 @@ class VideoDecoder:
 
         # Use ffmpeg to decode frame range to raw RGB
         # -noautorotate: output coded dimensions, consistent with _seek_frame_ffmpeg
+        from core.bin_paths import get_ffmpeg_bin
         cmd = [
-            "ffmpeg", "-noautorotate", "-v", "error",
+            get_ffmpeg_bin(), "-noautorotate", "-v", "error",
             "-i", path,
             "-vf", f"select='between(n\\,{min_idx}\\,{max_idx})',setpts=N/FRAME_RATE/TB",
             "-vsync", "vfr",
@@ -482,10 +484,12 @@ class VideoDecoder:
         # Store (position, tensor) so we can backfill gaps
         decoded: dict[int, torch.Tensor] = {}
 
+        from core.bin_paths import get_ffmpeg_bin
+        ffmpeg = get_ffmpeg_bin()
         for pos, idx in enumerate(indices):
             timestamp = idx / fps if fps > 0 else 0.0
             cmd = [
-                "ffmpeg", "-noautorotate",
+                ffmpeg, "-noautorotate",
                 "-ss", str(timestamp),
                 "-i", path,
                 "-vframes", "1",

@@ -63,8 +63,9 @@ def get_edit_metadata(video_path: str) -> EditMetadata:
     if not os.path.isfile(video_path):
         raise VideoEditError(f"Video file not found: {video_path}")
 
+    from core.bin_paths import get_ffprobe_bin
     cmd = [
-        "ffprobe", "-v", "error",
+        get_ffprobe_bin(), "-v", "error",
         "-show_format", "-show_streams",
         "-print_format", "json",
         video_path,
@@ -149,8 +150,9 @@ def trim_video(
 
     duration = end - start
 
+    from core.bin_paths import get_ffmpeg_bin
     cmd = [
-        "ffmpeg", "-y",
+        get_ffmpeg_bin(), "-y",
         "-ss", f"{start:.3f}",
         "-i", input_path,
         "-t", f"{duration:.3f}",
@@ -184,8 +186,9 @@ def _trim_reencode(
 ) -> str:
     """Trim with re-encoding for frame-accurate cuts (used internally)."""
     duration = end - start
+    from core.bin_paths import get_ffmpeg_bin
     cmd = [
-        "ffmpeg", "-y",
+        get_ffmpeg_bin(), "-y",
         "-ss", f"{start:.3f}",
         "-i", input_path,
         "-t", f"{duration:.3f}",
@@ -263,8 +266,9 @@ def concat_segments(
                 f.write(f"file '{escaped}'\n")
 
         # Concatenate with re-encoding for clean joins
+        from core.bin_paths import get_ffmpeg_bin
         cmd = [
-            "ffmpeg", "-y",
+            get_ffmpeg_bin(), "-y",
             "-f", "concat", "-safe", "0",
             "-i", list_path,
             "-c:v", "libx264", "-crf", "18",

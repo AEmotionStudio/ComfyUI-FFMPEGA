@@ -9,6 +9,19 @@ import sys
 import os
 import types
 
+import pytest
+from core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin
+
+
+@pytest.fixture(autouse=True)
+def _clear_bin_cache():
+    """Clear bin resolution cache before and after every test."""
+    get_ffmpeg_bin.cache_clear()
+    get_ffprobe_bin.cache_clear()
+    yield
+    get_ffmpeg_bin.cache_clear()
+    get_ffprobe_bin.cache_clear()
+
 # Add project root to sys.path so `skills`, `core`, `nodes`, `prompts` are importable
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:

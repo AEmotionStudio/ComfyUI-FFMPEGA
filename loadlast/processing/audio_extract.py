@@ -47,11 +47,12 @@ class AudioExtractor:
             return None
 
         try:
+            from core.bin_paths import get_ffmpeg_bin
             sample_rate = probe.sample_rate
             channels = probe.channels
             # Extract audio as raw PCM f32le at the probed sample rate
             cmd = [
-                "ffmpeg", "-v", "error",
+                get_ffmpeg_bin(), "-v", "error",
                 "-i", path,
                 "-vn",                    # No video
                 "-acodec", "pcm_f32le",   # Float32 little-endian
@@ -119,8 +120,9 @@ class AudioExtractor:
         instead of three separate subprocess calls.
         """
         try:
+            from core.bin_paths import get_ffprobe_bin
             cmd = [
-                "ffprobe", "-v", "error",
+                get_ffprobe_bin(), "-v", "error",
                 "-select_streams", "a:0",
                 "-show_entries", "stream=codec_type,channels,sample_rate",
                 "-print_format", "csv=p=0",
