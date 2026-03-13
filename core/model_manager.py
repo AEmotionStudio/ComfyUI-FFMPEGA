@@ -76,6 +76,18 @@ _MODEL_INFO: dict[str, dict] = {
                   "and place them in ComfyUI/models/mmaudio/. "
                   "⚠️ Model weights are CC-BY-NC 4.0 (non-commercial).",
     },
+    "audiox": {
+        "name": "AudioX (Unified Audio/Music Generation)",
+        "size": "~5 GB (model + VAE + Synchformer)",
+        "url": "https://huggingface.co/HKUSTAudio/AudioX-MAF",
+        "mirror_repo": "AEmotionStudio/audiox-models",
+        "license": "CC-BY-NC (non-commercial use only)",
+        "manual": "Download model.ckpt, config.json, VAE.ckpt, and "
+                  "synchformer_state_dict.pth from "
+                  "https://huggingface.co/HKUSTAudio/AudioX-MAF "
+                  "and place them in ComfyUI/models/audiox/. "
+                  "⚠️ Model weights are CC-BY-NC (non-commercial).",
+    },
     "musetalk": {
         "name": "MuseTalk (Lip Sync)",
         "size": "~3.2 GB (UNet) + ~335 MB (VAE, Whisper – separate downloads)",

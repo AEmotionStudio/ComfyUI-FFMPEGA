@@ -191,6 +191,23 @@ class SkillComposer:
         "ai_enhance": "ai_upscale",
         "upscale_ai": "ai_upscale",
         "sr": "ai_upscale",
+        # AudioX — Music Generation
+        "music": "generate_music",
+        "score": "generate_music",
+        "soundtrack": "generate_music",
+        "bgm": "generate_music",
+        "video_to_music": "generate_music",
+        "v2m": "generate_music",
+        "compose_music": "generate_music",
+        "text_to_music": "generate_music",
+        "t2m": "generate_music",
+        "audiox": "generate_music",
+        # AudioX — Audio Inpainting
+        "inpaint_audio": "audio_inpaint",
+        "audio_fill": "audio_inpaint",
+        "extend_audio": "audio_inpaint",
+        "audio_completion": "audio_inpaint",
+        "complete_audio": "audio_inpaint",
     }
 
     def __init__(self, registry: Optional[SkillRegistry] = None):
@@ -1451,6 +1468,9 @@ def _get_dispatch() -> dict:
         _f_auto_mask,
         # generate audio (MMAudio)
         _f_generate_audio,
+        # generate music / audio inpaint (AudioX)
+        _f_generate_music,
+        _f_audio_inpaint,
         # lip sync (MuseTalk)
         _f_lip_sync,
         # portrait animation (LivePortrait)
@@ -1640,6 +1660,25 @@ def _get_dispatch() -> dict:
         "synthesize_audio": _f_generate_audio,
         "generate_sound": _f_generate_audio,
         "add_sound": _f_generate_audio,
+        # AudioX — Music Generation
+        "generate_music": _f_generate_music,
+        "music": _f_generate_music,
+        "score": _f_generate_music,
+        "soundtrack": _f_generate_music,
+        "bgm": _f_generate_music,
+        "video_to_music": _f_generate_music,
+        "v2m": _f_generate_music,
+        "compose_music": _f_generate_music,
+        "text_to_music": _f_generate_music,
+        "t2m": _f_generate_music,
+        "audiox": _f_generate_music,
+        # AudioX — Audio Inpainting
+        "audio_inpaint": _f_audio_inpaint,
+        "inpaint_audio": _f_audio_inpaint,
+        "audio_fill": _f_audio_inpaint,
+        "extend_audio": _f_audio_inpaint,
+        "audio_completion": _f_audio_inpaint,
+        "complete_audio": _f_audio_inpaint,
         # MuseTalk — Lip Sync
         "lip_sync": _f_lip_sync,
         "lipsync": _f_lip_sync,

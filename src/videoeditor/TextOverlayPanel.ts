@@ -30,6 +30,7 @@ export interface TextOverlay {
 
 export interface TextOverlayPanelCallbacks {
     onOverlaysChanged: (overlays: TextOverlay[]) => void;
+    getVideoPath?: () => string;
 }
 
 const POSITION_PRESETS: { label: string; x: string; y: string }[] = [
@@ -165,12 +166,21 @@ export class TextOverlayPanel {
 
         presetRow.append(presetLabel, presetSelect);
 
+        // Auto-captions button
+        const captionBtn = document.createElement('button');
+        captionBtn.className = 'veditor-btn veditor-caption-btn';
+        captionBtn.innerHTML = '🎙️ Auto-Generate Captions';
+        captionBtn.setAttribute('data-tool-id', 'veditor-text-auto-caption');
+        captionBtn.setAttribute('aria-label', 'Auto-generate captions from audio');
+        captionBtn.title = 'Transcribe audio and generate subtitle overlays';
+        captionBtn.addEventListener('click', () => this._onAutoCaption(captionBtn));
+
         this.listEl = document.createElement('div');
         this.listEl.className = 'veditor-text-list';
         this.listEl.setAttribute('data-tool-id', 'veditor-text-list');
         this.listEl.setAttribute('aria-label', 'List of text overlays');
 
-        this.container.append(header, presetRow, this.listEl);
+        this.container.append(header, captionBtn, presetRow, this.listEl);
     }
 
     get element(): HTMLDivElement {
@@ -665,5 +675,71 @@ export class TextOverlayPanel {
 
     private _notify(): void {
         this.callbacks.onOverlaysChanged([...this.overlays]);
+    }
+
+    private async _onAutoCaption(btn: HTMLButtonElement): Promise<void> {
+        const videoPath = this.callbacks.getVideoPath?.();
+        if (!videoPath) {
+            btn.textContent = '⚠️ No video loaded';
+            setTimeout(() => { btn.innerHTML = '🎙️ Auto-Generate Captions'; }, 2000);
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerHTML = '⏳ Transcribing…';
+
+        try {
+            const res = await fetch('/ffmpega/transcribe_video', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ video_path: videoPath }),
+            });
+
+            if (!res.ok) {
+                throw new Error(`Server error: ${res.status}`);
+            }
+
+            const data = await res.json();
+            const segments: Array<{ text: string; start: number; end: number }> = data.segments || [];
+
+            if (segments.length === 0) {
+                btn.innerHTML = '⚠️ No speech detected';
+                setTimeout(() => { btn.innerHTML = '🎙️ Auto-Generate Captions'; }, 2000);
+                return;
+            }
+
+            // Convert segments to TextOverlay objects
+            const newOverlays: TextOverlay[] = segments.map(seg => ({
+                text: seg.text.trim(),
+                x: 'center',
+                y: 'bottom',
+                font_size: 32,
+                color: '#ffffff',
+                start_time: Math.round(seg.start * 100) / 100,
+                end_time: Math.round(seg.end * 100) / 100,
+                font: 'sans-serif',
+                alignment: 'center' as const,
+                bold: false,
+                italic: false,
+                backgroundColor: '#000000',
+                backgroundOpacity: 0.6,
+                outlineColor: null,
+                outlineWidth: 0,
+            }));
+
+            // Append to existing overlays
+            this.overlays.push(...newOverlays);
+            this._renderList();
+            this._notify();
+
+            btn.innerHTML = `✅ ${newOverlays.length} captions added`;
+            setTimeout(() => { btn.innerHTML = '🎙️ Auto-Generate Captions'; }, 3000);
+        } catch (err) {
+            console.error('[VideoEditor] Auto-caption failed:', err);
+            btn.innerHTML = '❌ Transcription failed';
+            setTimeout(() => { btn.innerHTML = '🎙️ Auto-Generate Captions'; }, 3000);
+        } finally {
+            btn.disabled = false;
+        }
     }
 }

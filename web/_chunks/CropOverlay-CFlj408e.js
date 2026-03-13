@@ -103,6 +103,27 @@ const iconPlus = L(
 const iconShuffle = L(
   '<path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/>'
 );
+const iconPalette = L(
+  '<circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>'
+);
+const iconWand = L(
+  '<path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/>'
+);
+const iconSun = L(
+  '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>'
+);
+const iconSettings = L(
+  '<path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>'
+);
+const iconLayers = L(
+  '<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.84Z"/><path d="m22.18 12.08-1.39-.63-8.58 3.9a2 2 0 0 1-1.66 0l-8.58-3.9-1.39.63a1 1 0 0 0 0 1.84l8.58 3.9a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.84Z"/><path d="m22.18 16.08-1.39-.63-8.58 3.9a2 2 0 0 1-1.66 0l-8.58-3.9-1.39.63a1 1 0 0 0 0 1.84l8.58 3.9a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.84Z"/>'
+);
+const iconBrain = L(
+  '<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/><path d="M17.599 6.5a3 3 0 0 0 .399-1.375"/><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/><path d="M3.477 10.896a4 4 0 0 1 .585-.396"/><path d="M19.938 10.5a4 4 0 0 1 .585.396"/><path d="M6 18a4 4 0 0 1-1.967-.516"/><path d="M19.967 17.484A4 4 0 0 1 18 18"/>'
+);
+const iconMove = L(
+  '<polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="22"/>'
+);
 const HANDLE_SIZE = 10;
 class CropOverlay {
   constructor(callbacks) {
@@ -555,15 +576,22 @@ class CropOverlay {
   }
 }
 export {
-  iconPause as A,
-  iconCursor as B,
+  iconBrain as A,
+  iconMove as B,
   CropOverlay as C,
-  iconSplit as D,
-  iconTrash as E,
-  iconReset as F,
-  iconReverse as G,
-  iconCurve as H,
-  iconFilm as I,
+  iconSkipStart as D,
+  iconStepBack as E,
+  iconPlay as F,
+  iconStepForward as G,
+  iconRepeat as H,
+  iconPause as I,
+  iconCursor as J,
+  iconSplit as K,
+  iconTrash as L,
+  iconReset as M,
+  iconReverse as N,
+  iconCurve as O,
+  iconFilm as P,
   iconMuted as a,
   iconMusic as b,
   iconPlus as c,
@@ -574,20 +602,20 @@ export {
   iconAlignCenter as h,
   iconVolume as i,
   iconAlignRight as j,
-  iconZoomOut as k,
-  iconZoomIn as l,
-  iconMaximize as m,
-  iconShuffle as n,
-  iconClapperboard as o,
-  iconUndo as p,
-  iconRedo as q,
-  iconCheck as r,
-  iconCrop as s,
-  iconGauge as t,
-  iconText as u,
-  iconSkipStart as v,
-  iconStepBack as w,
-  iconPlay as x,
-  iconStepForward as y,
-  iconRepeat as z
+  iconPalette as k,
+  iconZoomOut as l,
+  iconZoomIn as m,
+  iconMaximize as n,
+  iconShuffle as o,
+  iconClapperboard as p,
+  iconUndo as q,
+  iconRedo as r,
+  iconCheck as s,
+  iconCrop as t,
+  iconGauge as u,
+  iconText as v,
+  iconWand as w,
+  iconSun as x,
+  iconSettings as y,
+  iconLayers as z
 };

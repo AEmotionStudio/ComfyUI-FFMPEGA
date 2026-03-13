@@ -130,6 +130,14 @@ class VideoEditorNode:
                 "_text_overlays": ("STRING", {"default": "[]"}),
                 "_transitions": ("STRING", {"default": "[]"}),
                 "_audio_segments": ("STRING", {"default": "[]"}),
+                "_color_grading": ("STRING", {"default": "{}"}),
+                "_filter_preset": ("STRING", {"default": "{}"}),
+                "_keyframes": ("STRING", {"default": "{}"}),
+                "_relight_params": ("STRING", {"default": "{}"}),
+                "_export_settings": ("STRING", {"default": "{}"}),
+                "_compose_layers": ("STRING", {"default": "{}"}),
+                "_ai_compose": ("STRING", {"default": "{}"}),
+                "_transform": ("STRING", {"default": "{}"}),
                 "unique_id": "UNIQUE_ID",
             },
         }
@@ -173,6 +181,14 @@ class VideoEditorNode:
         _text_overlays: str = "[]",
         _transitions: str = "[]",
         _audio_segments: str = "[]",
+        _color_grading: str = "{}",
+        _filter_preset: str = "{}",
+        _keyframes: str = "{}",
+        _relight_params: str = "{}",
+        _export_settings: str = "{}",
+        _compose_layers: str = "{}",
+        _ai_compose: str = "{}",
+        _transform: str = "{}",
         unique_id=None,
     ):
         """Main execution method."""
@@ -248,10 +264,21 @@ class VideoEditorNode:
                 or abs(_volume - 1.0) > 0.01
                 or (_text_overlays and _text_overlays != "[]")
                 or (_transitions and _transitions != "[]")
+                or (_color_grading and _color_grading.strip() and _color_grading != "{}")
+                or (_filter_preset and _filter_preset.strip() and _filter_preset != "{}")
+                or (_keyframes and _keyframes.strip() and _keyframes != "{}")
+                or (_relight_params and _relight_params.strip() and _relight_params != "{}")
+                or (_transform and _transform.strip() and _transform != "{}")
+                or (_compose_layers and _compose_layers.strip() and _compose_layers != "{}")
+                or (_export_settings and _export_settings.strip() and _export_settings != "{}")
                 # Note: _audio_segments intentionally excluded — per-segment
                 # audio rendering is not yet implemented in the FFmpeg export
                 # pipeline.  Including them would trigger a full re-encode
                 # with no audible change.  Audio segments are preview-only.
+                # Note: _ai_compose intentionally excluded — AI compose
+                # requires model inference which is not part of the FFmpeg-only
+                # pipeline.  Including would trigger a re-encode with no
+                # visible change.  See render_edits() for logging.
             )
 
             if not has_real_edits:
@@ -287,6 +314,14 @@ class VideoEditorNode:
                 text_overlays_json=_text_overlays,
                 transitions_json=_transitions,
                 audio_segments_json=_audio_segments,
+                color_grading_json=_color_grading,
+                filter_preset_json=_filter_preset,
+                keyframes_json=_keyframes,
+                relight_json=_relight_params,
+                export_settings_json=_export_settings,
+                compose_json=_compose_layers,
+                ai_compose_json=_ai_compose,
+                transform_json=_transform,
             )
 
             if not result.get("success"):

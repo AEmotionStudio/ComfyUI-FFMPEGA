@@ -74,8 +74,13 @@ def get_models_dir(subdir: str = "") -> str:
 # ------------------------------------------------------------------ #
 
 
-def free_comfyui_vram() -> None:
+def free_comfyui_vram(memory_needed: int = 0) -> None:
     """Ask ComfyUI to unload cached models and free GPU memory.
+
+    Args:
+        memory_needed: Bytes of VRAM needed.  When > 0, uses
+            budget-aware ``free_memory()`` to evict only what's
+            necessary.  When 0, evicts all models (nuclear).
 
     Safe to call outside ComfyUI — silently does nothing if the
     ``comfy`` package is unavailable.
@@ -83,7 +88,13 @@ def free_comfyui_vram() -> None:
     try:
         import comfy.model_management  # type: ignore[import-not-found]
 
-        comfy.model_management.unload_all_models()
+        if memory_needed > 0:
+            comfy.model_management.free_memory(
+                memory_needed,
+                comfy.model_management.get_torch_device(),
+            )
+        else:
+            comfy.model_management.unload_all_models()
         comfy.model_management.soft_empty_cache()
         log.debug("Freed ComfyUI GPU VRAM via model_management")
     except (ImportError, AttributeError):

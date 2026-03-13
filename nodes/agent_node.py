@@ -143,7 +143,7 @@ class FFMPEGAgentNode:
                                "Select 'custom' to type any model name manually. "
                                "Select 'none' to skip the LLM entirely and use no_llm_mode instead (manual pipeline, SAM3, Whisper, or MMAudio).",
                 }),
-                "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles", "generate_audio", "lip_sync", "animate_portrait", "marigold", "video_depth", "flux_klein", "minimax_remover", "ai_upscale", "rembg"], {
+                "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles", "generate_audio", "generate_music", "audio_inpaint", "audio_separate", "lip_sync", "animate_portrait", "marigold", "video_depth", "flux_klein", "minimax_remover", "ai_upscale", "rembg"], {
                     "default": "manual",
                     "tooltip": "What to do when llm_model is 'none'. "
                                "'manual' runs the Effects Builder pipeline directly (no AI). "
@@ -151,6 +151,9 @@ class FFMPEGAgentNode:
                                "'transcribe' runs Whisper speech-to-text and burns SRT subtitles. "
                                "'karaoke_subtitles' runs Whisper and burns word-by-word karaoke subtitles. "
                                "'generate_audio' uses MMAudio to synthesize audio from video/prompt. "
+                               "'generate_music' uses AudioX to generate music from video/prompt (CC-BY-NC). "
+                               "'audio_inpaint' uses AudioX to inpaint/complete audio (CC-BY-NC). "
+                               "'audio_separate' uses SAM-Audio to isolate specific sounds from audio — prompt describes what to isolate (e.g. 'drums', 'vocals'). "
                                "'lip_sync' uses MuseTalk to sync lip movements to connected audio_a. "
                                "'animate_portrait' uses LivePortrait to animate a face — connect driving video to video_a. "
                                "'marigold' runs Marigold dense vision analysis (depth/normals/intrinsics) — choose output via marigold_output_type. "
@@ -256,7 +259,7 @@ class FFMPEGAgentNode:
                     "default": False,
                     "label_on": "Advanced",
                     "label_off": "Simple",
-                    "tooltip": "Show advanced options: preview, encoding, SAM3/Whisper tuning, FLUX smoothing, MMAudio mode, batch processing, and usage tracking.",
+                    "tooltip": "Show advanced options: preview, encoding, SAM3/Whisper tuning, FLUX smoothing, MMAudio mode, SAM-Audio model, batch processing, and usage tracking.",
                 }),
 
                 # ── Advanced: Rendering ───────────────────────────────────
@@ -333,6 +336,15 @@ class FFMPEGAgentNode:
                     "label_on": "MiniMax On",
                     "label_off": "MiniMax Off",
                     "tooltip": "Enable MiniMax-Remover for high-quality video object removal (auto_mask:effect=remove). Uses a purpose-built DiT model (~2.5 GB, ~5–8 GB VRAM). Takes priority over FLUX Klein for removal when both are enabled. When OFF, removal falls back to FLUX Klein (if enabled) or LaMa (~200 MB).",
+                }),
+
+                # ── Advanced: SAM-Audio ──────────────────────────────────
+                "sam_audio_model": (["base", "large"], {
+                    "default": "base",
+                    "tooltip": "SAM-Audio model variant for audio_separate mode. "
+                               "'base' = 3.6 GiB (fast, works on 12 GB GPUs). "
+                               "'large' = 6.9 GiB (better quality, needs 12+ GB VRAM). "
+                               "Models auto-download on first use.",
                 }),
 
                 # ── Advanced: Marigold ────────────────────────────────────
@@ -1012,7 +1024,7 @@ class FFMPEGAgentNode:
 
         if not prompt.strip():
             # manual + whisper + lip_sync modes don't need a prompt
-            if llm_model != "none" or no_llm_mode not in ("manual", "transcribe", "karaoke_subtitles", "generate_audio", "lip_sync", "animate_portrait", "marigold", "video_depth", "minimax_remover", "ai_upscale", "rembg"):
+            if llm_model != "none" or no_llm_mode not in ("manual", "transcribe", "karaoke_subtitles", "generate_audio", "generate_music", "audio_inpaint", "audio_separate", "lip_sync", "animate_portrait", "marigold", "video_depth", "minimax_remover", "ai_upscale", "rembg"):
                 raise ValueError("Prompt cannot be empty")
 
         # --- Analyze input video ---
@@ -1100,6 +1112,58 @@ class FFMPEGAgentNode:
                 result6 = await self._process_mmaudio_only(
                     prompt=prompt,
                     mmaudio_mode=mmaudio_mode,
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    **kwargs,
+                )
+                return result6 + (mask_points or "",)
+            # AudioX music-only mode (generate_music from video/prompt)
+            if no_llm_mode == "generate_music":
+                result6 = await self._process_audiox_music_only(
+                    prompt=prompt,
+                    mmaudio_mode=mmaudio_mode,
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    **kwargs,
+                )
+                return result6 + (mask_points or "",)
+            # AudioX inpaint-only mode (audio_inpaint from video audio)
+            if no_llm_mode == "audio_inpaint":
+                result6 = await self._process_audiox_inpaint_only(
+                    prompt=prompt,
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    **kwargs,
+                )
+                return result6 + (mask_points or "",)
+            # SAM-Audio separation mode (isolate sounds from audio)
+            if no_llm_mode == "audio_separate":
+                result6 = await self._process_sam_audio_separate(
+                    prompt=prompt,
                     effective_video_path=effective_video_path,
                     video_metadata=video_metadata,
                     save_output=save_output,
@@ -1323,7 +1387,7 @@ class FFMPEGAgentNode:
                 "No-LLM 'manual' mode requires an Effects Builder node or "
                 "FFMPEGA Text node. Connect one to the pipeline_json or "
                 "text_a input, or switch no_llm_mode to 'sam3_masking', "
-                "'transcribe', 'karaoke_subtitles', 'generate_audio', 'lip_sync', 'marigold', 'video_depth', 'flux_klein', 'minimax_remover', or 'ai_upscale'."
+                "'transcribe', 'karaoke_subtitles', 'generate_audio', 'generate_music', 'audio_inpaint', 'audio_separate', 'lip_sync', 'marigold', 'video_depth', 'flux_klein', 'minimax_remover', or 'ai_upscale'."
             )
         # --- Build connected-inputs context string ---
         connected_inputs_str = self._build_connected_inputs_summary(
@@ -1619,6 +1683,59 @@ class FFMPEGAgentNode:
         return await _nollm.process_mmaudio_only(
             media_converter=self.media_converter,
             prompt=prompt, mmaudio_mode=mmaudio_mode,
+            effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
+        )
+
+    # ------------------------------------------------------------------ #
+    #  AudioX music-only mode (no LLM)                                    #
+    # ------------------------------------------------------------------ #
+
+    async def _process_audiox_music_only(self, prompt, mmaudio_mode, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+        """Delegate to nollm_modes module."""
+        return await _nollm.process_audiox_music_only(
+            media_converter=self.media_converter,
+            prompt=prompt, mmaudio_mode=mmaudio_mode,
+            effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
+        )
+
+    # ------------------------------------------------------------------ #
+    #  AudioX inpaint-only mode (no LLM)                                  #
+    # ------------------------------------------------------------------ #
+
+    async def _process_audiox_inpaint_only(self, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+        """Delegate to nollm_modes module."""
+        return await _nollm.process_audiox_inpaint_only(
+            media_converter=self.media_converter,
+            prompt=prompt,
+            effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
+        )
+
+    async def _process_sam_audio_separate(self, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+        """Delegate to nollm_modes module."""
+        return await _nollm.process_sam_audio_separate(
+            media_converter=self.media_converter,
+            prompt=prompt,
             effective_video_path=effective_video_path,
             video_metadata=video_metadata, save_output=save_output,
             output_path=output_path, preview_mode=preview_mode,

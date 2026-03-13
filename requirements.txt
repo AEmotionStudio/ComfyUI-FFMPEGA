@@ -2,7 +2,9 @@
 httpx>=0.25.0
 
 # Memory-efficient model loading (SAM3, MMAudio)
-accelerate>=0.26.0
+# >=1.1.0 required for device_map="auto" in SAM3 and
+# the updated Accelerator.prepare() API used by MMAudio.
+accelerate>=1.1.0
 
 # Speech-to-text (auto-transcription)
 openai-whisper>=20240930

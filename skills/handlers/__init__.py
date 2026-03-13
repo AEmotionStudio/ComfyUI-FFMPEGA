@@ -15,6 +15,14 @@ from .generate_audio import (  # noqa: F401
     _f_generate_audio,
 )
 
+from .generate_music import (  # noqa: F401
+    _f_generate_music,
+)
+
+from .audio_inpaint import (  # noqa: F401
+    _f_audio_inpaint,
+)
+
 from .lip_sync import (  # noqa: F401
     _f_lip_sync,
 )

@@ -4,6 +4,8 @@
  * Takes snapshots of the full editor state and supports Ctrl+Z / Ctrl+Shift+Z.
  */
 
+import type { ColorGradingState } from './ColorGradingPanel';
+
 export interface EditorState {
     segments: number[][];
     cropRect: string;
@@ -12,6 +14,14 @@ export interface EditorState {
     textOverlays: unknown[];
     transitions: unknown[];
     audioSegments: unknown[];
+    colorGrading?: Partial<ColorGradingState>;
+    filterPreset?: { preset: string; intensity: number };
+    keyframes?: unknown;
+    relight?: unknown;
+    exportSettings?: unknown;
+    compose?: unknown;
+    aiCompose?: unknown;
+    transform?: unknown;
 }
 
 export interface UndoManagerCallbacks {

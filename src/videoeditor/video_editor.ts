@@ -97,6 +97,19 @@ function _setupNode(node: EditorNode): void {
         textOverlays: [],
         transitions: [],
         audioSegments: [],
+        colorGrading: {
+            brightness: 0, contrast: 1, saturation: 1, exposure: 0, gamma: 1,
+            shadows_r: 0, shadows_g: 0, shadows_b: 0,
+            midtones_r: 0, midtones_g: 0, midtones_b: 0,
+            temperature: 6500,
+        },
+        filterPreset: { preset: 'none', intensity: 1.0 },
+        keyframes: null,
+        relight: { enabled: false, azimuth: 0, elevation: 45, intensity: 1.0, ambient: 0.3, color_r: 255, color_g: 255, color_b: 255 },
+        exportSettings: { resolution: 'source', video_codec: 'h264', crf: 18, preset: 'fast', format: 'mp4', audio_codec: 'aac', audio_bitrate: '192k' },
+        compose: { pip: { enabled: false }, watermark: { enabled: false }, chromakey: { enabled: false }, blend: { enabled: false }, splitScreen: { enabled: false }, vignette: { enabled: false }, mask: { enabled: false } } as any,
+        aiCompose: { bg_removal: { enabled: false }, depth_effect: { enabled: false } } as any,
+        transform: { enabled: false, position_x: 0, position_y: 0, scale: 100, rotation: 0, anchor_x: 50, anchor_y: 50, flip_h: false, flip_v: false, opacity: 100 },
     };
 
     // ── Resize helper ──
@@ -255,6 +268,7 @@ function _setupNode(node: EditorNode): void {
         {
             serialize: false,
             hideOnZoom: false,
+            hint: '<kbd>1-0</kbd> Tool Tabs',
             getValue() { return previewContainer.value; },
             setValue(v: unknown) { previewContainer.value = v; },
         },
@@ -423,6 +437,14 @@ function _syncToWidgets(node: ComfyNode, state: ModalEditState): void {
     _setW(node, '_text_overlays', JSON.stringify(state.textOverlays));
     _setW(node, '_transitions', JSON.stringify(state.transitions));
     _setW(node, '_audio_segments', JSON.stringify(state.audioSegments));
+    _setW(node, '_color_grading', JSON.stringify(state.colorGrading));
+    _setW(node, '_filter_preset', JSON.stringify(state.filterPreset));
+    _setW(node, '_keyframes', JSON.stringify(state.keyframes ?? {}));
+    _setW(node, '_relight_params', JSON.stringify(state.relight));
+    _setW(node, '_export_settings', JSON.stringify(state.exportSettings));
+    _setW(node, '_compose_layers', JSON.stringify(state.compose));
+    _setW(node, '_ai_compose', JSON.stringify(state.aiCompose));
+    _setW(node, '_transform', JSON.stringify(state.transform));
     _setW(node, '_edit_action', 'passthrough');
 }
 
@@ -448,6 +470,14 @@ const HIDDEN_WIDGETS: [string, string][] = [
     ['_text_overlays', '[]'],
     ['_transitions', '[]'],
     ['_audio_segments', '[]'],
+    ['_color_grading', '{}'],
+    ['_filter_preset', '{}'],
+    ['_keyframes', '{}'],
+    ['_relight_params', '{}'],
+    ['_export_settings', '{}'],
+    ['_compose_layers', '{}'],
+    ['_ai_compose', '{}'],
+    ['_transform', '{}'],
 ];
 
 /**
@@ -489,4 +519,12 @@ function _loadStateFromWidgets(node: ComfyNode, editState: ModalEditState): void
     editState.cropRect = _getW(node, '_crop_rect', '');
     try { const t = JSON.parse(_getW(node, '_transitions', '[]')); if (Array.isArray(t)) editState.transitions = t; } catch { }
     try { const a = JSON.parse(_getW(node, '_audio_segments', '[]')); if (Array.isArray(a)) editState.audioSegments = a; } catch { }
+    try { const c = JSON.parse(_getW(node, '_color_grading', '{}')); if (typeof c === 'object' && c !== null) editState.colorGrading = c; } catch { }
+    try { const f = JSON.parse(_getW(node, '_filter_preset', '{}')); if (typeof f === 'object' && f !== null) editState.filterPreset = f; } catch { }
+    try { const k = JSON.parse(_getW(node, '_keyframes', '{}')); if (typeof k === 'object' && k !== null && k.keyframes) editState.keyframes = k; } catch { }
+    try { const r = JSON.parse(_getW(node, '_relight_params', '{}')); if (typeof r === 'object' && r !== null) editState.relight = r; } catch { }
+    try { const e = JSON.parse(_getW(node, '_export_settings', '{}')); if (typeof e === 'object' && e !== null) editState.exportSettings = e; } catch { }
+    try { const c = JSON.parse(_getW(node, '_compose_layers', '{}')); if (typeof c === 'object' && c !== null) editState.compose = c; } catch { }
+    try { const ai = JSON.parse(_getW(node, '_ai_compose', '{}')); if (typeof ai === 'object' && ai !== null) editState.aiCompose = ai; } catch { }
+    try { const tr = JSON.parse(_getW(node, '_transform', '{}')); if (typeof tr === 'object' && tr !== null) editState.transform = tr; } catch { }
 }

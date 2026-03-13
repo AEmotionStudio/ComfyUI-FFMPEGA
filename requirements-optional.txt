@@ -1,0 +1,73 @@
+# ============================================================================
+#  ComfyUI-FFMPEGA — Optional Dependencies (all-in-one)
+# ============================================================================
+#
+#  Install everything at once:
+#    pip install -r requirements-optional.txt
+#
+#  If you only need specific features, install individual sections below.
+#  All --no-deps packages are marked; install them first, then the rest.
+#
+# ============================================================================
+
+
+# ---------------------------------------------------------------------------
+#  SAM3 — Object Segmentation (auto_mask, sam3_masking mode)
+# ---------------------------------------------------------------------------
+# Install separately with --no-deps to avoid numpy conflicts:
+#   pip install --no-deps git+https://github.com/facebookresearch/sam3.git
+simple-lama-inpainting
+
+
+# ---------------------------------------------------------------------------
+#  MMAudio — AI Audio Synthesis (generate_audio mode)
+# ---------------------------------------------------------------------------
+# Install separately with --no-deps:
+#   pip install --no-deps git+https://github.com/hkchengrex/MMAudio.git
+torchdiffeq
+open-clip-torch
+scipy
+colorlog
+omegaconf
+librosa
+einops
+
+
+# ---------------------------------------------------------------------------
+#  AudioX — Music Generation & Audio Inpainting (generate_music, audio_inpaint)
+# ---------------------------------------------------------------------------
+# Install separately with --no-deps:
+#   pip install --no-deps git+https://github.com/ZeyueT/AudioX.git
+alias-free-torch
+x-transformers
+einops-exts
+k-diffusion
+descript-audio-codec
+descript-audiotools
+vector-quantize-pytorch
+local-attention
+ema-pytorch
+aeiou
+encodec
+auraloss
+laion-clap
+setuptools<81  # k-diffusion → clip → pkg_resources
+
+
+# ---------------------------------------------------------------------------
+#  SAM-Audio — Audio Separation (audio_separate mode)
+# ---------------------------------------------------------------------------
+# Install these separately with --no-deps:
+#   pip install --no-deps git+https://github.com/facebookresearch/sam-audio.git
+#   pip install --no-deps git+https://github.com/facebookresearch/dacvae.git
+#   pip install --no-deps git+https://github.com/facebookresearch/perception_models@unpin-deps
+pydub
+xformers
+torchcodec
+
+
+# ---------------------------------------------------------------------------
+#  Shared / already in ComfyUI (listed for completeness, usually pre-installed)
+# ---------------------------------------------------------------------------
+safetensors
+huggingface-hub

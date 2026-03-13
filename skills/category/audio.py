@@ -854,3 +854,172 @@ def register_skills(registry: SkillRegistry) -> None:
         ],
     ))
 
+    # Generate music — AI-powered music generation (AudioX)
+    registry.register(Skill(
+        name="generate_music",
+        category=SkillCategory.AUDIO,
+        description=(
+            "AI-generate music from text description and/or video content "
+            "using AudioX. Produces a complete musical score synced to video, "
+            "or generates music from a text prompt alone. "
+            "NOTE: AudioX model weights are licensed CC-BY-NC "
+            "(non-commercial use only). By using this skill you accept that "
+            "license: https://huggingface.co/HKUSTAudio/AudioX-MAF"
+        ),
+        parameters=[
+            SkillParameter(
+                name="prompt",
+                type=ParameterType.STRING,
+                description="Text description to guide music generation (e.g. 'upbeat electronic dance music')",
+                required=False,
+                default="",
+            ),
+            SkillParameter(
+                name="negative_prompt",
+                type=ParameterType.STRING,
+                description="What to avoid in the generated music (e.g. 'vocals, speech')",
+                required=False,
+                default="",
+            ),
+            SkillParameter(
+                name="mode",
+                type=ParameterType.CHOICE,
+                description="How to combine generated music with existing audio",
+                required=False,
+                default="replace",
+                choices=["replace", "mix"],
+            ),
+            SkillParameter(
+                name="seed",
+                type=ParameterType.INT,
+                description="Random seed for reproducibility (-1 = random)",
+                required=False,
+                default=-1,
+                min_value=-1,
+                max_value=999999,
+            ),
+            SkillParameter(
+                name="cfg_scale",
+                type=ParameterType.FLOAT,
+                description="Guidance scale (higher = more prompt adherence)",
+                required=False,
+                default=7.0,
+                min_value=1.0,
+                max_value=15.0,
+            ),
+            SkillParameter(
+                name="duration",
+                type=ParameterType.FLOAT,
+                description="Duration in seconds (max 10s, None = match video)",
+                required=False,
+                default=None,
+                min_value=1.0,
+                max_value=10.0,
+            ),
+            SkillParameter(
+                name="steps",
+                type=ParameterType.INT,
+                description="Number of diffusion steps (more = better quality, slower)",
+                required=False,
+                default=250,
+                min_value=50,
+                max_value=500,
+            ),
+        ],
+        examples=[
+            "generate_music - Generate matching music for the video",
+            "generate_music:prompt=upbeat electronic dance music - Generate EDM",
+            "generate_music:prompt=calm piano,mode=mix - Add calm piano, mixed with original",
+            "generate_music:prompt=epic orchestral soundtrack,steps=100 - Faster generation",
+        ],
+        tags=[
+            "music", "soundtrack", "score", "bgm", "compose", "audiox",
+            "generate", "ai", "v2m", "video_to_music", "text_to_music",
+            "non_commercial", "cc_by_nc",
+        ],
+    ))
+
+    # Audio inpaint — AI-powered audio inpainting/completion (AudioX)
+    registry.register(Skill(
+        name="audio_inpaint",
+        category=SkillCategory.AUDIO,
+        description=(
+            "AI audio inpainting: fill gaps, remove sections, or extend audio "
+            "using AudioX. Masks a region of the audio and regenerates it "
+            "guided by a text prompt. "
+            "NOTE: AudioX model weights are licensed CC-BY-NC "
+            "(non-commercial use only). By using this skill you accept that "
+            "license: https://huggingface.co/HKUSTAudio/AudioX-MAF"
+        ),
+        parameters=[
+            SkillParameter(
+                name="prompt",
+                type=ParameterType.STRING,
+                description="Text description to guide the inpainted audio (e.g. 'birds chirping')",
+                required=False,
+                default="",
+            ),
+            SkillParameter(
+                name="negative_prompt",
+                type=ParameterType.STRING,
+                description="What to avoid in the inpainted audio",
+                required=False,
+                default="",
+            ),
+            SkillParameter(
+                name="mask_start",
+                type=ParameterType.FLOAT,
+                description="Start of the mask region as percentage (0-100)",
+                required=False,
+                default=0.0,
+                min_value=0.0,
+                max_value=100.0,
+            ),
+            SkillParameter(
+                name="mask_end",
+                type=ParameterType.FLOAT,
+                description="End of the mask region as percentage (0-100)",
+                required=False,
+                default=100.0,
+                min_value=0.0,
+                max_value=100.0,
+            ),
+            SkillParameter(
+                name="seed",
+                type=ParameterType.INT,
+                description="Random seed for reproducibility (-1 = random)",
+                required=False,
+                default=-1,
+                min_value=-1,
+                max_value=999999,
+            ),
+            SkillParameter(
+                name="cfg_scale",
+                type=ParameterType.FLOAT,
+                description="Guidance scale (higher = more prompt adherence)",
+                required=False,
+                default=7.0,
+                min_value=1.0,
+                max_value=15.0,
+            ),
+            SkillParameter(
+                name="steps",
+                type=ParameterType.INT,
+                description="Number of diffusion steps (more = better quality, slower)",
+                required=False,
+                default=250,
+                min_value=50,
+                max_value=500,
+            ),
+        ],
+        examples=[
+            "audio_inpaint:mask_start=30,mask_end=60,prompt=birds chirping - Replace middle 30% with birds",
+            "audio_inpaint:mask_start=80,mask_end=100 - Extend/complete the last 20% of audio",
+            "audio_inpaint:mask_start=0,mask_end=50,prompt=silence - Replace first half with silence",
+        ],
+        tags=[
+            "inpaint", "fill", "extend", "completion", "audiox",
+            "repair", "restore", "ai", "non_commercial", "cc_by_nc",
+        ],
+    ))
+

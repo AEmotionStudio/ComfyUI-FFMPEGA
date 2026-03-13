@@ -1,7 +1,7 @@
 var __defProp = Object.defineProperty;
 var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
-import { v as iconSkipStart, w as iconStepBack, x as iconPlay, y as iconStepForward, z as iconRepeat, A as iconPause, B as iconCursor, D as iconSplit, E as iconTrash, F as iconReset, G as iconReverse, H as iconCurve, I as iconFilm, t as iconGauge } from "./CropOverlay-Chz7vM7Z.js";
+import { D as iconSkipStart, E as iconStepBack, F as iconPlay, G as iconStepForward, H as iconRepeat, I as iconPause, J as iconCursor, K as iconSplit, L as iconTrash, M as iconReset, N as iconReverse, O as iconCurve, P as iconFilm, u as iconGauge } from "./CropOverlay-CFlj408e.js";
 function captureFrame(video, time) {
   return new Promise((resolve) => {
     video.currentTime = time;
@@ -1315,6 +1315,379 @@ class EditToolbar {
     return btn;
   }
 }
+class KeyframeTrack {
+  constructor(property, min, max, defaultValue) {
+    __publicField(this, "keyframes", []);
+    __publicField(this, "property");
+    __publicField(this, "min");
+    __publicField(this, "max");
+    __publicField(this, "defaultValue");
+    this.property = property;
+    this.min = min;
+    this.max = max;
+    this.defaultValue = defaultValue;
+  }
+  /** Add or update a keyframe at the given time. */
+  addKeyframe(time, value, easing = "linear") {
+    value = Math.max(this.min, Math.min(this.max, value));
+    const existing = this.keyframes.findIndex((k) => Math.abs(k.time - time) < 0.01);
+    if (existing >= 0) {
+      this.keyframes[existing] = { time, value, easing };
+    } else {
+      this.keyframes.push({ time, value, easing });
+    }
+    this._sort();
+  }
+  /** Remove keyframe by index. */
+  removeKeyframe(index) {
+    if (index >= 0 && index < this.keyframes.length) {
+      this.keyframes.splice(index, 1);
+    }
+  }
+  /** Remove keyframe nearest to time (within tolerance). */
+  removeAt(time, tolerance = 0.1) {
+    const idx = this.keyframes.findIndex((k) => Math.abs(k.time - time) <= tolerance);
+    if (idx >= 0) {
+      this.keyframes.splice(idx, 1);
+      return true;
+    }
+    return false;
+  }
+  /** Find the keyframe index nearest to `time`. -1 if none within tolerance. */
+  findNearest(time, tolerance = 0.2) {
+    let best = -1;
+    let bestDist = Infinity;
+    for (let i = 0; i < this.keyframes.length; i++) {
+      const d = Math.abs(this.keyframes[i].time - time);
+      if (d < bestDist && d <= tolerance) {
+        bestDist = d;
+        best = i;
+      }
+    }
+    return best;
+  }
+  /** Get the interpolated value at time `t`. */
+  valueAt(t) {
+    if (this.keyframes.length === 0) return this.defaultValue;
+    if (this.keyframes.length === 1) return this.keyframes[0].value;
+    if (t <= this.keyframes[0].time) return this.keyframes[0].value;
+    const last = this.keyframes[this.keyframes.length - 1];
+    if (t >= last.time) return last.value;
+    for (let i = 0; i < this.keyframes.length - 1; i++) {
+      const a = this.keyframes[i];
+      const b = this.keyframes[i + 1];
+      if (t >= a.time && t <= b.time) {
+        const duration = b.time - a.time;
+        if (duration <= 0) return a.value;
+        const progress = (t - a.time) / duration;
+        return _interpolate(a.value, b.value, progress, a.easing);
+      }
+    }
+    return this.defaultValue;
+  }
+  /** Returns true if the track has any non-default keyframes. */
+  hasKeyframes() {
+    return this.keyframes.length > 0;
+  }
+  /** Serialize to JSON. */
+  toJSON() {
+    return {
+      keyframes: this.keyframes.map((k) => ({ ...k })),
+      property: this.property,
+      min: this.min,
+      max: this.max,
+      defaultValue: this.defaultValue
+    };
+  }
+  /** Load from JSON. */
+  fromJSON(data) {
+    this.keyframes = [];
+    if (data.keyframes && Array.isArray(data.keyframes)) {
+      for (const k of data.keyframes) {
+        if (typeof k.time === "number" && typeof k.value === "number") {
+          this.addKeyframe(k.time, k.value, k.easing || "linear");
+        }
+      }
+    }
+  }
+  /** Clear all keyframes. */
+  clear() {
+    this.keyframes = [];
+  }
+  _sort() {
+    this.keyframes.sort((a, b) => a.time - b.time);
+  }
+}
+function _interpolate(a, b, t, easing) {
+  switch (easing) {
+    case "step":
+      return a;
+    case "ease-in":
+      t = t * t;
+      break;
+    case "ease-out":
+      t = 1 - (1 - t) * (1 - t);
+      break;
+    case "ease-in-out":
+      t = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+      break;
+  }
+  return a + (b - a) * t;
+}
+const LANE_HEIGHT = 60;
+const DIAMOND_SIZE = 6;
+const PADDING_X = 8;
+const PADDING_Y = 8;
+class KeyframeEditor {
+  constructor(track, callbacks) {
+    __publicField(this, "container");
+    __publicField(this, "canvas");
+    __publicField(this, "ctx");
+    __publicField(this, "track");
+    __publicField(this, "callbacks");
+    __publicField(this, "duration", 10);
+    __publicField(this, "dragging", -1);
+    // index of keyframe being dragged
+    __publicField(this, "hovered", -1);
+    __publicField(this, "_animFrame", null);
+    this.track = track;
+    this.callbacks = callbacks;
+    this.container = document.createElement("div");
+    this.container.className = "veditor-keyframe-editor";
+    this.container.setAttribute("data-tool-id", `veditor-kf-${track.property}`);
+    const header = document.createElement("div");
+    header.className = "veditor-kf-header";
+    const label = document.createElement("span");
+    label.className = "veditor-kf-label";
+    label.textContent = `${track.property.charAt(0).toUpperCase() + track.property.slice(1)} Keyframes`;
+    const clearBtn = document.createElement("button");
+    clearBtn.className = "veditor-btn veditor-kf-clear-btn";
+    clearBtn.textContent = "Clear";
+    clearBtn.title = "Remove all keyframes";
+    clearBtn.addEventListener("click", () => {
+      this.track.clear();
+      this.render();
+      this.callbacks.onKeyframesChanged();
+    });
+    header.append(label, clearBtn);
+    this.canvas = document.createElement("canvas");
+    this.canvas.className = "veditor-kf-canvas";
+    this.canvas.height = LANE_HEIGHT;
+    this.canvas.setAttribute("aria-label", `Keyframe editor for ${track.property}`);
+    this.ctx = this.canvas.getContext("2d");
+    this.canvas.addEventListener("mousedown", (e) => this._onMouseDown(e));
+    this.canvas.addEventListener("mousemove", (e) => this._onMouseMove(e));
+    this.canvas.addEventListener("mouseup", () => this._onMouseUp());
+    this.canvas.addEventListener("mouseleave", () => this._onMouseUp());
+    this.canvas.addEventListener("dblclick", (e) => this._onDblClick(e));
+    this.canvas.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      this._onDblClick(e);
+    });
+    const hint = document.createElement("div");
+    hint.className = "veditor-kf-hint";
+    hint.textContent = "Click to add • Drag to move • Double-click to delete";
+    this.container.append(header, this.canvas, hint);
+  }
+  get element() {
+    return this.container;
+  }
+  /** Set the timeline duration for time→pixel mapping. */
+  setDuration(d) {
+    this.duration = Math.max(0.1, d);
+    this.render();
+  }
+  /** Resize canvas width and re-render. */
+  resize(width) {
+    const w = width ?? this.container.clientWidth;
+    if (w > 0) {
+      this.canvas.width = w;
+      this.render();
+    }
+  }
+  /** Re-render the keyframe lane. */
+  render() {
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const ctx = this.ctx;
+    if (w <= 0) return;
+    ctx.clearRect(0, 0, w, h);
+    const areaW = w - 2 * PADDING_X;
+    const areaH = h - 2 * PADDING_Y;
+    ctx.fillStyle = "rgba(30, 30, 44, 0.5)";
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = "rgba(255,255,255,0.05)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+      const y = PADDING_Y + areaH * i / 4;
+      ctx.beginPath();
+      ctx.moveTo(PADDING_X, y);
+      ctx.lineTo(w - PADDING_X, y);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "rgba(255,255,255,0.3)";
+    ctx.font = "9px monospace";
+    ctx.textAlign = "left";
+    ctx.fillText(String(this.track.max), 2, PADDING_Y + 8);
+    ctx.fillText(String(this.track.min), 2, h - PADDING_Y);
+    const defY = this._valueToY(this.track.defaultValue, areaH);
+    ctx.strokeStyle = "rgba(99,102,241,0.3)";
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(PADDING_X, defY);
+    ctx.lineTo(w - PADDING_X, defY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (this.track.keyframes.length >= 2) {
+      ctx.strokeStyle = "rgba(99,102,241,0.7)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      const steps = Math.min(areaW, 200);
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps * this.duration;
+        const val = this.track.valueAt(t);
+        const x = this._timeToX(t, areaW);
+        const y = this._valueToY(val, areaH);
+        if (s === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    if (this.callbacks.getCurrentTime) {
+      const ct = this.callbacks.getCurrentTime();
+      const px = this._timeToX(ct, areaW);
+      ctx.strokeStyle = "rgba(255,255,255,0.4)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(px, PADDING_Y);
+      ctx.lineTo(px, h - PADDING_Y);
+      ctx.stroke();
+    }
+    for (let i = 0; i < this.track.keyframes.length; i++) {
+      const kf = this.track.keyframes[i];
+      const x = this._timeToX(kf.time, areaW);
+      const y = this._valueToY(kf.value, areaH);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(Math.PI / 4);
+      const isHovered = i === this.hovered;
+      const isDragging = i === this.dragging;
+      const size = isDragging ? DIAMOND_SIZE + 2 : isHovered ? DIAMOND_SIZE + 1 : DIAMOND_SIZE;
+      ctx.fillStyle = isDragging ? "#818cf8" : isHovered ? "#a5b4fc" : "#6366f1";
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 1.5;
+      ctx.fillRect(-size / 2, -size / 2, size, size);
+      ctx.strokeRect(-size / 2, -size / 2, size, size);
+      ctx.restore();
+      if (isHovered) {
+        ctx.fillStyle = "rgba(0,0,0,0.7)";
+        const text = `${kf.value.toFixed(2)} @ ${kf.time.toFixed(1)}s`;
+        const tw = ctx.measureText(text).width + 8;
+        ctx.fillRect(x - tw / 2, y - 22, tw, 16);
+        ctx.fillStyle = "#fff";
+        ctx.font = "10px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(text, x, y - 10);
+      }
+    }
+  }
+  /** Get the underlying track. */
+  getTrack() {
+    return this.track;
+  }
+  destroy() {
+    if (this._animFrame) cancelAnimationFrame(this._animFrame);
+    this.container.remove();
+  }
+  // ── Private ──────────────────────────────────────────────────
+  _timeToX(t, areaW) {
+    return PADDING_X + t / this.duration * areaW;
+  }
+  _xToTime(x, areaW) {
+    return Math.max(0, Math.min(this.duration, (x - PADDING_X) / areaW * this.duration));
+  }
+  _valueToY(v, areaH) {
+    const norm = (v - this.track.min) / (this.track.max - this.track.min);
+    return PADDING_Y + (1 - norm) * areaH;
+  }
+  _yToValue(y, areaH) {
+    const norm = 1 - (y - PADDING_Y) / areaH;
+    return this.track.min + norm * (this.track.max - this.track.min);
+  }
+  _hitTest(mx, my) {
+    const areaW = this.canvas.width - 2 * PADDING_X;
+    const areaH = this.canvas.height - 2 * PADDING_Y;
+    for (let i = 0; i < this.track.keyframes.length; i++) {
+      const kf = this.track.keyframes[i];
+      const x = this._timeToX(kf.time, areaW);
+      const y = this._valueToY(kf.value, areaH);
+      const dist = Math.sqrt((mx - x) ** 2 + (my - y) ** 2);
+      if (dist <= DIAMOND_SIZE + 4) return i;
+    }
+    return -1;
+  }
+  _onMouseDown(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const hit = this._hitTest(mx, my);
+    if (hit >= 0) {
+      this.dragging = hit;
+    } else {
+      const areaW = this.canvas.width - 2 * PADDING_X;
+      const areaH = this.canvas.height - 2 * PADDING_Y;
+      const t = this._xToTime(mx, areaW);
+      const v = this._yToValue(my, areaH);
+      this.track.addKeyframe(t, v);
+      this.render();
+      this.callbacks.onKeyframesChanged();
+    }
+  }
+  _onMouseMove(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const areaW = this.canvas.width - 2 * PADDING_X;
+    const areaH = this.canvas.height - 2 * PADDING_Y;
+    if (this.dragging >= 0) {
+      const kf = this.track.keyframes[this.dragging];
+      if (kf) {
+        kf.time = this._xToTime(mx, areaW);
+        kf.value = Math.max(
+          this.track.min,
+          Math.min(this.track.max, this._yToValue(my, areaH))
+        );
+        this.render();
+      }
+    } else {
+      const hit = this._hitTest(mx, my);
+      if (hit !== this.hovered) {
+        this.hovered = hit;
+        this.canvas.style.cursor = hit >= 0 ? "pointer" : "crosshair";
+        this.render();
+      }
+    }
+  }
+  _onMouseUp() {
+    if (this.dragging >= 0) {
+      this.dragging = -1;
+      this.callbacks.onKeyframesChanged();
+      this.render();
+    }
+  }
+  _onDblClick(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const hit = this._hitTest(mx, my);
+    if (hit >= 0) {
+      this.track.removeKeyframe(hit);
+      this.hovered = -1;
+      this.render();
+      this.callbacks.onKeyframesChanged();
+    }
+  }
+}
 class SpeedControl {
   constructor(callbacks) {
     __publicField(this, "container");
@@ -1330,6 +1703,10 @@ class SpeedControl {
     __publicField(this, "reverseMap", /* @__PURE__ */ new Map());
     __publicField(this, "curveMap", /* @__PURE__ */ new Map());
     __publicField(this, "_interpolation", false);
+    __publicField(this, "keyframeTrack");
+    __publicField(this, "keyframeEditor");
+    __publicField(this, "kfToggle");
+    __publicField(this, "kfContainer");
     this.callbacks = callbacks;
     this.container = document.createElement("div");
     this.container.className = "veditor-speed";
@@ -1459,6 +1836,40 @@ class SpeedControl {
     });
     resetRow.appendChild(resetBtn);
     this.container.append(speedSection, reverseSection, curveSection, interpSection, resetRow);
+    const kfSection = this._makeSection("Speed Keyframes");
+    const kfToggleRow = document.createElement("div");
+    kfToggleRow.className = "veditor-control-row";
+    const kfLabel = document.createElement("label");
+    kfLabel.className = "veditor-toggle-label";
+    kfLabel.textContent = "Enable speed keyframes";
+    this.kfToggle = document.createElement("input");
+    this.kfToggle.type = "checkbox";
+    this.kfToggle.className = "veditor-checkbox";
+    this.kfToggle.setAttribute("data-tool-id", "veditor-speed-kf-toggle");
+    this.kfToggle.setAttribute("aria-label", "Enable speed keyframes for ramp transitions");
+    this.kfToggle.addEventListener("change", () => {
+      this.kfContainer.style.display = this.kfToggle.checked ? "block" : "none";
+      if (this.kfToggle.checked) {
+        this.keyframeEditor.resize();
+      }
+    });
+    kfToggleRow.append(kfLabel, this.kfToggle);
+    this.keyframeTrack = new KeyframeTrack("speed", 0.1, 8, 1);
+    this.keyframeEditor = new KeyframeEditor(this.keyframeTrack, {
+      onKeyframesChanged: () => {
+        var _a, _b;
+        (_b = (_a = this.callbacks).onKeyframesChanged) == null ? void 0 : _b.call(_a);
+      },
+      getCurrentTime: () => {
+        var _a, _b;
+        return ((_b = (_a = this.callbacks).getCurrentTime) == null ? void 0 : _b.call(_a)) ?? 0;
+      }
+    });
+    this.kfContainer = document.createElement("div");
+    this.kfContainer.style.display = "none";
+    this.kfContainer.appendChild(this.keyframeEditor.element);
+    kfSection.append(kfToggleRow, this.kfContainer);
+    this.container.appendChild(kfSection);
   }
   get element() {
     return this.container;
@@ -1511,6 +1922,40 @@ class SpeedControl {
     this.reverseBtn.classList.remove("active");
     this.reverseBtn.setAttribute("aria-pressed", "false");
     this.curveSelect.value = "linear";
+    this.keyframeTrack.clear();
+    this.kfToggle.checked = false;
+    this.kfContainer.style.display = "none";
+    this.keyframeEditor.render();
+  }
+  /** Get the keyframe track data for serialization. */
+  getKeyframeData() {
+    if (!this.kfToggle.checked || !this.keyframeTrack.hasKeyframes()) {
+      return null;
+    }
+    return this.keyframeTrack.toJSON();
+  }
+  /** Load keyframe data. */
+  loadKeyframeData(data) {
+    if (data && data.keyframes && data.keyframes.length > 0) {
+      this.keyframeTrack.fromJSON(data);
+      this.kfToggle.checked = true;
+      this.kfContainer.style.display = "block";
+      this.keyframeEditor.render();
+    } else {
+      this.keyframeTrack.clear();
+      this.kfToggle.checked = false;
+      this.kfContainer.style.display = "none";
+    }
+  }
+  /** Set the timeline duration for keyframe time mapping. */
+  setDuration(d) {
+    this.keyframeEditor.setDuration(d);
+  }
+  /** Resize the keyframe editor canvas. */
+  resizeKeyframes() {
+    if (this.kfToggle.checked) {
+      this.keyframeEditor.resize();
+    }
   }
   destroy() {
     this.container.remove();

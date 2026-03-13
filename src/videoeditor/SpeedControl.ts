@@ -6,6 +6,8 @@
  */
 
 import { iconGauge, iconReverse, iconCurve, iconFilm } from './icons';
+import { KeyframeTrack, KeyframeTrackJSON } from './KeyframeTrack';
+import { KeyframeEditor } from './KeyframeEditor';
 
 export type SpeedCurve = 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out';
 
@@ -14,6 +16,8 @@ export interface SpeedControlCallbacks {
     onReverseChanged?: (segmentIndex: number, reversed: boolean) => void;
     onCurveChanged?: (segmentIndex: number, curve: SpeedCurve) => void;
     onInterpolationChanged?: (enabled: boolean) => void;
+    onKeyframesChanged?: () => void;
+    getCurrentTime?: () => number;
 }
 
 export class SpeedControl {
@@ -30,6 +34,10 @@ export class SpeedControl {
     private reverseMap: Map<number, boolean> = new Map();
     private curveMap: Map<number, SpeedCurve> = new Map();
     private _interpolation = false;
+    private keyframeTrack: KeyframeTrack;
+    private keyframeEditor: KeyframeEditor;
+    private kfToggle: HTMLInputElement;
+    private kfContainer: HTMLDivElement;
 
     constructor(callbacks: SpeedControlCallbacks) {
         this.callbacks = callbacks;
@@ -192,6 +200,45 @@ export class SpeedControl {
         resetRow.appendChild(resetBtn);
 
         this.container.append(speedSection, reverseSection, curveSection, interpSection, resetRow);
+
+        // ── Keyframe Section ──
+        const kfSection = this._makeSection('Speed Keyframes');
+
+        const kfToggleRow = document.createElement('div');
+        kfToggleRow.className = 'veditor-control-row';
+
+        const kfLabel = document.createElement('label');
+        kfLabel.className = 'veditor-toggle-label';
+        kfLabel.textContent = 'Enable speed keyframes';
+
+        this.kfToggle = document.createElement('input');
+        this.kfToggle.type = 'checkbox';
+        this.kfToggle.className = 'veditor-checkbox';
+        this.kfToggle.setAttribute('data-tool-id', 'veditor-speed-kf-toggle');
+        this.kfToggle.setAttribute('aria-label', 'Enable speed keyframes for ramp transitions');
+        this.kfToggle.addEventListener('change', () => {
+            this.kfContainer.style.display = this.kfToggle.checked ? 'block' : 'none';
+            if (this.kfToggle.checked) {
+                this.keyframeEditor.resize();
+            }
+        });
+
+        kfToggleRow.append(kfLabel, this.kfToggle);
+
+        this.keyframeTrack = new KeyframeTrack('speed', 0.1, 8.0, 1.0);
+        this.keyframeEditor = new KeyframeEditor(this.keyframeTrack, {
+            onKeyframesChanged: () => {
+                this.callbacks.onKeyframesChanged?.();
+            },
+            getCurrentTime: () => this.callbacks.getCurrentTime?.() ?? 0,
+        });
+
+        this.kfContainer = document.createElement('div');
+        this.kfContainer.style.display = 'none';
+        this.kfContainer.appendChild(this.keyframeEditor.element);
+
+        kfSection.append(kfToggleRow, this.kfContainer);
+        this.container.appendChild(kfSection);
     }
 
     get element(): HTMLDivElement {
@@ -252,6 +299,44 @@ export class SpeedControl {
         this.reverseBtn.classList.remove('active');
         this.reverseBtn.setAttribute('aria-pressed', 'false');
         this.curveSelect.value = 'linear';
+        this.keyframeTrack.clear();
+        this.kfToggle.checked = false;
+        this.kfContainer.style.display = 'none';
+        this.keyframeEditor.render();
+    }
+
+    /** Get the keyframe track data for serialization. */
+    getKeyframeData(): KeyframeTrackJSON | null {
+        if (!this.kfToggle.checked || !this.keyframeTrack.hasKeyframes()) {
+            return null;
+        }
+        return this.keyframeTrack.toJSON();
+    }
+
+    /** Load keyframe data. */
+    loadKeyframeData(data: Partial<KeyframeTrackJSON> | null): void {
+        if (data && data.keyframes && data.keyframes.length > 0) {
+            this.keyframeTrack.fromJSON(data);
+            this.kfToggle.checked = true;
+            this.kfContainer.style.display = 'block';
+            this.keyframeEditor.render();
+        } else {
+            this.keyframeTrack.clear();
+            this.kfToggle.checked = false;
+            this.kfContainer.style.display = 'none';
+        }
+    }
+
+    /** Set the timeline duration for keyframe time mapping. */
+    setDuration(d: number): void {
+        this.keyframeEditor.setDuration(d);
+    }
+
+    /** Resize the keyframe editor canvas. */
+    resizeKeyframes(): void {
+        if (this.kfToggle.checked) {
+            this.keyframeEditor.resize();
+        }
     }
 
     destroy(): void {
