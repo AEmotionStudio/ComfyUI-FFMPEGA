@@ -246,6 +246,19 @@ export class TextOverlayPanel {
     private _renderList(): void {
         this.listEl.innerHTML = '';
 
+        if (this.overlays.length === 0) {
+            const emptyState = document.createElement('div');
+            emptyState.className = 'veditor-empty-state';
+            emptyState.style.cssText = 'padding: 24px 12px; text-align: center; color: #888; font-size: 13px; line-height: 1.5;';
+            emptyState.innerHTML = `
+                <div style="font-size: 24px; margin-bottom: 8px; opacity: 0.5;" aria-hidden="true">📝</div>
+                <div>No text overlays yet</div>
+                <div style="font-size: 11px; margin-top: 4px; opacity: 0.7;">Click <b>Add Text</b> above to create one</div>
+            `;
+            this.listEl.appendChild(emptyState);
+            return;
+        }
+
         this.overlays.forEach((ov, idx) => {
             const card = document.createElement('div');
             card.className = 'veditor-text-card';
