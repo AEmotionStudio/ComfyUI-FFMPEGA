@@ -6,6 +6,7 @@ modules don't each need their own try/except stanza.
 
 from __future__ import annotations
 
+import functools
 import shutil
 
 try:
@@ -16,6 +17,7 @@ except (ImportError, ValueError):
     _core_ffprobe = None  # type: ignore[assignment]
 
 
+@functools.cache
 def get_ffmpeg_bin() -> str:
     """Return the FFmpeg binary path, with shutil.which fallback."""
     if _core_ffmpeg is not None:
@@ -25,6 +27,7 @@ def get_ffmpeg_bin() -> str:
     return shutil.which("ffmpeg") or "ffmpeg"
 
 
+@functools.cache
 def get_ffprobe_bin() -> str:
     """Return the FFprobe binary path, with shutil.which fallback."""
     if _core_ffprobe is not None:

@@ -2,7 +2,7 @@ import functools
 import shutil
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def get_ffmpeg_bin() -> str:
     """Resolve the ffmpeg binary path.
 
@@ -12,7 +12,7 @@ def get_ffmpeg_bin() -> str:
     return shutil.which("ffmpeg") or "ffmpeg"
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def get_ffprobe_bin() -> str:
     """Resolve the ffprobe binary path.
 

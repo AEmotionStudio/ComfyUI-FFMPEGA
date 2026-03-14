@@ -288,7 +288,8 @@ def _probe_fps_cached(video_info: dict) -> float | None:
         if cached and cached[1] == mtime:
             return cached[0]
 
-        ffprobe = shutil.which("ffprobe") or "ffprobe"
+        from ..core.bin_paths import get_ffprobe_bin
+        ffprobe = get_ffprobe_bin()
         result = subprocess.run(
             [ffprobe, "-v", "error", "-select_streams", "v:0",
              "-show_entries", "stream=r_frame_rate",
