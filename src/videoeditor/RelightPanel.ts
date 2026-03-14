@@ -14,6 +14,7 @@
 
 export interface RelightState {
     enabled: boolean;
+    ai_normals: boolean;  // use NormalCrafter for real surface normals
     azimuth: number;      // degrees, 0=front, 90=right, -90=left
     elevation: number;    // degrees above horizon
     intensity: number;    // 0–2.0
@@ -29,6 +30,7 @@ export interface RelightCallbacks {
 
 const DEFAULT_STATE: RelightState = {
     enabled: false,
+    ai_normals: false,
     azimuth: 0,
     elevation: 45,
     intensity: 1.0,
@@ -44,6 +46,7 @@ export class RelightPanel {
     private state: RelightState;
 
     private enableToggle!: HTMLInputElement;
+    private aiNormalsToggle!: HTMLInputElement;
     private dirCanvas!: HTMLCanvasElement;
     private dirCtx!: CanvasRenderingContext2D;
     private elevSlider!: HTMLInputElement;
@@ -89,6 +92,35 @@ export class RelightPanel {
         // ── Controls container (hidden when disabled) ──
         this.controlsContainer = document.createElement('div');
         this.controlsContainer.style.display = 'none';
+
+        // ── AI Normals Toggle ──
+        const aiSection = this._makeSection('AI Normals');
+        const aiRow = document.createElement('div');
+        aiRow.className = 'veditor-control-row';
+
+        const aiLabel = document.createElement('label');
+        aiLabel.className = 'veditor-toggle-label';
+        aiLabel.textContent = 'Use NormalCrafter';
+        aiLabel.title = 'Use AI-generated surface normals (NormalCrafter) for physically accurate relighting instead of FFmpeg approximation. Requires GPU and ~12 GB VRAM.';
+
+        this.aiNormalsToggle = document.createElement('input');
+        this.aiNormalsToggle.type = 'checkbox';
+        this.aiNormalsToggle.className = 'veditor-checkbox';
+        this.aiNormalsToggle.setAttribute('data-tool-id', 'veditor-relight-ai-normals');
+        this.aiNormalsToggle.addEventListener('change', () => {
+            this.state.ai_normals = this.aiNormalsToggle.checked;
+            this._notify();
+        });
+
+        const aiHint = document.createElement('span');
+        aiHint.className = 'veditor-hint-text';
+        aiHint.textContent = 'GPU · ~12 GB VRAM';
+        aiHint.style.fontSize = '9px';
+        aiHint.style.opacity = '0.5';
+        aiHint.style.marginLeft = '6px';
+
+        aiRow.append(aiLabel, this.aiNormalsToggle, aiHint);
+        aiSection.appendChild(aiRow);
 
         // ── Light Direction Canvas ──
         const dirSection = this._makeSection('Light Direction');
@@ -224,7 +256,7 @@ export class RelightPanel {
         resetRow.appendChild(resetBtn);
 
         this.controlsContainer.append(
-            dirSection, elevSection, intSection, ambSection, colorSection, resetRow
+            aiSection, dirSection, elevSection, intSection, ambSection, colorSection, resetRow
         );
 
         this.container.append(enableSection, this.controlsContainer);
@@ -243,6 +275,7 @@ export class RelightPanel {
         Object.assign(this.state, s);
         this.enableToggle.checked = this.state.enabled;
         this.controlsContainer.style.display = this.state.enabled ? 'block' : 'none';
+        this.aiNormalsToggle.checked = this.state.ai_normals;
         this.elevSlider.value = String(this.state.elevation);
         this.elevLabel.textContent = `${this.state.elevation}°`;
         this.intensitySlider.value = String(Math.round(this.state.intensity * 100));
@@ -257,6 +290,7 @@ export class RelightPanel {
     reset(): void {
         this.state = { ...DEFAULT_STATE };
         this.enableToggle.checked = false;
+        this.aiNormalsToggle.checked = false;
         this.controlsContainer.style.display = 'none';
         this.elevSlider.value = '45';
         this.elevLabel.textContent = '45°';

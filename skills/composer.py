@@ -93,6 +93,11 @@ class SkillComposer:
     # Common aliases LLMs tend to use
     SKILL_ALIASES = {
         "overlay": "overlay_image",
+        # Shader aliases
+        "glsl": "shader",
+        "gpu_shader": "shader",
+        "gpu_effect": "shader",
+        "shader_overlay": "shader",
         "pip": "picture_in_picture",
         "picture-in-picture": "picture_in_picture",
         "pictureinpicture": "picture_in_picture",
@@ -106,6 +111,11 @@ class SkillComposer:
         "transition": "xfade",
         "splitscreen": "split_screen",
         "side_by_side": "split_screen",
+        "ghosting": "onion_skin",
+        "superimpose": "onion_skin",
+        "double_exposure": "onion_skin",
+        "onionskin": "onion_skin",
+        "video_overlay": "onion_skin",
         "moving_overlay": "animated_overlay",
         "chroma_key": "chromakey",
         "green_screen": "chromakey",
@@ -183,6 +193,11 @@ class SkillComposer:
         "consistent_depth": "video_depth",
         "vda": "video_depth",
         "vda_depth": "video_depth",
+        # NormalCrafter — Video Normal Maps
+        "video_normals": "normalcrafter",
+        "video_normal_map": "normalcrafter",
+        "temporal_normals": "normalcrafter",
+        "video_surface_normals": "normalcrafter",
         # AI Upscale — Super-Resolution
         "super_resolution": "ai_upscale",
         "esrgan": "ai_upscale",
@@ -208,6 +223,14 @@ class SkillComposer:
         "extend_audio": "audio_inpaint",
         "audio_completion": "audio_inpaint",
         "complete_audio": "audio_inpaint",
+        # ACE-Step — Music Generation / Cover / Repaint
+        "acestep": "ace_step",
+        "music_repaint": "ace_step",
+        "audio_cover": "ace_step",
+        "music_cover": "ace_step",
+        "vocal2bgm": "ace_step",
+        "lrc": "ace_step",
+        "stem_separate": "ace_step",
     }
 
     def __init__(self, registry: Optional[SkillRegistry] = None):
@@ -715,12 +738,18 @@ class SkillComposer:
                     corr_name, corrected_value = correction.split("=", 1)
                     step.params[corr_name] = corrected_value
                 elif not p_valid:
-                    import logging
-                    logging.getLogger("ffmpega").warning(
-                        f"Security/Validation: Dropping invalid parameter '{name}' "
-                        f"value '{val}' for skill '{step.skill_name}'. Using default."
-                    )
-                    del step.params[name]
+                    # Skip validation drop when the value comes from internal
+                    # routing (e.g. merge_sam3_into_effects_pipeline sets
+                    # effect=<skill_name> for dynamic resolution).
+                    if name == "effect" and "_original_skill" in step.params:
+                        pass  # allow dynamic effect names through
+                    else:
+                        import logging
+                        logging.getLogger("ffmpega").warning(
+                            f"Security/Validation: Dropping invalid parameter '{name}' "
+                            f"value '{val}' for skill '{step.skill_name}'. Using default."
+                        )
+                        del step.params[name]
 
             # 6. Security: Strict Allowlist Filtering
             # Remove any parameters not defined in the schema to prevent handlers
@@ -728,7 +757,12 @@ class SkillComposer:
             allowed_params = set(skill._param_map.keys())
             filtered_params = {}
             for k, v in step.params.items():
-                if k in allowed_params:
+                if k in allowed_params or k.startswith("_"):
+                    # Allow schema-defined params AND _-prefixed internal
+                    # metadata (e.g. _original_skill, _original_params
+                    # from merge_sam3_into_effects_pipeline).  Internal
+                    # params are injected programmatically, not from LLM
+                    # output, so they don't need security filtering.
                     filtered_params[k] = v
                 else:
                     import logging
@@ -1459,24 +1493,30 @@ def _get_dispatch() -> dict:
         # composite
         _f_add_text, _f_grid, _f_slideshow, _f_overlay_image, _f_watermark,
         _f_concat, _f_xfade, _f_split_screen, _f_animated_overlay,
-        _f_text_overlay, _f_pip, _f_burn_subtitles, _f_countdown,
+        _f_text_overlay, _f_pip, _f_onion_skin, _f_burn_subtitles, _f_countdown,
         _f_animated_text, _f_scrolling_text, _f_ticker, _f_lower_third,
         _f_typewriter_text, _f_bounce_text, _f_fade_text, _f_karaoke_text,
         # transcribe
         _f_auto_transcribe, _f_karaoke_subtitles,
         # masking (SAM2)
         _f_auto_mask,
+        # shader overlays
+        _f_shader,
         # generate audio (MMAudio)
         _f_generate_audio,
         # generate music / audio inpaint (AudioX)
         _f_generate_music,
         _f_audio_inpaint,
+        # ACE-Step music generation / cover / repaint
+        _f_ace_step,
         # lip sync (MuseTalk)
         _f_lip_sync,
         # portrait animation (LivePortrait)
         _f_animate_portrait,
         # dense vision (Marigold)
         _f_marigold,
+        # video normals (NormalCrafter)
+        _f_normalcrafter,
         # video depth (Video Depth Anything)
         _f_video_depth,
         # ai upscale (Real-ESRGAN, HAT, DAT, SwinIR)
@@ -1549,7 +1589,6 @@ def _get_dispatch() -> dict:
         "lut_apply": _f_lut_apply,
         "color_match": _f_color_match,
         "blend": _f_blend,
-        "double_exposure": _f_blend,
         # Audio
         "volume": _f_volume,
         "normalize": _f_normalize,
@@ -1599,6 +1638,13 @@ def _get_dispatch() -> dict:
         "moving_overlay": _f_animated_overlay,
         "picture_in_picture": _f_pip,
         "pip": _f_pip,
+        # Onion Skin — Video Overlay Compositing
+        "onion_skin": _f_onion_skin,
+        "ghosting": _f_onion_skin,
+        "superimpose": _f_onion_skin,
+        "double_exposure": _f_onion_skin,
+        "onionskin": _f_onion_skin,
+        "video_overlay": _f_onion_skin,
         "burn_subtitles": _f_burn_subtitles,
         "hardcode_subtitles": _f_burn_subtitles,
         # Transcription
@@ -1639,7 +1685,7 @@ def _get_dispatch() -> dict:
         "remove_background": _f_remove_background,
         "remove_bg": _f_remove_background,
         "background_removal": _f_remove_background,
-        # SAM2 Auto-Mask
+        # SAM3 Auto-Mask
         "auto_mask": _f_auto_mask,
         "auto_segment": _f_auto_mask,
         "segment": _f_auto_mask,
@@ -1648,6 +1694,12 @@ def _get_dispatch() -> dict:
         "sam_mask": _f_auto_mask,
         "ai_mask": _f_auto_mask,
         "object_mask": _f_auto_mask,
+        # Shader Overlays
+        "shader": _f_shader,
+        "glsl": _f_shader,
+        "gpu_shader": _f_shader,
+        "gpu_effect": _f_shader,
+        "shader_overlay": _f_shader,
         # MMAudio — AI Audio Generation
         "generate_audio": _f_generate_audio,
         "add_audio": _f_generate_audio,
@@ -1679,6 +1731,15 @@ def _get_dispatch() -> dict:
         "extend_audio": _f_audio_inpaint,
         "audio_completion": _f_audio_inpaint,
         "complete_audio": _f_audio_inpaint,
+        # ACE-Step — Music Generation / Cover / Repaint
+        "ace_step": _f_ace_step,
+        "acestep": _f_ace_step,
+        "music_repaint": _f_ace_step,
+        "audio_cover": _f_ace_step,
+        "music_cover": _f_ace_step,
+        "vocal2bgm": _f_ace_step,
+        "lrc": _f_ace_step,
+        "stem_separate": _f_ace_step,
         # MuseTalk — Lip Sync
         "lip_sync": _f_lip_sync,
         "lipsync": _f_lip_sync,
@@ -1714,6 +1775,12 @@ def _get_dispatch() -> dict:
         "consistent_depth": _f_video_depth,
         "vda": _f_video_depth,
         "vda_depth": _f_video_depth,
+        # NormalCrafter — Video Normal Maps
+        "normalcrafter": _f_normalcrafter,
+        "video_normals": _f_normalcrafter,
+        "video_normal_map": _f_normalcrafter,
+        "temporal_normals": _f_normalcrafter,
+        "video_surface_normals": _f_normalcrafter,
         # AI Upscale — Super-Resolution
         "ai_upscale": _f_ai_upscale,
         "super_resolution": _f_ai_upscale,

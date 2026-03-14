@@ -617,3 +617,87 @@ def _f_pip(p):
         return make_result(opts=["-map", "[_vout]", "-map", "[_aout]"], fc=fc)
 
     return make_result(fc=fc)
+
+
+def _f_onion_skin(p):
+    """Onion skin compositing: overlay videos with adjustable opacity/blend.
+
+    Supports two modes:
+    - **composite**: Blend extra video inputs onto the main video using
+      configurable blend mode, opacity, and optional frame offset.
+      Supports multi-layer compositing with decaying opacity.
+    - **temporal**: Self-blend ghost trail from a single video using lagfun.
+    """
+    mode = str(p.get("mode", "composite")).lower()
+    opacity = float(p.get("opacity", 0.5))
+    blend_mode = sanitize_text_param(str(p.get("blend_mode", "screen")))
+    frame_offset = int(p.get("frame_offset", 0))
+    layers = int(p.get("layers", 1))
+    decay = float(p.get("decay", 0.97))
+
+    # Valid blend modes for ffmpeg blend filter
+    _valid_modes = {
+        "normal", "screen", "addition", "difference",
+        "multiply", "overlay", "softlight",
+    }
+    if blend_mode not in _valid_modes:
+        blend_mode = "screen"
+
+    # ── Temporal mode: single-video ghost trail ──────────────────
+    if mode == "temporal":
+        decay = max(0.9, min(0.999, decay))
+        return make_result(vf=[f"lagfun=decay={decay}"])
+
+    # ── Composite mode: multi-input blend ────────────────────────
+    n = int(p.get("_extra_input_count", 0))
+    if n < 1:
+        # No extra inputs — fall back to temporal mode
+        decay = max(0.9, min(0.999, decay))
+        return make_result(vf=[f"lagfun=decay={decay}"])
+
+    fps = int(p.get("_input_fps", 25))
+
+    # Determine how many layers to actually use (capped by available inputs)
+    actual_layers = min(layers, n)
+
+    fc_parts = []
+
+    # Scale and prepare each overlay input
+    for i in range(actual_layers):
+        idx = i + 1  # ffmpeg input index (0 = main)
+        layer_label = f"[_os{i}]"
+
+        # Scale overlay to match main video, apply frame offset
+        prep = f"[{idx}:v]scale=iw:ih:force_original_aspect_ratio=decrease"
+        prep += f",pad=iw:ih:(ow-iw)/2:(oh-ih)/2:black,setsar=1"
+
+        if frame_offset != 0:
+            offset_sec = frame_offset / fps
+            prep += f",setpts=PTS+{offset_sec}/TB"
+
+        prep += layer_label
+        fc_parts.append(prep)
+
+    # Chain blend operations with decaying opacity per layer
+    prev = "[0:v]"
+    for i in range(actual_layers):
+        layer_label = f"[_os{i}]"
+        # Decay opacity for each successive layer
+        layer_opacity = opacity * (0.5 ** i) if actual_layers > 1 else opacity
+        layer_opacity = max(0.01, min(1.0, layer_opacity))
+
+        if i < actual_layers - 1:
+            out_label = f"[_osm{i}]"
+            fc_parts.append(
+                f"{prev}{layer_label}blend=all_mode={blend_mode}"
+                f":all_opacity={layer_opacity:.3f}{out_label}"
+            )
+            prev = out_label
+        else:
+            # Last layer — no output label (final output)
+            fc_parts.append(
+                f"{prev}{layer_label}blend=all_mode={blend_mode}"
+                f":all_opacity={layer_opacity:.3f}"
+            )
+
+    return make_result(fc=";".join(fc_parts))

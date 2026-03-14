@@ -20,8 +20,9 @@ from .audio import build_audio_filter, get_audio_args
 from .color_grading import build_color_grading_filters, has_color_grading
 from .crop import apply_crop
 from .filters import build_filter_preset, has_filter_preset
+from .shaders import has_shader, build_shader_filter as build_shader_preset
 from .keyframes import has_keyframes, build_speed_keyframe_filter
-from .relight import build_relight_filters, has_relight
+from .relight import build_relight_filters, has_relight, needs_ai_normals, apply_ai_relight
 from .export_settings import (
     parse_export_settings, build_video_codec_args, build_audio_codec_args,
     build_resolution_filter, has_export_settings, _DEFAULTS as _EXPORT_DEFAULTS,
@@ -50,6 +51,7 @@ def render_edits(
     audio_segments_json: str = "[]",
     color_grading_json: str = "{}",
     filter_preset_json: str = "{}",
+    shader_preset_json: str = "{}",
     keyframes_json: str = "{}",
     relight_json: str = "{}",
     export_settings_json: str = "{}",
@@ -104,6 +106,7 @@ def render_edits(
         has_transitions = bool(transitions)
         has_grading = has_color_grading(color_grading_json)
         has_filters = has_filter_preset(filter_preset_json)
+        has_shaders = has_shader(shader_preset_json)
         has_kf = has_keyframes(keyframes_json)
         has_relit = has_relight(relight_json)
         has_xform = has_transform(transform_json)
@@ -228,6 +231,26 @@ def render_edits(
                 )
                 fc_applied = True
 
+        # Complex / reduced-intensity shader → separate fc pass
+        if has_shaders:
+            _vf_s, _fc_s = build_shader_preset(shader_preset_json)
+            if _fc_s:
+                shader_fc_path = os.path.join(tmp_dir, "fc_shader.mp4")
+                ffmpeg = get_ffmpeg_bin()
+                shader_cmd = [
+                    ffmpeg, "-y", "-i", current,
+                    "-filter_complex", _fc_s,
+                    "-c:v", "libx264", "-crf", "18", "-preset", "fast",
+                    "-pix_fmt", "yuv420p", "-c:a", "copy",
+                    shader_fc_path,
+                ]
+                log.info("[VideoEditor] Shader fc pass: %s", " ".join(shader_cmd))
+                _run(shader_cmd, cancel_event=cancel_event)
+                if os.path.isfile(shader_fc_path) and os.path.getsize(shader_fc_path) > 0:
+                    current = shader_fc_path
+                else:
+                    log.warning("[VideoEditor] Shader fc pass produced no output, skipping")
+
         # Watermark uses movie= filter_complex → separate pass
         if compose_data.get("watermark_filter"):
             wm_fc = compose_data["watermark_filter"]
@@ -268,6 +291,30 @@ def render_edits(
                 "input — not yet integrated.  Skipping."
             )
 
+        # ── Step 3c-pre: AI normals relight (NormalCrafter GPU pass) ──
+        # When ai_normals is enabled, run NormalCrafter to get real surface
+        # normals and composite per-pixel Lambertian shading.  This replaces
+        # the FFmpeg-only relight approximation with physically-based normals.
+        # Must run before the vf chain since it needs GPU model inference.
+        if has_relit and needs_ai_normals(relight_json):
+            if cancel_event and cancel_event.is_set():
+                return _error("Export cancelled")
+            ai_relit_path = os.path.join(tmp_dir, "ai_relit.mp4")
+            try:
+                current = apply_ai_relight(
+                    video_path=current,
+                    relight_json=relight_json,
+                    output_path=ai_relit_path,
+                )
+                log.info("[VideoEditor] AI normals relight applied successfully")
+            except Exception as exc:
+                log.warning(
+                    "[VideoEditor] AI normals relight failed, falling back "
+                    "to FFmpeg approximation: %s", exc,
+                )
+                # Fall through — build_relight_filters will return FFmpeg
+                # approximation filters since ai_normals check failed.
+
         # ── Step 3c: Collect simple -vf filters into one chain ─────
         if cancel_event and cancel_event.is_set():
             return _error("Export cancelled")
@@ -284,17 +331,24 @@ def render_edits(
             if _vf_simple:
                 vf_chain.extend(_vf_simple)
 
+        # Simple shader preset (full intensity, no fc needed)
+        if has_shaders:
+            _vf_shader, _fc_shader = build_shader_preset(shader_preset_json)
+            if _vf_shader and not _fc_shader:
+                vf_chain.extend(_vf_shader)
+
         if has_relit:
             vf_chain.extend(build_relight_filters(relight_json))
 
         if has_xform:
             vf_chain.extend(build_transform_filter(parse_transform(transform_json)))
 
-        # Compose -vf parts (vignette, chromakey, mask)
+        # Compose -vf parts (vignette, chromakey, mask, onion skin)
         if has_comp:
             vf_chain.extend(compose_data.get("vignette", []))
             vf_chain.extend(compose_data.get("chromakey", []))
             vf_chain.extend(compose_data.get("mask", []))
+            vf_chain.extend(compose_data.get("onion_skin", []))
 
         # Speed keyframes (setpts changes timing → must strip audio)
         if has_kf:

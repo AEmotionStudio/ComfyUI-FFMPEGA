@@ -41,6 +41,19 @@ def main():
     else:
         print("[FFMPEGA] ✓ SAM3 already installed")
 
+    # SAM3 companion deps (skipped by --no-deps but needed at import time)
+    sam3_companion = ["iopath"]
+    missing_s3 = [pkg for pkg in sam3_companion if not is_installed(pkg)]
+    if missing_s3:
+        print(f"[FFMPEGA] Installing SAM3 companion deps: {', '.join(missing_s3)}...")
+        result = subprocess.run([*pip, *missing_s3])
+        if result.returncode == 0:
+            print("[FFMPEGA] ✓ SAM3 companion deps installed successfully")
+        else:
+            print("[FFMPEGA] ✗ Some SAM3 companion deps failed — SAM3 may not import")
+    else:
+        print("[FFMPEGA] ✓ SAM3 companion deps already installed")
+
     # --- LaMa inpainting (object removal for auto_mask) ---
     if not is_installed("simple-lama-inpainting"):
         print("[FFMPEGA] Installing simple-lama-inpainting (--no-deps to avoid torch/numpy conflicts)...")
@@ -170,7 +183,73 @@ def main():
     else:
         print("[FFMPEGA] ✓ SAM-Audio companion deps already installed")
 
+    # --- ACE-Step 1.5 (music generation, cover, repaint) ---
+    # Install --no-deps to avoid pulling conflicting torch / transformers pins
+    if not is_installed("acestep"):
+        print("[FFMPEGA] Installing ACE-Step 1.5 (--no-deps)...")
+        result = subprocess.run([*pip, "--no-deps", "git+https://github.com/ace-step/ACE-Step-1.5.git"])
+        if result.returncode == 0:
+            print("[FFMPEGA] ✓ ACE-Step installed")
+        else:
+            print("[FFMPEGA] ✗ ACE-Step install failed — ace_step mode won't work")
+    else:
+        print("[FFMPEGA] ✓ ACE-Step already installed")
+
+    # Companion deps for ACE-Step (skip if already present from ComfyUI env)
+    acestep_companion = [
+        "vector-quantize-pytorch",
+        "numba",
+        "loguru",
+        "soundfile",
+        "peft",
+    ]
+    missing_ace = [pkg for pkg in acestep_companion if not is_installed(pkg)]
+    if missing_ace:
+        print(f"[FFMPEGA] Installing ACE-Step companion deps: {', '.join(missing_ace)}...")
+        result = subprocess.run([*pip, *missing_ace])
+        if result.returncode == 0:
+            print("[FFMPEGA] ✓ ACE-Step companion deps installed successfully")
+        else:
+            print("[FFMPEGA] ✗ Some ACE-Step companion deps failed — ace_step may not work")
+    else:
+        print("[FFMPEGA] ✓ ACE-Step companion deps already installed")
+
+    # --- NormalCrafter (video normal maps) ---
+    # Install --no-deps to avoid pulling torch==2.0.1 / CUDA 11 pins
+    if not is_installed("normalcrafter"):
+        print("[FFMPEGA] Installing NormalCrafter (--no-deps)...")
+        result = subprocess.run([*pip, "--no-deps", "git+https://github.com/Binyr/NormalCrafter.git"])
+        if result.returncode == 0:
+            print("[FFMPEGA] ✓ NormalCrafter installed")
+        else:
+            print("[FFMPEGA] ✗ NormalCrafter install failed — normalcrafter mode won't work")
+    else:
+        print("[FFMPEGA] ✓ NormalCrafter already installed")
+
+    # --- Rembg (background removal for rembg masking mode) ---
+    if not is_installed("rembg"):
+        print("[FFMPEGA] Installing rembg[cpu]...")
+        result = subprocess.run([*pip, "rembg[cpu]>=2.0.50"])
+        if result.returncode == 0:
+            print("[FFMPEGA] ✓ rembg installed successfully")
+        else:
+            print("[FFMPEGA] ✗ rembg installation failed — rembg masking mode won't work")
+    else:
+        print("[FFMPEGA] ✓ rembg already installed")
+
+    # --- Whisper (speech-to-text transcription) ---
+    if not is_installed("openai-whisper"):
+        print("[FFMPEGA] Installing openai-whisper...")
+        result = subprocess.run([*pip, "openai-whisper>=20240930"])
+        if result.returncode == 0:
+            print("[FFMPEGA] ✓ openai-whisper installed successfully")
+        else:
+            print("[FFMPEGA] ✗ openai-whisper installation failed — whisper mode won't work")
+    else:
+        print("[FFMPEGA] ✓ openai-whisper already installed")
+
     print("[FFMPEGA] Dependency installation complete")
+
 
 
 if __name__ == "__main__":

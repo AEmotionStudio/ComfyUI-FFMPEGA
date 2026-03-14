@@ -5,6 +5,62 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.16.0] - 2026-03-13
+
+### Added
+- **ACE-Step AI Music Generation**: New ACE-Step 1.5 integration for AI-powered music generation and audio repainting directly within ComfyUI. Supports text-to-music, style-guided cover/repaint of existing audio tracks, and automatic lyrics generation via ACE-Step's 1.7B language model. *(ace_step no-LLM mode)*
+  - **7 Advanced Widgets**: `ace_negative_prompt`, `ace_cover_strength`, `ace_steps`, `ace_cfg_scale`, `ace_bpm`, `ace_key`, `ace_time_sig` — all dynamically shown only when `no_llm_mode = ace_step` with advanced options enabled.
+  - **Auto Lyrics Generation**: When no manual lyrics are provided via `text_a`, ACE-Step's LM auto-generates structured lyrics with section markers (`[verse]`, `[chorus]`) from the prompt.
+  - **Reference Audio**: Connect any audio to `audio_a` — automatically detected and used as style reference for ACE-Step generation.
+  - **BPM/Key/Time Signature Control**: User-specified musical metadata injected into the LM's chain-of-thought generation for precise control over rhythm, key, and meter.
+  - **Cover/Repaint Mode**: When a video has audio but no prompt is given, ACE-Step repaints the existing audio with configurable `cover_strength` (0.0 = preserve original, 1.0 = full creative freedom).
+- **SAM-Audio Source Separation**: New AI-powered audio source separation using SAM-Audio (Separate Anything in Audio). Splits audio into stems (vocals, drums, bass, other) with component-level VRAM offloading. Supports `large` and `large-fp8` variants with automatic model download. *(audio_separate no-LLM mode)*
+  - **FP8 Scaled Variant**: Custom FP8 conversion of SAM-Audio large model (~50% VRAM reduction) with per-tensor scaling factors for inference quality preservation.
+  - **Component Offloading**: Individual model components (encoder, separator, decoder) loaded/unloaded sequentially to minimize peak VRAM usage.
+- **AudioX Vocal Enhancement**: New AudioX integration for AI-powered vocal enhancement, speech restoration, and audio quality improvement. Processes audio through a transformer-based enhancement model with automatic VRAM offloading. *(audiox no-LLM mode)*
+  - **Standalone No-LLM Mode**: New `audiox` option in the `no_llm_mode` dropdown — enhance audio directly without an LLM.
+  - **ACE-Step Chaining**: When both AudioX and ACE-Step are enabled, AudioX output is automatically fed to ACE-Step for one-click music upgrading.
+  - **Model Mirror**: Weights hosted on [AEmotionStudio/audiox](https://huggingface.co/AEmotionStudio/audiox) with mirror-first download and upstream fallback.
+- **AI Music Generation Skill (`generate_music`)**: New `generate_music` skill with handler for LLM-driven music generation via ACE-Step. Registered with 8 aliases (`make_music`, `compose_music`, `create_music`, `music_gen`, `ai_music`, `music_ai`, `compose_audio`, `make_audio`).
+- **Audio Inpainting Skill (`audio_inpaint`)**: New `audio_inpaint` skill for AI-powered audio repair and enhancement using AudioX/ACE-Step pipeline.
+- **Video Editor v2 — 10 New Panels**: Major NLE video editor expansion with 10 new editing panels:
+  - **Color Grading Panel**: Exposure, contrast, saturation, temperature, tint, highlights, shadows, vibrance controls with real-time FFmpeg filter preview.
+  - **Filters Panel**: Collection of filter presets (Warm, Cool, Vintage, Noir, Vivid, Dramatic, Pastel, Sepia, Cross Process, Bleach Bypass) with one-click application.
+  - **Keyframe Editor**: Per-segment keyframe animation for speed and volume with visual keyframe tracks. Supports ease-in/out interpolation.
+  - **Relight Panel**: AI-powered scene relighting using IC-Light with configurable prompt, strength, guidance scale, steps, and background modes.
+  - **Transform Panel**: Scale, rotate, flip, position controls with FFmpeg filter chain generation.
+  - **Compositing Panel**: Picture-in-Picture, watermark, blend modes, chroma key, vignette, and mask compositing tools.
+  - **AI Compose Panel**: AI-powered composition suggestions and automatic edit generation.
+  - **Captions Panel**: Text overlay and subtitle editing with position, timing, font, and style controls.
+  - **Export Settings Panel**: Detailed export configuration with resolution, codec, CRF, preset, format, and audio settings.
+  - **Speed Control**: Dedicated speed adjustment tool with preset buttons and custom value input.
+- **NLE Audio Repaint Region**: Per-segment ACE-Step audio repaint toggle and strength control in the AudioMixer panel. Mark individual audio segments for AI repainting with adjustable strength (0–100%).
+- **NormalCrafter Surface Normal Estimation**: New AI-powered surface normal estimation from video using [NormalCrafter](https://github.com/Binyr/NormalCrafter). Generates temporally consistent normal maps from monocular video with configurable max resolution. Supports SVD-based architecture with automatic model download. *(normalcrafter no-LLM mode)*
+  - **`normalcrafter_max_res` Widget**: Configurable maximum resolution for NormalCrafter inference, shown only when `normalcrafter` mode is active.
+  - **Model Mirror**: Weights hosted on [AEmotionStudio/NormalCrafter](https://huggingface.co/AEmotionStudio/NormalCrafter) for supply chain resilience.
+- **Video Depth Anything**: New AI-powered temporal video depth estimation using [Video Depth Anything](https://github.com/DepthAnything/Video-Depth-Anything). Generates consistent depth maps from monocular video with three model variants (`vits`, `vitb`, `vitl`). Features configurable encoder selection and colormap output. *(video_depth no-LLM mode)*
+  - **`video_depth_encoder` Widget**: Select model variant (small/base/large) based on VRAM/quality tradeoff, shown only when `video_depth` mode is active.
+  - **`video_depth_colormap` Widget**: Choose depth visualization colormap (Spectral, Inferno, etc.).
+  - **Model Mirror**: Weights hosted on [AEmotionStudio/video-depth-anything](https://huggingface.co/AEmotionStudio/video-depth-anything).
+- **Dynamic Widget Visibility Improvements**: `sam_audio_model` and `normalcrafter_max_res` widgets now conditionally visible only when their respective no-LLM modes are active, reducing UI clutter.
+- **Install Scripts**: New `install-all-deps.sh` and `install-all-deps.bat` for one-command installation of all optional dependencies (torchaudio, accelerate, rembg, etc.).
+- **Optional Requirements**: New `requirements-optional.txt` organizing optional dependencies by feature area (ACE-Step, SAM-Audio, AudioX, IC-Light, etc.).
+
+### Changed
+- **Model Registry**: Added `sam_audio`, `sam_audio_fp8`, `audiox`, and `acestep` entries to `core/model_manager.py` with sizes, HuggingFace repos, and download instructions.
+- **VRAM Utils**: Enhanced `_vram_utils.py` with SAM-Audio and ACE-Step cleanup support.
+- **Video Editor Export Pipeline**: Integrated color grading, filter presets, keyframe-based speed/volume, relighting, transforms, compositing, and caption rendering into the FFmpeg export pipeline with proper filter chain orchestration.
+- **Node Widget Count**: Agent node now features 7 additional ACE-Step input widgets under the advanced toggle.
+- **AudioSegment Data Model**: Extended with `aceRepaint` and `aceRepaintStrength` fields for per-segment AI audio repaint marking, with full serialize/deserialize support.
+
+### Fixed
+- **ACE-Step Fallback Test**: Fixed `test_fallback_when_no_acestep` by mocking `is_available` to return `False` now that ACE-Step is installed.
+- **Audio Segment Init**: All `AudioSegment` creation paths now include the new `aceRepaint` fields, preventing TypeScript compilation errors.
+- **Keyframe Application**: Wired keyframe application into the export pipeline to prevent no-op keyframes.
+- **Blend Compose Skip Log**: Added skip log for blend compose mode when no blend target is specified.
+
+---
+
 ## [2.15.0] - 2026-03-09
 
 ### Added

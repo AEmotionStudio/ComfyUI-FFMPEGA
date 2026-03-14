@@ -157,6 +157,25 @@ _MODEL_INFO: dict[str, dict] = {
         "manual": "Models are auto-downloaded from HuggingFace on first use. "
                   "See https://huggingface.co/AEmotionStudio/ai-upscale-models",
     },
+    "acestep": {
+        "name": "ACE-Step 1.5 (Music Generation)",
+        "size": "~6 GB (DiT turbo + 1.7B LM + VAE + text encoder)",
+        "url": "https://huggingface.co/ACE-Step/Ace-Step1.5",
+        "mirror_repo": "AEmotionStudio/acestep-models",
+        "license": "MIT",
+        "manual": "Download model files from "
+                  "https://huggingface.co/ACE-Step/Ace-Step1.5 "
+                  "and place them in ComfyUI/models/acestep/checkpoints/.",
+    },
+    "normalcrafter": {
+        "name": "NormalCrafter (Video Normal Maps)",
+        "size": "~4.5 GB (UNet + VAE + SVD base)",
+        "url": "https://huggingface.co/AEmotionStudio/NormalCrafter",
+        "mirror_repo": "AEmotionStudio/NormalCrafter",
+        "license": "Apache-2.0",
+        "manual": "Models are auto-downloaded from HuggingFace via from_pretrained(). "
+                  "See https://github.com/Binyr/NormalCrafter for upstream.",
+    },
 }
 
 

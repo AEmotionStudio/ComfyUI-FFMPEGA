@@ -394,3 +394,100 @@ class TestInjectEffectsHints:
         inject = self._get_inject_fn()
         result = inject("Original prompt", "not valid json")
         assert result == "Original prompt"
+
+
+class TestMergeSam3IntoEffectsPipeline:
+    """Tests for merge_sam3_into_effects_pipeline (from nollm_modes)."""
+
+    @staticmethod
+    def _get_merge_fn():
+        """Import merge_sam3_into_effects_pipeline from nollm_modes."""
+        pytest.importorskip("torch")
+        from nodes.nollm_modes import merge_sam3_into_effects_pipeline
+        return merge_sam3_into_effects_pipeline
+
+    def test_wraps_blur_as_auto_mask(self):
+        """blur skill should become auto_mask(effect=blur)."""
+        merge = self._get_merge_fn()
+        pipeline = json.dumps({
+            "effects_mode": "skills",
+            "pipeline": [{"skill": "blur", "params": {"strength": 50}}],
+            "raw_ffmpeg": "",
+        })
+        result = json.loads(merge(pipeline, "the face"))
+        assert len(result["pipeline"]) == 1
+        step = result["pipeline"][0]
+        assert step["skill"] == "auto_mask"
+        assert step["params"]["target"] == "the face"
+        assert step["params"]["effect"] == "blur"
+        assert step["params"]["strength"] == 50
+
+    def test_passthrough_quality_step(self):
+        """Non-visual skills like quality should pass through unchanged."""
+        merge = self._get_merge_fn()
+        pipeline = json.dumps({
+            "effects_mode": "skills",
+            "pipeline": [
+                {"skill": "blur", "params": {}},
+                {"skill": "quality", "params": {"crf": 18}},
+            ],
+            "raw_ffmpeg": "",
+        })
+        result = json.loads(merge(pipeline, "the person"))
+        assert len(result["pipeline"]) == 2
+        assert result["pipeline"][0]["skill"] == "auto_mask"
+        assert result["pipeline"][1]["skill"] == "quality"
+        assert result["pipeline"][1]["params"]["crf"] == 18
+
+    def test_empty_pipeline_injects_auto_mask(self):
+        """Empty pipeline should inject a default auto_mask step."""
+        merge = self._get_merge_fn()
+        pipeline = json.dumps({
+            "effects_mode": "empty",
+            "pipeline": [],
+            "raw_ffmpeg": "",
+        })
+        result = json.loads(merge(pipeline, "the car"))
+        assert len(result["pipeline"]) == 1
+        assert result["pipeline"][0]["skill"] == "auto_mask"
+        assert result["pipeline"][0]["params"]["target"] == "the car"
+        assert result["pipeline"][0]["params"]["effect"] == "blur"
+
+    def test_preserves_raw_ffmpeg(self):
+        """raw_ffmpeg should be preserved in the output."""
+        merge = self._get_merge_fn()
+        pipeline = json.dumps({
+            "effects_mode": "hybrid",
+            "pipeline": [{"skill": "blur", "params": {}}],
+            "raw_ffmpeg": "eq=brightness=0.1",
+        })
+        result = json.loads(merge(pipeline, "face"))
+        assert result["raw_ffmpeg"] == "eq=brightness=0.1"
+
+    def test_existing_auto_mask_passthrough(self):
+        """auto_mask steps should pass through unchanged."""
+        merge = self._get_merge_fn()
+        pipeline = json.dumps({
+            "effects_mode": "skills",
+            "pipeline": [{"skill": "auto_mask", "params": {"target": "x", "effect": "remove"}}],
+            "raw_ffmpeg": "",
+        })
+        result = json.loads(merge(pipeline, "the person"))
+        assert result["pipeline"][0]["skill"] == "auto_mask"
+        assert result["pipeline"][0]["params"]["target"] == "x"
+
+    def test_invalid_json_returns_original(self):
+        """Invalid JSON should be returned as-is."""
+        merge = self._get_merge_fn()
+        assert merge("not json", "prompt") == "not json"
+
+    def test_default_target_when_empty_prompt(self):
+        """Empty prompt should default to 'the subject'."""
+        merge = self._get_merge_fn()
+        pipeline = json.dumps({
+            "effects_mode": "empty",
+            "pipeline": [],
+            "raw_ffmpeg": "",
+        })
+        result = json.loads(merge(pipeline, ""))
+        assert result["pipeline"][0]["params"]["target"] == "the subject"

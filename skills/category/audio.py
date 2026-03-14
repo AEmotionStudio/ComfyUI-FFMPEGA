@@ -1023,3 +1023,139 @@ def register_skills(registry: SkillRegistry) -> None:
         ],
     ))
 
+    # ACE-Step 1.5 — AI music generation, cover, repaint
+    registry.register(Skill(
+        name="ace_step",
+        category=SkillCategory.AUDIO,
+        description=(
+            "AI music generation using ACE-Step 1.5: high-quality music from "
+            "text + optional lyrics, cover/repaint existing audio, or run "
+            "the AudioX→ACE-Step pipeline for video-synced music at higher "
+            "quality. Supports durations from 10s to 10 minutes. "
+            "MIT licensed (code and model weights)."
+        ),
+        parameters=[
+            SkillParameter(
+                name="prompt",
+                type=ParameterType.STRING,
+                description="Text description of desired music (e.g. 'upbeat electronic dance music')",
+                required=False,
+                default="",
+            ),
+            SkillParameter(
+                name="lyrics",
+                type=ParameterType.STRING,
+                description="Structured lyrics with section markers: [verse], [chorus], [bridge], etc.",
+                required=False,
+                default="",
+            ),
+            SkillParameter(
+                name="mode",
+                type=ParameterType.CHOICE,
+                description="Operation mode: generate, cover, repaint, or audiox_repaint",
+                required=False,
+                default="generate",
+                choices=["generate", "cover", "repaint", "audiox_repaint"],
+            ),
+            SkillParameter(
+                name="audio_mode",
+                type=ParameterType.CHOICE,
+                description="How to combine with existing video audio",
+                required=False,
+                default="replace",
+                choices=["replace", "mix", "save_only"],
+            ),
+            SkillParameter(
+                name="reference_audio",
+                type=ParameterType.STRING,
+                description="Path to reference audio for style guidance or cover source",
+                required=False,
+                default="",
+            ),
+            SkillParameter(
+                name="mask_start",
+                type=ParameterType.FLOAT,
+                description="Repaint region start as percentage (0-100)",
+                required=False,
+                default=0.0,
+                min_value=0.0,
+                max_value=100.0,
+            ),
+            SkillParameter(
+                name="mask_end",
+                type=ParameterType.FLOAT,
+                description="Repaint region end as percentage (0-100)",
+                required=False,
+                default=100.0,
+                min_value=0.0,
+                max_value=100.0,
+            ),
+            SkillParameter(
+                name="duration",
+                type=ParameterType.FLOAT,
+                description="Audio duration in seconds (10-600)",
+                required=False,
+                default=60.0,
+                min_value=10.0,
+                max_value=600.0,
+            ),
+            SkillParameter(
+                name="seed",
+                type=ParameterType.INT,
+                description="Random seed for reproducibility (-1 = random)",
+                required=False,
+                default=-1,
+                min_value=-1,
+                max_value=999999,
+            ),
+            SkillParameter(
+                name="cfg_scale",
+                type=ParameterType.FLOAT,
+                description="Guidance scale (higher = more prompt adherence)",
+                required=False,
+                default=7.0,
+                min_value=1.0,
+                max_value=15.0,
+            ),
+            SkillParameter(
+                name="steps",
+                type=ParameterType.INT,
+                description="Diffusion steps (turbo default: 8, base: 50+)",
+                required=False,
+                default=8,
+                min_value=1,
+                max_value=100,
+            ),
+            SkillParameter(
+                name="lm_model",
+                type=ParameterType.CHOICE,
+                description="Language model tier for lyric planning",
+                required=False,
+                default="1.7B",
+                choices=["0.6B", "1.7B"],
+            ),
+            SkillParameter(
+                name="cover_strength",
+                type=ParameterType.FLOAT,
+                description="Cover fidelity (0 = creative, 1 = faithful to source)",
+                required=False,
+                default=0.8,
+                min_value=0.0,
+                max_value=1.0,
+            ),
+        ],
+        examples=[
+            "ace_step:prompt=upbeat electronic dance music - Generate EDM",
+            "ace_step:prompt=calm acoustic guitar,lyrics=[verse]Walking through the rain - With lyrics",
+            "ace_step:mode=cover,reference_audio=/path/to/audio.wav - Cover existing audio",
+            "ace_step:mode=audiox_repaint - AudioX→ACE-Step quality pipeline",
+            "ace_step:mode=repaint,mask_start=30,mask_end=60 - Repaint middle section",
+            "ace_step:prompt=epic orchestral,duration=120 - 2 minute epic track",
+        ],
+        tags=[
+            "music", "generate", "cover", "repaint", "ai", "ace_step",
+            "acestep", "lyrics", "lrc", "accompaniment", "soundtrack",
+            "mit", "open_source",
+        ],
+    ))
+

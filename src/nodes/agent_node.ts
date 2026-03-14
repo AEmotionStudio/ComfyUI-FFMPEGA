@@ -438,7 +438,7 @@ export function registerAgentNode(
         const vdaEncoderWidget = this.widgets?.find((w: ComfyWidget) => w.name === "video_depth_encoder");
         const vdaColormapWidget = this.widgets?.find((w: ComfyWidget) => w.name === "video_depth_colormap");
 
-        /** Show/hide marigold, VDA, and upscale widgets based on no_llm_mode value */
+        /** Show/hide marigold, VDA, upscale, and ACE-Step widgets based on no_llm_mode value */
         function updateNoLlmModeVisibility(): void {
             // Use dynamic lookups to avoid temporal dead zone issues
             const adv = node.widgets?.find((w: ComfyWidget) => w.name === "advanced_options");
@@ -453,6 +453,7 @@ export function registerAgentNode(
             const showUpscale = showAdvanced && mode === "ai_upscale";
             const showRembg = showAdvanced && mode === "rembg";
             const showWhisper = showAdvanced && (mode === "transcribe" || mode === "karaoke_subtitles");
+            const showAceStep = showAdvanced && mode === "ace_step";
 
             const mw = node.widgets?.find((w: ComfyWidget) => w.name === "marigold_output_type");
             const ve = node.widgets?.find((w: ComfyWidget) => w.name === "video_depth_encoder");
@@ -472,6 +473,39 @@ export function registerAgentNode(
             if (rb) toggleWidget(rb, showRembg);
             if (wd) toggleWidget(wd, showWhisper);
             if (wm) toggleWidget(wm, showWhisper);
+
+            // SAM-Audio model selector
+            const showSamAudio = showAdvanced && mode === "audio_separate";
+            const sam = node.widgets?.find((w: ComfyWidget) => w.name === "sam_audio_model");
+            if (sam) toggleWidget(sam, showSamAudio);
+
+            // NormalCrafter resolution selector
+            const showNormalcrafter = showAdvanced && mode === "normalcrafter";
+            const nc = node.widgets?.find((w: ComfyWidget) => w.name === "normalcrafter_max_res");
+            if (nc) toggleWidget(nc, showNormalcrafter);
+
+            // FLUX Klein model variant selector
+            const showFluxKlein = showAdvanced && mode === "flux_klein";
+            const fkm = node.widgets?.find((w: ComfyWidget) => w.name === "flux_klein_model");
+            if (fkm) toggleWidget(fkm, showFluxKlein);
+
+            // ACE-Step widgets
+            const aceWidgetNames = [
+                "ace_negative_prompt", "ace_cover_strength", "ace_steps",
+                "ace_cfg_scale", "ace_bpm", "ace_key", "ace_time_sig",
+            ];
+            for (const name of aceWidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showAceStep);
+            }
+
+            // Onion Skin widgets
+            const showOnionSkin = showAdvanced && mode === "onion_skin";
+            const onionWidgetNames = ["onion_blend_mode", "onion_opacity", "onion_decay"];
+            for (const name of onionWidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showOnionSkin);
+            }
         }
 
         function updateAdvancedVisibility(): void {

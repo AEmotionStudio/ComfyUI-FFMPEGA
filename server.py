@@ -652,3 +652,38 @@ async def _save_effects_presets(request):
         log.warning("effects_presets POST error: %s", e)
         return web.json_response({"error": str(e)}, status=500)
 
+
+# ── Shader Overlay Presets ───────────────────────────────────────────
+
+_SHADER_PRESETS_FILE = os.path.join(os.path.dirname(__file__), "shader_presets.json")
+
+
+@server.PromptServer.instance.routes.get("/ffmpega/shader_presets")
+async def _get_shader_presets(request):
+    """Return saved custom shader overlay presets."""
+    try:
+        if os.path.isfile(_SHADER_PRESETS_FILE):
+            with open(_SHADER_PRESETS_FILE, "r", encoding="utf-8") as f:
+                presets = json.load(f)
+        else:
+            presets = []
+        return web.json_response(presets)
+    except Exception as e:
+        log.warning("shader_presets GET error: %s", e)
+        return web.json_response([], status=500)
+
+
+@server.PromptServer.instance.routes.post("/ffmpega/shader_presets")
+async def _save_shader_presets(request):
+    """Save custom shader overlay presets (replaces entire list)."""
+    try:
+        data = await request.json()
+        if not isinstance(data, list):
+            return web.json_response({"error": "expected array"}, status=400)
+        with open(_SHADER_PRESETS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        return web.json_response({"ok": True})
+    except Exception as e:
+        log.warning("shader_presets POST error: %s", e)
+        return web.json_response({"error": str(e)}, status=500)
+

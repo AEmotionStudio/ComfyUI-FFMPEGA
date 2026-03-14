@@ -19,6 +19,10 @@ from .generate_music import (  # noqa: F401
     _f_generate_music,
 )
 
+from .ace_step import (  # noqa: F401
+    _f_ace_step,
+)
+
 from .audio_inpaint import (  # noqa: F401
     _f_audio_inpaint,
 )
@@ -33,6 +37,10 @@ from .animate_portrait import (  # noqa: F401
 
 from .marigold import (  # noqa: F401
     _f_marigold,
+)
+
+from .normalcrafter import (  # noqa: F401
+    _f_normalcrafter,
 )
 
 from .video_depth import (  # noqa: F401
@@ -53,6 +61,7 @@ from .multi_input import (  # noqa: F401
     _f_split_screen,
     _f_animated_overlay,
     _f_pip,
+    _f_onion_skin,
 )
 
 from .text_handlers import (  # noqa: F401
@@ -135,6 +144,10 @@ from .temporal import (  # noqa: F401
     _f_boomerang,
     _f_jump_cut,
     _f_beat_sync,
+)
+
+from .shader import (  # noqa: F401
+    _f_shader,
 )
 
 from .visual import (  # noqa: F401

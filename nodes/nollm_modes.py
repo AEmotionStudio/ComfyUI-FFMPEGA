@@ -75,6 +75,120 @@ def inject_effects_hints(prompt: str, pipeline_json: str) -> str:
     return prompt + "\n".join(hint_lines)
 
 
+# ── SAM3 + Effects Builder merge ────────────────────────────────── #
+
+# Skills that should NOT be wrapped in auto_mask (they're already
+# mask-aware, meta-skills, or don't make sense applied to a region).
+_SAM3_PASSTHROUGH_SKILLS = frozenset({
+    "auto_mask", "auto_segment", "segment", "smart_mask",
+    "sam2", "sam_mask", "ai_mask", "object_mask",
+    "quality", "trim", "speed", "slowmo", "reverse",
+    "concat", "xfade", "split_screen", "grid", "slideshow",
+    "auto_transcribe", "transcribe", "karaoke_subtitles",
+    "generate_audio", "generate_music",
+    "normalize", "noise_reduction", "volume",
+    "fade",
+})
+
+# Effects Builder effects that map directly to auto_mask effect names
+_SKILL_TO_AUTOMASK_EFFECT = {
+    "blur": "blur",
+    "pixelate": "pixelate",
+    "grayscale": "grayscale",
+    "black_and_white": "grayscale",
+    "remove": "remove",
+    "highlight": "highlight",
+    "greenscreen": "greenscreen",
+    "thermal": "thermal",
+}
+
+
+def merge_sam3_into_effects_pipeline(
+    pipeline_json: str,
+    prompt: str,
+) -> str:
+    """Wrap Effects Builder skill steps as auto_mask steps for SAM3 masking.
+
+    When ``no_llm_mode=sam3_masking`` and the Effects Builder is connected,
+    this function converts each visual effect step into an ``auto_mask`` step
+    that applies the effect only to the SAM3-masked region.
+
+    Steps that are already mask-aware (e.g. ``auto_mask``) or non-visual
+    (e.g. ``quality``, ``trim``, ``fade``) are passed through unchanged.
+
+    Args:
+        pipeline_json: The raw JSON string from the Effects Builder node.
+        prompt: The user's prompt text, used as the SAM3 text target.
+
+    Returns:
+        Modified pipeline JSON string with visual steps wrapped as auto_mask.
+    """
+    try:
+        data = json.loads(pipeline_json)
+    except (ValueError, TypeError):
+        return pipeline_json
+
+    steps = data.get("pipeline", [])
+    if not steps:
+        # No skills selected — inject a single auto_mask step with blur
+        # so the user gets a useful result from sam3_masking mode
+        data["pipeline"] = [{
+            "skill": "auto_mask",
+            "params": {
+                "target": prompt.strip() or "the subject",
+                "effect": "blur",
+            },
+        }]
+        data["effects_mode"] = "skills"
+        return json.dumps(data)
+
+    new_steps = []
+    target = prompt.strip() or "the subject"
+
+    for step in steps:
+        skill = step.get("skill", "")
+        params = step.get("params", {})
+
+        # Already an auto_mask step or a non-visual skill → pass through
+        if skill in _SAM3_PASSTHROUGH_SKILLS:
+            new_steps.append(step)
+            continue
+
+        # Map known skill names to auto_mask effect names
+        effect = _SKILL_TO_AUTOMASK_EFFECT.get(skill)
+        if effect:
+            new_steps.append({
+                "skill": "auto_mask",
+                "params": {
+                    "target": target,
+                    "effect": effect,
+                    "strength": params.get("strength", 50),
+                    "invert": params.get("invert", False),
+                },
+            })
+        else:
+            # Any other visual/outcome skill — wrap as auto_mask with
+            # the original skill name for dynamic filter resolution.
+            # The auto_mask handler will call the skill's handler to
+            # get its FFmpeg filter, then apply it through the mask.
+            new_steps.append({
+                "skill": "auto_mask",
+                "params": {
+                    "target": target,
+                    "effect": skill,
+                    "_original_skill": skill,
+                    "_original_params": params,
+                    "strength": params.get("strength", 50),
+                    "invert": params.get("invert", False),
+                },
+            })
+
+    data["pipeline"] = new_steps
+    # Inject SAM3 config for downstream metadata
+    data["sam3"] = {"target": target, "effect": "blur"}
+    return json.dumps(data)
+
+
 async def process_effects_pipeline(
     # dependencies (injected from agent node)
     composer,
@@ -1056,6 +1170,284 @@ async def process_audiox_music_only(
                 shutil.rmtree(temp_render_dir, ignore_errors=True)
 
 
+async def process_ace_step_only(
+    # dependencies
+    media_converter,
+    # parameters
+    prompt: str,
+    mmaudio_mode: str,
+    effective_video_path: str,
+    video_metadata,
+    save_output: bool,
+    output_path: str,
+    preview_mode: bool,
+    quality_preset: str,
+    crf: int,
+    encoding_preset: str,
+    temp_video_from_images: Optional[str] = None,
+    temp_video_with_audio: Optional[str] = None,
+    **kwargs,
+) -> tuple[torch.Tensor, dict, str, str, str, str]:
+    """Run ACE-Step music generation directly without any LLM involvement.
+
+    Generates high-quality music from a text prompt (and optional lyrics) using
+    ACE-Step 1.5, then muxes the result into the output video. If the source
+    video has existing audio and the prompt is empty, ACE-Step will attempt
+    to cover/repaint the existing audio for higher quality.
+
+    Args:
+        prompt: Text description to guide music generation.
+        mmaudio_mode: "replace" to discard original audio, "mix" to blend.
+
+    Returns the standard 6-tuple:
+        (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
+    """
+    logger.info(
+        "ACE-Step music-only mode: prompt=%r, mode=%s", prompt, mmaudio_mode,
+    )
+
+    # --- Import ACE-Step ---
+    try:
+        try:
+            from ..core.acestep_synthesizer import (
+                generate_music_acestep,
+                cover_audio,
+                generate_lyrics as _ace_generate_lyrics,
+                cleanup as _ace_cleanup,
+            )
+        except ImportError:
+            from core.acestep_synthesizer import (  # type: ignore
+                generate_music_acestep,
+                cover_audio,
+                generate_lyrics as _ace_generate_lyrics,
+                cleanup as _ace_cleanup,
+            )
+    except ImportError:
+        raise RuntimeError(
+            "ACE-Step is not installed. Install with: "
+            "pip install --no-deps git+https://github.com/ace-step/ACE-Step-1.5.git"
+        )
+
+    # --- Build output path ---
+    output_path, temp_render_dir = build_output_path(
+        effective_video_path=effective_video_path,
+        save_output=save_output,
+        output_path=output_path,
+        preview_mode=preview_mode,
+    )
+
+    # --- Resolve lyrics: text_a = manual lyrics, auto-generate if empty ---
+    text_a = kwargs.get("text_a", "") or ""
+    lyrics = text_a.strip()
+
+    # --- Extract ACE-Step advanced params ---
+    ace_cover_strength = float(kwargs.get("ace_cover_strength", 0.5))
+    ace_steps = int(kwargs.get("ace_steps", 8))
+    ace_cfg_scale = float(kwargs.get("ace_cfg_scale", 7.0))
+    ace_bpm = (kwargs.get("ace_bpm", "") or "").strip()
+    ace_key = (kwargs.get("ace_key", "") or "").strip()
+    ace_time_sig = (kwargs.get("ace_time_sig", "") or "").strip()
+
+    # --- Resolve reference audio from audio_a ---
+    reference_audio_path = None
+    audio_a = kwargs.get("audio_a")
+    if audio_a and isinstance(audio_a, dict):
+        try:
+            import torchaudio
+            import tempfile as _tf
+            waveform = audio_a.get("waveform")
+            sample_rate = audio_a.get("sample_rate", 48000)
+            if waveform is not None:
+                fd, ref_wav = _tf.mkstemp(suffix=".wav", prefix="ace_ref_")
+                os.close(fd)
+                if waveform.dim() == 3:
+                    waveform = waveform.squeeze(0)  # (batch, channels, samples) → (channels, samples)
+                torchaudio.save(ref_wav, waveform.cpu(), sample_rate)
+                reference_audio_path = ref_wav
+                logger.info("ACE-Step: Using audio_a as reference audio")
+        except Exception as e:
+            logger.warning("ACE-Step: Could not extract reference audio from audio_a: %s", e)
+
+    # --- Build user metadata for LM (BPM/Key/TimeSig) ---
+    user_metadata = {}
+    if ace_bpm:
+        user_metadata["bpm"] = ace_bpm
+    if ace_key:
+        user_metadata["keyscale"] = ace_key
+    if ace_time_sig:
+        user_metadata["timesignature"] = ace_time_sig
+
+    # --- Determine mode: repaint existing audio or generate fresh ---
+    has_audio = bool(video_metadata.primary_audio)
+    audio_file = None
+    duration = float(video_metadata.duration) if video_metadata.duration else 60.0
+
+    try:
+        if has_audio and not prompt.strip():
+            # Repaint existing audio: extract → cover with ACE-Step
+            logger.info("ACE-Step: No prompt + video has audio → repaint mode (strength=%.2f)", ace_cover_strength)
+            import tempfile as _tf
+            fd, src_wav = _tf.mkstemp(suffix=".wav", prefix="ace_src_")
+            os.close(fd)
+            _ffmpeg = _get_ffmpeg_bin()
+            subprocess.run(
+                [_ffmpeg, "-y", "-i", effective_video_path,
+                 "-vn", "-acodec", "pcm_s16le", "-ar", "48000", "-ac", "2",
+                 src_wav],
+                capture_output=True, timeout=60,
+            )
+            if os.path.isfile(src_wav) and os.path.getsize(src_wav) > 100:
+                audio_file = cover_audio(
+                    audio_path=src_wav,
+                    prompt="high quality music",
+                    lyrics=lyrics,
+                    cover_strength=ace_cover_strength,
+                )
+            try:
+                os.unlink(src_wav)
+            except OSError:
+                pass
+            if not audio_file:
+                raise RuntimeError("ACE-Step repaint failed — no output generated")
+        else:
+            # Auto-generate lyrics if none provided and we have a prompt
+            if not lyrics and prompt.strip():
+                logger.info("ACE-Step: No manual lyrics — auto-generating from prompt")
+                lyrics = _ace_generate_lyrics(
+                    prompt=prompt,
+                    duration=duration,
+                    user_metadata=user_metadata if user_metadata else None,
+                )
+                if lyrics:
+                    logger.info("ACE-Step: Auto-generated lyrics: %r", lyrics[:120])
+                else:
+                    logger.info("ACE-Step: No lyrics generated — proceeding instrumental")
+
+            # Generate fresh music from prompt
+            audio_file = generate_music_acestep(
+                prompt=prompt or "background music",
+                lyrics=lyrics,
+                duration=duration,
+                steps=ace_steps,
+                cfg_scale=ace_cfg_scale,
+                reference_audio=reference_audio_path,
+            )
+    except Exception as e:
+        logger.error("ACE-Step music-only: generation failed: %s", e)
+        try:
+            _ace_cleanup()
+        except Exception:
+            pass
+        raise RuntimeError(f"ACE-Step music generation failed: {e}") from e
+
+    # --- Build ffmpeg command to mux generated audio ---
+    _ffmpeg = _get_ffmpeg_bin()
+    effective_crf = crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23)
+    effective_preset = encoding_preset if encoding_preset != "auto" else _PRESET_MAP.get(quality_preset, "medium")
+
+    if mmaudio_mode == "mix" and has_audio:
+        ffmpeg_cmd = [
+            _ffmpeg, "-y",
+            "-i", effective_video_path,
+            "-i", audio_file,
+            "-filter_complex",
+            "[0:a][1:a]amix=inputs=2:duration=shortest[aout]",
+            "-map", "0:v",
+            "-map", "[aout]",
+            "-c:v", "libx264",
+            "-crf", str(effective_crf),
+            "-preset", effective_preset,
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "192k",
+        ]
+    else:
+        ffmpeg_cmd = [
+            _ffmpeg, "-y",
+            "-i", effective_video_path,
+            "-i", audio_file,
+            "-map", "0:v",
+            "-map", "1:a",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-shortest",
+        ]
+
+    if preview_mode:
+        if mmaudio_mode == "mix" and has_audio:
+            ffmpeg_cmd.extend(["-vf", "scale=480:trunc(ow/a/2)*2", "-t", "10"])
+        else:
+            ffmpeg_cmd = [
+                _ffmpeg, "-y",
+                "-i", effective_video_path,
+                "-i", audio_file,
+                "-map", "0:v",
+                "-map", "1:a",
+                "-vf", "scale=480:trunc(ow/a/2)*2",
+                "-t", "10",
+                "-c:v", "libx264",
+                "-crf", str(effective_crf),
+                "-preset", effective_preset,
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-shortest",
+            ]
+
+    ffmpeg_cmd.append(output_path)
+
+    logger.debug("ACE-Step music-only ffmpeg command: %s", " ".join(ffmpeg_cmd))
+    try:
+        proc = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"ACE-Step music-only mode: ffmpeg mux failed:\n{proc.stderr[-500:]}"
+            )
+
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=False,
+        )
+
+        cmd_log = " ".join(ffmpeg_cmd)
+        lyrics_section = ""
+        if lyrics:
+            lyrics_source = "manual (text_a)" if text_a.strip() else "auto-generated"
+            lyrics_section = f"\nLyrics ({lyrics_source}):\n{lyrics}\n"
+        analysis = (
+            f"ACE-Step Music-Only Mode (no LLM)\n"
+            f"Prompt: {prompt or '(repaint mode — improving existing audio)'}\n"
+            f"Audio mode: {mmaudio_mode}\n"
+            f"Source had audio: {has_audio}\n"
+            f"{lyrics_section}\n"
+            f"Generated music: {audio_file}\n"
+            f"Output: {output_path}"
+        )
+
+        return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
+    finally:
+        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        if audio_file and os.path.exists(audio_file):
+            try:
+                os.remove(audio_file)
+            except OSError:
+                pass
+        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+            if not os.listdir(temp_render_dir):
+                shutil.rmtree(temp_render_dir, ignore_errors=True)
+
+
 async def process_audiox_inpaint_only(
     # dependencies
     media_converter,
@@ -1877,6 +2269,161 @@ async def process_marigold_only(
                 shutil.rmtree(temp_render_dir, ignore_errors=True)
 
 
+async def process_normalcrafter_only(
+    # dependencies
+    media_converter,
+    # parameters
+    effective_video_path: str,
+    video_metadata,
+    save_output: bool,
+    output_path: str,
+    preview_mode: bool,
+    quality_preset: str,
+    crf: int,
+    encoding_preset: str,
+    normalcrafter_max_res: str = "auto",
+    normalcrafter_window_size: int = 14,
+    normalcrafter_process_length: int = -1,
+    normalcrafter_target_fps: int = -1,
+    normalcrafter_seed: int = 42,
+    temp_video_from_images: Optional[str] = None,
+    temp_video_with_audio: Optional[str] = None,
+    **kwargs,
+) -> tuple[torch.Tensor, dict, str, str, str, str]:
+    """Run NormalCrafter video normal map generation without LLM involvement.
+
+    Produces temporally consistent surface normal map videos using video
+    diffusion priors (NormalCrafter).
+
+    Args:
+        normalcrafter_max_res: Maximum processing resolution. One of
+            'auto', '1024', '768', '512'.  'auto' detects GPU VRAM and
+            picks a safe resolution.
+        normalcrafter_window_size: Temporal window size for sliding inference.
+        normalcrafter_process_length: Max frames to process (-1 = all).
+        normalcrafter_target_fps: Target FPS (-1 = use original).
+        normalcrafter_seed: Random seed for reproducibility.
+
+    Returns the standard 6-tuple:
+        (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
+    """
+    logger.info(
+        "NormalCrafter mode: max_res=%s, window=%d, seed=%d",
+        normalcrafter_max_res, normalcrafter_window_size, normalcrafter_seed,
+    )
+
+    # --- Import NormalCrafter synthesizer ---
+    try:
+        try:
+            from ..core.normalcrafter_synthesizer import run_normalcrafter, cleanup as _nc_cleanup
+        except ImportError:
+            from core.normalcrafter_synthesizer import run_normalcrafter, cleanup as _nc_cleanup  # type: ignore
+    except ImportError:
+        raise RuntimeError(
+            "NormalCrafter is not available. "
+            "Install with: pip install --no-deps "
+            "git+https://github.com/Binyr/NormalCrafter.git"
+        )
+
+    # --- Build output path ---
+    output_path, temp_render_dir = build_output_path(
+        effective_video_path=effective_video_path,
+        save_output=save_output,
+        output_path=output_path,
+        preview_mode=preview_mode,
+    )
+
+    # --- Run NormalCrafter (in-process with GPU offloading) ---
+    nc_output = None
+    try:
+        nc_output = run_normalcrafter(
+            video_path=effective_video_path,
+            max_res=normalcrafter_max_res,
+            window_size=normalcrafter_window_size,
+            process_length=normalcrafter_process_length,
+            target_fps=normalcrafter_target_fps,
+            seed=normalcrafter_seed,
+        )
+    except Exception as e:
+        logger.error("NormalCrafter mode: inference failed: %s", e)
+        try:
+            _nc_cleanup()
+        except Exception:
+            pass
+        raise RuntimeError(f"NormalCrafter inference failed: {e}") from e
+
+    # --- Re-encode to output path ---
+    _ffmpeg = _get_ffmpeg_bin()
+    effective_crf = crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23)
+    effective_preset = encoding_preset if encoding_preset != "auto" else _PRESET_MAP.get(quality_preset, "medium")
+
+    ffmpeg_cmd = [
+        _ffmpeg, "-y",
+        "-i", nc_output,
+        "-c:v", "libx264",
+        "-crf", str(effective_crf),
+        "-preset", effective_preset,
+        "-pix_fmt", "yuv420p",
+        "-an",  # NormalCrafter output has no audio
+    ]
+
+    if preview_mode:
+        ffmpeg_cmd.extend(["-vf", "scale=480:trunc(ow/a/2)*2", "-t", "10"])
+
+    ffmpeg_cmd.append(output_path)
+
+    logger.debug("NormalCrafter ffmpeg command: %s", " ".join(ffmpeg_cmd))
+    proc = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"NormalCrafter mode: ffmpeg encoding failed:\n{proc.stderr[-500:]}"
+        )
+    cmd_log = " ".join(ffmpeg_cmd)
+
+    try:
+        # --- Collect frame/audio output ---
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=True,
+        )
+
+        # --- Build analysis string ---
+        analysis = (
+            f"NormalCrafter Mode (no LLM)\n"
+            f"Temporally consistent video surface normals\n"
+            f"Max resolution: {normalcrafter_max_res}\n"
+            f"Window size: {normalcrafter_window_size}\n"
+            f"Seed: {normalcrafter_seed}\n\n"
+            f"Source: {effective_video_path}\n"
+            f"NormalCrafter output: {nc_output}\n"
+            f"Output: {output_path}"
+        )
+
+        return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
+    finally:
+        # --- Cleanup temp files (always runs, even on error) ---
+        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        # Clean up NormalCrafter temp output
+        if nc_output and os.path.exists(nc_output):
+            try:
+                os.remove(nc_output)
+            except OSError:
+                pass
+        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+            if not os.listdir(temp_render_dir):
+                shutil.rmtree(temp_render_dir, ignore_errors=True)
+
+
 async def process_video_depth_only(
     # dependencies
     media_converter,
@@ -2242,6 +2789,8 @@ async def process_flux_klein_only(
     """
     logger.info("FLUX Klein mode: prompt=%r", prompt)
 
+    flux_klein_model = kwargs.get("flux_klein_model", "auto")
+
     if not prompt or not prompt.strip():
         raise RuntimeError(
             "FLUX Klein mode requires a prompt describing the desired edit. "
@@ -2329,6 +2878,7 @@ async def process_flux_klein_only(
                 prompt=prompt,
                 output_path=img_output,
                 reference_images=reference_images,
+                model_variant=flux_klein_model,
             )
             output_path = edited_path
             cmd_log = f"flux_klein edit_single_image → {output_path}"
@@ -2343,6 +2893,7 @@ async def process_flux_klein_only(
                 mode="edit",
                 smoothing=flux_smoothing,
                 reference_images=reference_images,
+                model_variant=flux_klein_model,
             )
             output_path = edited_path
 
@@ -2710,3 +3261,214 @@ async def process_rembg_only(
         if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
             if not os.listdir(temp_render_dir):
                 shutil.rmtree(temp_render_dir, ignore_errors=True)
+
+
+async def process_onion_skin_only(
+    # dependencies (injected from agent node)
+    composer,
+    process_manager,
+    media_converter,
+    # parameters
+    effective_video_path: str,
+    video_metadata,
+    save_output: bool,
+    output_path: str,
+    preview_mode: bool,
+    quality_preset: str,
+    crf: int,
+    encoding_preset: str,
+    onion_blend_mode: str = "screen",
+    onion_opacity: float = 0.5,
+    onion_decay: float = 0.97,
+    _all_video_paths: Optional[list] = None,
+    temp_video_from_images: Optional[str] = None,
+    temp_video_with_audio: Optional[str] = None,
+    **kwargs,
+) -> tuple[torch.Tensor, dict, str, str, str, str]:
+    """Run Onion Skin effect directly without any LLM involvement.
+
+    Auto-detects connected extra video inputs:
+    - **Composite mode** (extra inputs): Blends extra videos onto the main
+      video using ``filter_complex`` with FFmpeg ``blend`` filters.
+    - **Temporal mode** (no extra inputs): Applies ghost-trail self-blend
+      using the ``lagfun`` filter on a single video.
+
+    Returns the standard 6-tuple:
+        (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
+    """
+    extra_videos = _all_video_paths or []
+    has_extra = len(extra_videos) > 0
+    mode_label = "composite" if has_extra else "temporal"
+
+    logger.info(
+        "Onion Skin mode: %s, blend_mode=%s, opacity=%.2f, decay=%.3f, extra_inputs=%d",
+        mode_label, onion_blend_mode, onion_opacity, onion_decay, len(extra_videos),
+    )
+
+    # --- Validate blend mode ---
+    _valid_modes = {
+        "normal", "screen", "addition", "difference",
+        "multiply", "overlay", "softlight",
+    }
+    if onion_blend_mode not in _valid_modes:
+        onion_blend_mode = "screen"
+
+    # --- Build output path ---
+    output_path, temp_render_dir = build_output_path(
+        effective_video_path=effective_video_path,
+        save_output=save_output,
+        output_path=output_path,
+        preview_mode=preview_mode,
+    )
+
+    _ffmpeg = _get_ffmpeg_bin()
+    effective_crf = crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23)
+    effective_preset = (
+        encoding_preset if encoding_preset != "auto"
+        else _PRESET_MAP.get(quality_preset, "medium")
+    )
+
+    if has_extra:
+        # ── Composite mode: blend extra videos onto main ─────────────
+        ffmpeg_cmd = [_ffmpeg, "-y", "-i", effective_video_path]
+        for vp in extra_videos:
+            ffmpeg_cmd.extend(["-i", vp])
+
+        # Build filter_complex chain
+        n_layers = len(extra_videos)
+        fc_parts = []
+
+        # Scale and prepare each overlay input to match main video
+        for i in range(n_layers):
+            idx = i + 1  # ffmpeg input index (0 = main)
+            fc_parts.append(
+                f"[{idx}:v]scale=iw:ih:force_original_aspect_ratio=decrease,"
+                f"pad=iw:ih:(ow-iw)/2:(oh-ih)/2:black,setsar=1[_os{i}]"
+            )
+
+        # Chain blend operations with decaying opacity per layer
+        prev = "[0:v]"
+        for i in range(n_layers):
+            layer_opacity = onion_opacity * (0.5 ** i) if n_layers > 1 else onion_opacity
+            layer_opacity = max(0.01, min(1.0, layer_opacity))
+
+            if i < n_layers - 1:
+                out_label = f"[_osm{i}]"
+                fc_parts.append(
+                    f"{prev}[_os{i}]blend=all_mode={onion_blend_mode}"
+                    f":all_opacity={layer_opacity:.3f}{out_label}"
+                )
+                prev = out_label
+            else:
+                fc_parts.append(
+                    f"{prev}[_os{i}]blend=all_mode={onion_blend_mode}"
+                    f":all_opacity={layer_opacity:.3f}[vout]"
+                )
+
+        filter_complex = ";".join(fc_parts)
+        ffmpeg_cmd.extend(["-filter_complex", filter_complex])
+        ffmpeg_cmd.extend(["-map", "[vout]"])
+
+        # Copy audio from main input if present
+        if video_metadata.primary_audio:
+            ffmpeg_cmd.extend(["-map", "0:a?", "-c:a", "aac", "-b:a", "192k"])
+
+        ffmpeg_cmd.extend([
+            "-c:v", "libx264",
+            "-crf", str(effective_crf),
+            "-preset", effective_preset,
+            "-pix_fmt", "yuv420p",
+        ])
+
+        if preview_mode:
+            ffmpeg_cmd.extend(["-s", "480x270", "-t", "10"])
+
+        ffmpeg_cmd.append(output_path)
+        cmd_log = " ".join(ffmpeg_cmd)
+
+        logger.debug("Onion Skin composite command: %s", cmd_log)
+        proc = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"Onion Skin composite mode: ffmpeg failed:\n{proc.stderr[-500:]}"
+            )
+
+        analysis = (
+            f"Onion Skin Mode — Composite (no LLM)\n"
+            f"Blend mode: {onion_blend_mode}\n"
+            f"Opacity: {onion_opacity:.0%}\n"
+            f"Extra inputs: {n_layers}\n"
+            f"Layers blended with decay factor 0.5 per layer\n\n"
+            f"Inputs:\n  Main: {effective_video_path}\n"
+            + "\n".join(f"  Layer {i+1}: {v}" for i, v in enumerate(extra_videos))
+        )
+
+    else:
+        # ── Temporal mode: single-video ghost trail ──────────────────
+        decay = max(0.9, min(0.999, onion_decay))
+
+        ffmpeg_cmd = [
+            _ffmpeg, "-y",
+            "-i", effective_video_path,
+            "-vf", f"lagfun=decay={decay}",
+            "-c:v", "libx264",
+            "-crf", str(effective_crf),
+            "-preset", effective_preset,
+            "-pix_fmt", "yuv420p",
+        ]
+
+        # Preserve audio
+        if video_metadata.primary_audio:
+            ffmpeg_cmd.extend(["-c:a", "aac", "-b:a", "192k"])
+        else:
+            ffmpeg_cmd.append("-an")
+
+        if preview_mode:
+            # Insert scale filter before lagfun
+            for i, arg in enumerate(ffmpeg_cmd):
+                if arg == "-vf":
+                    ffmpeg_cmd[i + 1] = f"scale=480:-1,{ffmpeg_cmd[i + 1]}"
+                    break
+            ffmpeg_cmd.extend(["-t", "10"])
+
+        ffmpeg_cmd.append(output_path)
+        cmd_log = " ".join(ffmpeg_cmd)
+
+        logger.debug("Onion Skin temporal command: %s", cmd_log)
+        proc = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"Onion Skin temporal mode: ffmpeg failed:\n{proc.stderr[-500:]}"
+            )
+
+        analysis = (
+            f"Onion Skin Mode — Temporal (no LLM)\n"
+            f"Decay: {decay:.3f}\n"
+            f"Input: {effective_video_path}\n"
+            f"Output: {output_path}"
+        )
+
+    # --- Collect frame/audio output ---
+    unique_id = str(kwargs.get("unique_id", ""))
+    hidden_prompt = kwargs.get("hidden_prompt") or {}
+    images_tensor, audio_out = collect_frame_output(
+        media_converter=media_converter,
+        output_path=output_path,
+        unique_id=unique_id,
+        hidden_prompt=hidden_prompt,
+        removes_audio=not bool(video_metadata.primary_audio),
+    )
+
+    # --- Cleanup temp files ---
+    for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+    if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+        if not os.listdir(temp_render_dir):
+            shutil.rmtree(temp_render_dir, ignore_errors=True)
+
+    return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
+

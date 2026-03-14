@@ -24,6 +24,10 @@ class AudioMixer {
     __publicField(this, "_masterVolume", 1);
     __publicField(this, "segmentHeader");
     __publicField(this, "_selectedSegIndex", -1);
+    __publicField(this, "aceRepaintBtn");
+    __publicField(this, "aceStrengthSlider");
+    __publicField(this, "aceStrengthLabel");
+    __publicField(this, "_aceRepaintActive", false);
     this.callbacks = callbacks;
     this.container = document.createElement("div");
     this.container.className = "veditor-audio";
@@ -147,6 +151,48 @@ class AudioMixer {
     });
     eqRow.append(eqIcon, this.eqSelect);
     eqSection.appendChild(eqRow);
+    const aceSection = this._makeSection("ACE-Step Repaint");
+    aceSection.setAttribute("data-tool-id", "veditor-ace-repaint-section");
+    aceSection.title = "Mark this audio segment for ACE-Step quality enhancement";
+    const aceRow = document.createElement("div");
+    aceRow.className = "veditor-control-row";
+    this.aceRepaintBtn = document.createElement("button");
+    this.aceRepaintBtn.className = "veditor-btn veditor-toggle-btn";
+    this.aceRepaintBtn.textContent = "🎵 Repaint Off";
+    this.aceRepaintBtn.title = "Toggle ACE-Step repaint for this segment";
+    this.aceRepaintBtn.setAttribute("data-tool-id", "veditor-ace-repaint-toggle");
+    this.aceRepaintBtn.setAttribute("aria-label", "Toggle ACE-Step audio repaint");
+    this.aceRepaintBtn.addEventListener("click", () => {
+      var _a, _b;
+      this._aceRepaintActive = !this._aceRepaintActive;
+      this._updateAceRepaintBtn();
+      (_b = (_a = this.callbacks).onAceRepaintChanged) == null ? void 0 : _b.call(_a, this._aceRepaintActive);
+    });
+    aceRow.appendChild(this.aceRepaintBtn);
+    aceSection.appendChild(aceRow);
+    const aceStrengthRow = document.createElement("div");
+    aceStrengthRow.className = "veditor-control-row";
+    this.aceStrengthSlider = document.createElement("input");
+    this.aceStrengthSlider.type = "range";
+    this.aceStrengthSlider.min = "0";
+    this.aceStrengthSlider.max = "1";
+    this.aceStrengthSlider.step = "0.05";
+    this.aceStrengthSlider.value = "0.5";
+    this.aceStrengthSlider.className = "veditor-fade-slider";
+    this.aceStrengthSlider.setAttribute("data-tool-id", "veditor-ace-strength-slider");
+    this.aceStrengthSlider.setAttribute("aria-label", "ACE-Step repaint strength (0 to 1)");
+    this.aceStrengthSlider.addEventListener("input", () => {
+      var _a, _b;
+      const val = parseFloat(this.aceStrengthSlider.value);
+      this.aceStrengthLabel.textContent = `${Math.round(val * 100)}%`;
+      (_b = (_a = this.callbacks).onAceRepaintStrengthChanged) == null ? void 0 : _b.call(_a, val);
+    });
+    this.aceStrengthLabel = document.createElement("span");
+    this.aceStrengthLabel.className = "veditor-fade-label";
+    this.aceStrengthLabel.textContent = "50%";
+    this.aceStrengthLabel.setAttribute("data-tool-id", "veditor-ace-strength-label");
+    aceStrengthRow.append(this.aceStrengthSlider, this.aceStrengthLabel);
+    aceSection.appendChild(aceStrengthRow);
     const resetRow = document.createElement("div");
     resetRow.className = "veditor-control-row";
     const resetBtn = document.createElement("button");
@@ -156,15 +202,17 @@ class AudioMixer {
     resetBtn.setAttribute("data-tool-id", "veditor-audio-reset");
     resetBtn.setAttribute("aria-label", "Reset audio settings");
     resetBtn.addEventListener("click", () => {
-      var _a, _b, _c, _d, _e, _f;
+      var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
       this.callbacks.onVolumeChanged(1);
       (_b = (_a = this.callbacks).onFadeInChanged) == null ? void 0 : _b.call(_a, 0);
       (_d = (_c = this.callbacks).onFadeOutChanged) == null ? void 0 : _d.call(_c, 0);
       (_f = (_e = this.callbacks).onEQChanged) == null ? void 0 : _f.call(_e, "flat");
+      (_h = (_g = this.callbacks).onAceRepaintChanged) == null ? void 0 : _h.call(_g, false);
+      (_j = (_i = this.callbacks).onAceRepaintStrengthChanged) == null ? void 0 : _j.call(_i, 0.5);
       this.reset();
     });
     resetRow.appendChild(resetBtn);
-    this.container.append(volSection, fadeInSection, fadeOutSection, eqSection, resetRow);
+    this.container.append(volSection, fadeInSection, fadeOutSection, eqSection, aceSection, resetRow);
   }
   get element() {
     return this.container;
@@ -207,6 +255,10 @@ class AudioMixer {
     this.eqSelect.value = seg.eq;
     this.isMuted = seg.muted;
     this.muteBtn.innerHTML = seg.muted ? iconMuted : iconVolume;
+    this._aceRepaintActive = seg.aceRepaint;
+    this._updateAceRepaintBtn();
+    this.aceStrengthSlider.value = String(seg.aceRepaintStrength);
+    this.aceStrengthLabel.textContent = `${Math.round(seg.aceRepaintStrength * 100)}%`;
   }
   /** Clear segment selection, restore master volume to slider, and show master label */
   clearSegmentSelection() {
@@ -222,7 +274,9 @@ class AudioMixer {
       fadeIn: parseFloat(this.fadeInSlider.value),
       fadeOut: parseFloat(this.fadeOutSlider.value),
       eq: this.eqSelect.value,
-      muted: this.isMuted
+      muted: this.isMuted,
+      aceRepaint: this._aceRepaintActive,
+      aceRepaintStrength: parseFloat(this.aceStrengthSlider.value)
     };
   }
   get selectedSegmentIndex() {
@@ -248,6 +302,10 @@ class AudioMixer {
     this.eqSelect.value = "flat";
     this.isMuted = false;
     this.muteBtn.innerHTML = iconVolume;
+    this._aceRepaintActive = false;
+    this._updateAceRepaintBtn();
+    this.aceStrengthSlider.value = "0.5";
+    this.aceStrengthLabel.textContent = "50%";
     this.clearSegmentSelection();
   }
   destroy() {
@@ -277,6 +335,17 @@ class AudioMixer {
     label.textContent = title;
     section.appendChild(label);
     return section;
+  }
+  _updateAceRepaintBtn() {
+    if (this._aceRepaintActive) {
+      this.aceRepaintBtn.textContent = "🎵 Repaint On";
+      this.aceRepaintBtn.style.background = "var(--ve-success, #22c55e)";
+      this.aceRepaintBtn.style.color = "#000";
+    } else {
+      this.aceRepaintBtn.textContent = "🎵 Repaint Off";
+      this.aceRepaintBtn.style.background = "";
+      this.aceRepaintBtn.style.color = "";
+    }
   }
 }
 const POSITION_PRESETS$1 = [
@@ -1219,6 +1288,7 @@ class FiltersPanel {
 }
 const DEFAULT_STATE$3 = {
   enabled: false,
+  ai_normals: false,
   azimuth: 0,
   elevation: 45,
   intensity: 1,
@@ -1233,6 +1303,7 @@ class RelightPanel {
     __publicField(this, "callbacks");
     __publicField(this, "state");
     __publicField(this, "enableToggle");
+    __publicField(this, "aiNormalsToggle");
     __publicField(this, "dirCanvas");
     __publicField(this, "dirCtx");
     __publicField(this, "elevSlider");
@@ -1268,6 +1339,29 @@ class RelightPanel {
     enableSection.appendChild(enableRow);
     this.controlsContainer = document.createElement("div");
     this.controlsContainer.style.display = "none";
+    const aiSection = this._makeSection("AI Normals");
+    const aiRow = document.createElement("div");
+    aiRow.className = "veditor-control-row";
+    const aiLabel = document.createElement("label");
+    aiLabel.className = "veditor-toggle-label";
+    aiLabel.textContent = "Use NormalCrafter";
+    aiLabel.title = "Use AI-generated surface normals (NormalCrafter) for physically accurate relighting instead of FFmpeg approximation. Requires GPU and ~12 GB VRAM.";
+    this.aiNormalsToggle = document.createElement("input");
+    this.aiNormalsToggle.type = "checkbox";
+    this.aiNormalsToggle.className = "veditor-checkbox";
+    this.aiNormalsToggle.setAttribute("data-tool-id", "veditor-relight-ai-normals");
+    this.aiNormalsToggle.addEventListener("change", () => {
+      this.state.ai_normals = this.aiNormalsToggle.checked;
+      this._notify();
+    });
+    const aiHint = document.createElement("span");
+    aiHint.className = "veditor-hint-text";
+    aiHint.textContent = "GPU · ~12 GB VRAM";
+    aiHint.style.fontSize = "9px";
+    aiHint.style.opacity = "0.5";
+    aiHint.style.marginLeft = "6px";
+    aiRow.append(aiLabel, this.aiNormalsToggle, aiHint);
+    aiSection.appendChild(aiRow);
     const dirSection = this._makeSection("Light Direction");
     this.dirCanvas = document.createElement("canvas");
     this.dirCanvas.className = "veditor-relight-dir-canvas";
@@ -1371,6 +1465,7 @@ class RelightPanel {
     resetBtn.addEventListener("click", () => this.reset());
     resetRow.appendChild(resetBtn);
     this.controlsContainer.append(
+      aiSection,
       dirSection,
       elevSection,
       intSection,
@@ -1391,6 +1486,7 @@ class RelightPanel {
     Object.assign(this.state, s);
     this.enableToggle.checked = this.state.enabled;
     this.controlsContainer.style.display = this.state.enabled ? "block" : "none";
+    this.aiNormalsToggle.checked = this.state.ai_normals;
     this.elevSlider.value = String(this.state.elevation);
     this.elevLabel.textContent = `${this.state.elevation}°`;
     this.intensitySlider.value = String(Math.round(this.state.intensity * 100));
@@ -1404,6 +1500,7 @@ class RelightPanel {
   reset() {
     this.state = { ...DEFAULT_STATE$3 };
     this.enableToggle.checked = false;
+    this.aiNormalsToggle.checked = false;
     this.controlsContainer.style.display = "none";
     this.elevSlider.value = "45";
     this.elevLabel.textContent = "45°";
@@ -3567,7 +3664,9 @@ class AudioEditManager {
       fadeIn: 0,
       fadeOut: 0,
       eq: "flat",
-      muted: false
+      muted: false,
+      aceRepaint: false,
+      aceRepaintStrength: 0.5
     }];
   }
   /** Create an audio segment with defaults, optionally overridden */
@@ -3581,6 +3680,8 @@ class AudioEditManager {
       fadeOut: 0,
       eq: "flat",
       muted: false,
+      aceRepaint: false,
+      aceRepaintStrength: 0.5,
       ...overrides
     };
   }
@@ -3685,7 +3786,7 @@ class AudioEditManager {
   hasEdits() {
     if (this.segments.length !== 1) return true;
     const s = this.segments[0];
-    return Math.abs(s.start) > 0.01 || Math.abs(s.end - this.videoDuration) > 0.01 || Math.abs(s.volume - 1) > 0.01 || s.fadeIn > 0 || s.fadeOut > 0 || s.eq !== "flat" || s.muted;
+    return Math.abs(s.start) > 0.01 || Math.abs(s.end - this.videoDuration) > 0.01 || Math.abs(s.volume - 1) > 0.01 || s.fadeIn > 0 || s.fadeOut > 0 || s.eq !== "flat" || s.muted || s.aceRepaint;
   }
   /** Serialize */
   toJSON() {
@@ -3696,7 +3797,9 @@ class AudioEditManager {
       fadeIn: s.fadeIn,
       fadeOut: s.fadeOut,
       eq: s.eq,
-      muted: s.muted
+      muted: s.muted,
+      aceRepaint: s.aceRepaint,
+      aceRepaintStrength: s.aceRepaintStrength
     }));
   }
   /** Deserialize */
@@ -3709,7 +3812,9 @@ class AudioEditManager {
       fadeIn: d.fadeIn ?? 0,
       fadeOut: d.fadeOut ?? 0,
       eq: d.eq ?? "flat",
-      muted: d.muted ?? false
+      muted: d.muted ?? false,
+      aceRepaint: d.aceRepaint ?? false,
+      aceRepaintStrength: d.aceRepaintStrength ?? 0.5
     }));
   }
 }

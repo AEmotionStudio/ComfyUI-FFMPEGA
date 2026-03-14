@@ -47,11 +47,25 @@ _MODEL_VARIANTS = {
         "hf_repo": "facebook/sam-audio-base-tv",
         "weights": "sam-audio-base-tv-bf16.safetensors",
         "dim": 2048,
+        "fp8_scaled": False,
+    },
+    "base-fp8": {
+        "hf_repo": "facebook/sam-audio-base-tv",
+        "weights": "sam-audio-base-tv-fp8-scaled.safetensors",
+        "dim": 2048,
+        "fp8_scaled": True,
     },
     "large": {
         "hf_repo": "facebook/sam-audio-large-tv",
         "weights": "sam-audio-large-tv-bf16.safetensors",
         "dim": 2816,
+        "fp8_scaled": False,
+    },
+    "large-fp8": {
+        "hf_repo": "facebook/sam-audio-large-tv",
+        "weights": "sam-audio-large-tv-fp8-scaled.safetensors",
+        "dim": 2816,
+        "fp8_scaled": True,
     },
 }
 
@@ -260,13 +274,35 @@ def load_models(model_variant: str = _DEFAULT_VARIANT) -> dict:
     model = SAMAudio(config)
 
     # Load weights from safetensors
+    import torch
     from safetensors.torch import load_file
 
     state_dict = load_file(model_path)
 
-    # Cast back to the model's expected dtype if needed
-    # (safetensors preserves dtype, so BF16 weights stay BF16)
+    # Dequantize FP8 scaled weights if needed
+    vinfo = _MODEL_VARIANTS[model_variant]
+    if vinfo.get("fp8_scaled", False):
+        log.info("SAM-Audio: dequantizing FP8 scaled weights → BF16")
+        dequantized = {}
+        scale_keys = {k for k in state_dict if k.endswith("._scale")}
+        for key in list(state_dict.keys()):
+            if key in scale_keys:
+                continue  # skip scale tensors, handled with their weight
+            scale_key = f"{key}._scale"
+            if scale_key in state_dict:
+                # FP8 weight: reconstruct as bf16 = fp8.to(bf16) * scale
+                fp8_val = state_dict[key]
+                scale_val = state_dict[scale_key]
+                dequantized[key] = fp8_val.to(torch.bfloat16) * scale_val
+            else:
+                dequantized[key] = state_dict[key]
+        state_dict = dequantized
+        del dequantized
+        gc.collect()
+
     model.load_state_dict(state_dict, strict=True)
+    del state_dict
+    gc.collect()
 
     model = model.eval().to(offload_device)
     log.info("SAM-Audio: model loaded and cached (offloaded to %s)",

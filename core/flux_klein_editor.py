@@ -47,6 +47,7 @@ log = logging.getLogger("ffmpega")
 _HF_REPO = "black-forest-labs/FLUX.2-klein-4B"
 _MIRROR_REPO = "AEmotionStudio/flux-klein"
 _MODEL_DIR_NAME = "flux_klein"
+_FP8_MODEL_DIR_NAME = "flux_klein_fp8"
 
 # Default prompt for object removal (narrative prose per BFL best practices)
 _REMOVAL_PROMPT = (
@@ -62,6 +63,7 @@ _OUTPUT_SIZE = 1024  # Klein generates at 1024x1024
 
 # Cached pipeline
 _pipeline = None
+_pipeline_variant: str = ""  # which variant is currently loaded
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +95,29 @@ def _get_model_dir() -> Path:
     fallback = Path.home() / ".cache" / _MODEL_DIR_NAME
     fallback.mkdir(parents=True, exist_ok=True)
     return fallback
+
+
+def _get_fp8_model_dir() -> Path | None:
+    """Get the FP8 model directory if it exists and contains a valid model.
+
+    Returns the Path if flux_klein_fp8/ exists with model_index.json,
+    otherwise None.
+    """
+    env_dir = os.environ.get("FFMPEGA_FLUX_KLEIN_FP8_MODEL_DIR")
+    if env_dir:
+        p = Path(env_dir)
+        if (p / "model_index.json").is_file():
+            return p
+        return None
+
+    for candidate in [
+        Path(__file__).resolve().parents[3] / "models" / _FP8_MODEL_DIR_NAME,
+        Path.home() / "ComfyUI" / "models" / _FP8_MODEL_DIR_NAME,
+    ]:
+        if (candidate / "model_index.json").is_file():
+            return candidate
+
+    return None
 
 
 def _download_model(model_dir: Path) -> None:
@@ -171,20 +196,34 @@ def _free_vram() -> None:
 #  Pipeline loading
 # ---------------------------------------------------------------------------
 
-def load_pipeline():
+def load_pipeline(model_variant: str = "auto"):
     """Load and cache the FLUX Klein pipeline.
+
+    Args:
+        model_variant: Which model weights to load.
+            - ``"auto"`` (default): prefer FP8 if ``flux_klein_fp8/`` exists,
+              else fall back to the original BF16 weights.
+            - ``"fp8"``: require the FP8 scaled weights (error if missing).
+            - ``"bf16"``: always load the original BF16 weights.
 
     Returns:
         Flux2KleinPipeline instance ready for inference.
 
     Raises:
         ImportError: If diffusers is not installed or too old.
-        RuntimeError: If model download fails.
+        RuntimeError: If model download fails or requested variant is missing.
     """
-    global _pipeline
+    global _pipeline, _pipeline_variant
 
-    if _pipeline is not None:
+    # Re-use cached pipeline if variant matches
+    if _pipeline is not None and _pipeline_variant == model_variant:
         return _pipeline
+
+    # Variant changed — discard old pipeline
+    if _pipeline is not None:
+        log.info("Model variant changed (%s → %s), reloading pipeline",
+                 _pipeline_variant, model_variant)
+        cleanup()
 
     try:
         from diffusers import Flux2KleinPipeline  # type: ignore[attr-defined]
@@ -194,11 +233,35 @@ def load_pipeline():
             "Install with: pip install git+https://github.com/huggingface/diffusers.git"
         )
 
-    model_dir = _get_model_dir()
-    _download_model(model_dir)
+    # Select model directory based on variant
+    fp8_dir = _get_fp8_model_dir()
+
+    if model_variant == "fp8":
+        if fp8_dir is None:
+            raise RuntimeError(
+                "FP8 model variant requested but flux_klein_fp8/ not found. "
+                "Run: python scripts/convert_flux_klein_fp8.py"
+            )
+        model_dir = fp8_dir
+        is_fp8 = True
+    elif model_variant == "bf16":
+        model_dir = _get_model_dir()
+        _download_model(model_dir)
+        is_fp8 = False
+    else:  # "auto"
+        if fp8_dir is not None:
+            model_dir = fp8_dir
+            is_fp8 = True
+            log.info("Auto-detected FP8 model at %s", fp8_dir)
+        else:
+            model_dir = _get_model_dir()
+            _download_model(model_dir)
+            is_fp8 = False
+
     _free_vram()
 
-    log.info("Loading FLUX Klein pipeline from %s", model_dir)
+    log.info("Loading FLUX Klein pipeline from %s (fp8=%s, variant=%s)",
+             model_dir, is_fp8, model_variant)
 
     import torch
 
@@ -225,7 +288,9 @@ def load_pipeline():
     pipe.enable_sequential_cpu_offload()
 
     _pipeline = pipe
-    log.info("FLUX Klein pipeline loaded successfully (dtype=%s)", dtype)
+    _pipeline_variant = model_variant
+    variant_label = "fp8-scaled" if is_fp8 else str(dtype)
+    log.info("FLUX Klein pipeline loaded successfully (variant=%s)", variant_label)
     return _pipeline
 
 
@@ -673,6 +738,7 @@ def edit_single_image(
     output_path: Optional[str] = None,
     seed: int = 42,
     reference_images: "list | None" = None,
+    model_variant: str = "auto",
 ) -> str:
     """Edit a single image using FLUX Klein (no mask, full-frame).
 
@@ -703,7 +769,7 @@ def edit_single_image(
     image = Image.open(image_path).convert("RGB")
 
     try:
-        pipe = load_pipeline()
+        pipe = load_pipeline(model_variant=model_variant)
 
         import torch
         with torch.no_grad():
@@ -725,6 +791,7 @@ def edit_video(
     mode: str = "edit",
     smoothing: str = "none",
     reference_images: "list | None" = None,
+    model_variant: str = "auto",
 ) -> str:
     """Edit a video using FLUX Klein per-frame image editing.
 
@@ -789,7 +856,7 @@ def edit_video(
             masks, masks_tmpdir = _load_mask_frames(mask_video_path, total_frames)
 
         # Load pipeline
-        pipe = load_pipeline()
+        pipe = load_pipeline(model_variant=model_variant)
 
         # Flush VRAM fragments left by pipeline + model load so the
         # subsequent VAE encode has enough contiguous memory.

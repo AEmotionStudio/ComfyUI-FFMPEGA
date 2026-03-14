@@ -276,6 +276,27 @@ def build_mask_filter(params: dict) -> list[str]:
     return filters
 
 
+# ── Onion Skin (temporal ghost trail) ───────────────────────────────
+
+def build_onion_skin_filter(params: dict) -> list[str]:
+    """Build lagfun filter for temporal onion skin (ghost trail).
+
+    In the NLE editor context, onion skin operates on a single source
+    video using temporal self-blending.
+
+    Parameters
+    ----------
+    params : dict
+        Keys: ``enabled``, ``blend_mode`` (for tblend), ``opacity`` (0–100%),
+        ``decay`` (0.9–0.999).
+    """
+    if not params.get("enabled"):
+        return []
+
+    decay = max(0.9, min(0.999, params.get("decay", 0.97)))
+    return [f"lagfun=decay={decay}"]
+
+
 # ── Compose State ───────────────────────────────────────────────────
 
 def has_compose(compose_json: str) -> bool:
@@ -287,7 +308,7 @@ def has_compose(compose_json: str) -> bool:
         if not isinstance(data, dict):
             return False
         # Check if any subsection is enabled
-        for key in ("pip", "watermark", "chromakey", "blend", "splitScreen", "vignette", "mask"):
+        for key in ("pip", "watermark", "chromakey", "blend", "splitScreen", "vignette", "mask", "onionSkin"):
             section = data.get(key)
             if isinstance(section, dict) and section.get("enabled"):
                 return True
@@ -318,6 +339,7 @@ def build_compose_filters(compose_json: str) -> dict:
         "split_screen": None,
         "vignette": [],
         "mask": [],
+        "onion_skin": [],
     }
 
     if not compose_json or not compose_json.strip() or compose_json == "{}":
@@ -358,6 +380,10 @@ def build_compose_filters(compose_json: str) -> dict:
     msk = data.get("mask")
     if isinstance(msk, dict):
         result["mask"] = build_mask_filter(msk)
+
+    oskin = data.get("onionSkin")
+    if isinstance(oskin, dict):
+        result["onion_skin"] = build_onion_skin_filter(oskin)
 
     return result
 

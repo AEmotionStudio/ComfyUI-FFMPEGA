@@ -1616,3 +1616,103 @@ class TestSkillComposer:
         assert " -vf " not in cmd_str, (
             f"-vf must not appear when filter_complex is used: {cmd_str}"
         )
+
+
+    # ---- Onion Skin tests ----
+
+    def test_onion_skin_temporal_mode(self):
+        """onion_skin with mode=temporal should produce lagfun vf filter."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("onion_skin", {"mode": "temporal", "decay": 0.95})
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        assert "-vf" in cmd_str, f"Expected -vf for temporal mode: {cmd_str}"
+        assert "lagfun=decay=0.95" in cmd_str, (
+            f"Expected lagfun=decay=0.95 in vf: {cmd_str}"
+        )
+
+    def test_onion_skin_composite_mode(self):
+        """onion_skin with mode=composite and extra input should produce blend filter_complex."""
+        composer = SkillComposer()
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+            extra_inputs=["/overlay.mp4"],
+        )
+        pipeline.add_step("onion_skin", {
+            "mode": "composite", "opacity": 0.5, "blend_mode": "screen",
+        })
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        assert "filter_complex" in cmd_str, (
+            f"Expected filter_complex for composite mode: {cmd_str}"
+        )
+        assert "blend=all_mode=screen" in cmd_str, (
+            f"Expected blend=all_mode=screen: {cmd_str}"
+        )
+        assert "all_opacity=0.500" in cmd_str, (
+            f"Expected all_opacity=0.500: {cmd_str}"
+        )
+
+    def test_onion_skin_multilayer(self):
+        """onion_skin with layers=2 should produce chained blends with decaying opacity."""
+        composer = SkillComposer()
+        pipeline = Pipeline(
+            input_path="/in.mp4",
+            output_path="/out.mp4",
+            extra_inputs=["/overlay1.mp4", "/overlay2.mp4"],
+        )
+        pipeline.add_step("onion_skin", {
+            "mode": "composite", "opacity": 0.6, "layers": 2,
+            "blend_mode": "addition",
+        })
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        assert "filter_complex" in cmd_str, (
+            f"Expected filter_complex: {cmd_str}"
+        )
+        # First layer at 0.6, second at 0.3 (0.6 * 0.5)
+        assert "all_opacity=0.600" in cmd_str, (
+            f"Expected first layer opacity 0.600: {cmd_str}"
+        )
+        assert "all_opacity=0.300" in cmd_str, (
+            f"Expected second layer opacity 0.300: {cmd_str}"
+        )
+        assert "blend=all_mode=addition" in cmd_str, (
+            f"Expected addition blend mode: {cmd_str}"
+        )
+
+    def test_onion_skin_aliases(self):
+        """ghosting, superimpose, double_exposure should resolve to onion_skin."""
+        composer = SkillComposer()
+        for alias in ("ghosting", "superimpose", "double_exposure", "onionskin", "video_overlay"):
+            pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+            pipeline.add_step(alias, {"mode": "temporal", "decay": 0.97})
+
+            command = composer.compose(pipeline)
+            cmd_str = command.to_string()
+
+            assert "lagfun=decay=0.97" in cmd_str, (
+                f"Alias '{alias}' did not resolve to onion_skin: {cmd_str}"
+            )
+
+    def test_onion_skin_composite_fallback_no_inputs(self):
+        """onion_skin composite mode with no extra inputs should fall back to temporal."""
+        composer = SkillComposer()
+        pipeline = Pipeline(input_path="/in.mp4", output_path="/out.mp4")
+        pipeline.add_step("onion_skin", {"mode": "composite", "decay": 0.96})
+
+        command = composer.compose(pipeline)
+        cmd_str = command.to_string()
+
+        assert "lagfun=decay=0.96" in cmd_str, (
+            f"Expected fallback to temporal mode: {cmd_str}"
+        )
+

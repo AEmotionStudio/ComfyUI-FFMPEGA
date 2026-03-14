@@ -10,6 +10,7 @@ from .text_input_node import TextInputNode
 from .save_video_node import SaveVideoNode
 from .media_bridge_node import MediaBridgeNode
 from .effects_node import FFMPEGAEffectsNode
+from .shader_overlay_node import ShaderOverlayNode
 
 # Node class mappings for ComfyUI
 NODE_CLASS_MAPPINGS = {
@@ -21,6 +22,7 @@ NODE_CLASS_MAPPINGS = {
     "FFMPEGAMediaBridge": MediaBridgeNode,
     "FFMPEGATextInput": TextInputNode,
     "FFMPEGAEffects": FFMPEGAEffectsNode,
+    "FFMPEGAShaderOverlay": ShaderOverlayNode,
 }
 
 # Display names for nodes
@@ -33,6 +35,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FFMPEGAMediaBridge": "Media Bridge (FFMPEGA)",
     "FFMPEGATextInput": "FFMPEGA Text",
     "FFMPEGAEffects": "FFMPEGA Effects Builder",
+    "FFMPEGAShaderOverlay": "Shader Overlay (FFMPEGA)",
 }
 
 # --- LoadLast nodes (merged from ComfyUI-LoadLast) ---
@@ -70,6 +73,7 @@ __all__ = [
     "MediaBridgeNode",
     "TextInputNode",
     "FFMPEGAEffectsNode",
+    "ShaderOverlayNode",
     "NODE_CLASS_MAPPINGS",
     "NODE_DISPLAY_NAME_MAPPINGS",
 ]

@@ -112,6 +112,80 @@ def register_skills(registry: SkillRegistry) -> None:
         ],
     ))
 
+    # NormalCrafter — Temporally consistent video normal maps
+    registry.register(Skill(
+        name="normalcrafter",
+        category=SkillCategory.AI_VISUAL,
+        description=(
+            "AI video normal map generation with native temporal consistency. "
+            "Produces flicker-free surface normal videos using video diffusion "
+            "priors (NormalCrafter, ICCV 2025). Unlike per-frame Marigold normals, "
+            "NormalCrafter uses a sliding window approach over the SVD backbone "
+            "to ensure smooth transitions between frames — ideal for video "
+            "relighting and 3D reconstruction. For single-image normals, use "
+            "the 'marigold' skill instead."
+        ),
+        parameters=[
+            SkillParameter(
+                name="max_res",
+                type=ParameterType.INT,
+                description=(
+                    "Maximum processing resolution (longest side). "
+                    "512 = ~6 GB VRAM, 1024 = ~12 GB VRAM"
+                ),
+                required=False,
+                default=1024,
+                min_value=256,
+                max_value=1024,
+            ),
+            SkillParameter(
+                name="window_size",
+                type=ParameterType.INT,
+                description="Temporal window size for sliding inference (frames)",
+                required=False,
+                default=14,
+                min_value=2,
+                max_value=60,
+            ),
+            SkillParameter(
+                name="process_length",
+                type=ParameterType.INT,
+                description="Maximum number of frames to process (-1 = all)",
+                required=False,
+                default=-1,
+                min_value=-1,
+                max_value=1000,
+            ),
+            SkillParameter(
+                name="target_fps",
+                type=ParameterType.INT,
+                description="Target FPS for processing (-1 = use original)",
+                required=False,
+                default=-1,
+                min_value=-1,
+                max_value=60,
+            ),
+            SkillParameter(
+                name="seed",
+                type=ParameterType.INT,
+                description="Random seed for reproducibility",
+                required=False,
+                default=42,
+            ),
+        ],
+        examples=[
+            "normalcrafter - Generate temporally-consistent video normals",
+            "normalcrafter:max_res=512 - Lower VRAM usage at 512p",
+            "normalcrafter:window_size=28 - Longer temporal window for smoother normals",
+            "normalcrafter:process_length=100 - Process only the first 100 frames",
+        ],
+        tags=[
+            "normalcrafter", "normals", "normal_map", "video_normals",
+            "temporal", "consistent", "video", "surface", "3d", "ai",
+            "vision", "relight", "relighting", "svd",
+        ],
+    ))
+
     # Video Depth Anything — Temporally-consistent video depth
     registry.register(Skill(
         name="video_depth",

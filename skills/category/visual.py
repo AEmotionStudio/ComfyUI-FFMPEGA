@@ -875,3 +875,81 @@ def register_skills(registry: SkillRegistry) -> None:
         ],
         tags=["sharpen", "unsharp", "luma", "chroma", "detail", "crisp", "soft"],
     ))
+
+    # Onion skin — video overlay compositing / temporal ghosting
+    registry.register(Skill(
+        name="onion_skin",
+        category=SkillCategory.VISUAL,
+        description="Overlay videos with adjustable opacity (onion skin compositing). "
+            "Composite mode blends two video inputs; temporal mode creates ghost trails from a single video.",
+        parameters=[
+            SkillParameter(
+                name="mode",
+                type=ParameterType.CHOICE,
+                description="Compositing mode: 'composite' (two-input blend) or 'temporal' (self-blend ghost trail)",
+                required=False,
+                default="composite",
+                choices=["composite", "temporal"],
+            ),
+            SkillParameter(
+                name="opacity",
+                type=ParameterType.FLOAT,
+                description="Foreground layer opacity (0.0 = invisible, 1.0 = fully opaque)",
+                required=False,
+                default=0.5,
+                min_value=0.0,
+                max_value=1.0,
+            ),
+            SkillParameter(
+                name="blend_mode",
+                type=ParameterType.CHOICE,
+                description="Blend mode for compositing",
+                required=False,
+                default="screen",
+                choices=[
+                    "normal", "screen", "addition", "difference",
+                    "multiply", "overlay", "softlight",
+                ],
+            ),
+            SkillParameter(
+                name="frame_offset",
+                type=ParameterType.INT,
+                description="Shift overlay video by N frames relative to base (composite mode only, 0 = aligned)",
+                required=False,
+                default=0,
+                min_value=-1000,
+                max_value=1000,
+            ),
+            SkillParameter(
+                name="layers",
+                type=ParameterType.INT,
+                description="Number of overlay layers (each gets progressively lower opacity)",
+                required=False,
+                default=1,
+                min_value=1,
+                max_value=4,
+            ),
+            SkillParameter(
+                name="decay",
+                type=ParameterType.FLOAT,
+                description="Temporal decay rate for ghost trail (temporal mode only, higher = longer trails)",
+                required=False,
+                default=0.97,
+                min_value=0.9,
+                max_value=0.999,
+            ),
+        ],
+        examples=[
+            "onion_skin - Overlay video_b onto video_a at 50% opacity (screen blend)",
+            "onion_skin:opacity=0.3,blend_mode=addition - Subtle additive overlay",
+            "onion_skin:mode=temporal,decay=0.95 - Short ghost trail effect",
+            "onion_skin:mode=temporal,decay=0.99 - Long persistent ghost trails",
+            "onion_skin:layers=3,opacity=0.6 - Three-layer composite with decaying opacity",
+            "onion_skin:blend_mode=difference,opacity=0.7 - Difference composite for motion visualization",
+        ],
+        tags=[
+            "onion", "skin", "overlay", "composite", "ghost", "trail",
+            "superimpose", "double_exposure", "blend", "layer", "opacity",
+            "transparency", "animation", "compositing",
+        ],
+    ))

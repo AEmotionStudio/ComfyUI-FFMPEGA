@@ -16,6 +16,7 @@ export interface EditorState {
     audioSegments: unknown[];
     colorGrading?: Partial<ColorGradingState>;
     filterPreset?: { preset: string; intensity: number };
+    shaderPreset?: { preset: string; intensity: number };
     keyframes?: unknown;
     relight?: unknown;
     exportSettings?: unknown;

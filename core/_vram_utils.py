@@ -40,6 +40,8 @@ ALL_SYNTHESIZER_MODULES: tuple[str, ...] = (
     "upscaler",
     "minimax_remover",
     "sam_audio_synthesizer",
+    "normalcrafter_synthesizer",
+    "acestep_synthesizer",
 )
 
 _freeing_vram = False

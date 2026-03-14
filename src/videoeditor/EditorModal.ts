@@ -21,6 +21,7 @@ import { AudioMixer } from './AudioMixer';
 import { TextOverlayPanel, TextOverlay } from './TextOverlayPanel';
 import { ColorGradingPanel, ColorGradingState } from './ColorGradingPanel';
 import { FiltersPanel, FilterPresetState } from './FiltersPanel';
+import { ShaderPanel, ShaderPresetState } from './ShaderPanel';
 import { KeyframeTrackJSON } from './KeyframeTrack';
 import { RelightPanel, RelightState } from './RelightPanel';
 import { ExportSettingsPanel, ExportSettings } from './ExportSettingsPanel';
@@ -55,6 +56,7 @@ export interface ModalEditState {
     audioSegments: object[];
     colorGrading: ColorGradingState;
     filterPreset: FilterPresetState;
+    shaderPreset: ShaderPresetState;
     keyframes: KeyframeTrackJSON | null;
     relight: RelightState;
     exportSettings: ExportSettings;
@@ -85,6 +87,7 @@ export class EditorModal {
     private textPanel: TextOverlayPanel;
     private colorGradingPanel: ColorGradingPanel;
     private filtersPanel: FiltersPanel;
+    private shaderPanel: ShaderPanel;
     private relightPanel: RelightPanel;
     private exportSettingsPanel: ExportSettingsPanel;
     private composePanel: ComposePanel;
@@ -344,6 +347,12 @@ export class EditorModal {
             },
         });
 
+        this.shaderPanel = new ShaderPanel({
+            onShaderChanged: () => {
+                this._pushUndo();
+            },
+        });
+
         this.relightPanel = new RelightPanel({
             onRelightChanged: () => {
                 this._pushUndo();
@@ -390,6 +399,7 @@ export class EditorModal {
                 tabs: [
                     { id: 'color', label: 'Color', icon: iconPalette, content: this.colorGradingPanel.element },
                     { id: 'filters', label: 'Filters', icon: iconWand, content: this.filtersPanel.element },
+                    { id: 'shaders', label: 'Shaders', icon: iconWand, content: this.shaderPanel.element },
                     { id: 'relight', label: 'Relight', icon: iconSun, content: this.relightPanel.element },
                     { id: 'export', label: 'Export', icon: iconSettings, content: this.exportSettingsPanel.element },
                 ],
@@ -496,6 +506,9 @@ export class EditorModal {
             }
             if (initialState.filterPreset) {
                 this.filtersPanel.loadState(initialState.filterPreset);
+            }
+            if (initialState.shaderPreset) {
+                this.shaderPanel.loadState(initialState.shaderPreset);
             }
             if (initialState.keyframes) {
                 this.speedControl.loadKeyframeData(initialState.keyframes);
@@ -776,6 +789,7 @@ export class EditorModal {
             audioSegments: this.audioEditManager.toJSON(),
             colorGrading: this.colorGradingPanel.getState(),
             filterPreset: this.filtersPanel.getState(),
+            shaderPreset: this.shaderPanel.getState(),
             keyframes: this.speedControl.getKeyframeData() ?? null,
             relight: this.relightPanel.getState(),
             exportSettings: this.exportSettingsPanel.getState(),
@@ -836,6 +850,11 @@ export class EditorModal {
         // Filter preset
         if (state.filterPreset) {
             this.filtersPanel.loadState(state.filterPreset as FilterPresetState);
+        }
+
+        // Shader preset
+        if ((state as any).shaderPreset) {
+            this.shaderPanel.loadState((state as any).shaderPreset as ShaderPresetState);
         }
 
         this._applyCSSPreview();
@@ -925,6 +944,7 @@ export class EditorModal {
             audioSegments: this.audioEditManager.toJSON(),
             colorGrading: this.colorGradingPanel.getState(),
             filterPreset: this.filtersPanel.getState(),
+            shaderPreset: this.shaderPanel.getState(),
             keyframes: this.speedControl.getKeyframeData() ?? null,
             relight: this.relightPanel.getState(),
             exportSettings: this.exportSettingsPanel.getState(),

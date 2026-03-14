@@ -12,10 +12,17 @@
 
 
 # ---------------------------------------------------------------------------
+#  Rembg — Background Removal (rembg masking mode)
+# ---------------------------------------------------------------------------
+rembg[cpu]>=2.0.50
+
+
+# ---------------------------------------------------------------------------
 #  SAM3 — Object Segmentation (auto_mask, sam3_masking mode)
 # ---------------------------------------------------------------------------
 # Install separately with --no-deps to avoid numpy conflicts:
 #   pip install --no-deps git+https://github.com/facebookresearch/sam3.git
+iopath
 simple-lama-inpainting
 
 
@@ -64,6 +71,32 @@ setuptools<81  # k-diffusion → clip → pkg_resources
 pydub
 xformers
 torchcodec
+
+
+# ---------------------------------------------------------------------------
+#  NormalCrafter — Video Normal Maps (normalcrafter mode)
+# ---------------------------------------------------------------------------
+# Install separately with --no-deps (avoids torch==2.0.1 pin):
+#   pip install --no-deps git+https://github.com/Binyr/NormalCrafter.git
+# No companion deps needed — uses diffusers + torch already in ComfyUI.
+
+
+# ---------------------------------------------------------------------------
+#  ACE-Step 1.5 — Music Generation, Cover, Repaint (ace_step mode)
+# ---------------------------------------------------------------------------
+# Install separately with --no-deps:
+#   pip install --no-deps git+https://github.com/ace-step/ACE-Step-1.5.git
+vector-quantize-pytorch
+numba
+loguru
+soundfile
+peft
+
+
+# ---------------------------------------------------------------------------
+#  Whisper — Speech-to-Text Transcription (whisper mode)
+# ---------------------------------------------------------------------------
+openai-whisper>=20240930
 
 
 # ---------------------------------------------------------------------------

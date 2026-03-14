@@ -2979,7 +2979,8 @@ def register_skills(registry: SkillRegistry) -> None:
                 required=False,
                 default="blur",
                 choices=["blur", "pixelate", "remove", "edit", "grayscale",
-                         "highlight", "greenscreen", "transparent", "thermal"],
+                         "highlight", "greenscreen", "transparent", "thermal",
+                         "shader"],
             ),
             SkillParameter(
                 name="strength",
@@ -3026,6 +3027,122 @@ def register_skills(registry: SkillRegistry) -> None:
             "privacy", "face", "detect", "ai", "smart", "object", "region",
             "remove", "highlight", "grayscale", "invert", "text", "prompt",
             "edit", "flux", "inpaint", "replace", "change",
+        ],
+    ))
+
+    # ── Shader Overlay ──────────────────────────────────────────────── #
+
+    registry.register(Skill(
+        name="shader",
+        category=SkillCategory.VISUAL,
+        description=(
+            "Apply GPU-accelerated GLSL shaders to video using FFmpeg's "
+            "libplacebo filter. Supports built-in presets (CRT, VHS, "
+            "holographic, glitch, voronoi, water_ripple, night_vision, "
+            "force_field) and custom user-provided .glsl files. "
+            "When libplacebo/Vulkan is unavailable, automatically falls "
+            "back to FFmpeg-only approximations with clear warnings. "
+            "Combine with auto_mask for targeted shader effects on "
+            "specific objects."
+        ),
+        parameters=[
+            SkillParameter(
+                name="preset",
+                type=ParameterType.CHOICE,
+                description="Built-in shader preset name",
+                required=False,
+                default="crt",
+                choices=[
+                    # Original 8
+                    "crt", "vhs", "holographic", "glitch",
+                    "voronoi", "water_ripple", "night_vision", "force_field",
+                    # Creative batch 1
+                    "plasma_burn", "shockwave", "datamosh", "crystal",
+                    "aurora", "hologram_scan", "portal", "circuit_board",
+                    "dissolve", "hex_matrix", "liquid_metal", "xray",
+                    # Creative batch 2
+                    "cartoon", "jelly", "emboss_3d", "infrared_predator",
+                    "digital_decay", "underwater", "electric_arc", "ink_wash",
+                    # Outline shaders (pair with mask_target)
+                    "neon_outline", "fire_outline", "frost_outline", "shadow_outline",
+                    # Classic GPU-enhanced
+                    "oil_paint", "rain", "matrix", "sketch",
+                    # Boundary-pushing batch 3
+                    "pixel_sort", "topographic", "stained_glass", "smoke",
+                    "geometric_shatter", "noir", "cyberpunk", "mosaic",
+                    "lava_lamp", "vaporwave", "supernova", "fractal_loop",
+                    "kaleidoscope", "ebruli", "spirals", "space_tunnel",
+                    "singularity", "blueprint", "singularity_box",
+                ],
+            ),
+            SkillParameter(
+                name="custom_path",
+                type=ParameterType.STRING,
+                description="Path to a custom .glsl shader file (overrides preset)",
+                required=False,
+                default="",
+            ),
+            SkillParameter(
+                name="intensity",
+                type=ParameterType.FLOAT,
+                description="Effect intensity — blends shader with original (0.0=none, 1.0=full)",
+                required=False,
+                default=1.0,
+                min_value=0.0,
+                max_value=1.0,
+            ),
+        ],
+        examples=[
+            "shader - Apply CRT shader (default)",
+            "shader:preset=cartoon - Cel-shaded toon look with ink outlines",
+            "shader:preset=jelly - Elastic gelatin wobble distortion",
+            "shader:preset=plasma_burn - Animated plasma field burn",
+            "shader:preset=portal - Swirling vortex distortion",
+            "shader:preset=liquid_metal - Chrome mercury surface",
+            "shader:preset=datamosh - I-frame corruption glitch art",
+            "shader:preset=infrared_predator - Predator thermal hunting vision",
+            "shader:preset=underwater - Deep sea with caustics",
+            "shader:preset=ink_wash - Sumi-e ink painting",
+            "shader:preset=matrix - Digital rain cascade",
+            "shader:preset=neon_outline - Glowing neon contour (great with SAM3 masking)",
+            "shader:preset=fire_outline - Burning edge embers (great with SAM3 masking)",
+            "shader:preset=frost_outline - Icy crystallization outline",
+            "shader:preset=noir - Film noir with venetian blind light",
+            "shader:preset=cyberpunk - Neon dystopian aesthetic",
+            "shader:preset=vaporwave - Retro 80s with perspective grid",
+            "shader:preset=stained_glass - Cathedral window panels",
+            "shader:preset=pixel_sort - Glitch art pixel sorting",
+            "shader:preset=lava_lamp - Animated metaball blobs",
+            "shader:preset=geometric_shatter - Exploding triangle shards",
+            "shader:preset=supernova - Expanding nebula filaments with star field",
+            "shader:preset=fractal_loop - Iterated inversion fractal with rainbow colors",
+            "shader:preset=kaleidoscope - Neon ring fractal with cosine palette",
+            "shader:preset=ebruli - Turkish water marbling with liquid flow",
+            "shader:preset=spirals - Multi-layer spiral vortex with HSV rainbow",
+            "shader:preset=space_tunnel - Warp tunnel with nebula and god rays",
+            "shader:preset=singularity - Wormhole traverse with energy fibers",
+            "shader:preset=blueprint - Sacred geometry with hex grids and glyph rings",
+            "shader:preset=singularity_box - Raymarched spiral singularity with zone coloring",
+            "shader:preset=crt,intensity=0.5 - Subtle CRT at 50%",
+            "shader:custom_path=/path/to/my_shader.glsl - Custom shader",
+        ],
+        tags=[
+            "shader", "glsl", "gpu", "effect", "libplacebo", "vulkan",
+            "crt", "vhs", "holographic", "glitch", "voronoi",
+            "night_vision", "force_field", "water_ripple",
+            "plasma_burn", "shockwave", "datamosh", "crystal",
+            "aurora", "hologram_scan", "portal", "circuit_board",
+            "dissolve", "hex_matrix", "liquid_metal", "xray",
+            "cartoon", "jelly", "emboss_3d", "infrared_predator",
+            "digital_decay", "underwater", "electric_arc", "ink_wash",
+            "neon_outline", "fire_outline", "frost_outline", "shadow_outline",
+            "oil_paint", "rain", "matrix", "sketch",
+            "pixel_sort", "topographic", "stained_glass", "smoke",
+            "geometric_shatter", "noir", "cyberpunk", "mosaic",
+            "lava_lamp", "vaporwave", "supernova", "fractal_loop",
+            "kaleidoscope", "ebruli", "spirals", "space_tunnel",
+            "singularity", "blueprint", "singularity_box",
+            "outline", "toon", "cel", "custom", "visual", "overlay",
         ],
     ))
 

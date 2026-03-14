@@ -5,7 +5,7 @@
 **The ultimate video editing suite for ComfyUI — edit with natural language or hands-on manual controls.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-2.15.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-2.16.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-2-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 [![Downloads](https://img.shields.io/badge/dynamic/json?color=blueviolet&label=Downloads&query=downloads.smart_count&url=https://raw.githubusercontent.com/AEmotionStudio/ComfyUI-FFMPEGA/refs/heads/badges/traffic_stats.json&style=for-the-badge&logo=github)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
@@ -24,19 +24,23 @@
 
 ---
 
-## 🚀 What's New in v2.15.0
+## 🚀 What's New in v2.16.0
 
-*   🎭 **MiniMax-Remover** — new AI video object removal with 81-frame DiT inpainting, sliding-window batching for long videos, and automatic tiered fallback (MiniMax → FLUX Klein → LaMa → FFmpeg)
-*   🎛️ **5 New No-LLM Modes** — run `ai_upscale`, `video_depth`, `flux_klein`, `minimax_remover`, and `animate_portrait` directly from the dropdown without any LLM
-*   🧠 **Auto-VRAM Tile Sizing** — AI upscaler auto-calculates optimal tile dimensions from available GPU memory; new `tile_size` parameter for manual VRAM control
-*   ⚡ **VRAM Management Overhaul** — pipelines transfer to CPU before cleanup, only loaded modules are processed, consolidated FFmpeg binary paths across all synthesizers
-*   🎬 **NLE Editor & Upscaler Improvements** — video dimension padding, framerate compatibility fixes, 1-based frame indexing, dynamic mask fallback resolution
+*   🎵 **ACE-Step AI Music Generation** — generate music from text prompts, repaint/cover existing audio tracks, auto-generate lyrics, and control BPM/key/time signature with 7 new advanced widgets
+*   🎧 **SAM-Audio Source Separation** — split any audio into stems (vocals, drums, bass, other) using Separate Anything in Audio with FP8 support for ~50% VRAM savings
+*   🎬 **Video Editor v2** — 10 new NLE panels: color grading, filters, keyframes, AI relighting (IC-Light), transforms, compositing (PiP, chroma key, blend), captions, export settings, speed control, and AI compose
+*   🔊 **AudioX Vocal Enhancement** — AI-powered vocal enhancement with automatic ACE-Step chaining for one-click music upgrading
+*   🧊 **NormalCrafter** — AI surface normal estimation from monocular video with temporally consistent output and configurable resolution
+*   🌊 **Video Depth Anything** — temporal video depth estimation with three model tiers (small/base/large) and configurable colormap visualization
+*   🎨 **NLE Audio Repaint** — mark individual audio segments for ACE-Step repainting with per-segment strength control directly in the timeline
+*   🎛️ **Smarter Widget UX** — `sam_audio_model`, `normalcrafter_max_res`, and all ACE-Step widgets dynamically appear only when their mode is active
 
 <details>
 <summary><b>📋 Previous Releases</b></summary>
 
 | Version | Highlights |
 | :--- | :--- |
+| **v2.15.0** | MiniMax-Remover, 5 new no-LLM modes, auto-VRAM tile sizing, VRAM management overhaul |
 | **v2.14.0** | Video Editor NLE node with timeline, razor, crop, transitions, text overlays, keyboard shortcuts |
 | **v2.13.0** | AI Background Removal (BRIA RMBG), FLUX Klein toggle, Edit FFmpeg fallback, smarter defaults |
 | **v2.12.0** | AI Face Animation (LivePortrait), MMAudio in-process inference, MCP progressive disclosure, LaMa safetensors conversion |
@@ -90,7 +94,7 @@ Works with **Ollama** (local, free), **OpenAI**, **Anthropic**, **Google Gemini*
 <td width="50%">
 
 ### 🎨 200+ Skills
-200+ video editing skills across visual effects, audio processing, spatial transforms, temporal edits, encoding, cinematic presets, vintage looks, social media, creative effects, text animations, editing & composition, audio visualization, multi-input operations, transitions, concat, split screen, and AI-powered skills (Whisper transcription, SAM3 masking, MiniMax-Remover object removal, MMAudio generation, MuseTalk lip sync, LivePortrait face animation, Video Depth estimation, AI Upscaling, Marigold dense vision).
+200+ video editing skills across visual effects, audio processing, spatial transforms, temporal edits, encoding, cinematic presets, vintage looks, social media, creative effects, text animations, editing & composition, audio visualization, multi-input operations, transitions, concat, split screen, and AI-powered skills (ACE-Step music generation, SAM-Audio source separation, AudioX vocal enhancement, Whisper transcription, SAM3 masking, MiniMax-Remover object removal, MMAudio generation, MuseTalk lip sync, LivePortrait face animation, NormalCrafter surface normals, Video Depth estimation, AI Upscaling, Marigold dense vision).
 
 </td>
 </tr>
@@ -512,6 +516,10 @@ All models are mirrored to first-party [AEmotionStudio](https://huggingface.co/A
 | **Marigold** (Dense Vision) | ~2.5 GB per mode | Auto-downloaded by diffusers | `marigold` no-LLM mode (depth/normals/appearance/lighting) | [AEmotionStudio/marigold-depth-v1-1](https://huggingface.co/AEmotionStudio/marigold-depth-v1-1) |
 | **AI Upscaler** (Real-ESRGAN / HAT / DAT / SwinIR) | ~17–170 MB per model | `ComfyUI/models/upscale_models/` | `ai_upscale` skill, `ai_upscale` no-LLM mode | [AEmotionStudio/ai-upscale-models](https://huggingface.co/AEmotionStudio/ai-upscale-models) |
 | **BRIA RMBG** (rembg) | ~270 MB | `~/.u2net/` | `remove_background` skill | Install with `pip install 'comfyui-ffmpega[masking]'` — model auto-fetched by rembg |
+| **ACE-Step 1.5** (Music Generation) | ~5 GB | `ComfyUI/models/acestep/` | `ace_step` no-LLM mode, `generate_music` skill | [AEmotionStudio/ACE-Step](https://huggingface.co/AEmotionStudio/ACE-Step) |
+| **SAM-Audio** (Source Separation) | ~1.2 GB (large) / ~600 MB (fp8) | `ComfyUI/models/sam_audio/` | `audio_separate` no-LLM mode | [AEmotionStudio/sam-audio](https://huggingface.co/AEmotionStudio/sam-audio) |
+| **AudioX** (Vocal Enhancement) | ~1 GB | `ComfyUI/models/audiox/` | AudioX chaining with ACE-Step | [AEmotionStudio/audiox](https://huggingface.co/AEmotionStudio/audiox) |
+| **NormalCrafter** (Surface Normals) | ~2 GB | `ComfyUI/models/normalcrafter/` | `normalcrafter` no-LLM mode | [AEmotionStudio/NormalCrafter](https://huggingface.co/AEmotionStudio/NormalCrafter) |
 
 > [!NOTE]
 > Models are only downloaded when you use the corresponding skill for the first time. Core FFmpeg editing skills (200+ of them) require **zero model downloads**.
@@ -539,7 +547,7 @@ FFMPEGA provides **11 nodes** that work together:
 | `video_path` | STRING | Absolute path to source video. Used as ffmpeg input unless `images_a` is connected. |
 | `prompt` | STRING | Natural language editing instruction (e.g. *"Add cinematic letterbox"*, *"Speed up 2x"*). Not required in `manual` mode. |
 | `llm_model` | DROPDOWN | AI model selection — local Ollama models, CLI tools, or cloud APIs. Select `none` for no-LLM mode. |
-| `no_llm_mode` | DROPDOWN | Mode when `llm_model` is `none`: `manual` (Effects Builder, default), `sam3_masking`, `transcribe`, `karaoke_subtitles`, `generate_audio`, `lip_sync`, `animate_portrait`, `marigold`, `video_depth`, `flux_klein`, `minimax_remover`, `ai_upscale`. |
+| `no_llm_mode` | DROPDOWN | Mode when `llm_model` is `none`: `manual` (Effects Builder, default), `sam3_masking`, `transcribe`, `karaoke_subtitles`, `generate_audio`, `lip_sync`, `animate_portrait`, `marigold`, `video_depth`, `flux_klein`, `minimax_remover`, `ai_upscale`, `ace_step`, `audio_separate`, `normalcrafter`, `rembg`. |
 | `quality_preset` | DROPDOWN | Output quality: `draft`, `standard`, `high`, `lossless`. |
 | `seed` | INT | Change to force re-execution with the same prompt. Supports randomize control. |
 

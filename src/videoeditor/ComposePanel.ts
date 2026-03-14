@@ -15,6 +15,7 @@ export interface ComposeState {
     splitScreen: SplitScreenState;
     vignette: VignetteState;
     mask: MaskState;
+    onionSkin: OnionSkinState;
 }
 
 export interface PipState {
@@ -82,6 +83,13 @@ export interface MaskState {
     effect: string;
 }
 
+export interface OnionSkinState {
+    enabled: boolean;
+    blend_mode: string;
+    opacity: number;
+    decay: number;
+}
+
 export interface ComposePanelCallbacks {
     onComposeChanged: (state: ComposeState) => void;
 }
@@ -112,6 +120,9 @@ const DEFAULT_STATE: ComposeState = {
     mask: {
         enabled: false, shape: 'rectangle', x: 'iw/4', y: 'ih/4',
         width: 'iw/2', height: 'ih/2', feather: 5, invert: false, effect: 'blur',
+    },
+    onionSkin: {
+        enabled: false, blend_mode: 'screen', opacity: 50, decay: 0.97,
     },
 };
 
@@ -163,6 +174,11 @@ export class ComposePanel {
         this.container.appendChild(
             this._buildSection('Blend Mode', 'blend', () => this._buildBlendContent()),
         );
+
+        // ── Onion Skin Section ──
+        this.container.appendChild(
+            this._buildSection('Onion Skin', 'onionSkin', () => this._buildOnionSkinContent()),
+        );
     }
 
     get element(): HTMLDivElement {
@@ -181,6 +197,7 @@ export class ComposePanel {
         if (s.splitScreen) Object.assign(this.state.splitScreen, s.splitScreen);
         if (s.vignette) Object.assign(this.state.vignette, s.vignette);
         if (s.mask) Object.assign(this.state.mask, s.mask);
+        if (s.onionSkin) Object.assign(this.state.onionSkin, s.onionSkin);
         this._rebuild();
     }
 
@@ -431,6 +448,48 @@ export class ComposePanel {
         return frag;
     }
 
+    // ── Onion Skin Content ───────────────────────────────────────
+
+    private _buildOnionSkinContent(): HTMLElement {
+        const frag = document.createElement('div');
+        const os = this.state.onionSkin;
+
+        // Blend mode dropdown
+        const modeRow = this._row();
+        const modeLabel = document.createElement('span');
+        modeLabel.className = 'veditor-control-label';
+        modeLabel.textContent = 'Blend';
+
+        const modeSelect = document.createElement('select');
+        modeSelect.className = 'veditor-select';
+        modeSelect.setAttribute('data-tool-id', 'veditor-compose-oskin-blend');
+        const modes = ['screen', 'normal', 'addition', 'difference', 'multiply', 'overlay', 'softlight'];
+        modes.forEach(m => {
+            const o = document.createElement('option');
+            o.value = m;
+            o.textContent = m.charAt(0).toUpperCase() + m.slice(1);
+            if (m === os.blend_mode) o.selected = true;
+            modeSelect.appendChild(o);
+        });
+        modeSelect.addEventListener('change', () => { os.blend_mode = modeSelect.value; this._notify(); });
+        modeRow.append(modeLabel, modeSelect);
+        frag.appendChild(modeRow);
+
+        // Opacity slider
+        frag.appendChild(this._slider('Opacity', os.opacity, 0, 100, 1, '%', (v) => {
+            os.opacity = v;
+            this._notify();
+        }, 'veditor-compose-oskin-opacity'));
+
+        // Decay slider (trail length)
+        frag.appendChild(this._slider('Trail Length', os.decay * 1000, 900, 999, 1, '', (v) => {
+            os.decay = v / 1000;
+            this._notify();
+        }, 'veditor-compose-oskin-decay'));
+
+        return frag;
+    }
+
     // ── Rebuild ──────────────────────────────────────────────────
 
     private _rebuild(): void {
@@ -449,6 +508,9 @@ export class ComposePanel {
         );
         this.container.appendChild(
             this._buildSection('Blend Mode', 'blend', () => this._buildBlendContent()),
+        );
+        this.container.appendChild(
+            this._buildSection('Onion Skin', 'onionSkin', () => this._buildOnionSkinContent()),
         );
     }
 

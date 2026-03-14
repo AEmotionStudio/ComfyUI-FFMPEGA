@@ -383,7 +383,7 @@ function registerAgentNode(nodeType, nodeData) {
     (_F = this.widgets) == null ? void 0 : _F.find((w) => w.name === "video_depth_encoder");
     (_G = this.widgets) == null ? void 0 : _G.find((w) => w.name === "video_depth_colormap");
     function updateNoLlmModeVisibility() {
-      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2;
+      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o2, _p2;
       const adv = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "advanced_options");
       const showAdvanced = Boolean(adv == null ? void 0 : adv.value);
       const llm = (_b2 = node.widgets) == null ? void 0 : _b2.find((w) => w.name === "llm_model");
@@ -395,6 +395,7 @@ function registerAgentNode(nodeType, nodeData) {
       const showUpscale = showAdvanced && mode === "ai_upscale";
       const showRembg = showAdvanced && mode === "rembg";
       const showWhisper = showAdvanced && (mode === "transcribe" || mode === "karaoke_subtitles");
+      const showAceStep = showAdvanced && mode === "ace_step";
       const mw = (_d2 = node.widgets) == null ? void 0 : _d2.find((w) => w.name === "marigold_output_type");
       const ve = (_e2 = node.widgets) == null ? void 0 : _e2.find((w) => w.name === "video_depth_encoder");
       const vc = (_f2 = node.widgets) == null ? void 0 : _f2.find((w) => w.name === "video_depth_colormap");
@@ -413,6 +414,28 @@ function registerAgentNode(nodeType, nodeData) {
       if (rb) toggleWidget(rb, showRembg);
       if (wd) toggleWidget(wd, showWhisper);
       if (wm) toggleWidget(wm, showWhisper);
+      const showSamAudio = showAdvanced && mode === "audio_separate";
+      const sam = (_m2 = node.widgets) == null ? void 0 : _m2.find((w) => w.name === "sam_audio_model");
+      if (sam) toggleWidget(sam, showSamAudio);
+      const showNormalcrafter = showAdvanced && mode === "normalcrafter";
+      const nc = (_n2 = node.widgets) == null ? void 0 : _n2.find((w) => w.name === "normalcrafter_max_res");
+      if (nc) toggleWidget(nc, showNormalcrafter);
+      const showFluxKlein = showAdvanced && mode === "flux_klein";
+      const fkm = (_o2 = node.widgets) == null ? void 0 : _o2.find((w) => w.name === "flux_klein_model");
+      if (fkm) toggleWidget(fkm, showFluxKlein);
+      const aceWidgetNames = [
+        "ace_negative_prompt",
+        "ace_cover_strength",
+        "ace_steps",
+        "ace_cfg_scale",
+        "ace_bpm",
+        "ace_key",
+        "ace_time_sig"
+      ];
+      for (const name of aceWidgetNames) {
+        const w = (_p2 = node.widgets) == null ? void 0 : _p2.find((ww) => ww.name === name);
+        if (w) toggleWidget(w, showAceStep);
+      }
     }
     function updateAdvancedVisibility() {
       var _a2;

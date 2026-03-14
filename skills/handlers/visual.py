@@ -982,8 +982,107 @@ def _f_auto_mask(p):
             )
             return _edit_ffmpeg_fallback(edit_prompt, strength, mask_path, invert)
 
-    # Build FFmpeg filter_complex that uses the mask
-    return _build_mask_fc(mask_path, effect, strength, invert)
+    # ── Shader effect: extract preset param and resolve to filter ──
+    shader_preset = str(p.get("_shader_preset", p.get("preset", "crt"))).lower()
+    if effect == "shader":
+        try:
+            from .shader import get_shader_vf_for_mask
+            shader_vf = get_shader_vf_for_mask(shader_preset)
+            if shader_vf:
+                return _build_mask_fc(mask_path, shader_vf, strength, invert)
+            else:
+                log.warning(
+                    "SAM3 auto_mask: shader preset '%s' unavailable — "
+                    "falling back to blur",
+                    shader_preset,
+                )
+                return _build_mask_fc(mask_path, "blur", strength, invert)
+        except ImportError:
+            log.warning("SAM3 auto_mask: shader handler not available — falling back to blur")
+            return _build_mask_fc(mask_path, "blur", strength, invert)
+
+    # Resolve dynamic effect names (from merge_sam3_into_effects_pipeline)
+    # into raw FFmpeg filter strings before building the mask graph.
+    original_params = p.get("_original_params")
+    original_skill = p.get("_original_skill")
+    if original_skill and effect not in _effect_filter_map(strength):
+        resolved = _resolve_effect_inline(original_skill, original_params or {}, log)
+        if resolved:
+            effect = resolved  # raw FFmpeg filter string (contains '=')
+            log.info("SAM3 auto_mask: resolved '%s' to FFmpeg filter", original_skill)
+
+    return _build_mask_fc(mask_path, effect, strength, invert,
+                          original_params=original_params)
+
+def _resolve_effect_inline(skill_name: str, params: dict, log) -> str | None:
+    """Resolve a skill name to its raw FFmpeg video filter string.
+
+    Called from _f_auto_mask when a dynamic effect name (e.g. 'emboss',
+    'halftone') needs to be converted to a raw FFmpeg filter before
+    building the masked filter graph.
+
+    Returns the filter string, or None if the skill can't produce one.
+    """
+    try:
+        # Get the skill's ffmpeg_template (emboss, sepia, etc.)
+        try:
+            from skills.registry import get_registry
+        except ImportError:
+            try:
+                from ..registry import get_registry
+            except ImportError:
+                from ...skills.registry import get_registry  # type: ignore
+        registry = get_registry()
+        skill = registry.get(skill_name)
+        if skill is None:
+            log.debug("_resolve_effect_inline: '%s' not in registry", skill_name)
+            return None
+
+        if skill.ffmpeg_template:
+            template = skill.ffmpeg_template
+            if "{" in template and params:
+                for key, value in params.items():
+                    if not key.startswith("_"):
+                        template = template.replace(f"{{{key}}}", str(value))
+                for sp in (skill.parameters or []):
+                    if sp.default is not None:
+                        template = template.replace(f"{{{sp.name}}}", str(sp.default))
+            log.debug("_resolve_effect_inline: '%s' → template: %s", skill_name, template[:80])
+            return template
+
+        # No template — try the dispatch table handler
+        try:
+            from skills.composer import _get_dispatch
+        except ImportError:
+            try:
+                from ..composer import _get_dispatch  # type: ignore
+            except ImportError:
+                from ...skills.composer import _get_dispatch  # type: ignore
+        dispatch = _get_dispatch()
+        handler = dispatch.get(skill_name)
+        if handler is None:
+            log.debug("_resolve_effect_inline: '%s' not in dispatch", skill_name)
+            return None
+
+        result = handler(params)
+        if result is None:
+            return None
+
+        # HandlerResult has .video_filters and .filter_complex
+        vf_list = getattr(result, "video_filters", None)
+        fc_str = getattr(result, "filter_complex", None)
+        if vf_list and isinstance(vf_list, list):
+            resolved = ",".join(vf_list)
+            log.debug("_resolve_effect_inline: '%s' → handler vf: %s", skill_name, resolved[:80])
+            return resolved
+        if fc_str:
+            log.debug("_resolve_effect_inline: '%s' uses filter_complex, cannot mask", skill_name)
+            return None
+
+        return None
+    except Exception as exc:
+        log.warning("_resolve_effect_inline: failed for '%s': %s", skill_name, exc)
+        return None
 
 
 def _edit_ffmpeg_fallback(edit_prompt: str, strength: int, mask_path: str, invert: bool):
@@ -1032,9 +1131,9 @@ def _edit_ffmpeg_fallback(edit_prompt: str, strength: int, mask_path: str, inver
     return _build_mask_fc(mask_path, fx_filter, strength, invert)
 
 
-def _effect_filter_map(strength: int) -> dict:
+def _effect_filter_map(strength: int, shader_preset: str = "crt") -> dict:
     """Shared effect-to-FFmpeg-filter mapping for auto_mask."""
-    return {
+    efm: dict = {
         "blur": f"boxblur={max(1, strength // 5)}",
         "pixelate": f"scale=iw/{max(2, strength // 10)}:ih/{max(2, strength // 10)},"
                     f"scale=iw*{max(2, strength // 10)}:ih*{max(2, strength // 10)}:flags=neighbor,"
@@ -1045,11 +1144,20 @@ def _effect_filter_map(strength: int) -> dict:
         "greenscreen": "drawbox=c=#00FF00:t=fill",
         "thermal": _THERMAL_PSEUDOCOLOR,
     }
+    # Shader: resolve preset to vf filter string via shader_support
+    try:
+        from .shader import get_shader_vf_for_mask
+        shader_vf = get_shader_vf_for_mask(shader_preset)
+        if shader_vf:
+            efm["shader"] = shader_vf
+    except ImportError:
+        pass
+    return efm
 
 
-def _auto_mask_fallback(effect: str, strength: int):
+def _auto_mask_fallback(effect: str, strength: int, shader_preset: str = "crt"):
     """Full-frame fallback when SAM3 is unavailable."""
-    effect_filters = _effect_filter_map(strength)
+    effect_filters = _effect_filter_map(strength, shader_preset=shader_preset)
     if effect == "transparent":
         # Transparent fallback: output fully transparent frame via WebM
         return make_result(
@@ -1061,7 +1169,85 @@ def _auto_mask_fallback(effect: str, strength: int):
     return make_result(vf=[filt])
 
 
-def _build_mask_fc(mask_path: str, effect: str, strength: int, invert: bool):
+def _resolve_skill_filter(effect_name: str, original_params: dict | None = None) -> str | None:
+    """Dynamically resolve a skill name to its FFmpeg video filter string.
+
+    Uses two resolution paths:
+    1. The skill's ``ffmpeg_template`` (a direct FFmpeg filter string).
+    2. The composer's dispatch table handler function.
+
+    Returns ``None`` if the skill isn't found or doesn't produce a simple
+    video filter (e.g. it needs filter_complex or produces a movie file).
+    """
+    import logging
+    log = logging.getLogger("ffmpega")
+    try:
+        try:
+            from skills.registry import get_registry
+        except ImportError:
+            from ..skills.registry import get_registry  # type: ignore[import-not-found]
+        registry = get_registry()
+        skill = registry.get(effect_name)
+        if skill is None:
+            log.debug("_resolve_skill_filter: skill '%s' not found in registry", effect_name)
+            return None
+
+        # Path 1: ffmpeg_template — direct filter string
+        if skill.ffmpeg_template:
+            template = skill.ffmpeg_template
+            # Resolve parameter placeholders
+            if "{" in template and original_params:
+                for key, value in original_params.items():
+                    template = template.replace(f"{{{key}}}", str(value))
+                # Fill remaining placeholders with defaults
+                for sp in (skill.parameters or []):
+                    if sp.default is not None:
+                        template = template.replace(f"{{{sp.name}}}", str(sp.default))
+            log.debug("_resolve_skill_filter: '%s' resolved via template: %s", effect_name, template[:80])
+            return template
+
+        # Path 2: dispatch table handler
+        try:
+            from skills.composer import _get_dispatch
+        except ImportError:
+            from ..skills.composer import _get_dispatch  # type: ignore[import-not-found]
+        dispatch = _get_dispatch()
+        handler = dispatch.get(effect_name)
+        if handler is None:
+            log.debug("_resolve_skill_filter: '%s' not in dispatch table", effect_name)
+            return None
+
+        result = handler(original_params or {})
+        if result is None:
+            return None
+
+        # HandlerResult dataclass — check .video_filters first
+        vf_list = getattr(result, "video_filters", None)
+        fc_str = getattr(result, "filter_complex", None)
+        if vf_list and isinstance(vf_list, list):
+            resolved = ",".join(vf_list)
+            log.debug("_resolve_skill_filter: '%s' resolved via handler vf: %s", effect_name, resolved[:80])
+            return resolved
+        # Some effects use filter_complex (neon, comic_book) — can't use
+        # as a simple vf within maskedmerge, return None to fall back
+        if fc_str:
+            log.debug("_resolve_skill_filter: '%s' uses filter_complex, cannot use in mask", effect_name)
+            return None
+
+        # Legacy tuple/dict handlers
+        if isinstance(result, dict):
+            vf_list = result.get("vf", [])
+            if vf_list and isinstance(vf_list, list):
+                return ",".join(vf_list)
+
+        return None
+    except Exception as exc:
+        log.warning("_resolve_skill_filter: failed to resolve '%s': %s", effect_name, exc)
+        return None
+
+
+def _build_mask_fc(mask_path: str, effect: str, strength: int, invert: bool,
+                   original_params: dict | None = None):
     """Build a filter_complex that applies an effect using a mask video.
 
     Approach:
@@ -1108,7 +1294,20 @@ def _build_mask_fc(mask_path: str, effect: str, strength: int, invert: bool):
     elif "=" in effect:
         fx_filter = effect
     else:
-        fx_filter = effect_map["blur"]
+        # Dynamic resolution: try to call the skill's handler to get
+        # its FFmpeg filter, so outcome effects (halftone, emboss, etc.)
+        # work through SAM3 masks without manual mapping.
+        fx_filter = _resolve_skill_filter(effect, original_params)
+        if fx_filter is None:
+            import logging
+            logging.getLogger("ffmpega").warning(
+                "SAM3 auto_mask: effect '%s' uses filter_complex and cannot be "
+                "applied through a mask — falling back to blur. Effects that "
+                "work with masks include: blur, pixelate, grayscale, halftone, "
+                "emboss, sepia, thermal, posterize, and others with simple filters.",
+                effect,
+            )
+            fx_filter = effect_map["blur"]
 
     # Build the filter graph
     if invert:

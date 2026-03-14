@@ -132,6 +132,7 @@ class VideoEditorNode:
                 "_audio_segments": ("STRING", {"default": "[]"}),
                 "_color_grading": ("STRING", {"default": "{}"}),
                 "_filter_preset": ("STRING", {"default": "{}"}),
+                "_shader_preset": ("STRING", {"default": "{}"}),
                 "_keyframes": ("STRING", {"default": "{}"}),
                 "_relight_params": ("STRING", {"default": "{}"}),
                 "_export_settings": ("STRING", {"default": "{}"}),
@@ -183,6 +184,7 @@ class VideoEditorNode:
         _audio_segments: str = "[]",
         _color_grading: str = "{}",
         _filter_preset: str = "{}",
+        _shader_preset: str = "{}",
         _keyframes: str = "{}",
         _relight_params: str = "{}",
         _export_settings: str = "{}",
@@ -266,6 +268,7 @@ class VideoEditorNode:
                 or (_transitions and _transitions != "[]")
                 or (_color_grading and _color_grading.strip() and _color_grading != "{}")
                 or (_filter_preset and _filter_preset.strip() and _filter_preset != "{}")
+                or (_shader_preset and _shader_preset.strip() and _shader_preset != "{}")
                 or (_keyframes and _keyframes.strip() and _keyframes != "{}")
                 or (_relight_params and _relight_params.strip() and _relight_params != "{}")
                 or (_transform and _transform.strip() and _transform != "{}")
@@ -316,6 +319,7 @@ class VideoEditorNode:
                 audio_segments_json=_audio_segments,
                 color_grading_json=_color_grading,
                 filter_preset_json=_filter_preset,
+                shader_preset_json=_shader_preset,
                 keyframes_json=_keyframes,
                 relight_json=_relight_params,
                 export_settings_json=_export_settings,
