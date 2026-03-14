@@ -439,8 +439,12 @@ app.registerExtension({
                 if (!name?.trim()) return;
                 const preset: PresetConfig = { name: name.trim(), ...captureState() };
                 const idx = _customEffectsPresets.findIndex((p: PresetConfig) => p.name === preset.name);
-                if (idx >= 0) _customEffectsPresets[idx] = preset;
-                else _customEffectsPresets.push(preset);
+                if (idx >= 0) {
+                    if (!confirm(`Preset "${preset.name}" already exists. Overwrite?`)) return;
+                    _customEffectsPresets[idx] = preset;
+                } else {
+                    _customEffectsPresets.push(preset);
+                }
                 try {
                     await fetch(api.apiURL("/ffmpega/effects_presets"), {
                         method: "POST",
@@ -454,6 +458,7 @@ app.registerExtension({
             const deleteCustom = async (presetName: string): Promise<void> => {
                 const idx = _customEffectsPresets.findIndex((p: PresetConfig) => p.name === presetName);
                 if (idx < 0) return;
+                if (!confirm(`Are you sure you want to delete the preset "${presetName}"?`)) return;
                 _customEffectsPresets.splice(idx, 1);
                 try {
                     await fetch(api.apiURL("/ffmpega/effects_presets"), {
