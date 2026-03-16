@@ -500,6 +500,9 @@ def cleanup() -> None:
 # between consecutive frames, so skipping saves ~90% of detection cost).
 _DRV_DETECT_INTERVAL = 10
 
+# Re-detect source face every N frames when source is a video.
+_SRC_DETECT_INTERVAL = 5
+
 
 def _detect_face_bbox(image: np.ndarray) -> Optional[tuple]:
     """Detect the largest face bounding box using MediaPipe.
@@ -529,6 +532,383 @@ def _detect_face_bbox(image: np.ndarray) -> Optional[tuple]:
     # Pick the largest bbox
     best = max(bboxes, key=lambda b: (b[2] - b[0]) * (b[3] - b[1]))
     return best
+
+
+def _detect_all_faces(image: np.ndarray,
+                      min_face_size: int = 30,
+                      use_blaze_fallback: bool = False) -> list[tuple]:
+    """Detect all face bounding boxes, sorted left-to-right.
+
+    Sorting by x-center gives stable face indexing across frames
+    (face 0 = leftmost, face 1 = next, …).
+
+    Uses MediaPipe FaceLandmarker as primary detector. Optionally falls
+    back to face-alignment with blazeface_back_camera for small/distant
+    faces when ``use_blaze_fallback`` is True.
+
+    Args:
+        image: BGR uint8 image.
+        min_face_size: Minimum bbox width/height to keep.
+        use_blaze_fallback: If True, try blazeface_back_camera when
+            MediaPipe finds no faces.
+
+    Returns:
+        List of (x1, y1, x2, y2) tuples, sorted by x-center.
+        Empty list if no faces found.
+    """
+    # ── Primary: MediaPipe FaceLandmarker ──
+    try:
+        try:
+            from .musetalk.face_detection import get_face_bbox
+        except ImportError:
+            from core.musetalk.face_detection import get_face_bbox  # type: ignore
+    except ImportError:
+        log.warning("[LivePortrait] face_detection module not available")
+        return []
+
+    bboxes = get_face_bbox(image)
+
+    # Filter tiny / spurious detections
+    valid = []
+    if bboxes:
+        for b in bboxes:
+            w = b[2] - b[0]
+            h = b[3] - b[1]
+            if w >= min_face_size and h >= min_face_size:
+                valid.append(tuple(b))
+
+    # ── Optional: face-alignment (blazeface_back_camera) ──
+    # Better for small/distant faces — only when manually enabled
+    if not valid and use_blaze_fallback:
+        valid = _detect_faces_fa(image, min_face_size)
+
+    # Sort by x-center for stable ordering
+    valid.sort(key=lambda b: (b[0] + b[2]) / 2)
+    return valid
+
+
+# Cached face-alignment detector for fallback
+_fa_detector = None
+_fa_available = None  # None = not checked, True/False = result
+
+
+def _detect_faces_fa(image: np.ndarray,
+                     min_face_size: int = 30) -> list[tuple]:
+    """Fallback face detection using face-alignment blazeface_back_camera.
+
+    This model handles smaller/distant faces better than MediaPipe's
+    blazeface_short model. Cached as a singleton for efficiency.
+    """
+    global _fa_detector, _fa_available
+
+    # Check availability only once
+    if _fa_available is False:
+        return []
+    if _fa_available is None:
+        try:
+            import face_alignment  # noqa: F401
+            _fa_available = True
+        except ImportError:
+            log.info("[LivePortrait] face-alignment not installed — "
+                     "small-face fallback unavailable. Install with: "
+                     "pip install face-alignment")
+            _fa_available = False
+            return []
+
+    try:
+        import face_alignment
+        import torch
+
+        if _fa_detector is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            log.info(f"[LivePortrait] Initializing face-alignment fallback "
+                     f"(blazeface_back_camera) on {device}…")
+            _fa_detector = face_alignment.FaceAlignment(
+                face_alignment.LandmarksType.TWO_D,
+                face_detector="blazeface_back_camera",
+                device=device,
+            )
+
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        fa_bboxes = _fa_detector.face_detector.detect_from_image(rgb)
+
+        if fa_bboxes is None or len(fa_bboxes) == 0:
+            return []
+
+        h, w = image.shape[:2]
+        valid = []
+        for det in fa_bboxes:
+            # face-alignment returns [x1, y1, x2, y2, confidence]
+            x1, y1, x2, y2 = int(det[0]), int(det[1]), int(det[2]), int(det[3])
+            # Add padding (10%)
+            bw = x2 - x1
+            bh = y2 - y1
+            if bw < min_face_size or bh < min_face_size:
+                continue
+            pad_w = int(bw * 0.1)
+            pad_h = int(bh * 0.1)
+            x1 = max(0, x1 - pad_w)
+            y1 = max(0, y1 - pad_h)
+            x2 = min(w, x2 + pad_w)
+            y2 = min(h, y2 + pad_h)
+            valid.append((x1, y1, x2, y2))
+
+        if valid:
+            log.info(f"[LivePortrait] face-alignment fallback found "
+                     f"{len(valid)} face(s) that MediaPipe missed")
+        return valid
+
+    except Exception as e:
+        log.warning(f"[LivePortrait] face-alignment fallback error: {e}")
+        return []
+
+
+# ---------------------------------------------------------------------------
+#  Expression controls
+# ---------------------------------------------------------------------------
+
+# Keypoint index mapping (21 keypoints × 3 coords each):
+#   Eyes:    11, 13, 15, 16
+#   Mouth:   14, 17, 19, 20
+#   Eyebrow: 1, 2
+#   Other:   3, 7 (cheeks)
+
+def calc_expression_delta(
+    kp: torch.Tensor,
+    *,
+    smile: float = 0.0,
+    blink: float = 0.0,
+    eyebrow: float = 0.0,
+    wink: float = 0.0,
+    pupil_x: float = 0.0,
+    pupil_y: float = 0.0,
+    aaa: float = 0.0,
+    eee: float = 0.0,
+    woo: float = 0.0,
+    rotate_pitch: float = 0.0,
+    rotate_yaw: float = 0.0,
+    rotate_roll: float = 0.0,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Apply named expression offsets to keypoints.
+
+    Modifies keypoint positions in-place following the same coefficients
+    as AdvancedLivePortrait's calc_fe function.
+
+    Args:
+        kp: Keypoints tensor (bs, num_kp, 3) — will be modified in-place.
+        smile..rotate_roll: Expression intensity values.
+
+    Returns:
+        (modified_kp, rotation_delta) where rotation_delta is a 3-element
+        tensor [pitch, yaw, roll] in degrees to add to the driving rotation.
+    """
+    kp = kp.clone()
+    r_pitch = rotate_pitch
+    r_yaw = rotate_yaw
+    r_roll = rotate_roll
+
+    # Smile
+    kp[0, 20, 1] += smile * -0.01
+    kp[0, 14, 1] += smile * -0.02
+    kp[0, 17, 1] += smile * 0.0065
+    kp[0, 17, 2] += smile * 0.003
+    kp[0, 13, 1] += smile * -0.00275
+    kp[0, 16, 1] += smile * -0.00275
+    kp[0, 3, 1] += smile * -0.0035
+    kp[0, 7, 1] += smile * -0.0035
+
+    # Mouth open (aaa)
+    kp[0, 19, 1] += aaa * 0.001
+    kp[0, 19, 2] += aaa * 0.0001
+    kp[0, 17, 1] += aaa * -0.0001
+    r_pitch -= aaa * 0.05
+
+    # Eee
+    kp[0, 20, 2] += eee * -0.001
+    kp[0, 20, 1] += eee * -0.001
+    kp[0, 14, 1] += eee * -0.001
+
+    # Woo
+    kp[0, 14, 1] += woo * 0.001
+    kp[0, 3, 1] += woo * -0.0005
+    kp[0, 7, 1] += woo * -0.0005
+    kp[0, 17, 2] += woo * -0.0005
+
+    # Wink
+    kp[0, 11, 1] += wink * 0.001
+    kp[0, 13, 1] += wink * -0.0003
+    kp[0, 17, 0] += wink * 0.0003
+    kp[0, 17, 1] += wink * 0.0003
+    kp[0, 3, 1] += wink * -0.0003
+    r_roll -= wink * 0.1
+    r_yaw -= wink * 0.1
+
+    # Pupil X
+    if pupil_x > 0:
+        kp[0, 11, 0] += pupil_x * 0.0007
+        kp[0, 15, 0] += pupil_x * 0.001
+    else:
+        kp[0, 11, 0] += pupil_x * 0.001
+        kp[0, 15, 0] += pupil_x * 0.0007
+
+    # Pupil Y
+    kp[0, 11, 1] += pupil_y * -0.001
+    kp[0, 15, 1] += pupil_y * -0.001
+    blink -= pupil_y / 2.0
+
+    # Blink / Eyes
+    kp[0, 11, 1] += blink * -0.001
+    kp[0, 13, 1] += blink * 0.0003
+    kp[0, 15, 1] += blink * -0.001
+    kp[0, 16, 1] += blink * 0.0003
+    kp[0, 1, 1] += blink * -0.00025
+    kp[0, 2, 1] += blink * 0.00025
+
+    # Eyebrow
+    if eyebrow > 0:
+        kp[0, 1, 1] += eyebrow * 0.001
+        kp[0, 2, 1] += eyebrow * -0.001
+    else:
+        kp[0, 1, 0] += eyebrow * -0.001
+        kp[0, 2, 0] += eyebrow * 0.001
+        kp[0, 1, 1] += eyebrow * 0.0003
+        kp[0, 2, 1] += eyebrow * -0.0003
+
+    rotation_delta = torch.tensor([r_pitch, r_yaw, r_roll],
+                                  dtype=kp.dtype, device=kp.device)
+    return kp, rotation_delta
+
+
+def retarget_keypoints(
+    src_exp: torch.Tensor,
+    drv_exp: torch.Tensor,
+    eyes_factor: float = 1.0,
+    mouth_factor: float = 1.0,
+) -> torch.Tensor:
+    """Scale retargeting intensity for eyes and mouth.
+
+    Applies the driving expression's eye/mouth keypoints at reduced
+    intensity, useful for dampening extreme expressions.
+
+    Args:
+        src_exp: Source expression keypoints (bs, num_kp, 3).
+        drv_exp: Driving expression keypoints (bs, num_kp, 3).
+        eyes_factor: 0.0 = ignore driver's eyes, 1.0 = full transfer.
+        mouth_factor: 0.0 = ignore driver's mouth, 1.0 = full transfer.
+
+    Returns:
+        Modified source expression with retargeted eye/mouth values applied.
+    """
+    result = src_exp.clone()
+    eye_indices = (11, 13, 15, 16)
+    mouth_indices = (14, 17, 19, 20)
+
+    for idx in eye_indices:
+        result[0, idx] += drv_exp[0, idx] * eyes_factor
+    for idx in mouth_indices:
+        result[0, idx] += drv_exp[0, idx] * mouth_factor
+
+    return result
+
+
+@torch.no_grad()
+def extract_expression(
+    image_path: str,
+    crop_factor: float = 1.6,
+) -> Optional[dict]:
+    """Extract face expression keypoints from a sample image.
+
+    Loads models, detects face, extracts keypoints, and returns
+    the raw expression data needed for transfer_expression().
+
+    Args:
+        image_path: Path to the sample face image.
+        crop_factor: Face crop expansion factor.
+
+    Returns:
+        Dict with 'kp' (keypoints tensor) and 'kp_info' (raw kp info),
+        or None if no face detected.
+    """
+    image = cv2.imread(image_path)
+    if image is None:
+        log.warning("[ExprTransfer] Failed to read image: %s", image_path)
+        return None
+
+    bbox = _detect_face_bbox(image)
+    if bbox is None:
+        log.warning("[ExprTransfer] No face detected in: %s", image_path)
+        return None
+
+    models = load_models()
+    me = models["motion_extractor"]
+    device = models["device"]
+
+    me.to(device)
+    try:
+        crop_256, _, _ = _crop_face(image, bbox, expand=crop_factor)
+        rgb = cv2.cvtColor(crop_256, cv2.COLOR_BGR2RGB)
+        tensor = _prepare_source(rgb, device)
+        kp_info = _get_kp_info(me, tensor)
+        kp = _transform_keypoint(kp_info)
+        return {"kp": kp.cpu(), "kp_info": kp_info}
+    finally:
+        offload = models["offload_device"]
+        try:
+            me.to(offload)
+        except Exception:
+            pass
+
+
+def transfer_expression(
+    source_kp: torch.Tensor,
+    sample_kp: torch.Tensor,
+    parts: str = "all",
+    ratio: float = 1.0,
+) -> torch.Tensor:
+    """Apply extracted expression from a sample face to source keypoints.
+
+    Selectively transfers expression components based on `parts`.
+
+    Args:
+        source_kp: Source face keypoints (bs, num_kp, 3).
+        sample_kp: Sample face keypoints (from extract_expression).
+        parts: Which parts to transfer:
+            "all" = full expression
+            "mouth_only" = mouth indices only (14, 17, 19, 20)
+            "eyes_only" = eye indices only (11, 13, 15, 16)
+            "rotation_only" = use sample's rotation, keep source expression
+        ratio: Blend ratio (0 = source only, 1 = full sample expression).
+
+    Returns:
+        Blended keypoints tensor.
+    """
+    result = source_kp.clone()
+    device = source_kp.device
+    sample = sample_kp.to(device)
+
+    if parts == "rotation_only":
+        # Only transfer the overall position (keypoints 0, 3, 7 are general)
+        # This approximates rotation by transferring global deltas
+        delta = sample - source_kp
+        result = source_kp + delta * ratio
+        # But keep eye/mouth expression from source
+        eye_mouth = (11, 13, 14, 15, 16, 17, 19, 20)
+        for idx in eye_mouth:
+            result[0, idx] = source_kp[0, idx]
+        return result
+
+    if parts == "mouth_only":
+        indices = (14, 17, 19, 20)
+    elif parts == "eyes_only":
+        indices = (11, 13, 15, 16)
+    else:  # "all"
+        indices = tuple(range(source_kp.shape[1]))
+
+    for idx in indices:
+        delta = sample[0, idx] - source_kp[0, idx]
+        result[0, idx] = source_kp[0, idx] + delta * ratio
+
+    return result
 
 
 def _crop_face(image: np.ndarray, bbox: tuple,
@@ -615,10 +995,10 @@ def _paste_back(canvas: np.ndarray, crop_512: np.ndarray,
     # This eliminates the visible box outline that a rectangular feather creates.
     mask = np.zeros((512, 512), dtype=np.float32)
     center = (256, 256)
-    axes = (220, 240)  # slightly taller than wide to cover forehead/chin
+    axes = (235, 250)  # slightly taller than wide to cover forehead/chin
     cv2.ellipse(mask, center, axes, 0, 0, 360, 1.0, -1)  # filled ellipse
-    # Heavy Gaussian blur for soft falloff (kernel must be odd)
-    mask = cv2.GaussianBlur(mask, (101, 101), 0)
+    # Moderate Gaussian blur for soft falloff (kernel must be odd)
+    mask = cv2.GaussianBlur(mask, (51, 51), 0)
     mask = mask[:, :, None]  # HxWx1
 
     mask_warped = cv2.warpAffine(
@@ -793,11 +1173,38 @@ def animate_portrait(
     output_dir: Optional[str] = None,
     driving_multiplier: float = 1.0,
     relative_motion: bool = True,
+    # Expression controls
+    rotate_pitch: float = 0.0,
+    rotate_yaw: float = 0.0,
+    rotate_roll: float = 0.0,
+    blink: float = 0.0,
+    eyebrow: float = 0.0,
+    wink: float = 0.0,
+    pupil_x: float = 0.0,
+    pupil_y: float = 0.0,
+    aaa: float = 0.0,
+    eee: float = 0.0,
+    woo: float = 0.0,
+    smile: float = 0.0,
+    # Retargeting
+    retargeting_eyes: float = 1.0,
+    retargeting_mouth: float = 1.0,
+    # Face crop
+    crop_factor: float = 1.6,
+    # Expression transfer
+    sample_image: Optional[str] = None,
+    sample_ratio: float = 1.0,
+    sample_parts: str = "all",
 ) -> str:
     """Animate a portrait using motion from a driving video.
 
     Uses cached in-process models with GPU↔CPU offloading.
     Models are loaded on first call and cached for reuse.
+
+    When the source is a **video**, source frames advance in lockstep
+    with driving frames.  The face is re-detected, re-cropped, and
+    re-extracted per source frame so the animated face is composited
+    onto the current (moving) source frame rather than a static snapshot.
 
     Args:
         source_path: Path to source image or video.
@@ -806,6 +1213,16 @@ def animate_portrait(
         driving_multiplier: Scale factor for driving motion.
         relative_motion: If True, use relative motion transfer
             (subtract driving frame 0, add delta).
+        rotate_pitch/yaw/roll: Additional head rotation (degrees).
+        blink..smile: Expression intensity sliders.
+        retargeting_eyes: Eye motion intensity (0=ignore, 1=full).
+        retargeting_mouth: Mouth motion intensity (0=ignore, 1=full).
+        crop_factor: Face crop expansion factor.
+        sample_image: Path to a sample face image for expression transfer.
+            If provided, the sample's expression is blended into each frame.
+        sample_ratio: Blend ratio for expression transfer (0=none, 1=full).
+        sample_parts: Which parts to transfer: "all", "mouth_only",
+            "eyes_only", or "rotation_only".
 
     Returns:
         Path to the output animated video file.
@@ -840,6 +1257,7 @@ def animate_portrait(
         for sub in srm.values():
             sub.to(device)
 
+    src_cap = None  # VideoCapture for source video (if applicable)
     try:
         # ── Read source ──
         log.info("[LivePortrait] Reading source: %s", source_path)
@@ -853,29 +1271,54 @@ def animate_portrait(
                 raise RuntimeError(
                     f"Failed to read source image: {source_path}")
         else:
-            cap = cv2.VideoCapture(source_path)
-            ret, source_frame = cap.read()
-            cap.release()
+            # Keep VideoCapture open — we'll read frames in the main loop
+            src_cap = cv2.VideoCapture(source_path)
+            src_fps = src_cap.get(cv2.CAP_PROP_FPS) or 25.0
+            src_total = int(src_cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            ret, source_frame = src_cap.read()
             if not ret:
                 raise RuntimeError(
                     f"Failed to read source video: {source_path}")
+            log.info("[LivePortrait] Source video: %d frames at %.1f FPS",
+                     src_total, src_fps)
 
-        # ── Detect and crop source face ──
+        # ── Check if any expression controls are active ──
+        _expr_params = dict(
+            smile=smile, blink=blink, eyebrow=eyebrow, wink=wink,
+            pupil_x=pupil_x, pupil_y=pupil_y, aaa=aaa, eee=eee, woo=woo,
+            rotate_pitch=rotate_pitch, rotate_yaw=rotate_yaw,
+            rotate_roll=rotate_roll,
+        )
+        _has_expr = any(v != 0.0 for v in _expr_params.values())
+        _has_retarget = (retargeting_eyes != 1.0 or retargeting_mouth != 1.0)
+
+        # ── Extract sample expression (for transfer) ──
+        _sample_kp = None
+        if sample_image and os.path.isfile(sample_image):
+            sample_data = extract_expression(sample_image, crop_factor)
+            if sample_data is not None:
+                _sample_kp = sample_data["kp"]
+                log.info("[animate_portrait] Loaded sample expression "
+                         "from %s (parts=%s, ratio=%.2f)",
+                         sample_image, sample_parts, sample_ratio)
+
+        # ── Initial source face detection and feature extraction ──
         src_bbox = _detect_face_bbox(source_frame)
         if src_bbox is None:
             raise RuntimeError("No face detected in source")
 
-        src_crop_256, src_M, src_M_inv = _crop_face(source_frame, src_bbox)
-
-        # Convert BGR → RGB for model input
+        src_crop_256, src_M, src_M_inv = _crop_face(
+            source_frame, src_bbox, expand=crop_factor)
         src_rgb = cv2.cvtColor(src_crop_256, cv2.COLOR_BGR2RGB)
         src_tensor = _prepare_source(src_rgb, device)
 
-        # ── Extract source features ──
         log.info("[LivePortrait] Extracting source features...")
         source_feature_3d = afe(src_tensor).float()
         source_kp_info = _get_kp_info(me, src_tensor)
         source_kp = _transform_keypoint(source_kp_info)
+
+        # Cache last source bbox for temporal stability
+        _last_src_bbox = src_bbox
 
         # ── Read driving video ──
         log.info("[LivePortrait] Reading driving video: %s", driving_path)
@@ -896,6 +1339,31 @@ def animate_portrait(
             if not ret:
                 break
 
+            # ── Advance source video frame (if source is video) ──
+            if src_cap is not None and frame_idx > 0:
+                ret_src, new_src_frame = src_cap.read()
+                if not ret_src:
+                    # Source video ended — stop (shortest behaviour)
+                    break
+                source_frame = new_src_frame
+
+                # Re-detect source face periodically
+                if frame_idx % _SRC_DETECT_INTERVAL == 0:
+                    new_src_bbox = _detect_face_bbox(source_frame)
+                    if new_src_bbox is not None:
+                        _last_src_bbox = new_src_bbox
+                    # If detection fails, keep the last good bbox
+                src_bbox = _last_src_bbox
+
+                # Re-crop and re-extract source features for this frame
+                src_crop_256, src_M, src_M_inv = _crop_face(
+                    source_frame, src_bbox, expand=crop_factor)
+                src_rgb = cv2.cvtColor(src_crop_256, cv2.COLOR_BGR2RGB)
+                src_tensor = _prepare_source(src_rgb, device)
+                source_feature_3d = afe(src_tensor).float()
+                source_kp_info = _get_kp_info(me, src_tensor)
+                source_kp = _transform_keypoint(source_kp_info)
+
             # Detect face in driving frame — only every N frames.
             # Between detection intervals we reuse _last_drv_bbox for temporal
             # stability; it is only cleared when a detection frame finds no face.
@@ -914,7 +1382,8 @@ def animate_portrait(
                 frame_idx += 1
                 continue
 
-            drv_crop_256, _, _ = _crop_face(drv_frame, drv_bbox)
+            drv_crop_256, _, _ = _crop_face(drv_frame, drv_bbox,
+                                              expand=crop_factor)
             drv_rgb = cv2.cvtColor(drv_crop_256, cv2.COLOR_BGR2RGB)
             drv_tensor = _prepare_source(drv_rgb, device)
 
@@ -932,6 +1401,25 @@ def animate_portrait(
             else:
                 kp_driving = driving_kp * driving_multiplier
 
+            # Apply retargeting (scale eye/mouth transfer intensity)
+            if _has_retarget:
+                kp_driving = retarget_keypoints(
+                    kp_driving, driving_kp,
+                    eyes_factor=retargeting_eyes - 1.0,
+                    mouth_factor=retargeting_mouth - 1.0,
+                )
+
+            # Apply expression slider deltas
+            if _has_expr:
+                kp_driving, _ = calc_expression_delta(
+                    kp_driving, **_expr_params)
+
+            # Apply expression transfer from sample image
+            if _sample_kp is not None:
+                kp_driving = transfer_expression(
+                    kp_driving, _sample_kp,
+                    parts=sample_parts, ratio=sample_ratio)
+
             # Stitching
             stitching_net = srm["stitching"] if isinstance(srm, dict) else None
             kp_driving = _do_stitching(stitching_net, source_kp, kp_driving)
@@ -940,7 +1428,7 @@ def animate_portrait(
             out_img = _warp_decode(
                 wm, sg, source_feature_3d, source_kp, kp_driving)
 
-            # Paste back into source frame
+            # Paste back into current source frame
             result = _paste_back(source_frame.copy(), out_img, src_M_inv)
             result_frames.append(result)
 
@@ -950,6 +1438,9 @@ def animate_portrait(
             frame_idx += 1
 
         drv_cap.release()
+        if src_cap is not None:
+            src_cap.release()
+            src_cap = None
 
         if not result_frames:
             raise RuntimeError("No frames generated")
@@ -991,7 +1482,225 @@ def animate_portrait(
         return output_path
 
     finally:
+        # ── Release source VideoCapture if still open ──
+        if src_cap is not None:
+            try:
+                src_cap.release()
+            except Exception:
+                pass
         # ── Offload models back to CPU ──
+        log.info("[LivePortrait] Offloading models to %s", offload_device)
+        try:
+            afe.to(offload_device)
+            me.to(offload_device)
+            wm.to(offload_device)
+            sg.to(offload_device)
+            if isinstance(srm, dict):
+                for sub in srm.values():
+                    sub.to(offload_device)
+        except Exception:
+            pass
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        try:
+            import comfy.model_management as mm  # type: ignore[import-not-found]
+            mm.soft_empty_cache()
+        except (ImportError, AttributeError):
+            pass
+
+
+@torch.no_grad()
+def animate_portrait_static(
+    source_path: str,
+    output_dir: Optional[str] = None,
+    num_frames: int = 30,
+    fps: float = 25.0,
+    # Expression controls
+    rotate_pitch: float = 0.0,
+    rotate_yaw: float = 0.0,
+    rotate_roll: float = 0.0,
+    blink: float = 0.0,
+    eyebrow: float = 0.0,
+    wink: float = 0.0,
+    pupil_x: float = 0.0,
+    pupil_y: float = 0.0,
+    aaa: float = 0.0,
+    eee: float = 0.0,
+    woo: float = 0.0,
+    smile: float = 0.0,
+    # Face crop
+    crop_factor: float = 1.6,
+) -> str:
+    """Animate a portrait using expression sliders only (no driving video).
+
+    For image sources: generates `num_frames` frames with the expression
+    applied, creating a short clip.
+    For video sources: applies the expression to each frame of the video.
+
+    Args:
+        source_path: Path to source image or video.
+        output_dir: Output directory (uses temp dir if None).
+        num_frames: Number of frames to generate (image sources only).
+        fps: Output video FPS.
+        rotate_pitch..smile: Expression intensity sliders.
+        crop_factor: Face crop expansion factor.
+
+    Returns:
+        Path to the output animated video file.
+    """
+    if output_dir is None:
+        output_dir = tempfile.mkdtemp(prefix="ffmpega_liveportrait_static_")
+    os.makedirs(output_dir, exist_ok=True)
+
+    base = os.path.splitext(os.path.basename(source_path))[0]
+    output_path = os.path.join(output_dir, f"{base}_static_animated.mp4")
+
+    _expr_params = dict(
+        smile=smile, blink=blink, eyebrow=eyebrow, wink=wink,
+        pupil_x=pupil_x, pupil_y=pupil_y, aaa=aaa, eee=eee, woo=woo,
+        rotate_pitch=rotate_pitch, rotate_yaw=rotate_yaw,
+        rotate_roll=rotate_roll,
+    )
+
+    # Load models
+    models = load_models()
+    afe = models["appearance_feature_extractor"]
+    me = models["motion_extractor"]
+    wm = models["warping_module"]
+    sg = models["spade_generator"]
+    srm = models["stitching_retargeting_module"]
+    device = models["device"]
+    offload_device = models["offload_device"]
+
+    log.info("[LivePortrait] Moving models to %s for static inference", device)
+    afe.to(device)
+    me.to(device)
+    wm.to(device)
+    sg.to(device)
+    if isinstance(srm, dict):
+        for sub in srm.values():
+            sub.to(device)
+
+    src_cap = None
+    try:
+        # Read source
+        ext = os.path.splitext(source_path)[1].lower()
+        is_image = ext in (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff",
+                           ".webp")
+
+        if is_image:
+            source_frame = cv2.imread(source_path)
+            if source_frame is None:
+                raise RuntimeError(
+                    f"Failed to read source image: {source_path}")
+            frames_to_process = [source_frame] * num_frames
+        else:
+            src_cap = cv2.VideoCapture(source_path)
+            src_fps = src_cap.get(cv2.CAP_PROP_FPS) or 25.0
+            fps = src_fps  # Use source video's FPS
+            frames_to_process = []
+            while True:
+                ret, frame = src_cap.read()
+                if not ret:
+                    break
+                frames_to_process.append(frame)
+            src_cap.release()
+            src_cap = None
+            if not frames_to_process:
+                raise RuntimeError(
+                    f"Failed to read source video: {source_path}")
+            log.info("[LivePortrait] Source video: %d frames at %.1f FPS",
+                     len(frames_to_process), fps)
+
+        result_frames = []
+        _last_src_bbox = None
+
+        for i, source_frame in enumerate(frames_to_process):
+            # Detect face (periodically for video, once for image)
+            if i % _SRC_DETECT_INTERVAL == 0 or _last_src_bbox is None:
+                bbox = _detect_face_bbox(source_frame)
+                if bbox is not None:
+                    _last_src_bbox = bbox
+
+            if _last_src_bbox is None:
+                result_frames.append(source_frame.copy())
+                continue
+
+            src_crop_256, src_M, src_M_inv = _crop_face(
+                source_frame, _last_src_bbox, expand=crop_factor)
+            src_rgb = cv2.cvtColor(src_crop_256, cv2.COLOR_BGR2RGB)
+            src_tensor = _prepare_source(src_rgb, device)
+
+            source_feature_3d = afe(src_tensor).float()
+            source_kp_info = _get_kp_info(me, src_tensor)
+            source_kp = _transform_keypoint(source_kp_info)
+
+            # Start from source keypoints and apply expression deltas
+            kp_driving = source_kp.clone()
+            kp_driving, _ = calc_expression_delta(
+                kp_driving, **_expr_params)
+
+            # Stitching
+            stitching_net = (
+                srm["stitching"] if isinstance(srm, dict) else None)
+            kp_driving = _do_stitching(
+                stitching_net, source_kp, kp_driving)
+
+            out_img = _warp_decode(
+                wm, sg, source_feature_3d, source_kp, kp_driving)
+            result = _paste_back(
+                source_frame.copy(), out_img, src_M_inv)
+            result_frames.append(result)
+
+            if i % 50 == 0:
+                log.info("[LivePortrait] Static: processed %d/%d frames",
+                         i + 1, len(frames_to_process))
+
+        if not result_frames:
+            raise RuntimeError("No frames generated")
+
+        # Write output video
+        log.info("[LivePortrait] Writing static output (%d frames)...",
+                 len(result_frames))
+        temp_video = os.path.join(output_dir, "_temp_static.mp4")
+        h, w = result_frames[0].shape[:2]
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
+        writer = cv2.VideoWriter(temp_video, fourcc, fps, (w, h))
+        for frame in result_frames:
+            writer.write(frame)
+        writer.release()
+
+        # Re-encode for compatibility (+ copy audio from source if video)
+        cmd = [
+            "ffmpeg", "-y", "-v", "warning",
+            "-i", temp_video,
+        ]
+        if not is_image:
+            cmd += ["-i", source_path]
+        cmd += [
+            "-c:v", "libx264",
+            "-crf", "18",
+            "-pix_fmt", "yuv420p",
+            "-map", "0:v:0",
+        ]
+        if not is_image:
+            cmd += ["-map", "1:a:0?", "-c:a", "aac", "-shortest"]
+        cmd.append(output_path)
+        subprocess.run(cmd, check=True)
+
+        if os.path.isfile(temp_video):
+            os.remove(temp_video)
+
+        log.info("[LivePortrait] Static animated video saved to %s",
+                 output_path)
+        return output_path
+
+    finally:
+        if src_cap is not None:
+            try:
+                src_cap.release()
+            except Exception:
+                pass
         log.info("[LivePortrait] Offloading models to %s", offload_device)
         try:
             afe.to(offload_device)

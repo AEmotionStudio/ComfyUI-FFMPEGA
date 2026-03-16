@@ -62,6 +62,7 @@ from .multi_input import (  # noqa: F401
     _f_animated_overlay,
     _f_pip,
     _f_onion_skin,
+    _f_comparison,
 )
 
 from .text_handlers import (  # noqa: F401

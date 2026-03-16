@@ -28,6 +28,7 @@ dependencies = [
 
 [project.optional-dependencies]
 masking = ["rembg[cpu]>=2.0.50"]
+rtx = ["nvidia-vfx"]
 ollama = ["ollama>=0.1.0"]
 mcp = ["mcp>=1.0.0"]
 whisper = ["openai-whisper>=20240930"]  # pip install 'comfyui-ffmpega[whisper]'

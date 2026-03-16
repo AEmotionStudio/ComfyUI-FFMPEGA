@@ -339,11 +339,49 @@ function _setupNode(node: EditorNode): void {
         if (fileInput.files?.length) await handleUpload(fileInput.files[0]);
     };
 
+    // Track drag revert timeout on the button element
+    let _dragTimeout: ReturnType<typeof setTimeout> | null = null;
+    let _origUploadHTML = '';
+    let _origUploadBorder = '';
+    let _hasDragVisual = false;
+
+    const _revertDragVisual = (): void => {
+        if (!_hasDragVisual) return;
+        uploadBtn.innerHTML = _origUploadHTML;
+        uploadBtn.style.border = _origUploadBorder;
+        uploadBtn.style.backgroundColor = '';
+        updateBtnStyle();
+        _hasDragVisual = false;
+    };
+
     node.onDragOver = (e: DragEvent): boolean => {
-        if (e?.dataTransfer?.types?.includes?.('Files')) return true;
+        if (e?.dataTransfer?.types?.includes?.('Files')) {
+            if (!(uploadBtn as any).disabled) {
+                if (!_hasDragVisual) {
+                    _origUploadHTML = uploadBtn.innerHTML;
+                    _origUploadBorder = uploadBtn.style.border;
+                    _hasDragVisual = true;
+                }
+                uploadBtn.innerHTML = '<span aria-hidden="true">📂</span> Drop to Upload';
+                uploadBtn.style.border = '1px dashed #4a6a8a';
+                uploadBtn.style.backgroundColor = '#333';
+
+                if (_dragTimeout) clearTimeout(_dragTimeout);
+                _dragTimeout = setTimeout(() => {
+                    if (!(uploadBtn as any).disabled) _revertDragVisual();
+                }, 500);
+            }
+            return true;
+        }
         return false;
     };
     node.onDragDrop = async (e: DragEvent): Promise<boolean> => {
+        // Cancel drop visual revert — upload state handler takes over
+        if (_dragTimeout) {
+            clearTimeout(_dragTimeout);
+            _dragTimeout = null;
+        }
+        _revertDragVisual();
         const file = e?.dataTransfer?.files?.[0];
         if (!file || !file.type.startsWith('video/')) return false;
         return await handleUpload(file);

@@ -47,7 +47,7 @@ def _f_ace_step(p):
     prompt = str(p.get("prompt", ""))
     lyrics = str(p.get("lyrics", ""))
     mode = str(p.get("mode", "generate")).lower()
-    audio_mode = str(p.get("audio_mode", "replace")).lower()
+    audio_mode = str(p.get("_audio_output_mode", p.get("audio_mode", "replace"))).lower()
     reference_audio = str(p.get("reference_audio", ""))
     mask_start = float(p.get("mask_start", 0.0))
     mask_end = float(p.get("mask_end", 100.0))

@@ -99,6 +99,14 @@ peft
 openai-whisper>=20240930
 
 
+
+# ---------------------------------------------------------------------------
+#  RTX VSR — NVIDIA RTX Video Super Resolution (rtx_vsr upscale model)
+# ---------------------------------------------------------------------------
+# Requires NVIDIA RTX GPU (Turing/Ampere/Ada/Blackwell) and driver 570+
+nvidia-vfx
+
+
 # ---------------------------------------------------------------------------
 #  Shared / already in ComfyUI (listed for completeness, usually pre-installed)
 # ---------------------------------------------------------------------------

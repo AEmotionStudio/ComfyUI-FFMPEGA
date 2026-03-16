@@ -103,6 +103,108 @@ _SKILL_TO_AUTOMASK_EFFECT = {
 }
 
 
+# ── Shared SAM3 pre-masking helpers ─────────────────────────────── #
+
+def sam3_premask(
+    video_path: str,
+    prompt: str,
+    sam3_device: str = "gpu",
+    sam3_max_objects: int = 5,
+    sam3_det_threshold: float = 0.7,
+) -> Optional[str]:
+    """Run SAM3 to generate a mask video from a text prompt.
+
+    Returns the path to the mask video, or None if SAM3 is unavailable
+    or the prompt is empty.
+    """
+    if not prompt or not prompt.strip():
+        return None
+
+    try:
+        try:
+            from ..core.sam3_masker import mask_video_subprocess as sam3_mask
+        except ImportError:
+            from core.sam3_masker import mask_video_subprocess as sam3_mask  # type: ignore
+    except ImportError:
+        logger.warning("SAM3 not available for pre-masking — skipping mask generation")
+        return None
+
+    try:
+        logger.info("SAM3 pre-mask: generating mask for '%s'", prompt.strip())
+        mask_path = sam3_mask(
+            video_path=video_path,
+            prompt=prompt.strip(),
+            device=sam3_device,
+            max_objects=sam3_max_objects,
+            det_threshold=sam3_det_threshold,
+        )
+        if mask_path and os.path.isfile(mask_path):
+            logger.info("SAM3 pre-mask: mask video ready: %s", mask_path)
+            return mask_path
+        logger.warning("SAM3 pre-mask: no mask produced")
+        return None
+    except Exception as e:
+        logger.error("SAM3 pre-mask failed: %s — proceeding without mask", e)
+        return None
+
+
+def sam3_composite(
+    original_path: str,
+    effect_path: str,
+    mask_path: str,
+    output_path: str,
+    crf: int = 23,
+    preset: str = "medium",
+) -> str:
+    """Composite effect output onto original using SAM3 mask via maskedmerge.
+
+    Uses FFmpeg's ``maskedmerge`` filter:
+    - Where mask is white → show effect_path
+    - Where mask is black → show original_path
+
+    Returns the path to the composited output.
+    """
+    _ffmpeg = _get_ffmpeg_bin()
+
+    # maskedmerge: [base][overlay][mask] → output
+    # base = original, overlay = effect result, mask = SAM3 grayscale
+    fc = (
+        "[0:v]format=yuv420p[base];"
+        "[1:v]scale=iw:ih,format=yuv420p[fx];"
+        "[2:v]scale=iw:ih,format=gray[mask];"
+        "[base][fx][mask]maskedmerge[vout]"
+    )
+
+    composite_path = output_path + ".sam3_composite.mp4"
+    cmd = [
+        _ffmpeg, "-y",
+        "-i", original_path,
+        "-i", effect_path,
+        "-i", mask_path,
+        "-filter_complex", fc,
+        "-map", "[vout]",
+        "-map", "1:a?",
+        "-c:v", "libx264",
+        "-crf", str(crf),
+        "-preset", preset,
+        "-pix_fmt", "yuv420p",
+        "-shortest",
+        composite_path,
+    ]
+
+    logger.debug("SAM3 composite command: %s", " ".join(cmd))
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        logger.error("SAM3 composite failed: %s", proc.stderr[-500:])
+        raise RuntimeError(f"SAM3 composite ffmpeg failed:\n{proc.stderr[-500:]}")
+
+    # Replace the original output with the composited version
+    if os.path.isfile(composite_path):
+        os.replace(composite_path, output_path)
+        logger.info("SAM3 composite: merged effect onto original → %s", output_path)
+    return output_path
+
+
 def merge_sam3_into_effects_pipeline(
     pipeline_json: str,
     prompt: str,
@@ -286,6 +388,7 @@ async def process_effects_pipeline(
     if mask_points and mask_points.strip():
         pipeline.metadata["_mask_points"] = mask_points.strip()
     pipeline.metadata["_enable_flux_klein"] = use_flux_klein
+    pipeline.metadata["_enable_kiwi_edit"] = kwargs.get("use_kiwi_edit", False)
     pipeline.metadata["_enable_minimax_remover"] = use_minimax_remover
     if flux_smoothing and flux_smoothing != "none":
         pipeline.metadata["_flux_smoothing"] = flux_smoothing
@@ -797,7 +900,7 @@ async def process_mmaudio_only(
     media_converter,
     # parameters
     prompt: str,
-    mmaudio_mode: str,
+    audio_output_mode: str,
     effective_video_path: str,
     video_metadata,
     save_output: bool,
@@ -818,13 +921,17 @@ async def process_mmaudio_only(
     Args:
         prompt: Text description to guide audio generation (can be empty
                 for pure video-to-audio).
-        mmaudio_mode: "replace" to discard original audio, "mix" to blend.
+        audio_output_mode: "auto"/"replace" to discard original audio,
+                           "mix" to blend, "save_only" to skip muxing.
 
     Returns the standard 6-tuple:
         (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
     """
+    # Treat "auto" as "replace" in no-LLM context
+    if audio_output_mode == "auto":
+        audio_output_mode = "replace"
     logger.info(
-        "MMAudio-only mode: prompt=%r, mode=%s", prompt, mmaudio_mode,
+        "MMAudio-only mode: prompt=%r, mode=%s", prompt, audio_output_mode,
     )
 
     # --- Import MMAudio ---
@@ -873,12 +980,40 @@ async def process_mmaudio_only(
     if video_metadata.primary_audio:
         has_audio = True
 
+    # --- save_only: skip muxing, just return the audio file path ---
+    if audio_output_mode == "save_only":
+        output_path, temp_render_dir = build_output_path(
+            effective_video_path=effective_video_path,
+            save_output=save_output,
+            output_path=output_path,
+            preview_mode=preview_mode,
+        )
+        # Copy original video to output (no audio changes)
+        _ffmpeg = _get_ffmpeg_bin()
+        shutil.copy2(effective_video_path, output_path)
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=False,
+        )
+        analysis = (
+            f"MMAudio-Only Mode (no LLM) — save_only\n"
+            f"Prompt: {prompt or '(video-to-audio, no text prompt)'}\n"
+            f"Generated audio saved to: {audio_file}\n"
+            f"(Audio was NOT muxed into the video)"
+        )
+        return (images_tensor, audio_out, output_path, "", analysis, "")
+
     # --- Build ffmpeg command to mux generated audio ---
     _ffmpeg = _get_ffmpeg_bin()
     effective_crf = crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23)
     effective_preset = encoding_preset if encoding_preset != "auto" else _PRESET_MAP.get(quality_preset, "medium")
 
-    if mmaudio_mode == "mix" and has_audio:
+    if audio_output_mode == "mix" and has_audio:
         # Mix generated audio with original audio
         logger.info(
             "MMAudio-only: 'mix' mode requires video re-encoding (slower than 'replace')"
@@ -914,7 +1049,7 @@ async def process_mmaudio_only(
         ]
 
     if preview_mode:
-        if mmaudio_mode == "mix" and has_audio:
+        if audio_output_mode == "mix" and has_audio:
             # Mix mode already re-encodes — just add scale + time limit
             ffmpeg_cmd.extend(["-vf", "scale=480:trunc(ow/a/2)*2", "-t", "10"])
         else:
@@ -962,7 +1097,7 @@ async def process_mmaudio_only(
         analysis = (
             f"MMAudio-Only Mode (no LLM)\n"
             f"Prompt: {prompt or '(video-to-audio, no text prompt)'}\n"
-            f"Audio mode: {mmaudio_mode}\n"
+            f"Audio mode: {audio_output_mode}\n"
             f"Source had audio: {has_audio}\n\n"
             f"Generated audio: {audio_file}\n"
             f"Output: {output_path}"
@@ -993,7 +1128,7 @@ async def process_audiox_music_only(
     media_converter,
     # parameters
     prompt: str,
-    mmaudio_mode: str,
+    audio_output_mode: str,
     effective_video_path: str,
     video_metadata,
     save_output: bool,
@@ -1013,13 +1148,17 @@ async def process_audiox_music_only(
 
     Args:
         prompt: Text description to guide music generation.
-        mmaudio_mode: "replace" to discard original audio, "mix" to blend.
+        audio_output_mode: "auto"/"replace" to discard original audio,
+                           "mix" to blend, "save_only" to skip muxing.
 
     Returns the standard 6-tuple:
         (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
     """
+    # Treat "auto" as "replace" in no-LLM context
+    if audio_output_mode == "auto":
+        audio_output_mode = "replace"
     logger.info(
-        "AudioX music-only mode: prompt=%r, mode=%s", prompt, mmaudio_mode,
+        "AudioX music-only mode: prompt=%r, mode=%s", prompt, audio_output_mode,
     )
 
     # --- Import AudioX ---
@@ -1067,12 +1206,32 @@ async def process_audiox_music_only(
     if video_metadata.primary_audio:
         has_audio = True
 
+    # --- save_only: skip muxing, just return the audio file path ---
+    if audio_output_mode == "save_only":
+        shutil.copy2(effective_video_path, output_path)
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=False,
+        )
+        analysis = (
+            f"AudioX Music-Only Mode (no LLM) — save_only\n"
+            f"Prompt: {prompt or '(video-to-music, no text prompt)'}\n"
+            f"Generated music saved to: {audio_file}\n"
+            f"(Audio was NOT muxed into the video)"
+        )
+        return (images_tensor, audio_out, output_path, "", analysis, "")
+
     # --- Build ffmpeg command to mux generated audio ---
     _ffmpeg = _get_ffmpeg_bin()
     effective_crf = crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23)
     effective_preset = encoding_preset if encoding_preset != "auto" else _PRESET_MAP.get(quality_preset, "medium")
 
-    if mmaudio_mode == "mix" and has_audio:
+    if audio_output_mode == "mix" and has_audio:
         ffmpeg_cmd = [
             _ffmpeg, "-y",
             "-i", effective_video_path,
@@ -1102,7 +1261,7 @@ async def process_audiox_music_only(
         ]
 
     if preview_mode:
-        if mmaudio_mode == "mix" and has_audio:
+        if audio_output_mode == "mix" and has_audio:
             ffmpeg_cmd.extend(["-vf", "scale=480:trunc(ow/a/2)*2", "-t", "10"])
         else:
             ffmpeg_cmd = [
@@ -1146,7 +1305,7 @@ async def process_audiox_music_only(
         analysis = (
             f"AudioX Music-Only Mode (no LLM)\n"
             f"Prompt: {prompt or '(video-to-music, no text prompt)'}\n"
-            f"Audio mode: {mmaudio_mode}\n"
+            f"Audio mode: {audio_output_mode}\n"
             f"Source had audio: {has_audio}\n\n"
             f"Generated music: {audio_file}\n"
             f"Output: {output_path}"
@@ -1175,7 +1334,7 @@ async def process_ace_step_only(
     media_converter,
     # parameters
     prompt: str,
-    mmaudio_mode: str,
+    audio_output_mode: str,
     effective_video_path: str,
     video_metadata,
     save_output: bool,
@@ -1197,13 +1356,17 @@ async def process_ace_step_only(
 
     Args:
         prompt: Text description to guide music generation.
-        mmaudio_mode: "replace" to discard original audio, "mix" to blend.
+        audio_output_mode: "auto"/"replace" to discard original audio,
+                           "mix" to blend, "save_only" to skip muxing.
 
     Returns the standard 6-tuple:
         (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
     """
+    # Treat "auto" as "replace" in no-LLM context
+    if audio_output_mode == "auto":
+        audio_output_mode = "replace"
     logger.info(
-        "ACE-Step music-only mode: prompt=%r, mode=%s", prompt, mmaudio_mode,
+        "ACE-Step music-only mode: prompt=%r, mode=%s", prompt, audio_output_mode,
     )
 
     # --- Import ACE-Step ---
@@ -1340,12 +1503,37 @@ async def process_ace_step_only(
             pass
         raise RuntimeError(f"ACE-Step music generation failed: {e}") from e
 
+    # --- save_only: skip muxing, just return the audio file path ---
+    if audio_output_mode == "save_only":
+        shutil.copy2(effective_video_path, output_path)
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=False,
+        )
+        lyrics_section = ""
+        if lyrics:
+            lyrics_source = "manual (text_a)" if text_a.strip() else "auto-generated"
+            lyrics_section = f"\nLyrics ({lyrics_source}):\n{lyrics}\n"
+        analysis = (
+            f"ACE-Step Music-Only Mode (no LLM) — save_only\n"
+            f"Prompt: {prompt or '(repaint mode — improving existing audio)'}\n"
+            f"{lyrics_section}\n"
+            f"Generated music saved to: {audio_file}\n"
+            f"(Audio was NOT muxed into the video)"
+        )
+        return (images_tensor, audio_out, output_path, "", analysis, "")
+
     # --- Build ffmpeg command to mux generated audio ---
     _ffmpeg = _get_ffmpeg_bin()
     effective_crf = crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23)
     effective_preset = encoding_preset if encoding_preset != "auto" else _PRESET_MAP.get(quality_preset, "medium")
 
-    if mmaudio_mode == "mix" and has_audio:
+    if audio_output_mode == "mix" and has_audio:
         ffmpeg_cmd = [
             _ffmpeg, "-y",
             "-i", effective_video_path,
@@ -1375,7 +1563,7 @@ async def process_ace_step_only(
         ]
 
     if preview_mode:
-        if mmaudio_mode == "mix" and has_audio:
+        if audio_output_mode == "mix" and has_audio:
             ffmpeg_cmd.extend(["-vf", "scale=480:trunc(ow/a/2)*2", "-t", "10"])
         else:
             ffmpeg_cmd = [
@@ -1423,7 +1611,7 @@ async def process_ace_step_only(
         analysis = (
             f"ACE-Step Music-Only Mode (no LLM)\n"
             f"Prompt: {prompt or '(repaint mode — improving existing audio)'}\n"
-            f"Audio mode: {mmaudio_mode}\n"
+            f"Audio mode: {audio_output_mode}\n"
             f"Source had audio: {has_audio}\n"
             f"{lyrics_section}\n"
             f"Generated music: {audio_file}\n"
@@ -1453,6 +1641,7 @@ async def process_audiox_inpaint_only(
     media_converter,
     # parameters
     prompt: str,
+    audio_output_mode: str,
     effective_video_path: str,
     video_metadata,
     save_output: bool,
@@ -1472,11 +1661,16 @@ async def process_audiox_inpaint_only(
 
     Args:
         prompt: Text description to guide inpainted audio.
+        audio_output_mode: "auto"/"replace" to discard original audio,
+                           "mix" to blend, "save_only" to skip muxing.
 
     Returns the standard 6-tuple:
         (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
     """
-    logger.info("AudioX inpaint-only mode: prompt=%r", prompt)
+    # Treat "auto" as "replace" in no-LLM context
+    if audio_output_mode == "auto":
+        audio_output_mode = "replace"
+    logger.info("AudioX inpaint-only mode: prompt=%r, mode=%s", prompt, audio_output_mode)
 
     # --- Import AudioX ---
     try:
@@ -1540,39 +1734,82 @@ async def process_audiox_inpaint_only(
             pass
         raise RuntimeError(f"AudioX audio inpainting failed: {e}") from e
 
+    # --- Detect if source has audio (for mix mode) ---
+    has_audio = bool(video_metadata.primary_audio)
+
+    # --- save_only: skip muxing, just return the audio file path ---
+    if audio_output_mode == "save_only":
+        shutil.copy2(effective_video_path, output_path)
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=False,
+        )
+        analysis = (
+            f"AudioX Inpaint-Only Mode (no LLM) — save_only\n"
+            f"Prompt: {prompt or '(no text prompt)'}\n"
+            f"Inpainted audio saved to: {audio_file}\n"
+            f"(Audio was NOT muxed into the video)"
+        )
+        return (images_tensor, audio_out, output_path, "", analysis, "")
+
     # --- Mux inpainted audio back into video ---
     effective_crf = crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23)
     effective_preset = encoding_preset if encoding_preset != "auto" else _PRESET_MAP.get(quality_preset, "medium")
 
-    ffmpeg_cmd = [
-        _ffmpeg, "-y",
-        "-i", effective_video_path,
-        "-i", audio_file,
-        "-map", "0:v",
-        "-map", "1:a",
-        "-c:v", "copy",
-        "-c:a", "aac",
-        "-b:a", "192k",
-        "-shortest",
-    ]
-
-    if preview_mode:
+    if audio_output_mode == "mix" and has_audio:
         ffmpeg_cmd = [
             _ffmpeg, "-y",
             "-i", effective_video_path,
             "-i", audio_file,
+            "-filter_complex",
+            "[0:a][1:a]amix=inputs=2:duration=shortest[aout]",
             "-map", "0:v",
-            "-map", "1:a",
-            "-vf", "scale=480:trunc(ow/a/2)*2",
-            "-t", "10",
+            "-map", "[aout]",
             "-c:v", "libx264",
             "-crf", str(effective_crf),
             "-preset", effective_preset,
             "-pix_fmt", "yuv420p",
             "-c:a", "aac",
             "-b:a", "192k",
+        ]
+    else:
+        ffmpeg_cmd = [
+            _ffmpeg, "-y",
+            "-i", effective_video_path,
+            "-i", audio_file,
+            "-map", "0:v",
+            "-map", "1:a",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "192k",
             "-shortest",
         ]
+
+    if preview_mode:
+        if audio_output_mode == "mix" and has_audio:
+            ffmpeg_cmd.extend(["-vf", "scale=480:trunc(ow/a/2)*2", "-t", "10"])
+        else:
+            ffmpeg_cmd = [
+                _ffmpeg, "-y",
+                "-i", effective_video_path,
+                "-i", audio_file,
+                "-map", "0:v",
+                "-map", "1:a",
+                "-vf", "scale=480:trunc(ow/a/2)*2",
+                "-t", "10",
+                "-c:v", "libx264",
+                "-crf", str(effective_crf),
+                "-preset", effective_preset,
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-shortest",
+            ]
 
     ffmpeg_cmd.append(output_path)
 
@@ -1598,6 +1835,7 @@ async def process_audiox_inpaint_only(
         analysis = (
             f"AudioX Inpaint-Only Mode (no LLM)\n"
             f"Prompt: {prompt or '(no text prompt)'}\n"
+            f"Audio mode: {audio_output_mode}\n"
             f"Mask: 50-100% (audio completion)\n\n"
             f"Inpainted audio: {audio_file}\n"
             f"Output: {output_path}"
@@ -1626,6 +1864,7 @@ async def process_sam_audio_separate(
     media_converter,
     # parameters
     prompt: str,
+    audio_output_mode: str,
     effective_video_path: str,
     video_metadata,
     save_output: bool,
@@ -1646,11 +1885,16 @@ async def process_sam_audio_separate(
     Args:
         prompt: Text description of the sound to isolate, e.g. "drums",
                 "vocals", "piano". Use lowercase noun-phrase format.
+        audio_output_mode: "auto"/"replace" to discard original audio,
+                           "mix" to blend, "save_only" to skip muxing.
 
     Returns the standard 6-tuple:
         (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
     """
-    logger.info("SAM-Audio separate mode: prompt=%r", prompt)
+    # Treat "auto" as "replace" in no-LLM context
+    if audio_output_mode == "auto":
+        audio_output_mode = "replace"
+    logger.info("SAM-Audio separate mode: prompt=%r, mode=%s", prompt, audio_output_mode)
 
     # --- Import SAM-Audio ---
     try:
@@ -1719,38 +1963,82 @@ async def process_sam_audio_separate(
     target_audio_file = result["target"]
     residual_audio_file = result["residual"]
 
+    # --- Detect if source has audio (for mix mode) ---
+    has_audio = bool(video_metadata.primary_audio)
+
+    # --- save_only: skip muxing, just return the audio file paths ---
+    if audio_output_mode == "save_only":
+        shutil.copy2(effective_video_path, output_path)
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=False,
+        )
+        analysis = (
+            f"SAM-Audio Separate Mode (no LLM) — save_only\n"
+            f"Description: {prompt or '(no text prompt)'}\n"
+            f"Target audio saved to: {target_audio_file}\n"
+            f"Residual audio saved to: {residual_audio_file}\n"
+            f"(Audio was NOT muxed into the video)"
+        )
+        return (images_tensor, audio_out, output_path, "", analysis, "")
+
     effective_crf = crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23)
     effective_preset = encoding_preset if encoding_preset != "auto" else _PRESET_MAP.get(quality_preset, "medium")
 
-    ffmpeg_cmd = [
-        _ffmpeg, "-y",
-        "-i", effective_video_path,
-        "-i", target_audio_file,
-        "-map", "0:v",
-        "-map", "1:a",
-        "-c:v", "copy",
-        "-c:a", "aac",
-        "-b:a", "192k",
-        "-shortest",
-    ]
-
-    if preview_mode:
+    if audio_output_mode == "mix" and has_audio:
         ffmpeg_cmd = [
             _ffmpeg, "-y",
             "-i", effective_video_path,
             "-i", target_audio_file,
+            "-filter_complex",
+            "[0:a][1:a]amix=inputs=2:duration=shortest[aout]",
             "-map", "0:v",
-            "-map", "1:a",
-            "-vf", "scale=480:trunc(ow/a/2)*2",
-            "-t", "10",
+            "-map", "[aout]",
             "-c:v", "libx264",
             "-crf", str(effective_crf),
             "-preset", effective_preset,
             "-pix_fmt", "yuv420p",
             "-c:a", "aac",
             "-b:a", "192k",
+        ]
+    else:
+        ffmpeg_cmd = [
+            _ffmpeg, "-y",
+            "-i", effective_video_path,
+            "-i", target_audio_file,
+            "-map", "0:v",
+            "-map", "1:a",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "192k",
             "-shortest",
         ]
+
+    if preview_mode:
+        if audio_output_mode == "mix" and has_audio:
+            ffmpeg_cmd.extend(["-vf", "scale=480:trunc(ow/a/2)*2", "-t", "10"])
+        else:
+            ffmpeg_cmd = [
+                _ffmpeg, "-y",
+                "-i", effective_video_path,
+                "-i", target_audio_file,
+                "-map", "0:v",
+                "-map", "1:a",
+                "-vf", "scale=480:trunc(ow/a/2)*2",
+                "-t", "10",
+                "-c:v", "libx264",
+                "-crf", str(effective_crf),
+                "-preset", effective_preset,
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-shortest",
+            ]
 
     ffmpeg_cmd.append(output_path)
 
@@ -1775,7 +2063,8 @@ async def process_sam_audio_separate(
         cmd_log = " ".join(ffmpeg_cmd)
         analysis = (
             f"SAM-Audio Separate Mode (no LLM)\n"
-            f"Description: {prompt or '(no text prompt)'}\n\n"
+            f"Description: {prompt or '(no text prompt)'}\n"
+            f"Audio mode: {audio_output_mode}\n\n"
             f"Target audio: {target_audio_file}\n"
             f"Residual audio: {residual_audio_file}\n"
             f"Output: {output_path}"
@@ -1963,6 +2252,28 @@ async def process_animate_portrait_only(
     driving_video: str = "",
     driving_multiplier: float = 1.0,
     relative_motion: bool = True,
+    # Expression controls
+    lp_rotate_pitch: float = 0.0,
+    lp_rotate_yaw: float = 0.0,
+    lp_rotate_roll: float = 0.0,
+    lp_blink: float = 0.0,
+    lp_eyebrow: float = 0.0,
+    lp_wink: float = 0.0,
+    lp_pupil_x: float = 0.0,
+    lp_pupil_y: float = 0.0,
+    lp_aaa: float = 0.0,
+    lp_eee: float = 0.0,
+    lp_woo: float = 0.0,
+    lp_smile: float = 0.0,
+    # Retargeting
+    lp_retargeting_eyes: float = 1.0,
+    lp_retargeting_mouth: float = 1.0,
+    # Crop
+    lp_crop_factor: float = 1.6,
+    # Expression transfer
+    lp_sample_image: str = "",
+    lp_sample_ratio: float = 1.0,
+    lp_sample_parts: str = "all",
     temp_video_from_images: Optional[str] = None,
     temp_video_with_audio: Optional[str] = None,
     **kwargs,
@@ -1970,29 +2281,44 @@ async def process_animate_portrait_only(
     """Run LivePortrait face animation directly without any LLM involvement.
 
     Animates the face in the source video/image using motion from a
-    driving video.  The source is ``effective_video_path`` (from
-    ``video_path`` or ``images_a``) and the driving video comes from
-    ``video_a``.
-
-    Requires a driving video — raises RuntimeError if missing.
+    driving video, or using expression sliders alone (no driving video).
+    The source is ``effective_video_path`` (from ``video_path`` or
+    ``images_a``) and the driving video comes from ``video_a``.
 
     Returns the standard 6-tuple:
         (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
     """
     logger.info("Animate portrait mode: starting LivePortrait")
 
-    if not driving_video or not os.path.isfile(driving_video):
+    # Build expression kwargs dict (strip lp_ prefix)
+    _expr_kwargs = dict(
+        rotate_pitch=lp_rotate_pitch, rotate_yaw=lp_rotate_yaw,
+        rotate_roll=lp_rotate_roll, blink=lp_blink, eyebrow=lp_eyebrow,
+        wink=lp_wink, pupil_x=lp_pupil_x, pupil_y=lp_pupil_y,
+        aaa=lp_aaa, eee=lp_eee, woo=lp_woo, smile=lp_smile,
+    )
+    _has_expr = any(v != 0.0 for v in _expr_kwargs.values())
+    _has_driving = driving_video and os.path.isfile(driving_video)
+    _has_sample = lp_sample_image and os.path.isfile(lp_sample_image)
+
+    if not _has_driving and not _has_expr and not _has_sample:
         raise RuntimeError(
-            "Animate portrait mode requires a driving video. "
-            "Connect a driving video to the video_a input."
+            "Animate portrait mode requires a driving video "
+            "or at least one expression control to be set. "
+            "Connect a driving video to the video_a input, "
+            "or adjust the expression sliders."
         )
 
     # --- Import LivePortrait ---
     try:
         try:
-            from ..core.liveportrait_synthesizer import animate_portrait
+            from ..core.liveportrait_synthesizer import (
+                animate_portrait, animate_portrait_static,
+            )
         except ImportError:
-            from core.liveportrait_synthesizer import animate_portrait  # type: ignore
+            from core.liveportrait_synthesizer import (  # type: ignore
+                animate_portrait, animate_portrait_static,
+            )
     except ImportError:
         raise RuntimeError(
             "LivePortrait is not available. "
@@ -2011,12 +2337,26 @@ async def process_animate_portrait_only(
     # --- Run LivePortrait (in-process with offloading) ---
     animated_video = None
     try:
-        animated_video = animate_portrait(
-            source_path=effective_video_path,
-            driving_path=driving_video,
-            driving_multiplier=driving_multiplier,
-            relative_motion=relative_motion,
-        )
+        if _has_driving:
+            animated_video = animate_portrait(
+                source_path=effective_video_path,
+                driving_path=driving_video,
+                driving_multiplier=driving_multiplier,
+                relative_motion=relative_motion,
+                retargeting_eyes=lp_retargeting_eyes,
+                retargeting_mouth=lp_retargeting_mouth,
+                crop_factor=lp_crop_factor,
+                sample_image=lp_sample_image if _has_sample else None,
+                sample_ratio=lp_sample_ratio,
+                sample_parts=lp_sample_parts,
+                **_expr_kwargs,
+            )
+        else:
+            animated_video = animate_portrait_static(
+                source_path=effective_video_path,
+                crop_factor=lp_crop_factor,
+                **_expr_kwargs,
+            )
     except Exception as e:
         logger.error("Animate portrait mode: LivePortrait failed: %s", e)
         # Free VRAM on failure
@@ -2116,6 +2456,7 @@ async def process_marigold_only(
     crf: int,
     encoding_preset: str,
     marigold_output_type: str = "depth",
+    marigold_colormap: str = "Spectral",
     marigold_num_steps: int = 4,
     marigold_ensemble_size: int = 1,
     temp_video_from_images: Optional[str] = None,
@@ -2167,6 +2508,7 @@ async def process_marigold_only(
         marigold_output = run_marigold(
             input_path=effective_video_path,
             output_type=marigold_output_type,
+            colormap=marigold_colormap,
             num_steps=marigold_num_steps,
             ensemble_size=marigold_ensemble_size,
         )
@@ -2974,6 +3316,238 @@ async def process_flux_klein_only(
             if not os.listdir(temp_render_dir):
                 shutil.rmtree(temp_render_dir, ignore_errors=True)
 
+async def process_kiwi_edit_only(
+    # dependencies
+    media_converter,
+    # parameters
+    prompt: str,
+    effective_video_path: str,
+    video_metadata,
+    save_output: bool,
+    output_path: str,
+    preview_mode: bool,
+    quality_preset: str,
+    crf: int,
+    encoding_preset: str,
+    image_a=None,
+    _all_image_paths=None,
+    temp_video_from_images: Optional[str] = None,
+    temp_video_with_audio: Optional[str] = None,
+    **kwargs,
+) -> tuple[torch.Tensor, dict, str, str, str, str]:
+    """Run Kiwi-Edit video editing directly without any LLM involvement.
+
+    Auto-detects model variant based on available inputs:
+    - Prompt only → instruct-only
+    - Reference image only → reference-only
+    - Both → instruct-reference
+
+    The prompt is sent directly to Kiwi-Edit as the edit instruction.
+    Reference images come from image_a input or image_path_a/b/c.
+
+    Returns the standard 6-tuple:
+        (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
+    """
+    logger.info("Kiwi-Edit mode: prompt=%r", prompt)
+
+    kiwi_model = kwargs.get("kiwi_model", "auto")
+    kiwi_precision = kwargs.get("kiwi_precision", "auto")
+    kiwi_resolution = kwargs.get("kiwi_resolution", "640")
+    kiwi_width = kwargs.get("kiwi_width", 640)
+    kiwi_height = kwargs.get("kiwi_height", 640)
+    kiwi_max_frames = kwargs.get("kiwi_max_frames", 0)
+    if int(kiwi_max_frames) <= 0:
+        # Auto: match input video frame count
+        input_frames = None
+        if video_metadata and video_metadata.primary_video:
+            input_frames = video_metadata.primary_video.nb_frames
+        if input_frames and input_frames > 0:
+            kiwi_max_frames = min(input_frames, 161)  # Cap at model max
+            logger.info("Kiwi-Edit auto max_frames=%d (from input video)", kiwi_max_frames)
+        else:
+            kiwi_max_frames = 81  # Fallback default
+            logger.info("Kiwi-Edit auto max_frames=%d (fallback, no frame count in metadata)", kiwi_max_frames)
+    kiwi_steps = kwargs.get("kiwi_steps", 50)
+    kiwi_guidance = kwargs.get("kiwi_guidance", 5.0)
+    kiwi_block_swap = kwargs.get("kiwi_block_swap", 0)
+    kiwi_long_video = kwargs.get("kiwi_long_video", False)
+    kiwi_seed = kwargs.get("kiwi_seed", 0)
+    kiwi_flow_shift = kwargs.get("kiwi_flow_shift", 5.0)
+    kiwi_task_type = kwargs.get("kiwi_task_type", "auto")
+    kiwi_scheduler = kwargs.get("kiwi_scheduler", "unipc")
+
+    # --- Import Kiwi-Edit synthesizer ---
+    try:
+        try:
+            from ..core.kiwi_edit_synthesizer import (
+                edit_video as _kiwi_edit,
+                cleanup as _kiwi_cleanup,
+                auto_select_variant,
+            )
+        except ImportError:
+            from core.kiwi_edit_synthesizer import (  # type: ignore
+                edit_video as _kiwi_edit,
+                cleanup as _kiwi_cleanup,
+                auto_select_variant,
+            )
+    except ImportError:
+        raise RuntimeError(
+            "Kiwi-Edit is not available. "
+            "Ensure diffusers >= 0.32.0 is installed and "
+            "core/kiwi_edit_synthesizer.py exists."
+        )
+
+    # --- Build output path ---
+    output_path, temp_render_dir = build_output_path(
+        effective_video_path=effective_video_path,
+        save_output=save_output,
+        output_path=output_path,
+        preview_mode=preview_mode,
+    )
+
+    if not effective_video_path or not os.path.isfile(effective_video_path):
+        raise RuntimeError("No valid video provided for Kiwi-Edit")
+
+    # --- Convert image_a tensor → PIL reference images ---
+    reference_images = None
+    if image_a is not None:
+        from PIL import Image as _PILImage
+        import numpy as _np
+        reference_images = []
+        if hasattr(image_a, 'shape') and len(image_a.shape) == 4:
+            for idx in range(image_a.shape[0]):
+                arr = (image_a[idx].cpu().numpy() * 255).clip(0, 255).astype(_np.uint8)
+                reference_images.append(_PILImage.fromarray(arr))
+        elif hasattr(image_a, 'shape') and len(image_a.shape) == 3:
+            arr = (image_a.cpu().numpy() * 255).clip(0, 255).astype(_np.uint8)
+            reference_images.append(_PILImage.fromarray(arr))
+        if not reference_images:
+            reference_images = None
+        else:
+            logger.info("Kiwi-Edit: using %d reference image(s) from image_a", len(reference_images))
+
+    # --- Load image_path_a / image_path_b / ... as PIL references ---
+    ref_image_paths = None
+    if _all_image_paths:
+        ref_image_paths = [p for p in _all_image_paths if os.path.isfile(p)]
+        if ref_image_paths:
+            logger.info("Kiwi-Edit: %d reference image path(s)", len(ref_image_paths))
+
+    # --- Determine variant for analysis ---
+    variant = auto_select_variant(prompt, reference_images or [], kiwi_model)
+
+    edited_path = None
+    try:
+        edited_path = _kiwi_edit(
+            video_path=effective_video_path,
+            prompt=prompt if prompt and prompt.strip() else None,
+            ref_image_paths=ref_image_paths,
+            ref_images_pil=reference_images,
+            output_path=output_path,
+            model_variant=kiwi_model,
+            resolution_preset=kiwi_resolution,
+            custom_width=int(kiwi_width),
+            custom_height=int(kiwi_height),
+            max_frames=int(kiwi_max_frames),
+            steps=int(kiwi_steps),
+            guidance_scale=float(kiwi_guidance),
+            seed=int(kiwi_seed),
+            precision=kiwi_precision,
+            long_video=bool(kiwi_long_video),
+            block_swap_blocks=int(kiwi_block_swap),
+            flow_shift=float(kiwi_flow_shift),
+            task_type=str(kiwi_task_type),
+            scheduler=str(kiwi_scheduler),
+        )
+        output_path = edited_path
+
+        # Re-encode for preview if needed
+        if preview_mode:
+            _ffmpeg = _get_ffmpeg_bin()
+            effective_crf = crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23)
+            effective_preset = (
+                encoding_preset if encoding_preset != "auto"
+                else _PRESET_MAP.get(quality_preset, "medium")
+            )
+            preview_path = output_path + ".preview.mp4"
+            ffmpeg_cmd = [
+                _ffmpeg, "-y",
+                "-i", output_path,
+                "-vf", "scale=480:trunc(ow/a/2)*2",
+                "-t", "10",
+                "-c:v", "libx264",
+                "-crf", str(effective_crf),
+                "-preset", effective_preset,
+                "-pix_fmt", "yuv420p",
+                "-an",
+                preview_path,
+            ]
+            proc = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+            if proc.returncode == 0:
+                os.replace(preview_path, output_path)
+            else:
+                logger.warning(
+                    "Kiwi-Edit preview downscale failed: %s",
+                    proc.stderr[-300:],
+                )
+
+        cmd_log = f"kiwi_edit edit_video ({variant}) → {output_path}"
+
+    except Exception as e:
+        logger.error("Kiwi-Edit mode failed: %s", e)
+        try:
+            _kiwi_cleanup()
+        except Exception:
+            pass
+        raise RuntimeError(f"Kiwi-Edit editing failed: {e}") from e
+
+    try:
+        # --- Collect frame/audio output ---
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=True,
+        )
+
+        # --- Build analysis string ---
+        has_prompt = bool(prompt and prompt.strip())
+        has_ref = bool(reference_images or ref_image_paths)
+        analysis = (
+            f"Kiwi-Edit Mode (no LLM)\n"
+            f"Model variant: {variant}\n"
+            f"Precision: {kiwi_precision}\n"
+            f"Resolution: {kiwi_resolution}\n"
+            f"Max frames: {kiwi_max_frames}\n"
+            f"Steps: {kiwi_steps}\n"
+            f"Guidance: {kiwi_guidance}\n"
+            f"Seed: {kiwi_seed}\n"
+            f"Flow shift: {kiwi_flow_shift}\n"
+            f"Task type: {kiwi_task_type}\n"
+            f"Scheduler: {kiwi_scheduler}\n"
+            f"Long video: {kiwi_long_video}\n"
+            f"Prompt: {prompt or '(none)'}\n"
+            f"Reference images: {'yes' if has_ref else 'no'}\n\n"
+            f"Source: {effective_video_path}\n"
+            f"Output: {output_path}"
+        )
+
+        return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
+    finally:
+        # --- Cleanup temp files (always runs, even on error) ---
+        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+            if not os.listdir(temp_render_dir):
+                shutil.rmtree(temp_render_dir, ignore_errors=True)
+
 
 async def process_ai_upscale_only(
     # dependencies
@@ -2990,6 +3564,9 @@ async def process_ai_upscale_only(
     upscale_model: str = "realesrgan_x4plus",
     upscale_scale: int = 4,
     tile_size: int = 512,
+    blockswap_blocks: int = 0,
+    seedvr_resolution: int = 1080,
+    rtx_quality: str = "ULTRA",
     temp_video_from_images: Optional[str] = None,
     temp_video_with_audio: Optional[str] = None,
     **kwargs,
@@ -3007,38 +3584,93 @@ async def process_ai_upscale_only(
 
     upscale_output = None
     temp_render_dir = None
+    _SEEDVR_MODELS = {"seedvr2_3b_fp8", "seedvr2_7b_gguf"}
+
+    # --- Build output path (same pattern as flux_klein and other no-LLM modes) ---
+    output_path, temp_render_dir = build_output_path(
+        effective_video_path=effective_video_path,
+        save_output=save_output,
+        output_path=output_path,
+        preview_mode=preview_mode,
+    )
+
     try:
         if not effective_video_path or not os.path.isfile(effective_video_path):
             raise RuntimeError("No valid input provided for AI upscaling")
-
-        # Import synthesizer
-        try:
-            from ..core.upscaler import upscale_image, upscale_video
-        except ImportError:
-            from core.upscaler import upscale_image, upscale_video
 
         # Determine if input is video or image
         ext = os.path.splitext(effective_video_path)[1].lower()
         _video_exts = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv"}
         is_video = ext in _video_exts
 
-        logger.info("[AIUpscale] Upscaling with model=%s, scale=%dx, is_video=%s",
-                    upscale_model, upscale_scale, is_video)
+        # Import the appropriate synthesizer
+        if upscale_model in _SEEDVR_MODELS:
+            try:
+                from ..core.seedvr_synthesizer import upscale_image, upscale_video
+            except ImportError:
+                from core.seedvr_synthesizer import upscale_image, upscale_video  # type: ignore
 
-        if is_video:
-            upscale_output = upscale_video(
-                input_path=effective_video_path,
-                model_name=upscale_model,
-                scale_factor=upscale_scale,
-                tile_size=tile_size,
-            )
+            logger.info("[AIUpscale] SeedVR2 upscaling with model=%s, is_video=%s",
+                        upscale_model, is_video)
+
+            if is_video:
+                upscale_output = upscale_video(
+                    input_path=effective_video_path,
+                    model_name=upscale_model,
+                    resolution=seedvr_resolution,
+                    blockswap_blocks=blockswap_blocks,
+                )
+            else:
+                upscale_output = upscale_image(
+                    input_path=effective_video_path,
+                    model_name=upscale_model,
+                    resolution=seedvr_resolution,
+                    blockswap_blocks=blockswap_blocks,
+                )
+        elif upscale_model == "rtx_vsr":
+            try:
+                from ..core.rtx_vsr_synthesizer import upscale_image, upscale_video
+            except ImportError:
+                from core.rtx_vsr_synthesizer import upscale_image, upscale_video  # type: ignore
+
+            logger.info("[AIUpscale] RTX VSR upscaling (quality=%s, scale=%dx, is_video=%s)",
+                        rtx_quality, upscale_scale, is_video)
+
+            if is_video:
+                upscale_output = upscale_video(
+                    input_path=effective_video_path,
+                    scale=upscale_scale,
+                    quality=rtx_quality,
+                )
+            else:
+                upscale_output = upscale_image(
+                    input_path=effective_video_path,
+                    scale=upscale_scale,
+                    quality=rtx_quality,
+                )
         else:
-            upscale_output = upscale_image(
-                input_path=effective_video_path,
-                model_name=upscale_model,
-                scale_factor=upscale_scale,
-                tile_size=tile_size,
-            )
+            try:
+                from ..core.upscaler import upscale_image, upscale_video
+            except ImportError:
+                from core.upscaler import upscale_image, upscale_video  # type: ignore
+
+            logger.info("[AIUpscale] Upscaling with model=%s, scale=%dx, is_video=%s",
+                        upscale_model, upscale_scale, is_video)
+
+            if is_video:
+                upscale_output = upscale_video(
+                    input_path=effective_video_path,
+                    model_name=upscale_model,
+                    scale_factor=upscale_scale,
+                    tile_size=tile_size,
+                )
+            else:
+                upscale_output = upscale_image(
+                    input_path=effective_video_path,
+                    model_name=upscale_model,
+                    scale_factor=upscale_scale,
+                    tile_size=tile_size,
+                )
 
         if not upscale_output or not os.path.isfile(upscale_output):
             raise RuntimeError("AI upscaler produced no output")
@@ -3472,3 +4104,229 @@ async def process_onion_skin_only(
 
     return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
 
+
+async def process_comparison_only(
+    # dependencies (injected from agent node)
+    composer,
+    process_manager,
+    media_converter,
+    # parameters
+    effective_video_path: str,
+    video_metadata,
+    save_output: bool,
+    output_path: str,
+    preview_mode: bool,
+    quality_preset: str,
+    crf: int,
+    encoding_preset: str,
+    comparison_style: str = "swipe",
+    comparison_labels: bool = False,
+    comparison_label_a: str = "Before",
+    comparison_label_b: str = "After",
+    _all_video_paths: Optional[list] = None,
+    temp_video_from_images: Optional[str] = None,
+    temp_video_with_audio: Optional[str] = None,
+    **kwargs,
+) -> tuple[torch.Tensor, dict, str, str, str, str]:
+    """Run Comparison effect directly without any LLM involvement.
+
+    Creates a comparison video from the main video and a connected extra video
+    input. Supports styles: swipe, split, side_by_side, diagonal,
+    circular_reveal, difference.
+
+    Returns the standard 6-tuple:
+        (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
+    """
+    extra_videos = _all_video_paths or []
+    if not extra_videos:
+        raise RuntimeError(
+            "Comparison mode requires a second video input. "
+            "Connect a video to video_a (the 'after' input)."
+        )
+
+    video_b_path = extra_videos[0]
+    logger.info(
+        "Comparison mode: style=%s, labels=%s, video_a=%s, video_b=%s",
+        comparison_style, comparison_labels, effective_video_path, video_b_path,
+    )
+
+    # --- Build output path ---
+    output_path, temp_render_dir = build_output_path(
+        effective_video_path=effective_video_path,
+        save_output=save_output,
+        output_path=output_path,
+        preview_mode=preview_mode,
+    )
+
+    _ffmpeg = _get_ffmpeg_bin()
+    effective_crf = crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23)
+    effective_preset = (
+        encoding_preset if encoding_preset != "auto"
+        else _PRESET_MAP.get(quality_preset, "medium")
+    )
+
+    # --- Probe input dimensions ---
+    try:
+        from ..core.bin_paths import get_ffprobe_bin
+    except ImportError:
+        from core.bin_paths import get_ffprobe_bin  # type: ignore
+
+    w, h, fps_val, dur = 1280, 720, 25, 10.0
+    ffprobe = get_ffprobe_bin()
+    if ffprobe:
+        try:
+            probe_result = subprocess.run(
+                [ffprobe, "-v", "error", "-select_streams", "v:0",
+                 "-show_entries", "stream=width,height,r_frame_rate",
+                 "-show_entries", "format=duration",
+                 "-of", "csv=p=0", effective_video_path],
+                capture_output=True, text=True, timeout=10,
+            )
+            lines = probe_result.stdout.strip().split("\n")
+            if lines and lines[0]:
+                parts = lines[0].split(",")
+                if len(parts) >= 2:
+                    w = int(parts[0])
+                    h = int(parts[1])
+                if len(parts) >= 3 and "/" in parts[2]:
+                    num, den = parts[2].split("/")
+                    fps_val = int(num) // max(1, int(den))
+            if len(lines) > 1 and lines[1]:
+                try:
+                    dur = float(lines[1])
+                except ValueError:
+                    pass
+        except Exception:
+            pass
+
+    # Ensure even dimensions
+    w = w // 2 * 2
+    h = h // 2 * 2
+
+    # --- Build filter_complex ---
+    style = comparison_style.lower()
+
+    prep_a = (f"[0:v]scale={w}:{h}:force_original_aspect_ratio=decrease,"
+              f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps={fps_val}[_ca]")
+    prep_b = (f"[1:v]scale={w}:{h}:force_original_aspect_ratio=decrease,"
+              f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps={fps_val}[_cb]")
+
+    fc_parts = [prep_a, prep_b]
+
+    if style == "swipe":
+        crop_w = f"floor((t/{dur})*{w}/2)*2"
+        fc_parts.append(f"[_cb]crop=w={crop_w}:h={h}:x=0:y=0[_cb_crop]")
+        fc_parts.append(f"[_ca][_cb_crop]overlay=x=0:y=0:shortest=1[_cmp]")
+
+    elif style == "split":
+        half = (w // 2) // 2 * 2
+        fc_parts.append(f"[_cb]crop=w={half}:h={h}:x=0:y=0[_cb_half]")
+        fc_parts.append(f"[_ca][_cb_half]overlay=x=0:y=0:shortest=1[_cmp_raw]")
+        fc_parts.append(f"[_cmp_raw]drawbox=x={half}:y=0:w=2:h={h}:color=white:t=fill[_cmp]")
+
+    elif style == "side_by_side":
+        fc_parts.append(f"[_ca][_cb]hstack=inputs=2:shortest=1[_cmp]")
+
+    elif style == "diagonal":
+        fc_parts.append(
+            f"[_ca][_cb]blend=all_expr='if(lt(X/{w}+Y/{h},1),B,A)'[_cmp]"
+        )
+
+    elif style == "circular_reveal":
+        max_r = max(w, h)
+        cx, cy = w // 2, h // 2
+        fc_parts.append(
+            f"[_ca][_cb]blend=all_expr='if(lte(hypot(X-{cx},Y-{cy}),{max_r}*T/{dur}),B,A)'[_cmp]"
+        )
+
+    elif style == "difference":
+        fc_parts.append(f"[_ca][_cb]blend=all_mode=difference:all_opacity=1.0[_cmp]")
+
+    else:
+        # Default to swipe
+        crop_w = f"floor((t/{dur})*{w}/2)*2"
+        fc_parts.append(f"[_cb]crop=w={crop_w}:h={h}:x=0:y=0[_cb_crop]")
+        fc_parts.append(f"[_ca][_cb_crop]overlay=x=0:y=0:shortest=1[_cmp]")
+
+    # --- Optional labels ---
+    if comparison_labels:
+        safe_a = comparison_label_a.replace(":", r"\:")
+        safe_b = comparison_label_b.replace(":", r"\:")
+        fc_parts.append(
+            f"[_cmp]drawtext=text='{safe_a}':fontsize=36:"
+            f"fontcolor=white:borderw=2:bordercolor=black:x=20:y=20,"
+            f"drawtext=text='{safe_b}':fontsize=36:"
+            f"fontcolor=white:borderw=2:bordercolor=black:x=w-text_w-20:y=20[vout]"
+        )
+        map_label = "[vout]"
+    else:
+        fc_parts.append("[_cmp]null[vout]")
+        map_label = "[vout]"
+
+    filter_complex = ";".join(fc_parts)
+
+    # --- Build FFmpeg command ---
+    ffmpeg_cmd = [
+        _ffmpeg, "-y",
+        "-i", effective_video_path,
+        "-stream_loop", "-1", "-i", video_b_path,
+        "-filter_complex", filter_complex,
+        "-map", map_label,
+    ]
+
+    # Copy audio from main input if present
+    if video_metadata.primary_audio:
+        ffmpeg_cmd.extend(["-map", "0:a?", "-c:a", "aac", "-b:a", "192k"])
+
+    ffmpeg_cmd.extend([
+        "-c:v", "libx264",
+        "-crf", str(effective_crf),
+        "-preset", effective_preset,
+        "-pix_fmt", "yuv420p",
+        "-shortest",
+    ])
+
+    if preview_mode:
+        ffmpeg_cmd.extend(["-s", "480x270", "-t", "10"])
+
+    ffmpeg_cmd.append(output_path)
+    cmd_log = " ".join(ffmpeg_cmd)
+
+    logger.debug("Comparison command: %s", cmd_log)
+    proc = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"Comparison mode: ffmpeg failed:\n{proc.stderr[-500:]}"
+        )
+
+    analysis = (
+        f"Comparison Mode — {style} (no LLM)\n"
+        f"Labels: {'Yes' if comparison_labels else 'No'}\n"
+        f"Input A (before): {effective_video_path}\n"
+        f"Input B (after): {video_b_path}\n"
+        f"Output: {output_path}"
+    )
+
+    # --- Collect frame/audio output ---
+    unique_id = str(kwargs.get("unique_id", ""))
+    hidden_prompt = kwargs.get("hidden_prompt") or {}
+    images_tensor, audio_out = collect_frame_output(
+        media_converter=media_converter,
+        output_path=output_path,
+        unique_id=unique_id,
+        hidden_prompt=hidden_prompt,
+        removes_audio=not bool(video_metadata.primary_audio),
+    )
+
+    # --- Cleanup temp files ---
+    for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+    if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+        if not os.listdir(temp_render_dir):
+            shutil.rmtree(temp_render_dir, ignore_errors=True)
+
+    return (images_tensor, audio_out, output_path, cmd_log, analysis, "")

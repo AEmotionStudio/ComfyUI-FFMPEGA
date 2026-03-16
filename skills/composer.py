@@ -809,8 +809,10 @@ class SkillComposer:
                 step.params["_enable_flux_klein"] = pipeline.metadata["_enable_flux_klein"]
             if "_enable_minimax_remover" in pipeline.metadata:
                 step.params["_enable_minimax_remover"] = pipeline.metadata["_enable_minimax_remover"]
-            if "_mmaudio_mode" in pipeline.metadata:
-                step.params["_mmaudio_mode"] = pipeline.metadata["_mmaudio_mode"]
+            if "_enable_kiwi_edit" in pipeline.metadata:
+                step.params["_enable_kiwi_edit"] = pipeline.metadata["_enable_kiwi_edit"]
+            if "_audio_output_mode" in pipeline.metadata:
+                step.params["_audio_output_mode"] = pipeline.metadata["_audio_output_mode"]
             # Provide mutable reference so handlers can write back metadata
             # (e.g. _f_auto_mask stores _mask_video_path for overlay generation)
             step.params["_metadata_ref"] = pipeline.metadata
@@ -1493,7 +1495,7 @@ def _get_dispatch() -> dict:
         # composite
         _f_add_text, _f_grid, _f_slideshow, _f_overlay_image, _f_watermark,
         _f_concat, _f_xfade, _f_split_screen, _f_animated_overlay,
-        _f_text_overlay, _f_pip, _f_onion_skin, _f_burn_subtitles, _f_countdown,
+        _f_text_overlay, _f_pip, _f_onion_skin, _f_comparison, _f_burn_subtitles, _f_countdown,
         _f_animated_text, _f_scrolling_text, _f_ticker, _f_lower_third,
         _f_typewriter_text, _f_bounce_text, _f_fade_text, _f_karaoke_text,
         # transcribe
@@ -1645,6 +1647,12 @@ def _get_dispatch() -> dict:
         "double_exposure": _f_onion_skin,
         "onionskin": _f_onion_skin,
         "video_overlay": _f_onion_skin,
+        # Comparison — A/B video comparison
+        "comparison": _f_comparison,
+        "compare": _f_comparison,
+        "before_after": _f_comparison,
+        "ab_compare": _f_comparison,
+        "video_compare": _f_comparison,
         "burn_subtitles": _f_burn_subtitles,
         "hardcode_subtitles": _f_burn_subtitles,
         # Transcription

@@ -55,6 +55,7 @@ class TestAIUpscaleSkillRegistration:
         expected = {
             "realesrgan_x4plus", "realesrgan_x4_anime",
             "hat_x4", "dat_x4", "swinir_x4",
+            "seedvr2_3b_fp8", "seedvr2_7b_gguf",
         }
         assert set(choices) == expected
 
@@ -75,7 +76,7 @@ class TestAIUpscaleSkillRegistration:
     def test_skill_tags_include_key_terms(self):
         registry = get_registry()
         skill = registry.get("ai_upscale")
-        for tag in ("upscale", "super_resolution", "esrgan", "hat", "ai"):
+        for tag in ("upscale", "super_resolution", "esrgan", "hat", "ai", "seedvr2"):
             assert tag in skill.tags
 
     def test_skill_has_examples(self):
@@ -209,6 +210,16 @@ class TestAIUpscaleModelManager:
         from core.model_manager import _MODEL_INFO
         assert "AEmotionStudio" in _MODEL_INFO["ai_upscale"]["mirror_repo"]
 
+    def test_seedvr2_model_info_exists(self):
+        from core.model_manager import _MODEL_INFO
+        assert "seedvr2" in _MODEL_INFO
+
+    def test_seedvr2_model_info_has_required_fields(self):
+        from core.model_manager import _MODEL_INFO
+        info = _MODEL_INFO["seedvr2"]
+        for field in ("name", "size", "url", "license", "manual"):
+            assert field in info, f"Missing field: {field}"
+
 
 # ------------------------------------------------------------------ #
 #  Module imports
@@ -276,6 +287,8 @@ class TestAIUpscaleNoLLMMode:
         models = optional["upscale_model"][0]
         assert "realesrgan_x4plus" in models
         assert "hat_x4" in models
+        assert "seedvr2_3b_fp8" in models
+        assert "seedvr2_7b_gguf" in models
 
     def test_upscale_scale_dropdown_exists(self):
         """upscale_scale should be in optional INPUT_TYPES."""
@@ -284,6 +297,19 @@ class TestAIUpscaleNoLLMMode:
         input_types = FFMPEGAgentNode.INPUT_TYPES()
         optional = input_types.get("optional", {})
         assert "upscale_scale" in optional
+
+    def test_blockswap_blocks_widget_exists(self):
+        """blockswap_blocks INT widget should be in optional INPUT_TYPES."""
+        pytest.importorskip("torch")
+        from nodes.agent_node import FFMPEGAgentNode
+        input_types = FFMPEGAgentNode.INPUT_TYPES()
+        optional = input_types.get("optional", {})
+        assert "blockswap_blocks" in optional
+        spec = optional["blockswap_blocks"]
+        assert spec[0] == "INT"
+        assert spec[1]["default"] == 0
+        assert spec[1]["min"] == 0
+        assert spec[1]["max"] == 32
 
     def test_process_ai_upscale_only_exists(self):
         """process_ai_upscale_only should be importable from nollm_modes."""
@@ -304,3 +330,49 @@ class TestAIUpscaleNoLLMMode:
         up._model = None
         up.cleanup()  # Should not raise
         assert up._model is None
+
+
+# ------------------------------------------------------------------ #
+#  SeedVR2 synthesizer
+# ------------------------------------------------------------------ #
+
+@pytest.mark.skipif(not _has_torch, reason="PyTorch not available")
+class TestSeedVR2Synthesizer:
+    """Verify the SeedVR2 synthesizer module."""
+
+    def test_seedvr_synthesizer_importable(self):
+        from core import seedvr_synthesizer
+        assert hasattr(seedvr_synthesizer, "upscale_image")
+        assert hasattr(seedvr_synthesizer, "upscale_video")
+        assert hasattr(seedvr_synthesizer, "cleanup")
+        assert hasattr(seedvr_synthesizer, "SEEDVR_CONFIGS")
+
+    def test_seedvr_configs_complete(self):
+        from core.seedvr_synthesizer import SEEDVR_CONFIGS
+        assert "seedvr2_3b_fp8" in SEEDVR_CONFIGS
+        assert "seedvr2_7b_gguf" in SEEDVR_CONFIGS
+
+    def test_seedvr_configs_have_required_fields(self):
+        from core.seedvr_synthesizer import SEEDVR_CONFIGS
+        required = {"description", "dit_model", "vae_model", "size"}
+        for name, cfg in SEEDVR_CONFIGS.items():
+            for field in required:
+                assert field in cfg, f"{name} missing field: {field}"
+
+    def test_seedvr_in_vram_utils(self):
+        from core._vram_utils import ALL_SYNTHESIZER_MODULES
+        assert "seedvr_synthesizer" in ALL_SYNTHESIZER_MODULES
+
+    def test_seedvr_handler_accepts_seedvr2_models(self):
+        from skills.handlers.upscale import _VALID_MODELS, _SEEDVR_MODELS
+        assert "seedvr2_3b_fp8" in _VALID_MODELS
+        assert "seedvr2_7b_gguf" in _VALID_MODELS
+        assert "seedvr2_3b_fp8" in _SEEDVR_MODELS
+        assert "seedvr2_7b_gguf" in _SEEDVR_MODELS
+
+    def test_cleanup_when_no_model(self):
+        """cleanup() should not error when no model is loaded."""
+        import core.seedvr_synthesizer as svr
+        svr._runner = None
+        svr.cleanup()  # Should not raise
+        assert svr._runner is None

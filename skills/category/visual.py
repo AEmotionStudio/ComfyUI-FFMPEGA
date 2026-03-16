@@ -953,3 +953,89 @@ def register_skills(registry: SkillRegistry) -> None:
             "transparency", "animation", "compositing",
         ],
     ))
+
+    # Comparison — A/B video comparison with multiple styles
+    registry.register(Skill(
+        name="comparison",
+        category=SkillCategory.VISUAL,
+        description="Create a comparison video from two inputs (before/after). "
+            "Supports animated swipe, static split, side-by-side, diagonal, circular reveal, and difference modes.",
+        parameters=[
+            SkillParameter(
+                name="style",
+                type=ParameterType.CHOICE,
+                description="Comparison style",
+                required=False,
+                default="swipe",
+                choices=["swipe", "split", "side_by_side", "diagonal", "circular_reveal", "difference"],
+            ),
+            SkillParameter(
+                name="labels",
+                type=ParameterType.BOOL,
+                description="Show Before/After text labels on the output",
+                required=False,
+                default=False,
+            ),
+            SkillParameter(
+                name="label_a",
+                type=ParameterType.STRING,
+                description="Label for video A (left / before)",
+                required=False,
+                default="Before",
+            ),
+            SkillParameter(
+                name="label_b",
+                type=ParameterType.STRING,
+                description="Label for video B (right / after)",
+                required=False,
+                default="After",
+            ),
+            SkillParameter(
+                name="label_size",
+                type=ParameterType.INT,
+                description="Font size for labels",
+                required=False,
+                default=36,
+                min_value=12,
+                max_value=120,
+            ),
+            SkillParameter(
+                name="direction",
+                type=ParameterType.CHOICE,
+                description="Layout direction for side_by_side mode",
+                required=False,
+                default="horizontal",
+                choices=["horizontal", "vertical"],
+            ),
+            SkillParameter(
+                name="line_width",
+                type=ParameterType.INT,
+                description="Divider line width in pixels (split mode)",
+                required=False,
+                default=2,
+                min_value=0,
+                max_value=10,
+            ),
+            SkillParameter(
+                name="line_color",
+                type=ParameterType.STRING,
+                description="Divider line color (split mode)",
+                required=False,
+                default="white",
+            ),
+        ],
+        examples=[
+            "comparison - Animated left-to-right swipe comparison",
+            "comparison:style=split,labels=true - Static 50/50 split with Before/After labels",
+            "comparison:style=side_by_side - Full frames side by side",
+            "comparison:style=diagonal - Diagonal split from top-left to bottom-right",
+            "comparison:style=circular_reveal - Expanding circle reveals the 'after' video",
+            "comparison:style=difference - Pixel difference visualization",
+            "comparison:style=swipe,labels=true,label_a=Original,label_b=Enhanced - Swipe with custom labels",
+        ],
+        tags=[
+            "comparison", "compare", "before", "after", "split", "swipe",
+            "side_by_side", "ab", "diff", "wipe", "reveal",
+        ],
+    ))
+

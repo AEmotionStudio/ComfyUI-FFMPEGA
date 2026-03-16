@@ -741,12 +741,16 @@ def _f_auto_mask(p):
     _enable_flux_klein = bool(p.get("_enable_flux_klein", False))
     # Whether MiniMax-Remover is enabled (off by default)
     _enable_minimax_remover = bool(p.get("_enable_minimax_remover", False))
+    # Whether Kiwi-Edit is enabled (off by default)
+    _enable_kiwi_edit = bool(p.get("_enable_kiwi_edit", False))
 
     _base_cache_key = str(p.get("edit_prompt", effect))
     # Prefix the cache key with the active model so switching between
     # MiniMax and FLUX Klein invalidates stale cached results.
     if _enable_minimax_remover:
         _cache_key = f"minimax:{_base_cache_key}"
+    elif _enable_kiwi_edit:
+        _cache_key = f"kiwi:{_base_cache_key}"
     elif _enable_flux_klein:
         _cache_key = f"flux:{_base_cache_key}"
     else:
@@ -760,7 +764,7 @@ def _f_auto_mask(p):
         # Only reuse cached FLUX output when the toggle is still ON —
         # otherwise the user explicitly asked for the lightweight fallback.
         _cached_flux = _flux_cache.get(_cache_key)
-        if effect in ("remove", "edit") and (_enable_flux_klein or _enable_minimax_remover) and _cached_flux and os.path.isfile(_cached_flux):
+        if effect in ("remove", "edit") and (_enable_flux_klein or _enable_minimax_remover or _enable_kiwi_edit) and _cached_flux and os.path.isfile(_cached_flux):
             log.info("auto_mask: reusing cached AI output: %s", _cached_flux)
             escaped = _escape_filter_path(_cached_flux)
             fc = f"movie={escaped}[inp];[inp]format=yuv420p[_vout]"
@@ -945,7 +949,35 @@ def _f_auto_mask(p):
                 "auto_mask effect='edit' requires an 'edit_prompt' parameter "
                 "describing the desired change (e.g. 'change hair to blonde')"
             )
-        if _enable_flux_klein:
+        if _enable_kiwi_edit:
+            # Kiwi-Edit: native video editor with temporal consistency
+            try:
+                try:
+                    from ...core.kiwi_edit_synthesizer import edit_video as kiwi_edit_video
+                except ImportError:
+                    from core.kiwi_edit_synthesizer import edit_video as kiwi_edit_video
+                edited_path = kiwi_edit_video(
+                    video_path=video_path,
+                    prompt=edit_prompt,
+                )
+                log.info("Kiwi-Edit edit complete: %s", edited_path)
+                if _metadata_ref is not None and isinstance(_metadata_ref, dict):
+                    _metadata_ref.setdefault("_flux_klein_outputs", {})[_cache_key] = edited_path
+                escaped = _escape_filter_path(edited_path)
+                fc = f"movie={escaped}[inp];[inp]format=yuv420p[_vout]"
+                return make_result(fc=fc)
+            except Exception as e:
+                log.error("Kiwi-Edit edit failed: %s", e)
+                try:
+                    try:
+                        from ...core.kiwi_edit_synthesizer import cleanup as _ke_cleanup
+                    except ImportError:
+                        from core.kiwi_edit_synthesizer import cleanup as _ke_cleanup
+                    _ke_cleanup()
+                except Exception:
+                    pass
+                raise
+        elif _enable_flux_klein:
             try:
                 try:
                     from ...core.flux_klein_editor import edit_video

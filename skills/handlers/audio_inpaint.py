@@ -110,8 +110,31 @@ def _f_audio_inpaint(p):
     if _metadata_ref is not None and isinstance(_metadata_ref, dict):
         _metadata_ref["_generated_audio_path"] = result_path
 
-    # Replace audio with inpainted version
+    # Determine audio output mode
+    audio_mode = str(p.get("_audio_output_mode", p.get("mode", "replace"))).lower()
+    if audio_mode not in ("replace", "mix", "save_only"):
+        audio_mode = "replace"
+
+    # save_only: just store the path, don't mux
+    if audio_mode == "save_only":
+        log.info("audio_inpaint save_only: %s", result_path)
+        return make_result()
+
     escaped = result_path.replace("'", "'\\''").replace(":", "\\:")
+
+    if audio_mode == "mix" and p.get("_has_embedded_audio"):
+        # Mix inpainted audio with original
+        fc = (
+            f"amovie={escaped}[_inpaint_audio];"
+            f"[0:a][_inpaint_audio]amix=inputs=2:duration=shortest[_aout];"
+            f"[0:v]null[_vpass]"
+        )
+        return make_result(
+            fc=fc,
+            opts=["-map", "[_vpass]", "-map", "[_aout]"],
+        )
+
+    # Replace (default) or mix with no existing audio
     fc = (
         f"amovie={escaped}[_inpaint_audio];"
         f"[0:v]null[_vpass]"

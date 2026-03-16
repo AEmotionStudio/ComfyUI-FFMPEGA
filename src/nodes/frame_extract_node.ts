@@ -430,7 +430,7 @@ export function registerFrameExtractNode(
                             }
                             updateUploadBtn();
                         }
-                    }, 100);
+                    }, 500);
                 }
                 return true;
             }
@@ -438,6 +438,11 @@ export function registerFrameExtractNode(
         };
 
         this.onDragDrop = async (e: DragEvent): Promise<boolean> => {
+            // Cancel drop visual revert — upload state handler takes over
+            if (uploadBtn._dragTimeout) {
+                clearTimeout(uploadBtn._dragTimeout);
+                delete uploadBtn._dragTimeout;
+            }
             if (!e?.dataTransfer?.types?.includes?.("Files")) return false;
             const file = e.dataTransfer?.files?.[0];
             if (!file) return false;

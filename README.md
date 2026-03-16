@@ -5,7 +5,7 @@
 **The ultimate video editing suite for ComfyUI — edit with natural language or hands-on manual controls.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-2.16.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-2.18.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-2-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 [![Downloads](https://img.shields.io/badge/dynamic/json?color=blueviolet&label=Downloads&query=downloads.smart_count&url=https://raw.githubusercontent.com/AEmotionStudio/ComfyUI-FFMPEGA/refs/heads/badges/traffic_stats.json&style=for-the-badge&logo=github)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
@@ -24,22 +24,22 @@
 
 ---
 
-## 🚀 What's New in v2.16.0
+## 🚀 What's New in v2.18.0
 
-*   🎵 **ACE-Step AI Music Generation** — generate music from text prompts, repaint/cover existing audio tracks, auto-generate lyrics, and control BPM/key/time signature with 7 new advanced widgets
-*   🎧 **SAM-Audio Source Separation** — split any audio into stems (vocals, drums, bass, other) using Separate Anything in Audio with FP8 support for ~50% VRAM savings
-*   🎬 **Video Editor v2** — 10 new NLE panels: color grading, filters, keyframes, AI relighting (IC-Light), transforms, compositing (PiP, chroma key, blend), captions, export settings, speed control, and AI compose
-*   🔊 **AudioX Vocal Enhancement** — AI-powered vocal enhancement with automatic ACE-Step chaining for one-click music upgrading
-*   🧊 **NormalCrafter** — AI surface normal estimation from monocular video with temporally consistent output and configurable resolution
-*   🌊 **Video Depth Anything** — temporal video depth estimation with three model tiers (small/base/large) and configurable colormap visualization
-*   🎨 **NLE Audio Repaint** — mark individual audio segments for ACE-Step repainting with per-segment strength control directly in the timeline
-*   🎛️ **Smarter Widget UX** — `sam_audio_model`, `normalcrafter_max_res`, and all ACE-Step widgets dynamically appear only when their mode is active
+*   🎬 **Kiwi-Edit AI Video Editing** — text-instruction and reference-image video editing powered by WAN 2.2. FP8 (~5 GB) and BF16 (~10 GB) precision with long video chunking
+*   🎯 **SAM3 + Kiwi-Edit** — use SAM3 pre-masking to precisely target objects before Kiwi-Edit processing
+*   🎛️ **Kiwi-Edit Advanced Controls** — seed (reproducibility), flow shift (denoising aggressiveness), task type override, and 4 scheduler options (UniPC, Euler, Heun, DPM++)
+*   ⚡ **RTX Video Super Resolution** — hardware-accelerated AI upscaling on RTX Tensor Cores with upscale, denoise, and deblur modes
+*   🔬 **SeedVR AI Upscaling** — high-quality video upscaling with SeedVR 2 diffusion pipeline (3B and 7B variants)
+*   😊 **FacePoke Expression Presets** — predefined facial expression parameter sets for quick emotion editing
 
 <details>
 <summary><b>📋 Previous Releases</b></summary>
 
 | Version | Highlights |
 | :--- | :--- |
+| **v2.17.0** | FacePoke interactive face editor, driving video reference, shader effects system, Flux Klein FP8, onion skin compositing, unified audio output mode |
+| **v2.16.0** | ACE-Step AI music generation, SAM-Audio source separation, Video Editor v2 (10 panels), AudioX vocal enhancement, NormalCrafter, Video Depth Anything |
 | **v2.15.0** | MiniMax-Remover, 5 new no-LLM modes, auto-VRAM tile sizing, VRAM management overhaul |
 | **v2.14.0** | Video Editor NLE node with timeline, razor, crop, transitions, text overlays, keyboard shortcuts |
 | **v2.13.0** | AI Background Removal (BRIA RMBG), FLUX Klein toggle, Edit FFmpeg fallback, smarter defaults |
@@ -520,6 +520,7 @@ All models are mirrored to first-party [AEmotionStudio](https://huggingface.co/A
 | **SAM-Audio** (Source Separation) | ~1.2 GB (large) / ~600 MB (fp8) | `ComfyUI/models/sam_audio/` | `audio_separate` no-LLM mode | [AEmotionStudio/sam-audio](https://huggingface.co/AEmotionStudio/sam-audio) |
 | **AudioX** (Vocal Enhancement) | ~1 GB | `ComfyUI/models/audiox/` | AudioX chaining with ACE-Step | [AEmotionStudio/audiox](https://huggingface.co/AEmotionStudio/audiox) |
 | **NormalCrafter** (Surface Normals) | ~2 GB | `ComfyUI/models/normalcrafter/` | `normalcrafter` no-LLM mode | [AEmotionStudio/NormalCrafter](https://huggingface.co/AEmotionStudio/NormalCrafter) |
+| **Kiwi-Edit** (AI Video Editing) | ~5 GB (FP8) / ~10 GB (BF16) | `ComfyUI/models/kiwi_edit_*` | `kiwi_edit` no-LLM mode | [AEmotionStudio/Kiwi-Edit-Instruct](https://huggingface.co/AEmotionStudio/Kiwi-Edit-Instruct) |
 
 > [!NOTE]
 > Models are only downloaded when you use the corresponding skill for the first time. Core FFmpeg editing skills (200+ of them) require **zero model downloads**.
@@ -547,7 +548,7 @@ FFMPEGA provides **11 nodes** that work together:
 | `video_path` | STRING | Absolute path to source video. Used as ffmpeg input unless `images_a` is connected. |
 | `prompt` | STRING | Natural language editing instruction (e.g. *"Add cinematic letterbox"*, *"Speed up 2x"*). Not required in `manual` mode. |
 | `llm_model` | DROPDOWN | AI model selection — local Ollama models, CLI tools, or cloud APIs. Select `none` for no-LLM mode. |
-| `no_llm_mode` | DROPDOWN | Mode when `llm_model` is `none`: `manual` (Effects Builder, default), `sam3_masking`, `transcribe`, `karaoke_subtitles`, `generate_audio`, `lip_sync`, `animate_portrait`, `marigold`, `video_depth`, `flux_klein`, `minimax_remover`, `ai_upscale`, `ace_step`, `audio_separate`, `normalcrafter`, `rembg`. |
+| `no_llm_mode` | DROPDOWN | Mode when `llm_model` is `none`: `manual` (Effects Builder, default), `sam3_masking`, `transcribe`, `karaoke_subtitles`, `generate_audio`, `lip_sync`, `animate_portrait`, `marigold`, `video_depth`, `flux_klein`, `kiwi_edit`, `minimax_remover`, `ai_upscale`, `ace_step`, `audio_separate`, `normalcrafter`, `rembg`. |
 | `quality_preset` | DROPDOWN | Output quality: `draft`, `standard`, `high`, `lossless`. |
 | `seed` | INT | Change to force re-execution with the same prompt. Supports randomize control. |
 

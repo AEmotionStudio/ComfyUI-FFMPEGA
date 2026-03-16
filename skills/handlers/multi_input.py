@@ -701,3 +701,142 @@ def _f_onion_skin(p):
             )
 
     return make_result(fc=";".join(fc_parts))
+
+
+def _f_comparison(p):
+    """Create a comparison video from two inputs with various styles.
+
+    Styles:
+    - **swipe**: Animated divider sweeps left-to-right revealing video B.
+    - **split**: Static 50/50 split with a vertical divider line.
+    - **side_by_side**: Full frames stacked horizontally or vertically.
+    - **diagonal**: Diagonal split from top-left to bottom-right.
+    - **circular_reveal**: Expanding circle reveals video B over time.
+    - **difference**: Pixel-difference blend between A and B.
+
+    Video A (input 0) = "Before", Video B (input 1) = "After".
+    """
+    style = str(p.get("style", "swipe")).lower()
+    labels = str(p.get("labels", "false")).lower() in ("true", "1", "yes")
+    label_a = sanitize_text_param(str(p.get("label_a", "Before")))
+    label_b = sanitize_text_param(str(p.get("label_b", "After")))
+    label_size = int(p.get("label_size", 36))
+    direction = str(p.get("direction", "horizontal")).lower()
+    line_width = int(p.get("line_width", 2))
+    line_color = sanitize_text_param(str(p.get("line_color", "white")))
+    n_extra = int(p.get("_extra_input_count", 0))
+
+    if n_extra < 1:
+        return make_result()
+
+    w = int(p.get("_input_width", 1280))
+    h = int(p.get("_input_height", 720))
+    fps = int(p.get("_input_fps", 25))
+    dur = float(p.get("_video_duration", 10.0))
+
+    # Scale both inputs to the same size for clean compositing
+    prep_a = (f"[0:v]scale={w}:{h}:force_original_aspect_ratio=decrease,"
+              f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps={fps}[_ca]")
+    prep_b = (f"[1:v]scale={w}:{h}:force_original_aspect_ratio=decrease,"
+              f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps={fps}[_cb]")
+
+    fc_parts = [prep_a, prep_b]
+    opts = ["-shortest"]
+
+    if style == "swipe":
+        # Animated wipe: crop B to a growing width, overlay on A
+        crop_w = f"floor((t/{dur})*{w}/2)*2"
+        fc_parts.append(
+            f"[_cb]crop=w={crop_w}:h={h}:x=0:y=0[_cb_crop]"
+        )
+        fc_parts.append(
+            f"[_ca][_cb_crop]overlay=x=0:y=0:shortest=1[_cmp]"
+        )
+
+    elif style == "split":
+        # Static 50/50 vertical split
+        half = (w // 2) // 2 * 2  # ensure even
+        fc_parts.append(
+            f"[_cb]crop=w={half}:h={h}:x=0:y=0[_cb_half]"
+        )
+        fc_parts.append(
+            f"[_ca][_cb_half]overlay=x=0:y=0:shortest=1[_cmp_raw]"
+        )
+        # Draw divider line
+        fc_parts.append(
+            f"[_cmp_raw]drawbox=x={half}:y=0:w={line_width}:h={h}:"
+            f"color={line_color}:t=fill[_cmp]"
+        )
+
+    elif style == "side_by_side":
+        stack = "hstack" if direction == "horizontal" else "vstack"
+        fc_parts.append(f"[_ca][_cb]{stack}=inputs=2:shortest=1[_cmp]")
+
+    elif style == "diagonal":
+        # Diagonal split using blend expression
+        fc_parts.append(
+            f"[_ca][_cb]blend=all_expr='"
+            f"if(lt(X/{w}+Y/{h},1),B,A)'[_cmp]"
+        )
+
+    elif style == "circular_reveal":
+        # Expanding circle reveals B over time
+        max_r = max(w, h)
+        cx, cy = w // 2, h // 2
+        fc_parts.append(
+            f"[_ca][_cb]blend=all_expr='"
+            f"if(lte(hypot(X-{cx},Y-{cy}),{max_r}*T/{dur}),B,A)'[_cmp]"
+        )
+
+    elif style == "difference":
+        fc_parts.append(
+            f"[_ca][_cb]blend=all_mode=difference:all_opacity=1.0[_cmp]"
+        )
+
+    else:
+        # Default to swipe
+        crop_w = f"floor((t/{dur})*{w}/2)*2"
+        fc_parts.append(
+            f"[_cb]crop=w={crop_w}:h={h}:x=0:y=0[_cb_crop]"
+        )
+        fc_parts.append(
+            f"[_ca][_cb_crop]overlay=x=0:y=0:shortest=1[_cmp]"
+        )
+
+    # --- Optional labels ---
+    if labels:
+        safe_a = label_a.replace(":", r"\\:")
+        safe_b = label_b.replace(":", r"\\:")
+
+        if style == "side_by_side" and direction == "horizontal":
+            fc_parts.append(
+                f"[_cmp]drawtext=text='{safe_a}':fontsize={label_size}:"
+                f"fontcolor=white:borderw=2:bordercolor=black:"
+                f"x=({w}/2-text_w)/2:y={h}-{label_size}-20,"
+                f"drawtext=text='{safe_b}':fontsize={label_size}:"
+                f"fontcolor=white:borderw=2:bordercolor=black:"
+                f"x={w}/2+({w}/2-text_w)/2:y={h}-{label_size}-20"
+            )
+        elif style == "side_by_side" and direction == "vertical":
+            fc_parts.append(
+                f"[_cmp]drawtext=text='{safe_a}':fontsize={label_size}:"
+                f"fontcolor=white:borderw=2:bordercolor=black:"
+                f"x=(w-text_w)/2:y={h}/2-{label_size}-10,"
+                f"drawtext=text='{safe_b}':fontsize={label_size}:"
+                f"fontcolor=white:borderw=2:bordercolor=black:"
+                f"x=(w-text_w)/2:y={h}+{h}/2-{label_size}-10"
+            )
+        else:
+            fc_parts.append(
+                f"[_cmp]drawtext=text='{safe_a}':fontsize={label_size}:"
+                f"fontcolor=white:borderw=2:bordercolor=black:"
+                f"x=20:y=20,"
+                f"drawtext=text='{safe_b}':fontsize={label_size}:"
+                f"fontcolor=white:borderw=2:bordercolor=black:"
+                f"x=w-text_w-20:y=20"
+            )
+    else:
+        # No labels — pass through with null filter
+        fc_parts.append("[_cmp]null")
+
+    return make_result(opts=opts, fc=";".join(fc_parts))

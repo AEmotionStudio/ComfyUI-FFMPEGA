@@ -38,7 +38,7 @@ def _f_generate_music(p):
     """
     prompt = str(p.get("prompt", ""))
     negative_prompt = str(p.get("negative_prompt", ""))
-    mode = str(p.get("mode", "replace")).lower()
+    mode = str(p.get("_audio_output_mode", p.get("mode", "replace"))).lower()
     seed = int(p.get("seed", -1))
     cfg_scale = float(p.get("cfg_scale", 7.0))
     duration = p.get("duration")
@@ -47,7 +47,7 @@ def _f_generate_music(p):
     steps = int(p.get("steps", 250))
     video_path = p.get("_input_path", "")
 
-    if mode not in ("replace", "mix"):
+    if mode not in ("replace", "mix", "save_only"):
         mode = "replace"
 
     log.info(
@@ -114,6 +114,10 @@ def _f_generate_music(p):
 def _build_audio_filter(audio_path, mode, p):
     """Build the FFmpeg filter_complex for replacing or mixing audio."""
     escaped = audio_path.replace("'", "'\\''").replace(":", "\\:")
+
+    if mode == "save_only":
+        log.info("generate_music save_only: %s", audio_path)
+        return make_result()
 
     if mode == "replace":
         fc = (

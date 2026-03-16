@@ -248,6 +248,19 @@ def main():
     else:
         print("[FFMPEGA] ✓ openai-whisper already installed")
 
+    # --- RTX VSR (NVIDIA RTX Video Super Resolution) ---
+    # Pure pip package — libraries are bundled in the wheel.
+    # Requires RTX GPU (Turing+) and driver 570+ at runtime.
+    if not is_installed("nvidia-vfx"):
+        print("[FFMPEGA] Installing nvidia-vfx (RTX Video Super Resolution)...")
+        result = subprocess.run([*pip, "nvidia-vfx"])
+        if result.returncode == 0:
+            print("[FFMPEGA] nvidia-vfx installed successfully")
+        else:
+            print("[FFMPEGA] nvidia-vfx installation failed — rtx_vsr upscale model will be unavailable")
+    else:
+        print("[FFMPEGA] nvidia-vfx already installed")
+
     print("[FFMPEGA] Dependency installation complete")
 
 

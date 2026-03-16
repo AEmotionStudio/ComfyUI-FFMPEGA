@@ -5,6 +5,68 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.18.0] - 2026-03-16
+
+### Added
+- **Kiwi-Edit Video Editing**: New AI-powered video editing using [Kiwi-Edit](https://github.com/showlab/Kiwi-Edit) (WAN 2.2-based). Text instruction, reference image, and combined modes. Supports FP8 (~5 GB) and BF16 (~10 GB) precision with automatic model download. Long video chunked processing with crossfade stitching. *(kiwi_edit no-LLM mode)*
+  - **10 Advanced Widgets**: `kiwi_model`, `kiwi_precision`, `kiwi_resolution`, `kiwi_width`, `kiwi_height`, `kiwi_max_frames`, `kiwi_steps`, `kiwi_guidance`, `kiwi_block_swap`, `kiwi_long_video` — all dynamically shown only when `no_llm_mode = kiwi_edit`.
+  - **4 New Model Options**: `kiwi_seed` (reproducibility), `kiwi_flow_shift` (denoising aggressiveness 1–15), `kiwi_task_type` (override auto-detected prompt enhancement), `kiwi_scheduler` (unipc/euler/heun/dpm++ sampling).
+  - **SAM3 Toggle for Kiwi-Edit**: SAM3 pre-masking now available for `kiwi_edit` mode — generate a mask with SAM3, process with Kiwi-Edit, composite back. Backend was already wired; UI toggle was missing.
+  - **FP8 Conversion Script**: New `scripts/convert_kiwi_edit_fp8.py` for creating FP8 scaled model variants.
+  - **Task-Type Prompt Enhancement**: 5 task templates (global_style, local_change, background_change, local_remove, local_add) with temporal consistency hints. Overridable via `kiwi_task_type` widget.
+  - **Runtime Scheduler Selection**: New `_set_scheduler()` function allows switching schedulers between runs without reloading the model pipeline.
+- **RTX Video Super Resolution**: New NVIDIA RTX VSR AI upscaling using Video Effects SDK (nvvfx). Hardware-accelerated on RTX Tensor Cores for near-real-time performance. Three quality modes: upscale, denoise, deblur. Requires RTX GPU + NVIDIA driver 570+. *(rtx_vsr no-LLM mode)*
+- **SeedVR AI Upscaling**: New SeedVR 2 integration for high-quality video upscaling. Vendored core with diffusion pipeline, alpha upscaling, and model caching. Supports 3B and 7B model variants. *(seedvr no-LLM mode)*
+- **Expression Presets for FacePoke**: New `core/expression_presets.py` with predefined facial expression parameter sets for the FacePoke interactive face editor.
+- **Multi-Input Skill Handler**: New `skills/handlers/multi_input.py` for concat, grid, split screen, and multi-input operations with proper FFmpeg filter chain orchestration.
+- **Kiwi-Edit Model Mirror**: Weights hosted on AEmotionStudio HuggingFace repos with mirror-first download and upstream fallback.
+- **Kiwi-Edit Tests**: New `tests/test_kiwi_edit.py` with 50 tests covering constants, model manager, cleanup, no-LLM mode, prompt enhancement, and path validation.
+
+### Changed
+- **Model Registry**: Added `kiwi_edit_instruct`, `kiwi_edit_reference`, `kiwi_edit_instruct_reference`, `rtx_vsr`, and `seedvr` entries to `core/model_manager.py`.
+- **VRAM Utils**: Added Kiwi-Edit, RTX VSR, and SeedVR cleanup support.
+- **Conditional Widget Visibility**: `kiwi_width` and `kiwi_height` are now hidden unless `kiwi_resolution = 'custom'`. Scheduler dropdown triggers visibility refresh.
+- **Version**: Bumped to 2.18.0.
+
+### Fixed
+- **Kiwi-Edit BF16 Precision**: Fixed dtype handling for BF16 model loading that previously caused errors on some GPU configurations.
+- **SAM3 UI Toggle**: Fixed `kiwi_edit` mode not appearing in the SAM3-eligible modes list in the TypeScript UI, preventing the `use_sam3` toggle from showing.
+
+---
+
+## [2.17.0] - 2026-03-15
+
+### Added
+- **FacePoke Interactive Face Editor**: New full-featured face editing modal powered by LivePortrait. Edit facial expressions in real-time with slider controls for 16 parameters (pitch, yaw, roll, blink, eyebrow, smile, pupil, mouth shapes), per-frame editing with undo/redo, filmstrip frame scrubber with frame numbers and hover-scrolling, emotion presets (happy, sad, angry, surprised, wink, thoughtful, neutral), face landmark visualization, and Blaze Detect fallback mode. Professional SVG icon library throughout.
+  - **Driving Video Reference**: Upload a driving video to transfer facial motion across all source frames. Relative motion with configurable multiplier (0.1–2.0x). Server-side keypoint extraction and caching.
+  - **Reference Image Expression**: Upload a face image to transfer its expression to any frame. Configurable ratio (0–1), parts selection (all, mouth only, eyes only, rotation only), and slider edits stack on top.
+  - **Face Detection Caching**: Face bounding boxes cached per-frame on first detection, reused for subsequent previews and edits. Eliminates redundant face detection when no changes have been made.
+  - **Improved Paste-Back Quality**: Replaced naive 256px downscale paste-back with proper `_paste_back` function using full 512×512 model output, LANCZOS4 interpolation, and tightened blending mask (ellipse 235×250, kernel 51×51).
+- **Shader Effects System**: Extensive GPU-accelerated shader overlay system with shader chaining (up to 3 layers), animation speed control, hue shift, customizable blend modes, temporal phase offset, JSON parameter overrides, resolution scaling, and random shader selection mode.
+- **Multi-Input Skill Handler**: New `multi_input.py` handler for concat, grid, split screen, and other multi-input operations with proper FFmpeg filter chain orchestration.
+- **Onion Skin Compositing**: Onion skin no-LLM mode now auto-detects extra video inputs and switches to composite mode, building multi-input FFmpeg `blend` filter pipelines.
+- **Flux Klein FP8 Model**: New FP8 variant dropdown for Flux Klein — ~50% VRAM reduction with per-tensor scaling for quality preservation.
+- **Audio Output Mode**: Generalized `audio_output_mode` parameter across all audio processing nodes (`generate_audio`, `generate_music`, `audio_inpaint`, `ace_step`, `audio_separate`) with `auto` and `save_only` options.
+- **SAM3 Toggle**: New toggleable SAM3 control in the UI for easier masking workflow management.
+- **Marigold Appearance Mode**: New `appearance` estimation mode for Marigold dense vision pipeline.
+- **New Visual Skills**: Added `hdr_enhancement` and related visual effect skills to the skill registry.
+
+### Changed
+- **LivePortrait Expression Range**: Increased pitch/yaw/roll multipliers for much more pronounced head movement, matching KiJai's implementation. Fixed independent left/right eye and eyebrow controls.
+- **FacePoke UI Polish**: Removed all emojis and replaced with professional Lucide SVG icons. Added frame count numbers to filmstrip thumbnails. Made filmstrip frames scrollable on hover. Added first/last frame jump buttons.
+- **Video Editor**: Updated segment management and transport controls. Improved SAM3 toggle integration.
+- **Drop Animation UX**: Increased drag-and-drop upload feedback timeout from 100ms to a longer duration for reliable visual feedback across all nodes.
+- **Node Widget Visibility**: Dynamic widget visibility improvements for shader, SAM3, and audio mode controls.
+
+### Fixed
+- **FacePoke Blur**: Fixed severe blur in modified faces caused by 512→256px downscaling during paste-back. Now preserves full model resolution.
+- **FacePoke Blaze Fallback**: Changed from auto-fallback (too sensitive) to manual-only toggle, preventing incorrect model selection.
+- **LivePortrait Left/Right Controls**: Fixed independent eye and eyebrow controls (left/right split) that previously only worked in "both" mode.
+- **Animate Portrait Tests**: Updated test assertions for new parameter signatures.
+- **Audio Handler Consistency**: Aligned `audio_output_mode` parameter naming across all audio generation/processing handlers.
+
+---
+
 ## [2.16.0] - 2026-03-13
 
 ### Added

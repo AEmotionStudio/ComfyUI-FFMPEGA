@@ -1,0 +1,662 @@
+/* ═══════════════════════════════════════════════════════════════════
+ * Face Poke Editor (FFMPEGA)
+ *
+ * Shares design tokens with the Video Editor (--ve-*) for consistency.
+ * Layout: full-viewport modal with CSS Grid for the editing workspace.
+ * ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Modal Backdrop ──────────────────────────────────────────────── */
+
+.fpoke-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(6px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-top: 30px;
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+    color: #e8e8f0;
+}
+
+/* ── Panel (CSS Grid) ────────────────────────────────────────────── */
+
+.fpoke-panel {
+    background: linear-gradient(160deg, #161625 0%, #0f0f1a 100%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    width: 92vw;
+    height: 90vh;
+
+    display: grid;
+    grid-template-areas:
+        "header    header"
+        "canvas    sliders"
+        "filmstrip sliders"
+        "toolbar   toolbar";
+    grid-template-columns: 1fr 320px;
+    grid-template-rows: auto 1fr auto auto;
+
+    box-shadow:
+        0 0 60px rgba(0, 0, 0, 0.5),
+        0 0 120px rgba(99, 102, 241, 0.05);
+    overflow: hidden;
+}
+
+/* ── Header ──────────────────────────────────────────────────────── */
+
+.fpoke-header {
+    grid-area: header;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(28, 28, 48, 0.75);
+    backdrop-filter: blur(12px);
+}
+
+.fpoke-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+
+.fpoke-frame-info {
+    flex: 1;
+    font-size: 12px;
+    color: #9898b0;
+    font-variant-numeric: tabular-nums;
+}
+
+.fpoke-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.fpoke-blaze-row {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 0 4px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.fpoke-btn-blaze {
+    font-size: 11px;
+    opacity: 0.7;
+}
+
+.fpoke-btn-blaze.active {
+    opacity: 1;
+    background: rgba(251, 191, 36, 0.15);
+    border-color: #fbbf24;
+    color: #fbbf24;
+}
+
+.fpoke-close {
+    background: none;
+    border: 1px solid transparent;
+    color: #9898b0;
+    font-size: 16px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.fpoke-close:hover {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: #ef4444;
+    color: #ef4444;
+}
+
+/* ── Canvas Area ─────────────────────────────────────────────────── */
+
+.fpoke-canvas-area {
+    grid-area: canvas;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    min-height: 0;
+}
+
+.fpoke-canvas {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    cursor: crosshair;
+    user-select: none;
+}
+
+/* ── Face Overlays ───────────────────────────────────────────────── */
+
+.fpoke-face-overlay {
+    position: absolute;
+    border: 2px solid rgba(99, 102, 241, 0.6);
+    border-radius: 8px;
+    cursor: grab;
+    transition: all 0.2s ease;
+    z-index: 10;
+    background: rgba(99, 102, 241, 0.05);
+}
+
+.fpoke-face-overlay:hover {
+    border-color: #818cf8;
+    background: rgba(99, 102, 241, 0.12);
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.3);
+}
+
+.fpoke-face-overlay.active {
+    border-color: #6366f1;
+    border-width: 2px;
+    border-style: solid;
+    background: rgba(99, 102, 241, 0.15);
+    box-shadow:
+        0 0 20px rgba(99, 102, 241, 0.35),
+        0 0 40px rgba(99, 102, 241, 0.15),
+        inset 0 0 20px rgba(99, 102, 241, 0.08);
+    animation: fpoke-pulse 2s ease-in-out infinite;
+}
+
+@keyframes fpoke-pulse {
+    0%, 100% { box-shadow: 0 0 20px rgba(99, 102, 241, 0.35), 0 0 40px rgba(99, 102, 241, 0.15); }
+    50% { box-shadow: 0 0 30px rgba(99, 102, 241, 0.5), 0 0 60px rgba(99, 102, 241, 0.25); }
+}
+
+.fpoke-face-label {
+    position: absolute;
+    top: -22px;
+    left: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #fff;
+    background: rgba(99, 102, 241, 0.85);
+    padding: 2px 8px;
+    border-radius: 4px;
+    pointer-events: none;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    letter-spacing: 0.3px;
+}
+
+/* ── Draggable Control Points ────────────────────────────────────── */
+
+.fpoke-ctrl-point {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--cp-color, #7c6aef);
+    border: 2px solid rgba(255, 255, 255, 0.8);
+    cursor: grab;
+    z-index: 20;
+    transform: translate(-50%, -50%);
+    transition: all 0.15s ease;
+    box-shadow:
+        0 0 8px color-mix(in srgb, var(--cp-color, #7c6aef) 60%, transparent),
+        0 0 16px color-mix(in srgb, var(--cp-color, #7c6aef) 30%, transparent);
+}
+
+.fpoke-ctrl-point:hover {
+    width: 20px;
+    height: 20px;
+    box-shadow:
+        0 0 12px color-mix(in srgb, var(--cp-color, #7c6aef) 80%, transparent),
+        0 0 24px color-mix(in srgb, var(--cp-color, #7c6aef) 40%, transparent);
+}
+
+.fpoke-ctrl-point:hover::after {
+    content: attr(title);
+    position: absolute;
+    top: -24px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    font-weight: 600;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.8);
+    padding: 2px 6px;
+    border-radius: 3px;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.fpoke-ctrl-point.active {
+    cursor: grabbing;
+    width: 22px;
+    height: 22px;
+    border-color: #fff;
+    box-shadow:
+        0 0 16px color-mix(in srgb, var(--cp-color, #7c6aef) 90%, transparent),
+        0 0 32px color-mix(in srgb, var(--cp-color, #7c6aef) 50%, transparent),
+        0 0 48px color-mix(in srgb, var(--cp-color, #7c6aef) 25%, transparent);
+}
+
+/* ── Landmark toggle button ──────────────────────────────────────── */
+
+.fpoke-btn-landmark {
+    background: transparent;
+    border-color: rgba(255, 255, 255, 0.15);
+    color: #9898b0;
+}
+
+.fpoke-btn-landmark:hover {
+    background: rgba(99, 102, 241, 0.1);
+    border-color: #6366f1;
+    color: #e8e8f0;
+}
+
+.fpoke-btn-landmark.active {
+    background: rgba(99, 102, 241, 0.2);
+    border-color: #6366f1;
+    color: #818cf8;
+    box-shadow: 0 0 12px rgba(99, 102, 241, 0.25);
+}
+
+/* ── Play button ─────────────────────────────────────────────────── */
+
+.fpoke-btn-play {
+    background: transparent;
+    border-color: rgba(34, 197, 94, 0.3);
+    color: #4ade80;
+}
+
+.fpoke-btn-play:hover {
+    background: rgba(34, 197, 94, 0.1);
+    border-color: #22c55e;
+}
+
+.fpoke-btn-play.active {
+    background: rgba(34, 197, 94, 0.2);
+    border-color: #22c55e;
+    color: #4ade80;
+    box-shadow: 0 0 12px rgba(34, 197, 94, 0.3);
+    animation: fpoke-pulse-play 1.5s ease-in-out infinite;
+}
+
+@keyframes fpoke-pulse-play {
+    0%, 100% { box-shadow: 0 0 12px rgba(34, 197, 94, 0.3); }
+    50% { box-shadow: 0 0 20px rgba(34, 197, 94, 0.5); }
+}
+
+/* ── Interpolate button ──────────────────────────────────────────── */
+
+.fpoke-btn-interp {
+    background: rgba(168, 85, 247, 0.1);
+    border-color: rgba(168, 85, 247, 0.3);
+    color: #c084fc;
+}
+
+.fpoke-btn-interp:hover {
+    background: rgba(168, 85, 247, 0.2);
+    border-color: #a855f7;
+    color: #d8b4fe;
+    box-shadow: 0 0 12px rgba(168, 85, 247, 0.25);
+}
+
+/* ── Slider Panel (sidebar) ──────────────────────────────────────── */
+
+.fpoke-sliders {
+    grid-area: sliders;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    padding: 12px;
+    border-left: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(28, 28, 48, 0.6);
+    min-height: 0;
+}
+
+/* ── Emotion Presets ─────────────────────────────────────────────── */
+
+.fpoke-preset-section {
+    padding: 10px 0 6px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    margin-top: 8px;
+}
+
+.fpoke-preset-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #8888aa;
+    margin-bottom: 8px;
+}
+
+.fpoke-preset-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.fpoke-preset-chip {
+    font-size: 11px;
+    padding: 4px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    background: rgba(40, 40, 70, 0.6);
+    color: #c8c8e0;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.fpoke-preset-chip:hover {
+    background: rgba(99, 102, 241, 0.2);
+    border-color: rgba(99, 102, 241, 0.4);
+    color: #e8e8f0;
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.2);
+    transform: translateY(-1px);
+}
+
+.fpoke-preset-chip:active {
+    transform: scale(0.95);
+    background: rgba(99, 102, 241, 0.3);
+}
+
+/* ── Reference / Driving Sections ── */
+.fpoke-ref-section {
+    padding: 10px 0 6px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    margin-top: 8px;
+}
+
+.fpoke-select {
+    font-size: 11px;
+    padding: 4px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    background: rgba(30, 30, 55, 0.8);
+    color: #c8c8e0;
+    cursor: pointer;
+    outline: none;
+}
+.fpoke-select:focus {
+    border-color: rgba(99, 102, 241, 0.5);
+}
+
+.fpoke-slider-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: #9898b0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.fpoke-slider-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+}
+
+.fpoke-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.fpoke-slider-label {
+    font-size: 11px;
+    color: #9898b0;
+    min-width: 72px;
+    white-space: nowrap;
+}
+
+.fpoke-slider-input {
+    flex: 1;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+}
+
+.fpoke-slider-input::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #6366f1;
+    cursor: pointer;
+    border: none;
+    transition: transform 0.1s;
+}
+
+.fpoke-slider-input::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+.fpoke-slider-input::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #6366f1;
+    cursor: pointer;
+    border: none;
+}
+
+.fpoke-slider-value {
+    font-size: 11px;
+    color: #e8e8f0;
+    min-width: 42px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Scrollbar */
+.fpoke-sliders::-webkit-scrollbar { width: 6px; }
+.fpoke-sliders::-webkit-scrollbar-track { background: transparent; }
+.fpoke-sliders::-webkit-scrollbar-thumb { background: #2a2a45; border-radius: 3px; }
+
+/* ── Filmstrip ───────────────────────────────────────────────────── */
+
+.fpoke-filmstrip {
+    grid-area: filmstrip;
+    display: flex;
+    gap: 2px;
+    padding: 8px 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    background: rgba(15, 15, 26, 0.9);
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    scrollbar-width: thin;
+    scrollbar-color: #2a2a45 transparent;
+    max-height: 90px;
+}
+
+.fpoke-filmstrip::-webkit-scrollbar { height: 6px; }
+.fpoke-filmstrip::-webkit-scrollbar-track { background: transparent; }
+.fpoke-filmstrip::-webkit-scrollbar-thumb { background: #2a2a45; border-radius: 3px; }
+
+.fpoke-thumb-wrap {
+    position: relative;
+    flex-shrink: 0;
+    width: 80px;
+    height: 60px;
+    border-radius: 4px;
+    border: 2px solid transparent;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: all 0.15s ease;
+    overflow: hidden;
+}
+
+.fpoke-thumb {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.fpoke-thumb-num {
+    position: absolute;
+    bottom: 1px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 9px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.85);
+    background: rgba(0, 0, 0, 0.55);
+    padding: 0 4px;
+    border-radius: 3px;
+    line-height: 14px;
+    pointer-events: none;
+    font-variant-numeric: tabular-nums;
+}
+
+.fpoke-thumb-wrap:hover {
+    opacity: 0.9;
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.fpoke-thumb-wrap.active {
+    opacity: 1;
+    border-color: #6366f1;
+    box-shadow: 0 0 12px rgba(99, 102, 241, 0.3);
+}
+
+.fpoke-thumb-wrap.edited {
+    border-color: #22c55e;
+    opacity: 0.85;
+}
+
+.fpoke-thumb-wrap.edited.active {
+    border-color: #6366f1;
+    opacity: 1;
+    box-shadow: 0 0 12px rgba(99, 102, 241, 0.3),
+                inset 0 0 0 1px #22c55e;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────── */
+
+.fpoke-toolbar {
+    grid-area: toolbar;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: rgba(28, 28, 48, 0.75);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.fpoke-status {
+    font-size: 12px;
+    color: #9898b0;
+}
+
+.fpoke-nav-btns {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.fpoke-edited-count {
+    font-size: 11px;
+    color: #22c55e;
+    font-weight: 600;
+    margin-left: 12px;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────── */
+
+.fpoke-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
+    background: #2a2a45;
+    color: #e8e8f0;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: 'Inter', system-ui, sans-serif;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+}
+
+.fpoke-btn:hover {
+    background: #3a3a55;
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.fpoke-btn:active { transform: scale(0.97); }
+
+.fpoke-btn-sm { padding: 3px 8px; font-size: 11px; }
+
+.fpoke-btn-apply {
+    background: #22c55e;
+    border-color: transparent;
+    color: #fff;
+    font-weight: 600;
+}
+
+.fpoke-btn-apply:hover {
+    background: #4ade80;
+    box-shadow: 0 0 16px rgba(34, 197, 94, 0.25);
+}
+
+.fpoke-btn-reset {
+    background: transparent;
+    border-color: #ef4444;
+    color: #ef4444;
+}
+
+.fpoke-btn-reset:hover {
+    background: rgba(239, 68, 68, 0.1);
+    color: #f87171;
+}
+
+.fpoke-btn-pass {
+    background: transparent;
+    border-color: #6366f1;
+    color: #6366f1;
+}
+
+.fpoke-btn-pass:hover {
+    background: rgba(99, 102, 241, 0.1);
+}
+
+/* ── Responsive ──────────────────────────────────────────────────── */
+
+@media (max-width: 1024px) {
+    .fpoke-panel {
+        grid-template-areas:
+            "header"
+            "canvas"
+            "sliders"
+            "filmstrip"
+            "toolbar";
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr auto auto auto;
+        width: 98vw;
+        height: 95vh;
+    }
+
+    .fpoke-sliders {
+        border-left: none;
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+        max-height: 200px;
+    }
+}

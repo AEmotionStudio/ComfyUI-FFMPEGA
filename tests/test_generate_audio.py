@@ -265,16 +265,18 @@ class TestMMAudioNoLLMMode:
         no_llm_choices = inputs["required"]["no_llm_mode"][0]
         assert "generate_audio" in no_llm_choices
 
-    def test_mmaudio_mode_input_exists(self):
-        """mmaudio_mode input should be present with replace/mix choices."""
+    def test_audio_output_mode_input_exists(self):
+        """audio_output_mode input should be present with auto/replace/mix/save_only choices."""
         pytest.importorskip("torch")
         from nodes.agent_node import FFMPEGAgentNode
         inputs = FFMPEGAgentNode.INPUT_TYPES()
-        # mmaudio_mode is an optional advanced parameter
-        assert "mmaudio_mode" in inputs["optional"]
-        choices = inputs["optional"]["mmaudio_mode"][0]
+        # audio_output_mode is an optional advanced parameter
+        assert "audio_output_mode" in inputs["optional"]
+        choices = inputs["optional"]["audio_output_mode"][0]
+        assert "auto" in choices
         assert "replace" in choices
         assert "mix" in choices
+        assert "save_only" in choices
 
 
 # ── In-Process Model API Tests ─────────────────────────────────────

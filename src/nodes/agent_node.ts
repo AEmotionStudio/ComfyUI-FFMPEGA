@@ -433,12 +433,12 @@ export function registerAgentNode(
         const logUsageWidget = this.widgets?.find((w: ComfyWidget) => w.name === "log_usage");
         const allowDownloadsWidget = this.widgets?.find((w: ComfyWidget) => w.name === "allow_model_downloads");
         const fluxSmoothingWidget = this.widgets?.find((w: ComfyWidget) => w.name === "flux_smoothing");
-        const mmaudioModeWidget = this.widgets?.find((w: ComfyWidget) => w.name === "mmaudio_mode");
+        const audioOutputModeWidget = this.widgets?.find((w: ComfyWidget) => w.name === "audio_output_mode");
         const marigoldOutputWidget = this.widgets?.find((w: ComfyWidget) => w.name === "marigold_output_type");
         const vdaEncoderWidget = this.widgets?.find((w: ComfyWidget) => w.name === "video_depth_encoder");
         const vdaColormapWidget = this.widgets?.find((w: ComfyWidget) => w.name === "video_depth_colormap");
 
-        /** Show/hide marigold, VDA, upscale, and ACE-Step widgets based on no_llm_mode value */
+        /** Show/hide mode-specific widgets based on no_llm_mode value */
         function updateNoLlmModeVisibility(): void {
             // Use dynamic lookups to avoid temporal dead zone issues
             const adv = node.widgets?.find((w: ComfyWidget) => w.name === "advanced_options");
@@ -448,46 +448,93 @@ export function registerAgentNode(
             const noLlmMode = node.widgets?.find((w: ComfyWidget) => w.name === "no_llm_mode");
             const mode = isNone ? String(noLlmMode?.value ?? "manual") : "";
 
+            // --- Mode-specific sub-widgets (only show for matching mode) ---
+
             const showMarigold = showAdvanced && mode === "marigold";
             const showVda = showAdvanced && mode === "video_depth";
             const showUpscale = showAdvanced && mode === "ai_upscale";
             const showRembg = showAdvanced && mode === "rembg";
             const showWhisper = showAdvanced && (mode === "transcribe" || mode === "karaoke_subtitles");
             const showAceStep = showAdvanced && mode === "ace_step";
+            const showOnionSkin = showAdvanced && mode === "onion_skin";
+            const showComparison = showAdvanced && mode === "comparison";
+            const showSamAudio = showAdvanced && mode === "audio_separate";
+            const showNormalcrafter = showAdvanced && mode === "normalcrafter";
+            const showFluxKleinMode = showAdvanced && mode === "flux_klein";
+            const showKiwiEdit = showAdvanced && mode === "kiwi_edit";
 
+            // Marigold
             const mw = node.widgets?.find((w: ComfyWidget) => w.name === "marigold_output_type");
+            const mc = node.widgets?.find((w: ComfyWidget) => w.name === "marigold_colormap");
+            if (mw) toggleWidget(mw, showMarigold);
+            if (mc) toggleWidget(mc, showMarigold && String(mw?.value) === "depth");
+
+            // Video Depth Anything
             const ve = node.widgets?.find((w: ComfyWidget) => w.name === "video_depth_encoder");
             const vc = node.widgets?.find((w: ComfyWidget) => w.name === "video_depth_colormap");
-            const um = node.widgets?.find((w: ComfyWidget) => w.name === "upscale_model");
-            const us = node.widgets?.find((w: ComfyWidget) => w.name === "upscale_scale");
-            const rm = node.widgets?.find((w: ComfyWidget) => w.name === "rembg_model");
-            const rb = node.widgets?.find((w: ComfyWidget) => w.name === "rembg_background");
-            const wd = node.widgets?.find((w: ComfyWidget) => w.name === "whisper_device");
-            const wm = node.widgets?.find((w: ComfyWidget) => w.name === "whisper_model");
-            if (mw) toggleWidget(mw, showMarigold);
             if (ve) toggleWidget(ve, showVda);
             if (vc) toggleWidget(vc, showVda);
+
+            // AI Upscale
+            const um = node.widgets?.find((w: ComfyWidget) => w.name === "upscale_model");
+            const us = node.widgets?.find((w: ComfyWidget) => w.name === "upscale_scale");
+            const sr = node.widgets?.find((w: ComfyWidget) => w.name === "seedvr_resolution");
+            const bb = node.widgets?.find((w: ComfyWidget) => w.name === "blockswap_blocks");
+            const rq = node.widgets?.find((w: ComfyWidget) => w.name === "rtx_quality");
             if (um) toggleWidget(um, showUpscale);
-            if (us) toggleWidget(us, showUpscale);
+            // Model-specific widget visibility
+            const modelVal = String(um?.value ?? "");
+            const isSeedvr = showUpscale && modelVal.startsWith("seedvr2");
+            const isRtxVsr = showUpscale && modelVal === "rtx_vsr";
+            const isGanModel = showUpscale && !isSeedvr && !isRtxVsr;
+            if (us) toggleWidget(us, isGanModel || isRtxVsr);  // scale for GAN + RTX
+            if (sr) toggleWidget(sr, isSeedvr);                 // resolution for SeedVR2
+            if (bb) toggleWidget(bb, isSeedvr);                 // blockswap for SeedVR2
+            if (rq) toggleWidget(rq, isRtxVsr);                 // quality for RTX VSR
+
+            // Rembg
+            const rm = node.widgets?.find((w: ComfyWidget) => w.name === "rembg_model");
+            const rb = node.widgets?.find((w: ComfyWidget) => w.name === "rembg_background");
             if (rm) toggleWidget(rm, showRembg);
             if (rb) toggleWidget(rb, showRembg);
+
+            // Whisper (transcribe / karaoke)
+            const wd = node.widgets?.find((w: ComfyWidget) => w.name === "whisper_device");
+            const wm = node.widgets?.find((w: ComfyWidget) => w.name === "whisper_model");
             if (wd) toggleWidget(wd, showWhisper);
             if (wm) toggleWidget(wm, showWhisper);
 
-            // SAM-Audio model selector
-            const showSamAudio = showAdvanced && mode === "audio_separate";
+            // SAM-Audio
             const sam = node.widgets?.find((w: ComfyWidget) => w.name === "sam_audio_model");
             if (sam) toggleWidget(sam, showSamAudio);
 
-            // NormalCrafter resolution selector
-            const showNormalcrafter = showAdvanced && mode === "normalcrafter";
+            // NormalCrafter
             const nc = node.widgets?.find((w: ComfyWidget) => w.name === "normalcrafter_max_res");
             if (nc) toggleWidget(nc, showNormalcrafter);
 
-            // FLUX Klein model variant selector
-            const showFluxKlein = showAdvanced && mode === "flux_klein";
+            // FLUX Klein model variant
             const fkm = node.widgets?.find((w: ComfyWidget) => w.name === "flux_klein_model");
-            if (fkm) toggleWidget(fkm, showFluxKlein);
+            if (fkm) toggleWidget(fkm, showFluxKleinMode);
+
+            // Kiwi-Edit widgets
+            const kiwiWidgetNames = [
+                "kiwi_model", "kiwi_precision", "kiwi_resolution",
+                "kiwi_max_frames",
+                "kiwi_steps", "kiwi_guidance", "kiwi_block_swap",
+                "kiwi_long_video", "kiwi_seed", "kiwi_flow_shift",
+                "kiwi_task_type", "kiwi_scheduler",
+            ];
+            for (const name of kiwiWidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showKiwiEdit);
+            }
+            // kiwi_width / kiwi_height only visible when kiwi_resolution = "custom"
+            const kiwiRes = node.widgets?.find((ww: ComfyWidget) => ww.name === "kiwi_resolution");
+            const showKiwiCustom = showKiwiEdit && String(kiwiRes?.value) === "custom";
+            const kw = node.widgets?.find((ww: ComfyWidget) => ww.name === "kiwi_width");
+            const kh = node.widgets?.find((ww: ComfyWidget) => ww.name === "kiwi_height");
+            if (kw) toggleWidget(kw, showKiwiCustom);
+            if (kh) toggleWidget(kh, showKiwiCustom);
 
             // ACE-Step widgets
             const aceWidgetNames = [
@@ -500,27 +547,88 @@ export function registerAgentNode(
             }
 
             // Onion Skin widgets
-            const showOnionSkin = showAdvanced && mode === "onion_skin";
             const onionWidgetNames = ["onion_blend_mode", "onion_opacity", "onion_decay"];
             for (const name of onionWidgetNames) {
                 const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
                 if (w) toggleWidget(w, showOnionSkin);
             }
+
+            // Comparison widgets
+            const comparisonWidgetNames = [
+                "comparison_style", "comparison_labels",
+                "comparison_label_a", "comparison_label_b",
+            ];
+            for (const name of comparisonWidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showComparison);
+            }
+
+            // LivePortrait expression controls (animate_portrait mode)
+            const showLivePortrait = showAdvanced && mode === "animate_portrait";
+            const lpWidgetNames = [
+                "lp_rotate_pitch", "lp_rotate_yaw", "lp_rotate_roll",
+                "lp_blink", "lp_eyebrow", "lp_wink",
+                "lp_pupil_x", "lp_pupil_y",
+                "lp_aaa", "lp_eee", "lp_woo", "lp_smile",
+                "lp_retargeting_eyes", "lp_retargeting_mouth",
+                "lp_crop_factor",
+                "lp_expression_preset", "lp_save_expression",
+                "lp_sample_image", "lp_sample_ratio", "lp_sample_parts",
+            ];
+            for (const name of lpWidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showLivePortrait);
+            }
+
+            // --- Widgets that are relevant to LLM mode or specific no-LLM modes ---
+            // These should hide when a no-LLM mode doesn't use them.
+
+            // use_sam3 toggle: shown for eligible no-LLM modes
+            const sam3EligibleModes = new Set([
+                "lip_sync", "animate_portrait", "marigold", "normalcrafter",
+                "video_depth", "flux_klein", "kiwi_edit", "minimax_remover", "ai_upscale",
+                "rembg", "onion_skin", "comparison",
+            ]);
+            const showUseSam3 = showAdvanced && sam3EligibleModes.has(mode);
+            const useSam3Widget = node.widgets?.find((w: ComfyWidget) => w.name === "use_sam3");
+            if (useSam3Widget) toggleWidget(useSam3Widget, showUseSam3);
+            const useSam3On = showUseSam3 && Boolean(useSam3Widget?.value);
+
+            // SAM3 config widgets: show for sam3_masking mode, LLM mode, OR when use_sam3 is on
+            const showSam3 = showAdvanced && (!isNone || mode === "sam3_masking" || useSam3On);
+            for (const wName of ["sam3_max_objects", "sam3_det_threshold", "mask_output_type"]) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === wName);
+                if (w) toggleWidget(w, showSam3);
+            }
+
+            // use_flux_klein / use_kiwi_edit / use_minimax_remover: only relevant for LLM mode
+            const showLlmToggles = showAdvanced && !isNone;
+            for (const wName of ["use_flux_klein", "use_kiwi_edit", "use_minimax_remover"]) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === wName);
+                if (w) toggleWidget(w, showLlmToggles);
+            }
+            // flux_smoothing depends on use_flux_klein being on AND visible
+            const fluxKleinWidget = node.widgets?.find((w: ComfyWidget) => w.name === "use_flux_klein");
+            const fsw = node.widgets?.find((w: ComfyWidget) => w.name === "flux_smoothing");
+            if (fsw) toggleWidget(fsw, showLlmToggles && Boolean(fluxKleinWidget?.value));
+
+            // audio_output_mode: for all audio-related modes + LLM mode
+            const _AUDIO_MODES = new Set(["generate_audio", "generate_music", "audio_inpaint", "audio_separate", "ace_step"]);
+            const showAudioMode = showAdvanced && (!isNone || _AUDIO_MODES.has(mode));
+            const mmw = node.widgets?.find((w: ComfyWidget) => w.name === "audio_output_mode");
+            if (mmw) toggleWidget(mmw, showAudioMode);
+
+            // subtitle_path: relevant for transcribe, karaoke, manual, AND LLM mode
+            const showSubtitle = showAdvanced && (!isNone || mode === "manual" || mode === "transcribe" || mode === "karaoke_subtitles");
+            const sw = node.widgets?.find((w: ComfyWidget) => w.name === "subtitle_path");
+            if (sw) toggleWidget(sw, showSubtitle);
         }
 
         function updateAdvancedVisibility(): void {
             const show = Boolean(advancedWidget?.value);
             if (previewWidget) toggleWidget(previewWidget, show);
-            if (subtitleWidget) toggleWidget(subtitleWidget, show);
             if (crfWidget) toggleWidget(crfWidget, show);
             if (encodingWidget) toggleWidget(encodingWidget, show);
-            if (sam3MaxObjWidget) toggleWidget(sam3MaxObjWidget, show);
-            if (sam3ThreshWidget) toggleWidget(sam3ThreshWidget, show);
-            if (maskTypeWidget) toggleWidget(maskTypeWidget, show);
-            const fluxKleinWidget = node.widgets?.find((w: ComfyWidget) => w.name === "use_flux_klein");
-            const showFlux = show && Boolean(fluxKleinWidget?.value);
-            if (fluxSmoothingWidget) toggleWidget(fluxSmoothingWidget, showFlux);
-            if (mmaudioModeWidget) toggleWidget(mmaudioModeWidget, show);
             if (batchWidget) toggleWidget(batchWidget, show);
             const showBatch = show && Boolean(batchWidget?.value);
             if (folderWidget) toggleWidget(folderWidget, showBatch);
@@ -529,6 +637,7 @@ export function registerAgentNode(
             if (trackTokensWidget) toggleWidget(trackTokensWidget, show);
             if (logUsageWidget) toggleWidget(logUsageWidget, show);
             if (allowDownloadsWidget) toggleWidget(allowDownloadsWidget, show);
+            // Mode-specific widgets are handled inside updateNoLlmModeVisibility
             updateNoLlmModeVisibility();
             fitHeight();
         }
@@ -548,6 +657,46 @@ export function registerAgentNode(
             const origFluxCb = fluxKleinToggle.callback;
             fluxKleinToggle.callback = function (...args: unknown[]) {
                 origFluxCb?.apply(this, args);
+                updateAdvancedVisibility();
+            };
+        }
+
+        // --- use_sam3 → SAM3 sub-widget visibility ---
+        const useSam3Toggle = this.widgets?.find((w: ComfyWidget) => w.name === "use_sam3");
+        if (useSam3Toggle) {
+            const origSam3Cb = useSam3Toggle.callback;
+            useSam3Toggle.callback = function (...args: unknown[]) {
+                origSam3Cb?.apply(this, args);
+                updateAdvancedVisibility();
+            };
+        }
+
+        // --- upscale_model → blockswap_blocks visibility ---
+        const upscaleModelToggle = this.widgets?.find((w: ComfyWidget) => w.name === "upscale_model");
+        if (upscaleModelToggle) {
+            const origUpscaleCb = upscaleModelToggle.callback;
+            upscaleModelToggle.callback = function (...args: unknown[]) {
+                origUpscaleCb?.apply(this, args);
+                updateAdvancedVisibility();
+            };
+        }
+
+        // --- kiwi_resolution → kiwi_width / kiwi_height visibility ---
+        const kiwiResolutionToggle = this.widgets?.find((w: ComfyWidget) => w.name === "kiwi_resolution");
+        if (kiwiResolutionToggle) {
+            const origKiwiResCb = kiwiResolutionToggle.callback;
+            kiwiResolutionToggle.callback = function (...args: unknown[]) {
+                origKiwiResCb?.apply(this, args);
+                updateAdvancedVisibility();
+            };
+        }
+
+        // --- marigold_output_type → colormap visibility ---
+        const marigoldTypeWidget = this.widgets?.find((w: ComfyWidget) => w.name === "marigold_output_type");
+        if (marigoldTypeWidget) {
+            const origMtCb = marigoldTypeWidget.callback;
+            marigoldTypeWidget.callback = function (...args: unknown[]) {
+                origMtCb?.apply(this, args);
                 updateAdvancedVisibility();
             };
         }

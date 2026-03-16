@@ -24,6 +24,18 @@ from . import batch_processor as _bp
 from . import pipeline_assembler as _pa
 
 
+def _get_expression_presets() -> list[str]:
+    """List available expression preset names for the dropdown widget."""
+    try:
+        try:
+            from core.expression_presets import list_expressions
+        except ImportError:
+            from ..core.expression_presets import list_expressions  # type: ignore
+        return list_expressions()
+    except Exception:
+        return []
+
+
 class FFMPEGAgentNode:
     """Main FFMPEG Agent node that transforms natural language prompts into video edits."""
 
@@ -135,7 +147,7 @@ class FFMPEGAgentNode:
                     "tooltip": "Absolute path to the source video file. Used as the ffmpeg input unless images are connected.",
                 }),
                 "llm_model": (all_models, {
-                    "default": "gemini-cli" if "gemini-cli" in all_models else (ollama_models[0] if ollama_models != cls.FALLBACK_OLLAMA_MODELS else "none"),
+                    "default": "none",
                     "tooltip": "AI model for interpreting your prompt. "
                                "CLI models (gemini-cli, claude-cli, etc.) use locally installed CLI tools — no API key needed. "
                                "Ollama models run locally via the Ollama server. "
@@ -143,7 +155,7 @@ class FFMPEGAgentNode:
                                "Select 'custom' to type any model name manually. "
                                "Select 'none' to skip the LLM entirely and use no_llm_mode instead (manual pipeline, SAM3, Whisper, or MMAudio).",
                 }),
-                "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles", "generate_audio", "generate_music", "audio_inpaint", "audio_separate", "ace_step", "lip_sync", "animate_portrait", "marigold", "normalcrafter", "video_depth", "flux_klein", "minimax_remover", "ai_upscale", "rembg", "onion_skin"], {
+                "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles", "generate_audio", "generate_music", "audio_inpaint", "audio_separate", "ace_step", "lip_sync", "animate_portrait", "marigold", "normalcrafter", "video_depth", "flux_klein", "kiwi_edit", "minimax_remover", "ai_upscale", "rembg", "onion_skin", "comparison"], {
                     "default": "manual",
                     "tooltip": "What to do when llm_model is 'none'. "
                                "'manual' runs the Effects Builder pipeline directly (no AI). "
@@ -161,7 +173,9 @@ class FFMPEGAgentNode:
                                "'video_depth' runs Video Depth Anything for temporally-consistent depth — choose encoder via video_depth_encoder. "
                                "'flux_klein' runs FLUX Klein editing directly — prompt is the edit instruction, works on images and videos (full-frame, no mask needed). "
                                "'rembg' removes the video background using AI segmentation — choose model via rembg_model and background via rembg_background. "
-                               "'onion_skin' applies temporal ghosting (onion skin) — adjust blend mode, opacity, and trail decay in advanced options.",
+                               "'onion_skin' applies temporal ghosting (onion skin) — adjust blend mode, opacity, and trail decay in advanced options. "
+                               "'comparison' creates a comparison video from two inputs (before/after) — connect video_a as the 'after' video. "
+                               "Styles: swipe, split, side_by_side, diagonal, circular_reveal, difference.",
                 }),
                 "quality_preset": (cls.QUALITY_PRESETS, {
                     "default": "standard",
@@ -320,6 +334,17 @@ class FFMPEGAgentNode:
                     "tooltip": "Mask preview output format. 'black_white' outputs a raw B&W mask video (white = detected object) for use in external compositing. 'colored_overlay' composites colored SAM3-style regions + contours onto the video.",
                 }),
 
+                # ── Advanced: SAM3 Pre-Masking for No-LLM Modes ──────────
+                "use_sam3": ("BOOLEAN", {
+                    "default": False,
+                    "label_on": "SAM3 On",
+                    "label_off": "SAM3 Off",
+                    "tooltip": "Enable SAM3 pre-masking for no-LLM modes. When ON, the prompt text is used as a SAM3 target "
+                               "to mask specific objects before the effect runs. The effect is then composited onto the original "
+                               "via the mask. Works with: lip_sync, animate_portrait, marigold, normalcrafter, video_depth, "
+                               "flux_klein, minimax_remover, ai_upscale, rembg, onion_skin, comparison.",
+                }),
+
                 # ── Advanced: FLUX Klein ──────────────────────────────────
                 "use_flux_klein": ("BOOLEAN", {
                     "default": False,
@@ -340,6 +365,129 @@ class FFMPEGAgentNode:
                                "Run scripts/convert_flux_klein_fp8.py to create the FP8 model.",
                 }),
 
+                # ── Advanced: Kiwi-Edit ──────────────────────────────────
+                "use_kiwi_edit": ("BOOLEAN", {
+                    "default": False,
+                    "label_on": "Kiwi On",
+                    "label_off": "Kiwi Off",
+                    "tooltip": "Enable Kiwi-Edit 5B for AI-powered video editing (auto_mask:effect=edit). "
+                               "Provides native video-level editing with temporal consistency. "
+                               "Takes priority over FLUX Klein for edit effects when both are enabled. "
+                               "OFF by default to avoid high VRAM usage (~10–16 GB).",
+                }),
+                "kiwi_model": (["auto", "instruct", "reference", "instruct_reference"], {
+                    "default": "auto",
+                    "tooltip": "Kiwi-Edit model variant (used in 'kiwi_edit' no_llm_mode). "
+                               "'auto' = auto-select based on inputs (prompt → instruct, ref image → reference, both → instruct_reference). "
+                               "'instruct' = text instruction only. "
+                               "'reference' = reference image only. "
+                               "'instruct_reference' = both text + reference image.",
+                }),
+                "kiwi_precision": (["auto", "fp8", "bf16"], {
+                    "default": "auto",
+                    "tooltip": "Kiwi-Edit weight precision. "
+                               "'auto' = prefer FP8 if available, fall back to BF16 (~10 GB). "
+                               "'fp8' = FP8 scaled (~5 GB, half VRAM). "
+                               "'bf16' = full BF16 precision (~10 GB). "
+                               "Run scripts/convert_kiwi_edit_fp8.py to create the FP8 model.",
+                }),
+                "kiwi_resolution": (["auto", "480p", "512", "640", "720p", "custom"], {
+                    "default": "640",
+                    "tooltip": "Kiwi-Edit output resolution. "
+                               "'auto' = match input resolution (capped at 720p). "
+                               "'480p' = 480×640 (fast, lower VRAM). "
+                               "'512' = 512×512 (fast, square). "
+                               "'640' = 640×640 (balanced, recommended). "
+                               "'720p' = 720×1280 (highest quality, high VRAM). "
+                               "'custom' = use kiwi_width/kiwi_height values.",
+                }),
+                "kiwi_width": ("INT", {
+                    "default": 640,
+                    "min": 128,
+                    "max": 1920,
+                    "step": 16,
+                    "tooltip": "Custom width for Kiwi-Edit output (only used when kiwi_resolution='custom'). Must be a multiple of 16.",
+                }),
+                "kiwi_height": ("INT", {
+                    "default": 640,
+                    "min": 128,
+                    "max": 1920,
+                    "step": 16,
+                    "tooltip": "Custom height for Kiwi-Edit output (only used when kiwi_resolution='custom'). Must be a multiple of 16.",
+                }),
+                "kiwi_max_frames": ("INT", {
+                    "default": 0,
+                    "min": 0,
+                    "max": 161,
+                    "step": 1,
+                    "tooltip": "Maximum frames per Kiwi-Edit processing chunk. "
+                               "0 = auto (match input video frame count). "
+                               "Higher = more temporal context but more VRAM. Lower = faster with less VRAM.",
+                }),
+                "kiwi_steps": ("INT", {
+                    "default": 50,
+                    "min": 1,
+                    "max": 100,
+                    "step": 1,
+                    "tooltip": "Number of inference steps for Kiwi-Edit. Default 50. Lower = faster but lower quality.",
+                }),
+                "kiwi_guidance": ("FLOAT", {
+                    "default": 5.0,
+                    "min": 1.0,
+                    "max": 20.0,
+                    "step": 0.5,
+                    "tooltip": "Classifier-free guidance scale for Kiwi-Edit. Default 5.0. Higher = stronger prompt adherence.",
+                }),
+                "kiwi_block_swap": ("INT", {
+                    "default": 0,
+                    "min": 0,
+                    "max": 40,
+                    "step": 1,
+                    "tooltip": "Kiwi-Edit BlockSwap: number of transformer blocks to offload to CPU. "
+                               "0 = disabled (keep on GPU). 4-16 = saves VRAM for lower-end cards.",
+                }),
+                "kiwi_long_video": ("BOOLEAN", {
+                    "default": False,
+                    "label_on": "Long Video On",
+                    "label_off": "Long Video Off",
+                    "tooltip": "Enable chunked processing for videos longer than kiwi_max_frames. "
+                               "Splits into overlapping chunks, processes each, and stitches with crossfade blending.",
+                }),
+                "kiwi_seed": ("INT", {
+                    "default": 0,
+                    "min": 0,
+                    "max": 2147483647,
+                    "step": 1,
+                    "tooltip": "Random seed for Kiwi-Edit. 0 = random seed each run. "
+                               "Set a fixed value for reproducible results.",
+                }),
+                "kiwi_flow_shift": ("FLOAT", {
+                    "default": 5.0,
+                    "min": 1.0,
+                    "max": 15.0,
+                    "step": 0.5,
+                    "tooltip": "Flow matching shift for the UniPC scheduler. Default 5.0. "
+                               "Higher values = more aggressive denoising (stronger edits). "
+                               "Lower values = subtler, more conservative changes.",
+                }),
+                "kiwi_task_type": (["auto", "global_style", "local_change", "background_change", "local_remove", "local_add"], {
+                    "default": "auto",
+                    "tooltip": "Override automatic task type detection for prompt enhancement. "
+                               "'auto' = detect from keywords in prompt. "
+                               "'global_style' = style/aesthetic changes (e.g. 'make it look like a painting'). "
+                               "'local_change' = change a specific object (e.g. 'change shirt to red'). "
+                               "'background_change' = change background only. "
+                               "'local_remove' = remove an object. "
+                               "'local_add' = add a new object.",
+                }),
+                "kiwi_scheduler": (["unipc", "euler", "heun", "dpm++"], {
+                    "default": "unipc",
+                    "tooltip": "Scheduler (sampler) for Kiwi-Edit denoising. "
+                               "'unipc' = UniPC predictor-corrector (default, fast convergence at 30 steps). "
+                               "'euler' = Flow Match Euler (original model default, needs ~50 steps). "
+                               "'heun' = Flow Match Heun (higher quality per step, 2x cost). "
+                               "'dpm++' = DPM++ Multistep (alternative fast solver).",
+                }),
                 # ── Advanced: MiniMax-Remover ─────────────────────────────
                 "use_minimax_remover": ("BOOLEAN", {
                     "default": False,
@@ -368,6 +516,13 @@ class FFMPEGAgentNode:
                                "'appearance' = albedo + roughness + metallicity. "
                                "'lighting' = albedo + shading + residual.",
                 }),
+                "marigold_colormap": (["Spectral", "gray", "inferno", "turbo", "plasma", "magma", "viridis", "hot", "bone"], {
+                    "default": "Spectral",
+                    "tooltip": "Depth map colormap (used in 'marigold' no_llm_mode, depth output only). "
+                               "'Spectral' = standard red-to-blue depth map. "
+                               "'gray' = B&W depth (for ControlNet/compositing). "
+                               "Others are artistic colormaps for creative visualization.",
+                }),
 
                 # ── Advanced: NormalCrafter ────────────────────────────────
                 "normalcrafter_max_res": (["auto", "1024", "768", "512"], {
@@ -395,19 +550,49 @@ class FFMPEGAgentNode:
                 }),
 
                 # ── Advanced: AI Upscale ───────────────────────────────────
-                "upscale_model": (["realesrgan_x4plus", "realesrgan_x4_anime", "hat_x4", "dat_x4", "swinir_x4"], {
+                "upscale_model": (["realesrgan_x4plus", "realesrgan_x4_anime", "hat_x4", "dat_x4", "swinir_x4", "seedvr2_3b_fp8", "seedvr2_7b_gguf", "rtx_vsr"], {
                     "default": "realesrgan_x4plus",
                     "tooltip": "AI upscaler model (used in 'ai_upscale' no_llm_mode). "
                                "'realesrgan_x4plus' = fast general-purpose. "
                                "'realesrgan_x4_anime' = anime/cartoon. "
                                "'hat_x4' = SOTA quality (Real-HAT-GAN). "
                                "'dat_x4' = balanced (DAT-2). "
-                               "'swinir_x4' = classical SR.",
+                               "'swinir_x4' = classical SR. "
+                               "'seedvr2_3b_fp8' = diffusion upscaler, great quality (~8-12 GB VRAM). "
+                               "'seedvr2_7b_gguf' = highest quality diffusion upscaler (~8-12 GB VRAM). "
+                               "'rtx_vsr' = NVIDIA RTX Video Super Resolution (hardware-accelerated, RTX GPU required).",
                 }),
                 "upscale_scale": (["4", "2"], {
                     "default": "4",
                     "tooltip": "AI upscale factor (used in 'ai_upscale' no_llm_mode). "
                                "'4' = 4× resolution. '2' = 2× resolution.",
+                }),
+                "seedvr_resolution": (["1080", "720", "1440", "2160"], {
+                    "default": "1080",
+                    "tooltip": "SeedVR2 target output resolution (shortest edge, in pixels). "
+                               "'1080' = 1080p (default, recommended). "
+                               "'720' = 720p (faster, lower VRAM). "
+                               "'1440' = 1440p/2K (higher quality). "
+                               "'2160' = 4K (highest quality, high VRAM). "
+                               "Only applies when a SeedVR2 upscale model is selected.",
+                }),
+                "blockswap_blocks": ("INT", {
+                    "default": 0,
+                    "min": 0,
+                    "max": 32,
+                    "step": 1,
+                    "tooltip": "SeedVR2 BlockSwap: number of DiT blocks to offload to CPU during inference. "
+                               "0 = disabled (keep everything on GPU, recommended for ≥16 GB VRAM). "
+                               "4-8 = saves ~1-3 GB VRAM (for 8-12 GB cards). "
+                               "Only applies when a SeedVR2 upscale model is selected.",
+                }),
+                "rtx_quality": (["ULTRA", "HIGH", "MEDIUM", "LOW", "DENOISE_ULTRA", "DENOISE_HIGH", "DENOISE_MEDIUM", "DENOISE_LOW", "DEBLUR_ULTRA", "DEBLUR_HIGH", "DEBLUR_MEDIUM", "DEBLUR_LOW"], {
+                    "default": "ULTRA",
+                    "tooltip": "RTX VSR quality preset (used when 'rtx_vsr' upscale model is selected). "
+                               "ULTRA/HIGH/MEDIUM/LOW = upscale quality levels. "
+                               "DENOISE_* = same-resolution denoising. "
+                               "DEBLUR_* = same-resolution deblurring. "
+                               "Requires NVIDIA RTX GPU with Tensor Cores.",
                 }),
 
                 # ── Advanced: Rembg Background Removal ─────────────────────
@@ -429,12 +614,15 @@ class FFMPEGAgentNode:
                                "Other colors fill the background with a solid color.",
                 }),
 
-                # ── Advanced: MMAudio ─────────────────────────────────────
-                "mmaudio_mode": (["replace", "mix"], {
-                    "default": "replace",
-                    "tooltip": "How to combine AI-generated audio with existing audio (used in 'generate_audio' no_llm_mode). "
+                # ── Advanced: Audio Output Mode ───────────────────────────
+                "audio_output_mode": (["auto", "replace", "mix", "save_only"], {
+                    "default": "auto",
+                    "tooltip": "How to combine AI-generated audio with existing audio. "
+                               "Applies to all audio-generating modes: generate_audio (MMAudio), generate_music (AudioX), audio_inpaint (AudioX), audio_separate (SAM-Audio), ace_step. "
+                               "'auto' lets the LLM decide in agentic mode; defaults to 'replace' in no-LLM modes. "
                                "'replace' replaces existing audio entirely. "
-                               "'mix' blends generated audio with the original track.",
+                               "'mix' blends generated audio with the original track. "
+                               "'save_only' generates the audio file without muxing it into the video.",
                 }),
 
                 # ── Advanced: Onion Skin ──────────────────────────────────
@@ -461,6 +649,30 @@ class FFMPEGAgentNode:
                     "tooltip": "Temporal decay rate for ghost trails (used in 'onion_skin' no_llm_mode). "
                                "Higher values = longer, more persistent trails. "
                                "0.90 = very short. 0.97 = medium. 0.999 = long persistence.",
+                }),
+
+                # ── Advanced: Comparison ─────────────────────────────────
+                "comparison_style": (["swipe", "split", "side_by_side", "diagonal", "circular_reveal", "difference"], {
+                    "default": "swipe",
+                    "tooltip": "Comparison style (used in 'comparison' no_llm_mode). "
+                               "'swipe' = animated divider sweeps left-to-right. "
+                               "'split' = static 50/50 with divider line. "
+                               "'side_by_side' = full frames side by side. "
+                               "'diagonal' = diagonal split. "
+                               "'circular_reveal' = expanding circle reveals 'after'. "
+                               "'difference' = pixel difference visualization.",
+                }),
+                "comparison_labels": (["false", "true"], {
+                    "default": "false",
+                    "tooltip": "Show Before/After text labels on the comparison output (used in 'comparison' no_llm_mode).",
+                }),
+                "comparison_label_a": ("STRING", {
+                    "default": "Before",
+                    "tooltip": "Label for the main video (left / before) in comparison mode.",
+                }),
+                "comparison_label_b": ("STRING", {
+                    "default": "After",
+                    "tooltip": "Label for the video_a input (right / after) in comparison mode.",
                 }),
 
                 # ── Advanced: ACE-Step Music Generation ───────────────────
@@ -519,6 +731,98 @@ class FFMPEGAgentNode:
                     "placeholder": "e.g. 4/4, 3/4, 6/8",
                     "tooltip": "Target time signature for ACE-Step. "
                                "Leave empty for automatic. Only used when no_llm_mode = 'ace_step'.",
+                }),
+
+                # ── Advanced: LivePortrait expression controls ─────────────
+                "lp_rotate_pitch": ("FLOAT", {
+                    "default": 0.0, "min": -20.0, "max": 20.0, "step": 0.5,
+                    "tooltip": "Head pitch (nod up/down). Only for animate_portrait mode.",
+                }),
+                "lp_rotate_yaw": ("FLOAT", {
+                    "default": 0.0, "min": -20.0, "max": 20.0, "step": 0.5,
+                    "tooltip": "Head yaw (turn left/right). Only for animate_portrait mode.",
+                }),
+                "lp_rotate_roll": ("FLOAT", {
+                    "default": 0.0, "min": -20.0, "max": 20.0, "step": 0.5,
+                    "tooltip": "Head roll (tilt left/right). Only for animate_portrait mode.",
+                }),
+                "lp_blink": ("FLOAT", {
+                    "default": 0.0, "min": -20.0, "max": 5.0, "step": 0.5,
+                    "tooltip": "Eye blink (negative=close, positive=open). Only for animate_portrait mode.",
+                }),
+                "lp_eyebrow": ("FLOAT", {
+                    "default": 0.0, "min": -10.0, "max": 15.0, "step": 0.5,
+                    "tooltip": "Eyebrow raise/lower. Only for animate_portrait mode.",
+                }),
+                "lp_wink": ("FLOAT", {
+                    "default": 0.0, "min": 0.0, "max": 25.0, "step": 0.5,
+                    "tooltip": "Wink intensity. Only for animate_portrait mode.",
+                }),
+                "lp_pupil_x": ("FLOAT", {
+                    "default": 0.0, "min": -15.0, "max": 15.0, "step": 0.5,
+                    "tooltip": "Pupil horizontal (negative=left). Only for animate_portrait mode.",
+                }),
+                "lp_pupil_y": ("FLOAT", {
+                    "default": 0.0, "min": -15.0, "max": 15.0, "step": 0.5,
+                    "tooltip": "Pupil vertical (negative=up). Only for animate_portrait mode.",
+                }),
+                "lp_aaa": ("FLOAT", {
+                    "default": 0.0, "min": -30.0, "max": 120.0, "step": 1.0,
+                    "tooltip": "Mouth open (aaa shape). Only for animate_portrait mode.",
+                }),
+                "lp_eee": ("FLOAT", {
+                    "default": 0.0, "min": -20.0, "max": 15.0, "step": 0.5,
+                    "tooltip": "Mouth eee shape. Only for animate_portrait mode.",
+                }),
+                "lp_woo": ("FLOAT", {
+                    "default": 0.0, "min": -20.0, "max": 15.0, "step": 0.5,
+                    "tooltip": "Mouth woo/pucker shape. Only for animate_portrait mode.",
+                }),
+                "lp_smile": ("FLOAT", {
+                    "default": 0.0, "min": -0.3, "max": 1.3, "step": 0.05,
+                    "tooltip": "Smile intensity. Only for animate_portrait mode.",
+                }),
+                "lp_retargeting_eyes": ("FLOAT", {
+                    "default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05,
+                    "tooltip": "Eye retargeting (0=ignore driver eyes, 1=full). Only for animate_portrait mode.",
+                }),
+                "lp_retargeting_mouth": ("FLOAT", {
+                    "default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05,
+                    "tooltip": "Mouth retargeting (0=ignore driver mouth, 1=full). Only for animate_portrait mode.",
+                }),
+                "lp_crop_factor": ("FLOAT", {
+                    "default": 1.6, "min": 1.0, "max": 3.0, "step": 0.1,
+                    "tooltip": "Face crop expansion (larger=more context). Only for animate_portrait mode.",
+                }),
+                "lp_expression_preset": (["none"] + _get_expression_presets(), {
+                    "default": "none",
+                    "tooltip": "Load a saved expression preset. Overrides expression sliders with stored values. "
+                               "Only for animate_portrait mode.",
+                }),
+                "lp_save_expression": ("STRING", {
+                    "default": "",
+                    "multiline": False,
+                    "placeholder": "Enter name to save current sliders",
+                    "tooltip": "Type a preset name and run to save current expression slider values. "
+                               "Only for animate_portrait mode.",
+                }),
+                # ── Advanced: LivePortrait expression transfer ────────────
+                "lp_sample_image": ("STRING", {
+                    "default": "",
+                    "multiline": False,
+                    "placeholder": "Path to face image for expression transfer",
+                    "tooltip": "Sample face image whose expression will be transferred to the source. "
+                               "Only for animate_portrait mode.",
+                }),
+                "lp_sample_ratio": ("FLOAT", {
+                    "default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05,
+                    "tooltip": "Expression transfer blend ratio (0=source expression, 1=full sample expression). "
+                               "Only for animate_portrait mode.",
+                }),
+                "lp_sample_parts": (["all", "mouth_only", "eyes_only", "rotation_only"], {
+                    "default": "all",
+                    "tooltip": "Which parts to transfer: all, mouth_only, eyes_only, or rotation_only. "
+                               "Only for animate_portrait mode.",
                 }),
 
                 # ── Advanced: Batch processing ────────────────────────────
@@ -1007,9 +1311,10 @@ class FFMPEGAgentNode:
         mask_points: str = "",
         crop_data: str = "",
         use_flux_klein: bool = False,
+        use_kiwi_edit: bool = False,
         use_minimax_remover: bool = False,
         flux_smoothing: str = "none",
-        mmaudio_mode: str = "replace",
+        audio_output_mode: str = "auto",
         ace_negative_prompt: str = "",
         ace_cover_strength: float = 0.5,
         ace_steps: int = 8,
@@ -1085,6 +1390,7 @@ class FFMPEGAgentNode:
                 sam3_det_threshold=sam3_det_threshold,
                 mask_points=mask_points,
                 use_flux_klein=use_flux_klein,
+                use_kiwi_edit=use_kiwi_edit,
                 use_minimax_remover=use_minimax_remover,
                 flux_smoothing=flux_smoothing,
                 pipeline_json=pipeline_json,
@@ -1141,7 +1447,7 @@ class FFMPEGAgentNode:
 
         if not prompt.strip():
             # manual + whisper + lip_sync modes don't need a prompt
-            if llm_model != "none" or no_llm_mode not in ("manual", "transcribe", "karaoke_subtitles", "generate_audio", "generate_music", "audio_inpaint", "audio_separate", "ace_step", "lip_sync", "animate_portrait", "marigold", "normalcrafter", "video_depth", "minimax_remover", "ai_upscale", "rembg", "onion_skin"):
+            if llm_model != "none" or no_llm_mode not in ("manual", "transcribe", "karaoke_subtitles", "generate_audio", "generate_music", "audio_inpaint", "audio_separate", "ace_step", "lip_sync", "animate_portrait", "marigold", "normalcrafter", "video_depth", "kiwi_edit", "minimax_remover", "ai_upscale", "rembg", "onion_skin"):
                 raise ValueError("Prompt cannot be empty")
 
         # --- Analyze input video ---
@@ -1183,6 +1489,7 @@ class FFMPEGAgentNode:
                     sam3_det_threshold=sam3_det_threshold,
                     mask_points=mask_points,
                     use_flux_klein=use_flux_klein,
+                    use_kiwi_edit=use_kiwi_edit,
                     use_minimax_remover=use_minimax_remover,
                     flux_smoothing=flux_smoothing,
                     temp_video_from_images=temp_video_from_images,
@@ -1239,7 +1546,7 @@ class FFMPEGAgentNode:
             if no_llm_mode == "generate_audio":
                 result6 = await self._process_mmaudio_only(
                     prompt=prompt,
-                    mmaudio_mode=mmaudio_mode,
+                    audio_output_mode=audio_output_mode,
                     effective_video_path=effective_video_path,
                     video_metadata=video_metadata,
                     save_output=save_output,
@@ -1257,7 +1564,7 @@ class FFMPEGAgentNode:
             if no_llm_mode == "generate_music":
                 result6 = await self._process_audiox_music_only(
                     prompt=prompt,
-                    mmaudio_mode=mmaudio_mode,
+                    audio_output_mode=audio_output_mode,
                     effective_video_path=effective_video_path,
                     video_metadata=video_metadata,
                     save_output=save_output,
@@ -1275,6 +1582,7 @@ class FFMPEGAgentNode:
             if no_llm_mode == "audio_inpaint":
                 result6 = await self._process_audiox_inpaint_only(
                     prompt=prompt,
+                    audio_output_mode=audio_output_mode,
                     effective_video_path=effective_video_path,
                     video_metadata=video_metadata,
                     save_output=save_output,
@@ -1292,7 +1600,7 @@ class FFMPEGAgentNode:
             if no_llm_mode == "ace_step":
                 result6 = await self._process_ace_step_only(
                     prompt=prompt,
-                    mmaudio_mode=mmaudio_mode,
+                    audio_output_mode=audio_output_mode,
                     effective_video_path=effective_video_path,
                     video_metadata=video_metadata,
                     save_output=save_output,
@@ -1319,6 +1627,7 @@ class FFMPEGAgentNode:
             if no_llm_mode == "audio_separate":
                 result6 = await self._process_sam_audio_separate(
                     prompt=prompt,
+                    audio_output_mode=audio_output_mode,
                     effective_video_path=effective_video_path,
                     video_metadata=video_metadata,
                     save_output=save_output,
@@ -1332,6 +1641,32 @@ class FFMPEGAgentNode:
                     **kwargs,
                 )
                 return result6 + (mask_points or "",)
+
+            # ── SAM3 Pre-Masking for No-LLM Modes ──────────────────
+            # When use_sam3 is on and we have a prompt, pre-generate a
+            # SAM3 mask before the mode runs. After the mode produces
+            # its output, we composite via maskedmerge.
+            _SAM3_ELIGIBLE_MODES = {
+                "lip_sync", "animate_portrait", "marigold", "normalcrafter",
+                "video_depth", "flux_klein", "kiwi_edit", "minimax_remover",
+                "ai_upscale", "rembg", "onion_skin", "comparison",
+            }
+            _use_sam3 = bool(kwargs.pop("use_sam3", False))
+            _sam3_mask_path = None
+            if _use_sam3 and no_llm_mode in _SAM3_ELIGIBLE_MODES and _raw_prompt.strip():
+                _sam3_mask_path = _nollm.sam3_premask(
+                    video_path=effective_video_path,
+                    prompt=_raw_prompt,
+                    sam3_device=sam3_device,
+                    sam3_max_objects=sam3_max_objects,
+                    sam3_det_threshold=sam3_det_threshold,
+                )
+                if _sam3_mask_path:
+                    logger.info(
+                        "SAM3 pre-mask: will composite %s output over original",
+                        no_llm_mode,
+                    )
+
             # Lip sync mode (MuseTalk from connected audio_a)
             if no_llm_mode == "lip_sync":
                 result6 = await self._process_lip_sync_only(
@@ -1348,11 +1683,66 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
+                if _sam3_mask_path and result6[2]:
+                    _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
                 return result6 + (mask_points or "",)
             # Animate portrait mode (LivePortrait from connected video_a)
             if no_llm_mode == "animate_portrait":
                 # video_a is the driving video
                 driving_video = _all_video_paths[0] if _all_video_paths else ""
+
+                # Pop expression params from kwargs
+                _lp_vals = {
+                    "lp_rotate_pitch": float(kwargs.pop("lp_rotate_pitch", 0.0)),
+                    "lp_rotate_yaw": float(kwargs.pop("lp_rotate_yaw", 0.0)),
+                    "lp_rotate_roll": float(kwargs.pop("lp_rotate_roll", 0.0)),
+                    "lp_blink": float(kwargs.pop("lp_blink", 0.0)),
+                    "lp_eyebrow": float(kwargs.pop("lp_eyebrow", 0.0)),
+                    "lp_wink": float(kwargs.pop("lp_wink", 0.0)),
+                    "lp_pupil_x": float(kwargs.pop("lp_pupil_x", 0.0)),
+                    "lp_pupil_y": float(kwargs.pop("lp_pupil_y", 0.0)),
+                    "lp_aaa": float(kwargs.pop("lp_aaa", 0.0)),
+                    "lp_eee": float(kwargs.pop("lp_eee", 0.0)),
+                    "lp_woo": float(kwargs.pop("lp_woo", 0.0)),
+                    "lp_smile": float(kwargs.pop("lp_smile", 0.0)),
+                    "lp_retargeting_eyes": float(kwargs.pop("lp_retargeting_eyes", 1.0)),
+                    "lp_retargeting_mouth": float(kwargs.pop("lp_retargeting_mouth", 1.0)),
+                    "lp_crop_factor": float(kwargs.pop("lp_crop_factor", 1.6)),
+                }
+                _lp_preset = str(kwargs.pop("lp_expression_preset", "none"))
+                _lp_save = str(kwargs.pop("lp_save_expression", "")).strip()
+
+                # Load preset (overrides slider values)
+                if _lp_preset and _lp_preset != "none":
+                    try:
+                        try:
+                            from core.expression_presets import load_expression
+                        except ImportError:
+                            from ..core.expression_presets import load_expression  # type: ignore
+                        preset_data = load_expression(_lp_preset)
+                        if preset_data:
+                            logger.info("[animate_portrait] Loading preset '%s'", _lp_preset)
+                            for key, val in preset_data.items():
+                                lp_key = f"lp_{key}" if not key.startswith("lp_") else key
+                                if lp_key in _lp_vals:
+                                    _lp_vals[lp_key] = float(val)
+                    except Exception as e:
+                        logger.warning("[animate_portrait] Preset load failed: %s", e)
+
+                # Save current values as preset (if name provided)
+                if _lp_save:
+                    try:
+                        try:
+                            from core.expression_presets import save_expression
+                        except ImportError:
+                            from ..core.expression_presets import save_expression  # type: ignore
+                        # Strip lp_ prefix for storage
+                        save_data = {k.removeprefix("lp_"): v for k, v in _lp_vals.items()}
+                        save_expression(_lp_save, save_data)
+                        logger.info("[animate_portrait] Saved preset '%s'", _lp_save)
+                    except Exception as e:
+                        logger.warning("[animate_portrait] Preset save failed: %s", e)
+
                 result6 = await self._process_animate_portrait_only(
                     effective_video_path=effective_video_path,
                     video_metadata=video_metadata,
@@ -1363,10 +1753,16 @@ class FFMPEGAgentNode:
                     crf=crf,
                     encoding_preset=encoding_preset,
                     driving_video=driving_video,
+                    **_lp_vals,
+                    lp_sample_image=str(kwargs.pop("lp_sample_image", "")),
+                    lp_sample_ratio=float(kwargs.pop("lp_sample_ratio", 1.0)),
+                    lp_sample_parts=str(kwargs.pop("lp_sample_parts", "all")),
                     temp_video_from_images=temp_video_from_images,
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
+                if _sam3_mask_path and result6[2]:
+                    _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
                 return result6 + (mask_points or "",)
             # Marigold mode (dense vision analysis)
             if no_llm_mode == "marigold":
@@ -1380,10 +1776,13 @@ class FFMPEGAgentNode:
                     crf=crf,
                     encoding_preset=encoding_preset,
                     marigold_output_type=kwargs.pop("marigold_output_type", "depth"),
+                    marigold_colormap=kwargs.pop("marigold_colormap", "Spectral"),
                     temp_video_from_images=temp_video_from_images,
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
+                if _sam3_mask_path and result6[2]:
+                    _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
                 return result6 + (mask_points or "",)
             # NormalCrafter mode (temporally consistent video normals)
             if no_llm_mode == "normalcrafter":
@@ -1401,6 +1800,8 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
+                if _sam3_mask_path and result6[2]:
+                    _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
                 return result6 + (mask_points or "",)
             # Video Depth Anything mode (temporal depth estimation)
             if no_llm_mode == "video_depth":
@@ -1419,8 +1820,10 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
+                if _sam3_mask_path and result6[2]:
+                    _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
                 return result6 + (mask_points or "",)
-            # MiniMax-Remover mode (direct removal, no SAM3)
+            # MiniMax-Remover mode
             if no_llm_mode == "minimax_remover":
                 result6 = await self._process_minimax_remover_only(
                     prompt=prompt,
@@ -1436,8 +1839,10 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
+                if _sam3_mask_path and result6[2]:
+                    _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
                 return result6 + (mask_points or "",)
-            # FLUX Klein mode (direct editing, no SAM3)
+            # FLUX Klein mode
             if no_llm_mode == "flux_klein":
                 result6 = await self._process_flux_klein_only(
                     prompt=prompt,
@@ -1456,6 +1861,29 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
+                if _sam3_mask_path and result6[2]:
+                    _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
+                return result6 + (mask_points or "",)
+            # Kiwi-Edit mode (native video editing via instruction/reference)
+            if no_llm_mode == "kiwi_edit":
+                result6 = await self._process_kiwi_edit_only(
+                    prompt=prompt,
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
+                    image_a=image_a,
+                    _all_image_paths=_all_image_paths,
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    **kwargs,
+                )
+                if _sam3_mask_path and result6[2]:
+                    _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
                 return result6 + (mask_points or "",)
             # AI Upscale mode (spandrel-based super-resolution)
             if no_llm_mode == "ai_upscale":
@@ -1471,10 +1899,15 @@ class FFMPEGAgentNode:
                     upscale_model=kwargs.pop("upscale_model", "realesrgan_x4plus"),
                     upscale_scale=int(kwargs.pop("upscale_scale", "4")),
                     tile_size=int(kwargs.pop("tile_size", "512")),
+                    blockswap_blocks=int(kwargs.pop("blockswap_blocks", 0)),
+                    seedvr_resolution=int(kwargs.pop("seedvr_resolution", "1080")),
+                    rtx_quality=kwargs.pop("rtx_quality", "ULTRA"),
                     temp_video_from_images=temp_video_from_images,
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
+                if _sam3_mask_path and result6[2]:
+                    _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
                 return result6 + (mask_points or "",)
             # Rembg background removal mode
             if no_llm_mode == "rembg":
@@ -1493,6 +1926,8 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
+                if _sam3_mask_path and result6[2]:
+                    _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
                 return result6 + (mask_points or "",)
             # Onion Skin mode (temporal ghosting / composite)
             if no_llm_mode == "onion_skin":
@@ -1513,6 +1948,31 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
+                if _sam3_mask_path and result6[2]:
+                    _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
+                return result6 + (mask_points or "",)
+            # Comparison mode (A/B video comparison)
+            if no_llm_mode == "comparison":
+                result6 = await self._process_comparison_only(
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
+                    comparison_style=kwargs.pop("comparison_style", "swipe"),
+                    comparison_labels=str(kwargs.pop("comparison_labels", "false")).lower() in ("true", "1", "yes"),
+                    comparison_label_a=kwargs.pop("comparison_label_a", "Before"),
+                    comparison_label_b=kwargs.pop("comparison_label_b", "After"),
+                    _all_video_paths=_all_video_paths,
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    **kwargs,
+                )
+                if _sam3_mask_path and result6[2]:
+                    _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
                 return result6 + (mask_points or "",)
             # Text inputs connected → build a text overlay pipeline
             if _all_text_inputs:
@@ -1562,6 +2022,7 @@ class FFMPEGAgentNode:
                     sam3_det_threshold=sam3_det_threshold,
                     mask_points=mask_points,
                     use_flux_klein=use_flux_klein,
+                    use_kiwi_edit=use_kiwi_edit,
                     use_minimax_remover=use_minimax_remover,
                     flux_smoothing=flux_smoothing,
                     temp_video_from_images=temp_video_from_images,
@@ -1579,7 +2040,7 @@ class FFMPEGAgentNode:
                 "No-LLM 'manual' mode requires an Effects Builder node or "
                 "FFMPEGA Text node. Connect one to the pipeline_json or "
                 "text_a input, or switch no_llm_mode to 'sam3_masking', "
-                "'transcribe', 'karaoke_subtitles', 'generate_audio', 'generate_music', 'audio_inpaint', 'audio_separate', 'ace_step', 'lip_sync', 'marigold', 'normalcrafter', 'video_depth', 'flux_klein', 'minimax_remover', or 'ai_upscale'."
+                "'transcribe', 'karaoke_subtitles', 'generate_audio', 'generate_music', 'audio_inpaint', 'audio_separate', 'ace_step', 'lip_sync', 'marigold', 'normalcrafter', 'video_depth', 'flux_klein', 'kiwi_edit', 'minimax_remover', or 'ai_upscale'."
             )
         # --- Build connected-inputs context string ---
         connected_inputs_str = self._build_connected_inputs_summary(
@@ -1638,9 +2099,10 @@ class FFMPEGAgentNode:
             sam3_det_threshold=sam3_det_threshold,
             mask_points=mask_points,
             use_flux_klein=use_flux_klein,
+            use_kiwi_edit=use_kiwi_edit,
             use_minimax_remover=use_minimax_remover,
             flux_smoothing=flux_smoothing,
-            mmaudio_mode=mmaudio_mode,
+            audio_output_mode=audio_output_mode,
             composer=self.composer,
         )
 
@@ -1802,7 +2264,7 @@ class FFMPEGAgentNode:
     #  Effects Builder support                                             #
     # ------------------------------------------------------------------ #
 
-    async def _process_effects_pipeline(self, pipeline_json, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, whisper_device="cpu", whisper_model="large-v3", sam3_device="gpu", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", use_flux_klein=False, use_minimax_remover=False, flux_smoothing="none", temp_video_from_images=None, temp_video_with_audio=None, image_a=None, audio_a=None, _all_video_paths=None, _all_image_paths=None, _all_text_inputs=None, **kwargs):
+    async def _process_effects_pipeline(self, pipeline_json, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, whisper_device="cpu", whisper_model="large-v3", sam3_device="gpu", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", use_flux_klein=False, use_kiwi_edit=False, use_minimax_remover=False, flux_smoothing="none", temp_video_from_images=None, temp_video_with_audio=None, image_a=None, audio_a=None, _all_video_paths=None, _all_image_paths=None, _all_text_inputs=None, **kwargs):
         """Delegate to nollm_modes module."""
         return await _nollm.process_effects_pipeline(
             composer=self.composer, process_manager=self.process_manager,
@@ -1817,6 +2279,7 @@ class FFMPEGAgentNode:
             sam3_device=sam3_device, sam3_max_objects=sam3_max_objects,
             sam3_det_threshold=sam3_det_threshold, mask_points=mask_points,
             use_flux_klein=use_flux_klein,
+            use_kiwi_edit=use_kiwi_edit,
             use_minimax_remover=use_minimax_remover,
             flux_smoothing=flux_smoothing,
             temp_video_from_images=temp_video_from_images,
@@ -1870,11 +2333,11 @@ class FFMPEGAgentNode:
     #  MMAudio-only mode (no LLM)                                         #
     # ------------------------------------------------------------------ #
 
-    async def _process_mmaudio_only(self, prompt, mmaudio_mode, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+    async def _process_mmaudio_only(self, prompt, audio_output_mode, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
         """Delegate to nollm_modes module."""
         return await _nollm.process_mmaudio_only(
             media_converter=self.media_converter,
-            prompt=prompt, mmaudio_mode=mmaudio_mode,
+            prompt=prompt, audio_output_mode=audio_output_mode,
             effective_video_path=effective_video_path,
             video_metadata=video_metadata, save_output=save_output,
             output_path=output_path, preview_mode=preview_mode,
@@ -1889,11 +2352,11 @@ class FFMPEGAgentNode:
     #  AudioX music-only mode (no LLM)                                    #
     # ------------------------------------------------------------------ #
 
-    async def _process_audiox_music_only(self, prompt, mmaudio_mode, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+    async def _process_audiox_music_only(self, prompt, audio_output_mode, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
         """Delegate to nollm_modes module."""
         return await _nollm.process_audiox_music_only(
             media_converter=self.media_converter,
-            prompt=prompt, mmaudio_mode=mmaudio_mode,
+            prompt=prompt, audio_output_mode=audio_output_mode,
             effective_video_path=effective_video_path,
             video_metadata=video_metadata, save_output=save_output,
             output_path=output_path, preview_mode=preview_mode,
@@ -1908,11 +2371,11 @@ class FFMPEGAgentNode:
     #  ACE-Step music generation mode (no LLM)                             #
     # ------------------------------------------------------------------ #
 
-    async def _process_ace_step_only(self, prompt, mmaudio_mode, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+    async def _process_ace_step_only(self, prompt, audio_output_mode, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
         """Delegate to nollm_modes module."""
         return await _nollm.process_ace_step_only(
             media_converter=self.media_converter,
-            prompt=prompt, mmaudio_mode=mmaudio_mode,
+            prompt=prompt, audio_output_mode=audio_output_mode,
             effective_video_path=effective_video_path,
             video_metadata=video_metadata, save_output=save_output,
             output_path=output_path, preview_mode=preview_mode,
@@ -1927,11 +2390,11 @@ class FFMPEGAgentNode:
     #  AudioX inpaint-only mode (no LLM)                                  #
     # ------------------------------------------------------------------ #
 
-    async def _process_audiox_inpaint_only(self, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+    async def _process_audiox_inpaint_only(self, prompt, audio_output_mode, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
         """Delegate to nollm_modes module."""
         return await _nollm.process_audiox_inpaint_only(
             media_converter=self.media_converter,
-            prompt=prompt,
+            prompt=prompt, audio_output_mode=audio_output_mode,
             effective_video_path=effective_video_path,
             video_metadata=video_metadata, save_output=save_output,
             output_path=output_path, preview_mode=preview_mode,
@@ -1942,11 +2405,11 @@ class FFMPEGAgentNode:
             **kwargs,
         )
 
-    async def _process_sam_audio_separate(self, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+    async def _process_sam_audio_separate(self, prompt, audio_output_mode, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
         """Delegate to nollm_modes module."""
         return await _nollm.process_sam_audio_separate(
             media_converter=self.media_converter,
-            prompt=prompt,
+            prompt=prompt, audio_output_mode=audio_output_mode,
             effective_video_path=effective_video_path,
             video_metadata=video_metadata, save_output=save_output,
             output_path=output_path, preview_mode=preview_mode,
@@ -1980,7 +2443,7 @@ class FFMPEGAgentNode:
     #  Animate portrait mode (no LLM)                                     #
     # ------------------------------------------------------------------ #
 
-    async def _process_animate_portrait_only(self, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, driving_video="", temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+    async def _process_animate_portrait_only(self, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, driving_video="", lp_rotate_pitch=0.0, lp_rotate_yaw=0.0, lp_rotate_roll=0.0, lp_blink=0.0, lp_eyebrow=0.0, lp_wink=0.0, lp_pupil_x=0.0, lp_pupil_y=0.0, lp_aaa=0.0, lp_eee=0.0, lp_woo=0.0, lp_smile=0.0, lp_retargeting_eyes=1.0, lp_retargeting_mouth=1.0, lp_crop_factor=1.6, lp_sample_image="", lp_sample_ratio=1.0, lp_sample_parts="all", temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
         """Delegate to nollm_modes module."""
         return await _nollm.process_animate_portrait_only(
             media_converter=self.media_converter,
@@ -1990,6 +2453,24 @@ class FFMPEGAgentNode:
             quality_preset=quality_preset, crf=crf,
             encoding_preset=encoding_preset,
             driving_video=driving_video,
+            lp_rotate_pitch=lp_rotate_pitch,
+            lp_rotate_yaw=lp_rotate_yaw,
+            lp_rotate_roll=lp_rotate_roll,
+            lp_blink=lp_blink,
+            lp_eyebrow=lp_eyebrow,
+            lp_wink=lp_wink,
+            lp_pupil_x=lp_pupil_x,
+            lp_pupil_y=lp_pupil_y,
+            lp_aaa=lp_aaa,
+            lp_eee=lp_eee,
+            lp_woo=lp_woo,
+            lp_smile=lp_smile,
+            lp_retargeting_eyes=lp_retargeting_eyes,
+            lp_retargeting_mouth=lp_retargeting_mouth,
+            lp_crop_factor=lp_crop_factor,
+            lp_sample_image=lp_sample_image,
+            lp_sample_ratio=lp_sample_ratio,
+            lp_sample_parts=lp_sample_parts,
             temp_video_from_images=temp_video_from_images,
             temp_video_with_audio=temp_video_with_audio,
             **kwargs,
@@ -1999,7 +2480,7 @@ class FFMPEGAgentNode:
     #  Marigold mode (no LLM)                                             #
     # ------------------------------------------------------------------ #
 
-    async def _process_marigold_only(self, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, marigold_output_type="depth", temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+    async def _process_marigold_only(self, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, marigold_output_type="depth", marigold_colormap="Spectral", temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
         """Delegate to nollm_modes module."""
         return await _nollm.process_marigold_only(
             media_converter=self.media_converter,
@@ -2009,6 +2490,7 @@ class FFMPEGAgentNode:
             quality_preset=quality_preset, crf=crf,
             encoding_preset=encoding_preset,
             marigold_output_type=marigold_output_type,
+            marigold_colormap=marigold_colormap,
             temp_video_from_images=temp_video_from_images,
             temp_video_with_audio=temp_video_with_audio,
             **kwargs,
@@ -2057,7 +2539,7 @@ class FFMPEGAgentNode:
     #  AI Upscale mode (no LLM)                                            #
     # ------------------------------------------------------------------ #
 
-    async def _process_ai_upscale_only(self, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, upscale_model="realesrgan_x4plus", upscale_scale=4, tile_size=512, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+    async def _process_ai_upscale_only(self, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, upscale_model="realesrgan_x4plus", upscale_scale=4, tile_size=512, blockswap_blocks=0, seedvr_resolution=1080, rtx_quality="ULTRA", temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
         """Delegate to nollm_modes module."""
         return await _nollm.process_ai_upscale_only(
             media_converter=self.media_converter,
@@ -2069,6 +2551,9 @@ class FFMPEGAgentNode:
             upscale_model=upscale_model,
             upscale_scale=upscale_scale,
             tile_size=tile_size,
+            blockswap_blocks=blockswap_blocks,
+            seedvr_resolution=seedvr_resolution,
+            rtx_quality=rtx_quality,
             temp_video_from_images=temp_video_from_images,
             temp_video_with_audio=temp_video_with_audio,
             **kwargs,
@@ -2116,6 +2601,27 @@ class FFMPEGAgentNode:
         )
 
     # ------------------------------------------------------------------ #
+    #  Kiwi-Edit mode (no LLM)                                              #
+    # ------------------------------------------------------------------ #
+
+    async def _process_kiwi_edit_only(self, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, image_a=None, _all_image_paths=None, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+        """Delegate to nollm_modes module."""
+        return await _nollm.process_kiwi_edit_only(
+            media_converter=self.media_converter,
+            prompt=prompt,
+            effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            image_a=image_a,
+            _all_image_paths=_all_image_paths,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
+        )
+
+    # ------------------------------------------------------------------ #
     #  Rembg background removal mode (no LLM)                              #
     # ------------------------------------------------------------------ #
 
@@ -2153,6 +2659,27 @@ class FFMPEGAgentNode:
             onion_blend_mode=onion_blend_mode,
             onion_opacity=onion_opacity,
             onion_decay=onion_decay,
+            _all_video_paths=_all_video_paths,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
+        )
+
+    async def _process_comparison_only(self, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, comparison_style="swipe", comparison_labels=False, comparison_label_a="Before", comparison_label_b="After", _all_video_paths=None, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+        """Delegate to nollm_modes module."""
+        return await _nollm.process_comparison_only(
+            composer=self.composer,
+            process_manager=self.process_manager,
+            media_converter=self.media_converter,
+            effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            comparison_style=comparison_style,
+            comparison_labels=comparison_labels,
+            comparison_label_a=comparison_label_a,
+            comparison_label_b=comparison_label_b,
             _all_video_paths=_all_video_paths,
             temp_video_from_images=temp_video_from_images,
             temp_video_with_audio=temp_video_with_audio,

@@ -176,6 +176,72 @@ _MODEL_INFO: dict[str, dict] = {
         "manual": "Models are auto-downloaded from HuggingFace via from_pretrained(). "
                   "See https://github.com/Binyr/NormalCrafter for upstream.",
     },
+    "seedvr2": {
+        "name": "SeedVR2 (Diffusion Video/Image Upscaler)",
+        "size": "~3-4 GB (DiT) + ~300 MB (VAE)",
+        "url": "https://huggingface.co/numz/SeedVR2_comfyUI",
+        "mirror_repo": "AInVFX/SeedVR2_comfyUI",
+        "license": "Apache-2.0",
+        "manual": "Download DiT model (e.g. seedvr2_ema_3b_fp8_e4m3fn.safetensors) "
+                  "and ema_vae_fp16.safetensors from "
+                  "https://huggingface.co/numz/SeedVR2_comfyUI "
+                  "and place them in the SeedVR2 cache directory.",
+    },
+    "kiwi_edit_instruct": {
+        "name": "Kiwi-Edit 5B (Instruct Only)",
+        "size": "~10 GB",
+        "url": "https://huggingface.co/linyq/kiwi-edit-5b-instruct-only-diffusers",
+        "mirror_repo": "AEmotionStudio/kiwi-edit-instruct",
+        "license": "MIT",
+        "manual": "Download model files from "
+                  "https://huggingface.co/linyq/kiwi-edit-5b-instruct-only-diffusers "
+                  "and place them in ComfyUI/models/kiwi_edit_instruct/.",
+    },
+    "kiwi_edit_reference": {
+        "name": "Kiwi-Edit 5B (Reference Only)",
+        "size": "~10 GB",
+        "url": "https://huggingface.co/linyq/kiwi-edit-5b-reference-only-diffusers",
+        "mirror_repo": "AEmotionStudio/kiwi-edit-reference",
+        "license": "MIT",
+        "manual": "Download model files from "
+                  "https://huggingface.co/linyq/kiwi-edit-5b-reference-only-diffusers "
+                  "and place them in ComfyUI/models/kiwi_edit_reference/.",
+    },
+    "kiwi_edit_instruct_reference": {
+        "name": "Kiwi-Edit 5B (Instruct + Reference)",
+        "size": "~10 GB",
+        "url": "https://huggingface.co/linyq/kiwi-edit-5b-instruct-reference-diffusers",
+        "mirror_repo": "AEmotionStudio/kiwi-edit-instruct-reference",
+        "license": "MIT",
+        "manual": "Download model files from "
+                  "https://huggingface.co/linyq/kiwi-edit-5b-instruct-reference-diffusers "
+                  "and place them in ComfyUI/models/kiwi_edit_instruct_reference/.",
+    },
+    # Kiwi-Edit FP8 variants (auto-downloaded by default)
+    "kiwi_edit_instruct_fp8": {
+        "name": "Kiwi-Edit 5B FP8 (Instruct Only)",
+        "size": "~5 GB",
+        "url": "https://huggingface.co/AEmotionStudio/kiwi-edit-instruct-fp8",
+        "mirror_repo": "AEmotionStudio/kiwi-edit-instruct-fp8",
+        "license": "MIT",
+        "manual": "Downloaded automatically when Kiwi-Edit is used.",
+    },
+    "kiwi_edit_reference_fp8": {
+        "name": "Kiwi-Edit 5B FP8 (Reference Only)",
+        "size": "~5 GB",
+        "url": "https://huggingface.co/AEmotionStudio/kiwi-edit-reference-fp8",
+        "mirror_repo": "AEmotionStudio/kiwi-edit-reference-fp8",
+        "license": "MIT",
+        "manual": "Downloaded automatically when Kiwi-Edit is used.",
+    },
+    "kiwi_edit_instruct_reference_fp8": {
+        "name": "Kiwi-Edit 5B FP8 (Instruct + Reference)",
+        "size": "~5 GB",
+        "url": "https://huggingface.co/AEmotionStudio/kiwi-edit-instruct-reference-fp8",
+        "mirror_repo": "AEmotionStudio/kiwi-edit-instruct-reference-fp8",
+        "license": "MIT",
+        "manual": "Downloaded automatically when Kiwi-Edit is used.",
+    },
 }
 
 

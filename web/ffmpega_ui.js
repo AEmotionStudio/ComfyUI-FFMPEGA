@@ -288,7 +288,7 @@ function registerAgentNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGAgent") return;
   const onNodeCreated = nodeType.prototype.onNodeCreated;
   nodeType.prototype.onNodeCreated = function() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L;
     const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
     const node = this;
     this.color = "#2a3a5a";
@@ -362,14 +362,14 @@ function registerAgentNode(nodeType, nodeData) {
     const previewWidget = (_k = this.widgets) == null ? void 0 : _k.find((w) => w.name === "preview_mode");
     const crfWidget = (_l = this.widgets) == null ? void 0 : _l.find((w) => w.name === "crf");
     const encodingWidget = (_m = this.widgets) == null ? void 0 : _m.find((w) => w.name === "encoding_preset");
-    const subtitleWidget = (_n = this.widgets) == null ? void 0 : _n.find((w) => w.name === "subtitle_path");
+    (_n = this.widgets) == null ? void 0 : _n.find((w) => w.name === "subtitle_path");
     (_o = this.widgets) == null ? void 0 : _o.find((w) => w.name === "use_vision");
     (_p = this.widgets) == null ? void 0 : _p.find((w) => w.name === "verify_output");
     (_q = this.widgets) == null ? void 0 : _q.find((w) => w.name === "whisper_device");
     (_r = this.widgets) == null ? void 0 : _r.find((w) => w.name === "whisper_model");
-    const sam3MaxObjWidget = (_s = this.widgets) == null ? void 0 : _s.find((w) => w.name === "sam3_max_objects");
-    const sam3ThreshWidget = (_t = this.widgets) == null ? void 0 : _t.find((w) => w.name === "sam3_det_threshold");
-    const maskTypeWidget = (_u = this.widgets) == null ? void 0 : _u.find((w) => w.name === "mask_output_type");
+    (_s = this.widgets) == null ? void 0 : _s.find((w) => w.name === "sam3_max_objects");
+    (_t = this.widgets) == null ? void 0 : _t.find((w) => w.name === "sam3_det_threshold");
+    (_u = this.widgets) == null ? void 0 : _u.find((w) => w.name === "mask_output_type");
     const batchWidget = (_v = this.widgets) == null ? void 0 : _v.find((w) => w.name === "batch_mode");
     const folderWidget = (_w = this.widgets) == null ? void 0 : _w.find((w) => w.name === "video_folder");
     const patternWidget = (_x = this.widgets) == null ? void 0 : _x.find((w) => w.name === "file_pattern");
@@ -377,13 +377,13 @@ function registerAgentNode(nodeType, nodeData) {
     const trackTokensWidget = (_z = this.widgets) == null ? void 0 : _z.find((w) => w.name === "track_tokens");
     const logUsageWidget = (_A = this.widgets) == null ? void 0 : _A.find((w) => w.name === "log_usage");
     const allowDownloadsWidget = (_B = this.widgets) == null ? void 0 : _B.find((w) => w.name === "allow_model_downloads");
-    const fluxSmoothingWidget = (_C = this.widgets) == null ? void 0 : _C.find((w) => w.name === "flux_smoothing");
-    const mmaudioModeWidget = (_D = this.widgets) == null ? void 0 : _D.find((w) => w.name === "mmaudio_mode");
+    (_C = this.widgets) == null ? void 0 : _C.find((w) => w.name === "flux_smoothing");
+    (_D = this.widgets) == null ? void 0 : _D.find((w) => w.name === "audio_output_mode");
     (_E = this.widgets) == null ? void 0 : _E.find((w) => w.name === "marigold_output_type");
     (_F = this.widgets) == null ? void 0 : _F.find((w) => w.name === "video_depth_encoder");
     (_G = this.widgets) == null ? void 0 : _G.find((w) => w.name === "video_depth_colormap");
     function updateNoLlmModeVisibility() {
-      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o2, _p2;
+      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o2, _p2, _q2, _r2, _s2, _t2, _u2, _v2, _w2, _x2, _y2, _z2, _A2, _B2, _C2, _D2, _E2, _F2, _G2, _H2;
       const adv = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "advanced_options");
       const showAdvanced = Boolean(adv == null ? void 0 : adv.value);
       const llm = (_b2 = node.widgets) == null ? void 0 : _b2.find((w) => w.name === "llm_model");
@@ -396,33 +396,72 @@ function registerAgentNode(nodeType, nodeData) {
       const showRembg = showAdvanced && mode === "rembg";
       const showWhisper = showAdvanced && (mode === "transcribe" || mode === "karaoke_subtitles");
       const showAceStep = showAdvanced && mode === "ace_step";
+      const showOnionSkin = showAdvanced && mode === "onion_skin";
+      const showComparison = showAdvanced && mode === "comparison";
+      const showSamAudio = showAdvanced && mode === "audio_separate";
+      const showNormalcrafter = showAdvanced && mode === "normalcrafter";
+      const showFluxKleinMode = showAdvanced && mode === "flux_klein";
+      const showKiwiEdit = showAdvanced && mode === "kiwi_edit";
       const mw = (_d2 = node.widgets) == null ? void 0 : _d2.find((w) => w.name === "marigold_output_type");
-      const ve = (_e2 = node.widgets) == null ? void 0 : _e2.find((w) => w.name === "video_depth_encoder");
-      const vc = (_f2 = node.widgets) == null ? void 0 : _f2.find((w) => w.name === "video_depth_colormap");
-      const um = (_g2 = node.widgets) == null ? void 0 : _g2.find((w) => w.name === "upscale_model");
-      const us = (_h2 = node.widgets) == null ? void 0 : _h2.find((w) => w.name === "upscale_scale");
-      const rm = (_i2 = node.widgets) == null ? void 0 : _i2.find((w) => w.name === "rembg_model");
-      const rb = (_j2 = node.widgets) == null ? void 0 : _j2.find((w) => w.name === "rembg_background");
-      const wd = (_k2 = node.widgets) == null ? void 0 : _k2.find((w) => w.name === "whisper_device");
-      const wm = (_l2 = node.widgets) == null ? void 0 : _l2.find((w) => w.name === "whisper_model");
+      const mc = (_e2 = node.widgets) == null ? void 0 : _e2.find((w) => w.name === "marigold_colormap");
       if (mw) toggleWidget(mw, showMarigold);
+      if (mc) toggleWidget(mc, showMarigold && String(mw == null ? void 0 : mw.value) === "depth");
+      const ve = (_f2 = node.widgets) == null ? void 0 : _f2.find((w) => w.name === "video_depth_encoder");
+      const vc = (_g2 = node.widgets) == null ? void 0 : _g2.find((w) => w.name === "video_depth_colormap");
       if (ve) toggleWidget(ve, showVda);
       if (vc) toggleWidget(vc, showVda);
+      const um = (_h2 = node.widgets) == null ? void 0 : _h2.find((w) => w.name === "upscale_model");
+      const us = (_i2 = node.widgets) == null ? void 0 : _i2.find((w) => w.name === "upscale_scale");
+      const sr = (_j2 = node.widgets) == null ? void 0 : _j2.find((w) => w.name === "seedvr_resolution");
+      const bb = (_k2 = node.widgets) == null ? void 0 : _k2.find((w) => w.name === "blockswap_blocks");
+      const rq = (_l2 = node.widgets) == null ? void 0 : _l2.find((w) => w.name === "rtx_quality");
       if (um) toggleWidget(um, showUpscale);
-      if (us) toggleWidget(us, showUpscale);
+      const modelVal = String((um == null ? void 0 : um.value) ?? "");
+      const isSeedvr = showUpscale && modelVal.startsWith("seedvr2");
+      const isRtxVsr = showUpscale && modelVal === "rtx_vsr";
+      const isGanModel = showUpscale && !isSeedvr && !isRtxVsr;
+      if (us) toggleWidget(us, isGanModel || isRtxVsr);
+      if (sr) toggleWidget(sr, isSeedvr);
+      if (bb) toggleWidget(bb, isSeedvr);
+      if (rq) toggleWidget(rq, isRtxVsr);
+      const rm = (_m2 = node.widgets) == null ? void 0 : _m2.find((w) => w.name === "rembg_model");
+      const rb = (_n2 = node.widgets) == null ? void 0 : _n2.find((w) => w.name === "rembg_background");
       if (rm) toggleWidget(rm, showRembg);
       if (rb) toggleWidget(rb, showRembg);
+      const wd = (_o2 = node.widgets) == null ? void 0 : _o2.find((w) => w.name === "whisper_device");
+      const wm = (_p2 = node.widgets) == null ? void 0 : _p2.find((w) => w.name === "whisper_model");
       if (wd) toggleWidget(wd, showWhisper);
       if (wm) toggleWidget(wm, showWhisper);
-      const showSamAudio = showAdvanced && mode === "audio_separate";
-      const sam = (_m2 = node.widgets) == null ? void 0 : _m2.find((w) => w.name === "sam_audio_model");
+      const sam = (_q2 = node.widgets) == null ? void 0 : _q2.find((w) => w.name === "sam_audio_model");
       if (sam) toggleWidget(sam, showSamAudio);
-      const showNormalcrafter = showAdvanced && mode === "normalcrafter";
-      const nc = (_n2 = node.widgets) == null ? void 0 : _n2.find((w) => w.name === "normalcrafter_max_res");
+      const nc = (_r2 = node.widgets) == null ? void 0 : _r2.find((w) => w.name === "normalcrafter_max_res");
       if (nc) toggleWidget(nc, showNormalcrafter);
-      const showFluxKlein = showAdvanced && mode === "flux_klein";
-      const fkm = (_o2 = node.widgets) == null ? void 0 : _o2.find((w) => w.name === "flux_klein_model");
-      if (fkm) toggleWidget(fkm, showFluxKlein);
+      const fkm = (_s2 = node.widgets) == null ? void 0 : _s2.find((w) => w.name === "flux_klein_model");
+      if (fkm) toggleWidget(fkm, showFluxKleinMode);
+      const kiwiWidgetNames = [
+        "kiwi_model",
+        "kiwi_precision",
+        "kiwi_resolution",
+        "kiwi_max_frames",
+        "kiwi_steps",
+        "kiwi_guidance",
+        "kiwi_block_swap",
+        "kiwi_long_video",
+        "kiwi_seed",
+        "kiwi_flow_shift",
+        "kiwi_task_type",
+        "kiwi_scheduler"
+      ];
+      for (const name of kiwiWidgetNames) {
+        const w = (_t2 = node.widgets) == null ? void 0 : _t2.find((ww) => ww.name === name);
+        if (w) toggleWidget(w, showKiwiEdit);
+      }
+      const kiwiRes = (_u2 = node.widgets) == null ? void 0 : _u2.find((ww) => ww.name === "kiwi_resolution");
+      const showKiwiCustom = showKiwiEdit && String(kiwiRes == null ? void 0 : kiwiRes.value) === "custom";
+      const kw = (_v2 = node.widgets) == null ? void 0 : _v2.find((ww) => ww.name === "kiwi_width");
+      const kh = (_w2 = node.widgets) == null ? void 0 : _w2.find((ww) => ww.name === "kiwi_height");
+      if (kw) toggleWidget(kw, showKiwiCustom);
+      if (kh) toggleWidget(kh, showKiwiCustom);
       const aceWidgetNames = [
         "ace_negative_prompt",
         "ace_cover_strength",
@@ -433,24 +472,95 @@ function registerAgentNode(nodeType, nodeData) {
         "ace_time_sig"
       ];
       for (const name of aceWidgetNames) {
-        const w = (_p2 = node.widgets) == null ? void 0 : _p2.find((ww) => ww.name === name);
+        const w = (_x2 = node.widgets) == null ? void 0 : _x2.find((ww) => ww.name === name);
         if (w) toggleWidget(w, showAceStep);
       }
+      const onionWidgetNames = ["onion_blend_mode", "onion_opacity", "onion_decay"];
+      for (const name of onionWidgetNames) {
+        const w = (_y2 = node.widgets) == null ? void 0 : _y2.find((ww) => ww.name === name);
+        if (w) toggleWidget(w, showOnionSkin);
+      }
+      const comparisonWidgetNames = [
+        "comparison_style",
+        "comparison_labels",
+        "comparison_label_a",
+        "comparison_label_b"
+      ];
+      for (const name of comparisonWidgetNames) {
+        const w = (_z2 = node.widgets) == null ? void 0 : _z2.find((ww) => ww.name === name);
+        if (w) toggleWidget(w, showComparison);
+      }
+      const showLivePortrait = showAdvanced && mode === "animate_portrait";
+      const lpWidgetNames = [
+        "lp_rotate_pitch",
+        "lp_rotate_yaw",
+        "lp_rotate_roll",
+        "lp_blink",
+        "lp_eyebrow",
+        "lp_wink",
+        "lp_pupil_x",
+        "lp_pupil_y",
+        "lp_aaa",
+        "lp_eee",
+        "lp_woo",
+        "lp_smile",
+        "lp_retargeting_eyes",
+        "lp_retargeting_mouth",
+        "lp_crop_factor",
+        "lp_expression_preset",
+        "lp_save_expression",
+        "lp_sample_image",
+        "lp_sample_ratio",
+        "lp_sample_parts"
+      ];
+      for (const name of lpWidgetNames) {
+        const w = (_A2 = node.widgets) == null ? void 0 : _A2.find((ww) => ww.name === name);
+        if (w) toggleWidget(w, showLivePortrait);
+      }
+      const sam3EligibleModes = /* @__PURE__ */ new Set([
+        "lip_sync",
+        "animate_portrait",
+        "marigold",
+        "normalcrafter",
+        "video_depth",
+        "flux_klein",
+        "kiwi_edit",
+        "minimax_remover",
+        "ai_upscale",
+        "rembg",
+        "onion_skin",
+        "comparison"
+      ]);
+      const showUseSam3 = showAdvanced && sam3EligibleModes.has(mode);
+      const useSam3Widget = (_B2 = node.widgets) == null ? void 0 : _B2.find((w) => w.name === "use_sam3");
+      if (useSam3Widget) toggleWidget(useSam3Widget, showUseSam3);
+      const useSam3On = showUseSam3 && Boolean(useSam3Widget == null ? void 0 : useSam3Widget.value);
+      const showSam3 = showAdvanced && (!isNone || mode === "sam3_masking" || useSam3On);
+      for (const wName of ["sam3_max_objects", "sam3_det_threshold", "mask_output_type"]) {
+        const w = (_C2 = node.widgets) == null ? void 0 : _C2.find((ww) => ww.name === wName);
+        if (w) toggleWidget(w, showSam3);
+      }
+      const showLlmToggles = showAdvanced && !isNone;
+      for (const wName of ["use_flux_klein", "use_kiwi_edit", "use_minimax_remover"]) {
+        const w = (_D2 = node.widgets) == null ? void 0 : _D2.find((ww) => ww.name === wName);
+        if (w) toggleWidget(w, showLlmToggles);
+      }
+      const fluxKleinWidget = (_E2 = node.widgets) == null ? void 0 : _E2.find((w) => w.name === "use_flux_klein");
+      const fsw = (_F2 = node.widgets) == null ? void 0 : _F2.find((w) => w.name === "flux_smoothing");
+      if (fsw) toggleWidget(fsw, showLlmToggles && Boolean(fluxKleinWidget == null ? void 0 : fluxKleinWidget.value));
+      const _AUDIO_MODES = /* @__PURE__ */ new Set(["generate_audio", "generate_music", "audio_inpaint", "audio_separate", "ace_step"]);
+      const showAudioMode = showAdvanced && (!isNone || _AUDIO_MODES.has(mode));
+      const mmw = (_G2 = node.widgets) == null ? void 0 : _G2.find((w) => w.name === "audio_output_mode");
+      if (mmw) toggleWidget(mmw, showAudioMode);
+      const showSubtitle = showAdvanced && (!isNone || mode === "manual" || mode === "transcribe" || mode === "karaoke_subtitles");
+      const sw = (_H2 = node.widgets) == null ? void 0 : _H2.find((w) => w.name === "subtitle_path");
+      if (sw) toggleWidget(sw, showSubtitle);
     }
     function updateAdvancedVisibility() {
-      var _a2;
       const show = Boolean(advancedWidget == null ? void 0 : advancedWidget.value);
       if (previewWidget) toggleWidget(previewWidget, show);
-      if (subtitleWidget) toggleWidget(subtitleWidget, show);
       if (crfWidget) toggleWidget(crfWidget, show);
       if (encodingWidget) toggleWidget(encodingWidget, show);
-      if (sam3MaxObjWidget) toggleWidget(sam3MaxObjWidget, show);
-      if (sam3ThreshWidget) toggleWidget(sam3ThreshWidget, show);
-      if (maskTypeWidget) toggleWidget(maskTypeWidget, show);
-      const fluxKleinWidget = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "use_flux_klein");
-      const showFlux = show && Boolean(fluxKleinWidget == null ? void 0 : fluxKleinWidget.value);
-      if (fluxSmoothingWidget) toggleWidget(fluxSmoothingWidget, showFlux);
-      if (mmaudioModeWidget) toggleWidget(mmaudioModeWidget, show);
       if (batchWidget) toggleWidget(batchWidget, show);
       const showBatch = show && Boolean(batchWidget == null ? void 0 : batchWidget.value);
       if (folderWidget) toggleWidget(folderWidget, showBatch);
@@ -475,6 +585,38 @@ function registerAgentNode(nodeType, nodeData) {
       const origFluxCb = fluxKleinToggle.callback;
       fluxKleinToggle.callback = function(...args) {
         origFluxCb == null ? void 0 : origFluxCb.apply(this, args);
+        updateAdvancedVisibility();
+      };
+    }
+    const useSam3Toggle = (_I = this.widgets) == null ? void 0 : _I.find((w) => w.name === "use_sam3");
+    if (useSam3Toggle) {
+      const origSam3Cb = useSam3Toggle.callback;
+      useSam3Toggle.callback = function(...args) {
+        origSam3Cb == null ? void 0 : origSam3Cb.apply(this, args);
+        updateAdvancedVisibility();
+      };
+    }
+    const upscaleModelToggle = (_J = this.widgets) == null ? void 0 : _J.find((w) => w.name === "upscale_model");
+    if (upscaleModelToggle) {
+      const origUpscaleCb = upscaleModelToggle.callback;
+      upscaleModelToggle.callback = function(...args) {
+        origUpscaleCb == null ? void 0 : origUpscaleCb.apply(this, args);
+        updateAdvancedVisibility();
+      };
+    }
+    const kiwiResolutionToggle = (_K = this.widgets) == null ? void 0 : _K.find((w) => w.name === "kiwi_resolution");
+    if (kiwiResolutionToggle) {
+      const origKiwiResCb = kiwiResolutionToggle.callback;
+      kiwiResolutionToggle.callback = function(...args) {
+        origKiwiResCb == null ? void 0 : origKiwiResCb.apply(this, args);
+        updateAdvancedVisibility();
+      };
+    }
+    const marigoldTypeWidget = (_L = this.widgets) == null ? void 0 : _L.find((w) => w.name === "marigold_output_type");
+    if (marigoldTypeWidget) {
+      const origMtCb = marigoldTypeWidget.callback;
+      marigoldTypeWidget.callback = function(...args) {
+        origMtCb == null ? void 0 : origMtCb.apply(this, args);
         updateAdvancedVisibility();
       };
     }
@@ -962,7 +1104,7 @@ function registerFrameExtractNode(nodeType, nodeData) {
               }
               updateUploadBtn();
             }
-          }, 100);
+          }, 500);
         }
         return true;
       }
@@ -970,6 +1112,10 @@ function registerFrameExtractNode(nodeType, nodeData) {
     };
     this.onDragDrop = async (e) => {
       var _a, _b, _c, _d, _e, _f;
+      if (uploadBtn._dragTimeout) {
+        clearTimeout(uploadBtn._dragTimeout);
+        delete uploadBtn._dragTimeout;
+      }
       if (!((_c = (_b = (_a = e == null ? void 0 : e.dataTransfer) == null ? void 0 : _a.types) == null ? void 0 : _b.includes) == null ? void 0 : _c.call(_b, "Files"))) return false;
       const file = (_e = (_d = e.dataTransfer) == null ? void 0 : _d.files) == null ? void 0 : _e[0];
       if (!file) return false;
@@ -1425,7 +1571,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
               }
               updateBtn();
             }
-          }, 100);
+          }, 500);
         }
         return true;
       }
@@ -1433,6 +1579,10 @@ function registerLoadVideoNode(nodeType, nodeData) {
     };
     this.onDragDrop = async (e) => {
       var _a2, _b, _c, _d, _e, _f;
+      if (uploadBtn._dragTimeout) {
+        clearTimeout(uploadBtn._dragTimeout);
+        delete uploadBtn._dragTimeout;
+      }
       if (!((_c = (_b = (_a2 = e == null ? void 0 : e.dataTransfer) == null ? void 0 : _a2.types) == null ? void 0 : _b.includes) == null ? void 0 : _c.call(_b, "Files"))) return false;
       const file = (_e = (_d = e.dataTransfer) == null ? void 0 : _d.files) == null ? void 0 : _e[0];
       if (!file) return false;

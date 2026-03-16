@@ -42,6 +42,8 @@ ALL_SYNTHESIZER_MODULES: tuple[str, ...] = (
     "sam_audio_synthesizer",
     "normalcrafter_synthesizer",
     "acestep_synthesizer",
+    "seedvr_synthesizer",
+    "kiwi_edit_synthesizer",
 )
 
 _freeing_vram = False

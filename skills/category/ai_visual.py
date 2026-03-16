@@ -19,15 +19,17 @@ def register_skills(registry: SkillRegistry) -> None:
         description=(
             "AI-animate a portrait: transfer head pose, facial expressions, "
             "eye gaze, and lip movements from a driving video to a source "
-            "face image or video using LivePortrait. Produces a video where "
-            "the source face moves like the driver."
+            "face image or video using LivePortrait. Can also animate using "
+            "expression sliders alone (no driving video needed). Produces "
+            "a video where the source face moves like the driver or per the "
+            "specified expressions."
         ),
         parameters=[
             SkillParameter(
                 name="driving_video",
                 type=ParameterType.STRING,
-                description="Path to the driving video whose motion will be transferred",
-                required=True,
+                description="Path to the driving video whose motion will be transferred (optional if expression sliders are set)",
+                required=False,
             ),
             SkillParameter(
                 name="driving_multiplier",
@@ -45,16 +47,110 @@ def register_skills(registry: SkillRegistry) -> None:
                 required=False,
                 default=True,
             ),
+            # Expression controls
+            SkillParameter(
+                name="rotate_pitch",
+                type=ParameterType.FLOAT,
+                description="Head pitch rotation in degrees (nod up/down)",
+                required=False, default=0.0, min_value=-20.0, max_value=20.0,
+            ),
+            SkillParameter(
+                name="rotate_yaw",
+                type=ParameterType.FLOAT,
+                description="Head yaw rotation in degrees (turn left/right)",
+                required=False, default=0.0, min_value=-20.0, max_value=20.0,
+            ),
+            SkillParameter(
+                name="rotate_roll",
+                type=ParameterType.FLOAT,
+                description="Head roll rotation in degrees (tilt left/right)",
+                required=False, default=0.0, min_value=-20.0, max_value=20.0,
+            ),
+            SkillParameter(
+                name="blink",
+                type=ParameterType.FLOAT,
+                description="Eye blink intensity (-20 to 5, positive = open, negative = close)",
+                required=False, default=0.0, min_value=-20.0, max_value=5.0,
+            ),
+            SkillParameter(
+                name="eyebrow",
+                type=ParameterType.FLOAT,
+                description="Eyebrow raise/lower (-10 to 15, positive = raise)",
+                required=False, default=0.0, min_value=-10.0, max_value=15.0,
+            ),
+            SkillParameter(
+                name="wink",
+                type=ParameterType.FLOAT,
+                description="Wink intensity (0 to 25)",
+                required=False, default=0.0, min_value=0.0, max_value=25.0,
+            ),
+            SkillParameter(
+                name="pupil_x",
+                type=ParameterType.FLOAT,
+                description="Pupil horizontal position (-15 to 15, negative = left)",
+                required=False, default=0.0, min_value=-15.0, max_value=15.0,
+            ),
+            SkillParameter(
+                name="pupil_y",
+                type=ParameterType.FLOAT,
+                description="Pupil vertical position (-15 to 15, negative = up)",
+                required=False, default=0.0, min_value=-15.0, max_value=15.0,
+            ),
+            SkillParameter(
+                name="aaa",
+                type=ParameterType.FLOAT,
+                description="Mouth open (aaa shape, 0 to 50)",
+                required=False, default=0.0, min_value=-30.0, max_value=120.0,
+            ),
+            SkillParameter(
+                name="eee",
+                type=ParameterType.FLOAT,
+                description="Mouth eee shape (-20 to 15)",
+                required=False, default=0.0, min_value=-20.0, max_value=15.0,
+            ),
+            SkillParameter(
+                name="woo",
+                type=ParameterType.FLOAT,
+                description="Mouth woo/pucker shape (-20 to 15)",
+                required=False, default=0.0, min_value=-20.0, max_value=15.0,
+            ),
+            SkillParameter(
+                name="smile",
+                type=ParameterType.FLOAT,
+                description="Smile intensity (-0.3 to 1.3)",
+                required=False, default=0.0, min_value=-0.3, max_value=1.3,
+            ),
+            # Retargeting
+            SkillParameter(
+                name="retargeting_eyes",
+                type=ParameterType.FLOAT,
+                description="Eye retargeting intensity (0 = ignore driver's eyes, 1 = full transfer)",
+                required=False, default=1.0, min_value=0.0, max_value=1.0,
+            ),
+            SkillParameter(
+                name="retargeting_mouth",
+                type=ParameterType.FLOAT,
+                description="Mouth retargeting intensity (0 = ignore driver's mouth, 1 = full transfer)",
+                required=False, default=1.0, min_value=0.0, max_value=1.0,
+            ),
+            SkillParameter(
+                name="crop_factor",
+                type=ParameterType.FLOAT,
+                description="Face crop expansion factor (larger = more context around face)",
+                required=False, default=1.6, min_value=1.0, max_value=3.0,
+            ),
         ],
         examples=[
             "animate_portrait:driving_video=/path/to/driver.mp4 - Animate source with driver's expressions",
             "animate_portrait:driving_video=/path/to/driver.mp4,driving_multiplier=1.5 - Exaggerated motion",
-            "animate_portrait:driving_video=/path/to/driver.mp4,relative_motion=false - Absolute pose transfer",
+            "animate_portrait:smile=1.0,aaa=30 - Make the face smile with open mouth (no driving video)",
+            "animate_portrait:driving_video=/path/to/driver.mp4,retargeting_mouth=0.5 - Halve mouth motion",
+            "animate_portrait:rotate_yaw=10,smile=0.8,blink=-5 - Turn head right, smile, eyes half-closed",
         ],
         tags=[
             "animate", "portrait", "liveportrait", "face", "expression",
             "pose", "reenactment", "puppet", "ai", "deepfake",
-            "head", "motion",
+            "head", "motion", "smile", "blink", "eyebrow",
         ],
     ))
 
@@ -246,8 +342,9 @@ def register_skills(registry: SkillRegistry) -> None:
             "AI super-resolution upscaling: enhance image or video resolution "
             "using neural network models. Supports Real-ESRGAN (fast, general), "
             "Real-HAT-GAN (SOTA quality), DAT (balanced), SwinIR (classical), "
-            "and an anime-optimized variant. Uses tiled inference to stay "
-            "within VRAM limits."
+            "an anime-optimized variant, and SeedVR2 diffusion upscaler "
+            "(highest quality, temporal consistency for video). GAN models "
+            "use tiled inference; SeedVR2 uses one-step diffusion."
         ),
         parameters=[
             SkillParameter(
@@ -257,13 +354,16 @@ def register_skills(registry: SkillRegistry) -> None:
                     "Upscaler model: 'realesrgan_x4plus' (fast general), "
                     "'realesrgan_x4_anime' (anime/cartoon), "
                     "'hat_x4' (SOTA quality), 'dat_x4' (balanced), "
-                    "'swinir_x4' (classical SR)"
+                    "'swinir_x4' (classical SR), "
+                    "'seedvr2_3b_fp8' (diffusion, great quality), "
+                    "'seedvr2_7b_gguf' (diffusion, highest quality)"
                 ),
                 required=False,
                 default="realesrgan_x4plus",
                 choices=[
                     "realesrgan_x4plus", "realesrgan_x4_anime",
                     "hat_x4", "dat_x4", "swinir_x4",
+                    "seedvr2_3b_fp8", "seedvr2_7b_gguf",
                 ],
             ),
             SkillParameter(
@@ -290,10 +390,13 @@ def register_skills(registry: SkillRegistry) -> None:
             "ai_upscale:model=realesrgan_x4_anime - Anime-optimized upscale",
             "ai_upscale:model=dat_x4,scale_factor=2 - 2x upscale with DAT",
             "ai_upscale:tile_size=256 - Lower VRAM usage with smaller tiles",
+            "ai_upscale:model=seedvr2_3b_fp8 - Diffusion upscale (great quality)",
+            "ai_upscale:model=seedvr2_7b_gguf - Highest quality diffusion upscale",
         ],
         tags=[
             "upscale", "super_resolution", "enhance", "4k", "hd",
             "ai_upscale", "esrgan", "swinir", "hat", "dat",
+            "seedvr2", "diffusion", "temporal",
             "detail", "resolution", "enlarge", "ai",
         ],
     ))

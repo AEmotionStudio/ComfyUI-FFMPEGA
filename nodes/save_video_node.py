@@ -404,20 +404,33 @@ class SaveVideoNode:
             )
             tmp_frame.close()
 
-            result = subprocess.run(
-                [
-                    "ffmpeg", "-y",
-                    "-i", video_path,
-                    "-ss", "1",
-                    "-frames:v", "1",
-                    "-q:v", "2",
-                    tmp_frame.name,
-                ],
-                capture_output=True,
-                timeout=15,
-            )
+            ffmpeg_bin = get_ffmpeg_bin()
+            if not ffmpeg_bin:
+                logger.warning("SaveVideo: ffmpeg not found — skipping workflow PNG")
+                return None
 
-            if result.returncode != 0 or not os.path.isfile(tmp_frame.name):
+            # Try 1s mark first (past fade-in), fall back to 0s for short videos
+            for seek in ("1", "0"):
+                result = subprocess.run(
+                    [
+                        ffmpeg_bin, "-y",
+                        "-i", video_path,
+                        "-ss", seek,
+                        "-frames:v", "1",
+                        "-q:v", "2",
+                        tmp_frame.name,
+                    ],
+                    capture_output=True,
+                    timeout=15,
+                )
+                if (
+                    result.returncode == 0
+                    and os.path.isfile(tmp_frame.name)
+                    and os.path.getsize(tmp_frame.name) > 0
+                ):
+                    break
+
+            if not os.path.isfile(tmp_frame.name) or os.path.getsize(tmp_frame.name) == 0:
                 logger.warning(
                     "SaveVideo: failed to extract thumbnail frame"
                 )

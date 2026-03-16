@@ -64,6 +64,19 @@ except ImportError:
         "[FFMPEGA] VideoEditor node not available (import error)", exc_info=True
     )
 
+# --- FacePoke node ---
+try:
+    from .facepoke_node import FacePokeNode
+    if FacePokeNode is None:
+        raise ImportError("FacePokeNode failed to load")
+
+    NODE_CLASS_MAPPINGS["FFMPEGAFacePoke"] = FacePokeNode
+    NODE_DISPLAY_NAME_MAPPINGS["FFMPEGAFacePoke"] = "Face Poke (FFMPEGA)"
+except ImportError:
+    logging.getLogger("FFMPEGA").debug(
+        "[FFMPEGA] FacePoke node not available (import error)", exc_info=True
+    )
+
 __all__ = [
     "FFMPEGAgentNode",
     "FrameExtractNode",
@@ -85,3 +98,7 @@ if "LoadLastImage" in NODE_CLASS_MAPPINGS:
 # Add VideoEditor name only if successfully imported
 if "FFMPEGAVideoEditor" in NODE_CLASS_MAPPINGS:
     __all__.append("FFMPEGAVideoEditor")
+
+# Add FacePoke name only if successfully imported
+if "FFMPEGAFacePoke" in NODE_CLASS_MAPPINGS:
+    __all__.append("FacePokeNode")
