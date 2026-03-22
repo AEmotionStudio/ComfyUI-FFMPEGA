@@ -103,7 +103,11 @@ _PRESETS = {
     },
     "📺 Split Screen": {
         "effect_1": "split_screen",
-        "effect_1_params": {"layout": "side_by_side"},
+        "effect_1_params": {"layout": "horizontal", "fit": "height", "gap": 0},
+    },
+    "📺 Split Screen (Vertical)": {
+        "effect_1": "split_screen",
+        "effect_1_params": {"layout": "vertical", "fit": "height", "gap": 0},
     },
     "🖼️ Grid Layout": {
         "effect_1": "grid",
@@ -378,6 +382,21 @@ class FFMPEGAEffectsNode:
                     "placeholder": '{"key": "value"}',
                     "tooltip": param_tooltip,
                 }),
+                "use_as_text": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": (
+                        "When enabled, the text box below is treated as plain "
+                        "text for text_overlay effects instead of raw FFmpeg filters."
+                    ),
+                }),
+                "use_prompt_as_text": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": (
+                        "When enabled, the Agent node's prompt input is used as "
+                        "text for text_overlay effects. Overridden by 'use_as_text' "
+                        "if both are set and the text box is non-empty."
+                    ),
+                }),
                 "raw_ffmpeg": ("STRING", {
                     "default": "",
                     "multiline": True,
@@ -388,7 +407,9 @@ class FFMPEGAEffectsNode:
                     ),
                     "tooltip": (
                         "Raw FFmpeg video filter string. Applied after any "
-                        "skill-based effects. Use standard FFmpeg -vf syntax."
+                        "skill-based effects. Use standard FFmpeg -vf syntax.\n\n"
+                        "When 'use_as_text' is enabled, this field is treated as "
+                        "plain text for text_overlay effects instead."
                     ),
                 }),
                 "sam3_target": ("STRING", {
@@ -465,6 +486,8 @@ class FFMPEGAEffectsNode:
         effect_4_params: str = "",
         effect_5: str = "none",
         effect_5_params: str = "",
+        use_as_text: bool = False,
+        use_prompt_as_text: bool = False,
         raw_ffmpeg: str = "",
         sam3_target: str = "",
         sam3_effect: str = "blur",
@@ -529,9 +552,17 @@ class FFMPEGAEffectsNode:
                     },
                 })
 
+        # --- Handle text toggle: raw_ffmpeg becomes overlay text ---
+        overlay_text = ""
+        effective_raw = ""
+        if use_as_text and raw_ffmpeg and raw_ffmpeg.strip():
+            overlay_text = raw_ffmpeg.strip()
+        elif raw_ffmpeg and raw_ffmpeg.strip():
+            effective_raw = raw_ffmpeg.strip()
+
         # --- Determine mode ---
         has_skills = len(pipeline_steps) > 0
-        has_raw = bool(raw_ffmpeg and raw_ffmpeg.strip())
+        has_raw = bool(effective_raw)
 
         if has_skills and has_raw:
             mode = "hybrid"
@@ -543,12 +574,16 @@ class FFMPEGAEffectsNode:
             mode = "empty"
 
         # --- Build output ---
-        output = {
+        output: dict[str, Any] = {
             "effects_mode": mode,
             "pipeline": pipeline_steps,
-            "raw_ffmpeg": raw_ffmpeg.strip() if has_raw else "",
+            "raw_ffmpeg": effective_raw,
             "sam3": sam3_config,
         }
+        if overlay_text:
+            output["overlay_text"] = overlay_text
+        if use_prompt_as_text:
+            output["use_prompt_as_text"] = True
 
         result = json.dumps(output, indent=2)
         logger.debug("Effects Builder output: %s", result)

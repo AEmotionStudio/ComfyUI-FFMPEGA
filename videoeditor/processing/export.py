@@ -399,6 +399,7 @@ def render_edits(
                 acodec = ["-an"] if strip_audio else ["-c:a", "copy"]
 
             ffmpeg = get_ffmpeg_bin()
+            log.info("[VideoEditor] Combined vf chain: %s", vf)
             cmd = (
                 [ffmpeg, "-y", "-i", current, "-vf", vf]
                 + vcodec + acodec
@@ -411,8 +412,8 @@ def render_edits(
                 current = combined_path
             else:
                 log.warning(
-                    "[VideoEditor] Combined filter pass failed: %s",
-                    result.stderr[:300],
+                    "[VideoEditor] Combined filter pass failed (rc=%d): %s",
+                    result.returncode, result.stderr[:500],
                 )
 
         # --- Step 4: Apply crop ---

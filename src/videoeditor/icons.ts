@@ -347,3 +347,154 @@ export const iconMove = L(
     '<line x1="2" x2="22" y1="12" y2="12"/>' +
     '<line x1="12" x2="12" y1="2" y2="22"/>'
 );
+
+// ── Frame Picker Icons ────────────────────────────────────────────
+
+/** Flip Vertical — lucide/flip-vertical-2 */
+export const iconFlipVertical = L(
+    '<path d="m17 3-5 5-5-5h10"/>' +
+    '<path d="m17 21-5-5-5 5h10"/>' +
+    '<path d="M4 12H2"/>' +
+    '<path d="M10 12H8"/>' +
+    '<path d="M16 12h-2"/>' +
+    '<path d="M22 12h-2"/>'
+);
+
+/** Rotate CW — lucide/rotate-cw */
+export const iconRotateCW = L(
+    '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>' +
+    '<path d="M21 3v5h-5"/>'
+);
+
+/** Copy — lucide/copy */
+export const iconCopy = L(
+    '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>' +
+    '<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'
+);
+
+/** Clipboard Paste — lucide/clipboard-paste */
+export const iconPaste = L(
+    '<path d="M15 2H9a1 1 0 0 0-1 1v2c0 .6.4 1 1 1h6c.6 0 1-.4 1-1V3c0-.6-.4-1-1-1Z"/>' +
+    '<path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2M16 4h2a2 2 0 0 1 2 2v2"/>' +
+    '<path d="M21 14H11"/>' +
+    '<path d="m15 10-4 4 4 4"/>'
+);
+
+/** Circle Check — lucide/circle-check */
+export const iconCircleCheck = L(
+    '<circle cx="12" cy="12" r="10"/>' +
+    '<path d="m9 12 2 2 4-4"/>'
+);
+
+/** Circle X — lucide/circle-x */
+export const iconCircleX = L(
+    '<circle cx="12" cy="12" r="10"/>' +
+    '<path d="m15 9-6 6"/>' +
+    '<path d="m9 9 6 6"/>'
+);
+
+/** Select All — lucide/check-square */
+export const iconSelectAll = L(
+    '<rect x="3" y="3" width="18" height="18" rx="2"/>' +
+    '<path d="m9 12 2 2 4-4"/>'
+);
+
+/** Square Off / Deselect — lucide/square */
+export const iconDeselect = L(
+    '<rect x="3" y="3" width="18" height="18" rx="2"/>'
+);
+
+/** Invert — lucide/contrast */
+export const iconInvert = L(
+    '<circle cx="12" cy="12" r="10"/>' +
+    '<path d="M12 18a6 6 0 0 0 0-12v12z"/>'
+);
+
+/** Grid 2x2 — lucide/grid-2x2 */
+export const iconGrid = L(
+    '<rect width="18" height="18" x="3" y="3" rx="2"/>' +
+    '<path d="M3 12h18"/>' +
+    '<path d="M12 3v18"/>'
+);
+
+/** Filmstrip — lucide/film */
+export const iconFilmstrip = L(
+    '<rect width="18" height="18" x="3" y="3" rx="2"/>' +
+    '<path d="M7 3v18"/>' +
+    '<path d="M3 7.5h4"/>' +
+    '<path d="M3 12h18"/>' +
+    '<path d="M3 16.5h4"/>' +
+    '<path d="M17 3v18"/>' +
+    '<path d="M17 7.5h4"/>' +
+    '<path d="M17 16.5h4"/>'
+);
+
+/** Skip End — lucide/skip-forward */
+export const iconSkipEnd = L(
+    '<polygon points="5 4 15 12 5 20 5 4"/>' +
+    '<line x1="19" x2="19" y1="5" y2="19"/>'
+);
+
+/** Chevron Left — lucide/chevron-left */
+export const iconPrev = L('<path d="m15 18-6-6 6-6"/>');
+
+/** Chevron Right — lucide/chevron-right */
+export const iconNext = L('<path d="m9 18 6-6-6-6"/>');
+
+/** Plus Circle — lucide/plus-circle */
+export const iconPlusCircle = L(
+    '<circle cx="12" cy="12" r="10"/>' +
+    '<path d="M8 12h8"/>' +
+    '<path d="M12 8v8"/>'
+);
+
+// ── LoadLastImage Icons ──────────────────────────────────────────
+
+/** Lock — lucide/lock */
+export const iconLock = L(
+    '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>' +
+    '<path d="M7 11V7a5 5 0 0 1 10 0v4"/>'
+);
+
+/** Pin — lucide/pin */
+export const iconPin = L(
+    '<line x1="12" x2="12" y1="17" y2="22"/>' +
+    '<path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>'
+);
+
+/** Expand — lucide/expand */
+export const iconExpand = L(
+    '<path d="M21 11V3h-8"/>' +
+    '<path d="M3 13v8h8"/>' +
+    '<path d="M21 3l-9 9"/>' +
+    '<path d="M3 21l9-9"/>'
+);
+
+/** Image — lucide/image */
+export const iconImage = L(
+    '<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>' +
+    '<circle cx="9" cy="9" r="2"/>' +
+    '<path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>'
+);
+
+/** Columns — lucide/columns */
+export const iconColumns = L(
+    '<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>' +
+    '<line x1="12" x2="12" y1="3" y2="21"/>'
+);
+
+/** Arrow Left Right — lucide/arrow-left-right */
+export const iconArrowLeftRight = L(
+    '<path d="M8 3 4 7l4 4"/>' +
+    '<path d="M4 7h16"/>' +
+    '<path d="m16 21 4-4-4-4"/>' +
+    '<path d="M20 17H4"/>'
+);
+
+/** Scaling — lucide/scaling */
+export const iconScaling = L(
+    '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>' +
+    '<path d="M14 15H9v-5"/>' +
+    '<path d="M16 3h5v5"/>' +
+    '<path d="M21 3 9 15"/>'
+);

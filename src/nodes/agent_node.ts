@@ -384,6 +384,18 @@ export function registerAgentNode(
                 }
                 updateNoLlmModeVisibility();
                 fitHeight();
+
+                // Hook f1_style_transfer so noise_level toggles dynamically
+                const f1StyleTransferWidget = node.widgets?.find((w: ComfyWidget) => w.name === "f1_style_transfer");
+                if (f1StyleTransferWidget && !f1StyleTransferWidget._cbHooked) {
+                    f1StyleTransferWidget._cbHooked = true;
+                    const origF1Cb = f1StyleTransferWidget.callback;
+                    f1StyleTransferWidget.callback = function (...args: unknown[]) {
+                        origF1Cb?.apply(this, args);
+                        updateNoLlmModeVisibility();
+                        fitHeight();
+                    };
+                }
             }
 
             updateLlmVisibility = doUpdateLlmVisibility;
@@ -462,6 +474,9 @@ export function registerAgentNode(
             const showNormalcrafter = showAdvanced && mode === "normalcrafter";
             const showFluxKleinMode = showAdvanced && mode === "flux_klein";
             const showKiwiEdit = showAdvanced && mode === "kiwi_edit";
+            const showDreamidOmni = showAdvanced && mode === "dreamid_omni";
+            const showFoundation1 = showAdvanced && mode === "foundation1";
+            const showFishSpeech = showAdvanced && mode === "fish_speech";
 
             // Marigold
             const mw = node.widgets?.find((w: ComfyWidget) => w.name === "marigold_output_type");
@@ -523,6 +538,7 @@ export function registerAgentNode(
                 "kiwi_steps", "kiwi_guidance", "kiwi_block_swap",
                 "kiwi_long_video", "kiwi_seed", "kiwi_flow_shift",
                 "kiwi_task_type", "kiwi_scheduler",
+                "kiwi_lora_enabled",
             ];
             for (const name of kiwiWidgetNames) {
                 const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
@@ -536,6 +552,23 @@ export function registerAgentNode(
             if (kw) toggleWidget(kw, showKiwiCustom);
             if (kh) toggleWidget(kh, showKiwiCustom);
 
+            // kiwi_lora_variant only visible when kiwi_lora_enabled = true
+            const kiwiLoraEnabled = node.widgets?.find((ww: ComfyWidget) => ww.name === "kiwi_lora_enabled");
+            const showKiwiLora = showKiwiEdit && Boolean(kiwiLoraEnabled?.value);
+            const klv = node.widgets?.find((ww: ComfyWidget) => ww.name === "kiwi_lora_variant");
+            if (klv) toggleWidget(klv, showKiwiLora);
+
+            // DreamID-Omni widgets
+            const dreamidWidgetNames = [
+                "dreamid_precision", "dreamid_resolution", "dreamid_steps", "dreamid_seed",
+                "dreamid_solver", "dreamid_video_cfg", "dreamid_video_ref_cfg",
+                "dreamid_audio_cfg", "dreamid_audio_ref_cfg",
+            ];
+            for (const name of dreamidWidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showDreamidOmni);
+            }
+
             // ACE-Step widgets
             const aceWidgetNames = [
                 "ace_negative_prompt", "ace_cover_strength", "ace_steps",
@@ -544,6 +577,32 @@ export function registerAgentNode(
             for (const name of aceWidgetNames) {
                 const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
                 if (w) toggleWidget(w, showAceStep);
+            }
+
+            // Foundation-1 widgets
+            const f1WidgetNames = [
+                "f1_preset", "f1_instrument", "f1_fx", "f1_structure",
+                "f1_negative_prompt", "f1_bpm", "f1_bars",
+                "f1_key", "f1_duration", "f1_steps", "f1_cfg_scale",
+                "f1_style_transfer",
+            ];
+            for (const name of f1WidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showFoundation1);
+            }
+            // noise_level only visible when style_transfer is on
+            const f1StyleWidget = node.widgets?.find((w: ComfyWidget) => w.name === "f1_style_transfer");
+            const f1NoiseWidget = node.widgets?.find((w: ComfyWidget) => w.name === "f1_noise_level");
+            if (f1NoiseWidget) toggleWidget(f1NoiseWidget, showFoundation1 && Boolean(f1StyleWidget?.value));
+
+            // Fish Speech TTS widgets
+            const fishWidgetNames = [
+                "fish_model_variant", "fish_voice", "fish_emotion",
+                "fish_temperature", "fish_top_p", "fish_repetition_penalty",
+            ];
+            for (const name of fishWidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showFishSpeech);
             }
 
             // Onion Skin widgets
@@ -603,7 +662,7 @@ export function registerAgentNode(
 
             // use_flux_klein / use_kiwi_edit / use_minimax_remover: only relevant for LLM mode
             const showLlmToggles = showAdvanced && !isNone;
-            for (const wName of ["use_flux_klein", "use_kiwi_edit", "use_minimax_remover"]) {
+            for (const wName of ["use_flux_klein", "use_kiwi_edit", "use_minimax_remover", "use_dreamid_omni"]) {
                 const w = node.widgets?.find((ww: ComfyWidget) => ww.name === wName);
                 if (w) toggleWidget(w, showLlmToggles);
             }
@@ -613,10 +672,15 @@ export function registerAgentNode(
             if (fsw) toggleWidget(fsw, showLlmToggles && Boolean(fluxKleinWidget?.value));
 
             // audio_output_mode: for all audio-related modes + LLM mode
-            const _AUDIO_MODES = new Set(["generate_audio", "generate_music", "audio_inpaint", "audio_separate", "ace_step"]);
+            const _AUDIO_MODES = new Set(["generate_audio", "generate_music", "foundation1", "fish_speech", "audio_inpaint", "audio_separate", "ace_step"]);
             const showAudioMode = showAdvanced && (!isNone || _AUDIO_MODES.has(mode));
             const mmw = node.widgets?.find((w: ComfyWidget) => w.name === "audio_output_mode");
             if (mmw) toggleWidget(mmw, showAudioMode);
+
+            // audio_resample_rate: only for manual (effects builder) mode
+            const showResample = showAdvanced && mode === "manual";
+            const arw = node.widgets?.find((w: ComfyWidget) => w.name === "audio_resample_rate");
+            if (arw) toggleWidget(arw, showResample);
 
             // subtitle_path: relevant for transcribe, karaoke, manual, AND LLM mode
             const showSubtitle = showAdvanced && (!isNone || mode === "manual" || mode === "transcribe" || mode === "karaoke_subtitles");
@@ -687,6 +751,16 @@ export function registerAgentNode(
             const origKiwiResCb = kiwiResolutionToggle.callback;
             kiwiResolutionToggle.callback = function (...args: unknown[]) {
                 origKiwiResCb?.apply(this, args);
+                updateAdvancedVisibility();
+            };
+        }
+
+        // --- kiwi_lora_enabled → kiwi_lora_variant visibility ---
+        const kiwiLoraToggle = this.widgets?.find((w: ComfyWidget) => w.name === "kiwi_lora_enabled");
+        if (kiwiLoraToggle) {
+            const origKiwiLoraCb = kiwiLoraToggle.callback;
+            kiwiLoraToggle.callback = function (...args: unknown[]) {
+                origKiwiLoraCb?.apply(this, args);
                 updateAdvancedVisibility();
             };
         }

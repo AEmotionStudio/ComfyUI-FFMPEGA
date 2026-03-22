@@ -4,8 +4,9 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { a as addDownloadOverlay } from "./_chunks/ui_helpers-CvUDB6-L.js";
-import { d as collectEdges, s as snapToEdges, E as EditManager, T as TransportBar, S as SpeedControl, a as EditToolbar, U as UndoManager, N as NLETimeline } from "./_chunks/UndoManager-CZJj4dEj.js";
-import { i as iconVolume, a as iconMuted, b as iconMusic, c as iconPlus, d as iconClose, e as iconBold, f as iconItalic, g as iconAlignLeft, h as iconAlignCenter, j as iconAlignRight, k as iconPalette, l as iconZoomOut, m as iconZoomIn, n as iconMaximize, o as iconShuffle, p as iconClapperboard, q as iconUndo, r as iconRedo, s as iconCheck, C as CropOverlay, t as iconCrop, u as iconGauge, v as iconText, w as iconWand, x as iconSun, y as iconSettings, z as iconLayers, A as iconBrain, B as iconMove } from "./_chunks/CropOverlay-CFlj408e.js";
+import { d as collectEdges, s as snapToEdges, E as EditManager, T as TransportBar, S as SpeedControl, a as EditToolbar, U as UndoManager, N as NLETimeline } from "./_chunks/UndoManager-BnlgiwE5.js";
+import { C as CropOverlay } from "./_chunks/CropOverlay-H6yQHaMz.js";
+import { u as iconVolume, v as iconMuted, w as iconMusic, x as iconPlus, y as iconClose, z as iconBold, A as iconItalic, B as iconAlignLeft, C as iconAlignCenter, D as iconAlignRight, m as iconPalette, E as iconZoomOut, F as iconZoomIn, G as iconMaximize, H as iconShuffle, I as iconClapperboard, J as iconUndo, K as iconRedo, p as iconCheck, h as iconCrop, L as iconGauge, M as iconText, d as iconWand, f as iconSun, N as iconSettings, g as iconLayers, O as iconBrain, P as iconMove } from "./_chunks/icons-BOh8YpxI.js";
 class AudioMixer {
   constructor(callbacks) {
     __publicField(this, "container");
@@ -1682,6 +1683,113 @@ const SHADERS = [
     description: "Raymarched spiral singularity",
     css: "saturate(1.8) contrast(1.5) hue-rotate(280deg)",
     color: "#a78bfa"
+  },
+  // NPR & Stylized batch
+  {
+    key: "anime_pro",
+    label: "Anime Pro",
+    description: "Advanced cel-shading with halftone shadows & rim light",
+    css: "contrast(1.4) saturate(1.5)",
+    color: "#f472b6"
+  },
+  {
+    key: "anime_glow",
+    label: "Anime Glow",
+    description: "Dreamy bloom with pastel tints & sparkle",
+    css: "brightness(1.15) saturate(0.9) contrast(0.95)",
+    color: "#fda4af"
+  },
+  {
+    key: "comic_book",
+    label: "Comic Book",
+    description: "Ben-Day halftone dots with bold Kirby outlines",
+    css: "contrast(1.5) saturate(1.6)",
+    color: "#facc15"
+  },
+  {
+    key: "pop_art",
+    label: "Pop Art",
+    description: "Warhol CMYK halftone with bold posterization",
+    css: "contrast(1.6) saturate(2.5)",
+    color: "#f43f5e"
+  },
+  {
+    key: "watercolor",
+    label: "Watercolor",
+    description: "Realistic pigment pooling & paper texture",
+    css: "blur(0.5px) saturate(0.85) contrast(1.1)",
+    color: "#67e8f9"
+  },
+  {
+    key: "watercolor_bleed",
+    label: "Watercolor Bleed",
+    description: "Animated wet bleeding edges & pigment flow",
+    css: "blur(1px) saturate(0.8) contrast(1.05)",
+    color: "#5eead4"
+  },
+  {
+    key: "woodcut",
+    label: "Woodcut",
+    description: "Japanese linocut with carved line texture",
+    css: "grayscale(0.8) contrast(1.5) sepia(0.3)",
+    color: "#a16207"
+  },
+  {
+    key: "chromatic_prism",
+    label: "Chromatic Prism",
+    description: "Prismatic rainbow edge dispersion",
+    css: "saturate(1.2) brightness(1.05)",
+    color: "#c084fc"
+  },
+  {
+    key: "retro_dither",
+    label: "Retro Dither",
+    description: "Ordered Bayer 8×8 dithering with retro palette",
+    css: "contrast(1.1) saturate(1.2)",
+    color: "#34d399"
+  },
+  {
+    key: "neon_wireframe",
+    label: "Neon Wire",
+    description: "Glowing neon contour lines on dark background",
+    css: "brightness(0.3) contrast(2) saturate(2.5)",
+    color: "#22d3ee"
+  },
+  // Depth-Native batch (read depth per-pixel via SBS)
+  {
+    key: "toon_3d",
+    label: "Toon 3D",
+    description: "Depth-aware cel-shading with 3D silhouette outlines",
+    css: "contrast(1.5) saturate(1.4)",
+    color: "#e879f9"
+  },
+  {
+    key: "depth_fog",
+    label: "Depth Fog",
+    description: "Real atmospheric perspective with depth-based fog",
+    css: "brightness(0.9) saturate(0.7) contrast(0.85)",
+    color: "#94a3b8"
+  },
+  {
+    key: "focus_pull",
+    label: "Focus Pull",
+    description: "Cinematic depth-of-field with bokeh blur",
+    css: "blur(1px) brightness(1.02) contrast(1.05)",
+    color: "#a78bfa"
+  },
+  {
+    key: "relief_sculpt",
+    label: "Relief Sculpt",
+    description: "Emboss relief using depth as 3D height map",
+    css: "grayscale(0.5) contrast(1.6) sepia(0.2)",
+    color: "#d4a276"
+  },
+  {
+    key: "depth_watercolor",
+    label: "Depth Water",
+    description: "Watercolor with depth-modulated strokes",
+    css: "blur(0.5px) saturate(0.8) contrast(1.1)",
+    color: "#38bdf8"
   }
 ];
 class ShaderPanel {
@@ -1690,9 +1798,19 @@ class ShaderPanel {
     __publicField(this, "callbacks");
     __publicField(this, "selectedKey", "none");
     __publicField(this, "intensity", 1);
+    __publicField(this, "enableVda", false);
+    __publicField(this, "enableNormals", false);
+    __publicField(this, "depthEncoder", "vits");
+    __publicField(this, "depthStrength", 1);
     __publicField(this, "cards", /* @__PURE__ */ new Map());
     __publicField(this, "intensitySlider");
     __publicField(this, "intensityLabel");
+    __publicField(this, "vdaCheckbox");
+    __publicField(this, "normalsCheckbox");
+    __publicField(this, "depthEncoderSelect");
+    __publicField(this, "depthStrengthSlider");
+    __publicField(this, "depthStrengthLabel");
+    __publicField(this, "depthSection");
     this.callbacks = callbacks;
     this.container = document.createElement("div");
     this.container.className = "veditor-filters-panel";
@@ -1746,8 +1864,133 @@ class ShaderPanel {
     });
     intensityRow.append(this.intensitySlider, this.intensityLabel);
     intensitySection.append(intensityHeader, intensityRow);
-    this.container.append(header, grid, intensitySection);
+    this.depthSection = document.createElement("div");
+    this.depthSection.className = "veditor-panel-section";
+    this.depthSection.style.cssText = `
+            margin-top: 12px; padding-top: 12px;
+            border-top: 1px solid rgba(255,255,255,0.08);
+        `;
+    const depthHeader = document.createElement("div");
+    depthHeader.className = "veditor-section-label";
+    depthHeader.style.display = "flex";
+    depthHeader.style.alignItems = "center";
+    depthHeader.style.gap = "8px";
+    const depthBadge = document.createElement("span");
+    depthBadge.textContent = "🔮 AI";
+    depthBadge.style.cssText = `
+            font-size: 10px; padding: 2px 6px; border-radius: 4px;
+            background: linear-gradient(135deg, #06b6d4, #8b5cf6);
+            color: #fff; font-weight: 600; letter-spacing: 0.5px;
+        `;
+    const depthText = document.createElement("span");
+    depthText.textContent = "AI Passes";
+    depthHeader.append(depthText, depthBadge);
+    const vdaRow = document.createElement("div");
+    vdaRow.className = "veditor-control-row";
+    vdaRow.style.cssText = "margin-top: 6px; gap: 8px; align-items: center;";
+    this.vdaCheckbox = document.createElement("input");
+    this.vdaCheckbox.type = "checkbox";
+    this.vdaCheckbox.checked = false;
+    this.vdaCheckbox.setAttribute("data-tool-id", "veditor-shader-enable-vda");
+    this.vdaCheckbox.style.cssText = "width: 16px; height: 16px; cursor: pointer; accent-color: #06b6d4;";
+    const vdaLabel = document.createElement("span");
+    vdaLabel.className = "veditor-grading-value";
+    vdaLabel.textContent = "VDA Depth";
+    vdaLabel.style.cssText = "flex: 1; cursor: pointer;";
+    vdaLabel.addEventListener("click", () => {
+      this.vdaCheckbox.click();
+    });
+    this.vdaCheckbox.addEventListener("change", () => {
+      this.enableVda = this.vdaCheckbox.checked;
+      this._updateDepthVisibility();
+      this.callbacks.onShaderChanged(this.getState());
+    });
+    vdaRow.append(this.vdaCheckbox, vdaLabel);
+    const normalsRow = document.createElement("div");
+    normalsRow.className = "veditor-control-row";
+    normalsRow.style.cssText = "margin-top: 4px; gap: 8px; align-items: center;";
+    this.normalsCheckbox = document.createElement("input");
+    this.normalsCheckbox.type = "checkbox";
+    this.normalsCheckbox.checked = false;
+    this.normalsCheckbox.setAttribute("data-tool-id", "veditor-shader-enable-normals");
+    this.normalsCheckbox.style.cssText = "width: 16px; height: 16px; cursor: pointer; accent-color: #8b5cf6;";
+    const normalsLabel = document.createElement("span");
+    normalsLabel.className = "veditor-grading-value";
+    normalsLabel.textContent = "NormalCrafter";
+    normalsLabel.style.cssText = "flex: 1; cursor: pointer;";
+    normalsLabel.addEventListener("click", () => {
+      this.normalsCheckbox.click();
+    });
+    this.normalsCheckbox.addEventListener("change", () => {
+      this.enableNormals = this.normalsCheckbox.checked;
+      this.callbacks.onShaderChanged(this.getState());
+    });
+    normalsRow.append(this.normalsCheckbox, normalsLabel);
+    const depthEncoderRow = document.createElement("div");
+    depthEncoderRow.className = "veditor-control-row";
+    depthEncoderRow.style.cssText = "margin-top: 4px; gap: 8px;";
+    const depthEncoderLabel = document.createElement("span");
+    depthEncoderLabel.className = "veditor-grading-value";
+    depthEncoderLabel.textContent = "Model";
+    depthEncoderLabel.style.minWidth = "40px";
+    this.depthEncoderSelect = document.createElement("select");
+    this.depthEncoderSelect.className = "veditor-grading-slider";
+    this.depthEncoderSelect.setAttribute("data-tool-id", "veditor-shader-depth-encoder");
+    this.depthEncoderSelect.style.cssText = `
+            flex: 1; padding: 4px 8px; border-radius: 6px;
+            background: rgba(255,255,255,0.06); color: #e2e8f0;
+            border: 1px solid rgba(255,255,255,0.1);
+            font-size: 12px; cursor: pointer;
+        `;
+    for (const [val, label] of [
+      ["vits", "Small (fast, ~102 MB)"],
+      ["vitb", "Base (~390 MB)"],
+      ["vitl", "Large (best, ~670 MB)"]
+    ]) {
+      const opt = document.createElement("option");
+      opt.value = val;
+      opt.textContent = label;
+      this.depthEncoderSelect.appendChild(opt);
+    }
+    this.depthEncoderSelect.addEventListener("change", () => {
+      this.depthEncoder = this.depthEncoderSelect.value;
+      this.callbacks.onShaderChanged(this.getState());
+    });
+    depthEncoderRow.append(depthEncoderLabel, this.depthEncoderSelect);
+    const depthStrengthRow = document.createElement("div");
+    depthStrengthRow.className = "veditor-control-row";
+    depthStrengthRow.style.cssText = "margin-top: 4px;";
+    const depthStrLabel = document.createElement("span");
+    depthStrLabel.className = "veditor-grading-value";
+    depthStrLabel.textContent = "Strength";
+    depthStrLabel.style.minWidth = "40px";
+    this.depthStrengthSlider = document.createElement("input");
+    this.depthStrengthSlider.type = "range";
+    this.depthStrengthSlider.min = "0";
+    this.depthStrengthSlider.max = "100";
+    this.depthStrengthSlider.step = "1";
+    this.depthStrengthSlider.value = "100";
+    this.depthStrengthSlider.className = "veditor-grading-slider";
+    this.depthStrengthSlider.setAttribute("data-tool-id", "veditor-shader-depth-strength");
+    this.depthStrengthLabel = document.createElement("span");
+    this.depthStrengthLabel.className = "veditor-grading-value";
+    this.depthStrengthLabel.textContent = "100%";
+    this.depthStrengthSlider.addEventListener("input", () => {
+      this.depthStrength = parseInt(this.depthStrengthSlider.value, 10) / 100;
+      this.depthStrengthLabel.textContent = `${Math.round(this.depthStrength * 100)}%`;
+      this.callbacks.onShaderChanged(this.getState());
+    });
+    depthStrengthRow.append(depthStrLabel, this.depthStrengthSlider, this.depthStrengthLabel);
+    this.depthSection.append(
+      depthHeader,
+      vdaRow,
+      normalsRow,
+      depthEncoderRow,
+      depthStrengthRow
+    );
+    this.container.append(header, grid, intensitySection, this.depthSection);
     this._selectCard("none");
+    this._updateDepthVisibility();
   }
   get element() {
     return this.container;
@@ -1755,7 +1998,11 @@ class ShaderPanel {
   getState() {
     return {
       preset: this.selectedKey,
-      intensity: this.intensity
+      intensity: this.intensity,
+      enable_vda: this.enableVda,
+      enable_normals: this.enableNormals,
+      depth_encoder: this.depthEncoder,
+      depth_strength: this.depthStrength
     };
   }
   loadState(state) {
@@ -1767,12 +2014,40 @@ class ShaderPanel {
       this.intensitySlider.value = String(Math.round(this.intensity * 100));
       this.intensityLabel.textContent = `${Math.round(this.intensity * 100)}%`;
     }
+    if (state.enable_vda !== void 0) {
+      this.enableVda = state.enable_vda;
+      this.vdaCheckbox.checked = state.enable_vda;
+    }
+    if (state.enable_normals !== void 0) {
+      this.enableNormals = state.enable_normals;
+      this.normalsCheckbox.checked = state.enable_normals;
+    }
+    if (state.depth_encoder !== void 0) {
+      this.depthEncoder = state.depth_encoder;
+      this.depthEncoderSelect.value = state.depth_encoder;
+    }
+    if (state.depth_strength !== void 0) {
+      this.depthStrength = state.depth_strength;
+      this.depthStrengthSlider.value = String(Math.round(this.depthStrength * 100));
+      this.depthStrengthLabel.textContent = `${Math.round(this.depthStrength * 100)}%`;
+    }
+    this._updateDepthVisibility();
   }
   reset() {
     this._selectCard("none");
     this.intensity = 1;
     this.intensitySlider.value = "100";
     this.intensityLabel.textContent = "100%";
+    this.enableVda = false;
+    this.vdaCheckbox.checked = false;
+    this.enableNormals = false;
+    this.normalsCheckbox.checked = false;
+    this.depthEncoder = "vits";
+    this.depthEncoderSelect.value = "vits";
+    this.depthStrength = 1;
+    this.depthStrengthSlider.value = "100";
+    this.depthStrengthLabel.textContent = "100%";
+    this._updateDepthVisibility();
   }
   destroy() {
     this.container.remove();
@@ -1804,6 +2079,14 @@ class ShaderPanel {
     this.selectedKey = key;
     for (const [k, card] of this.cards) {
       card.classList.toggle("active", k === key);
+    }
+  }
+  _updateDepthVisibility() {
+    const active = this.enableVda || this.enableNormals;
+    const rows = this.depthSection.querySelectorAll(".veditor-control-row");
+    if (rows.length >= 4) {
+      rows[2].style.display = active ? "" : "none";
+      rows[3].style.display = active ? "" : "none";
     }
   }
 }
@@ -4546,7 +4829,7 @@ class AudioTimeline {
     const { trackX, trackY, trackW, trackH, duration } = this.geometry;
     if (duration <= 0) return;
     ctx.save();
-    ctx.scale(dpr, dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (this._lastPlayheadX >= 0) {
       const eraseX = this._lastPlayheadX - PLAYHEAD_W / 2 - 1;
       const eraseW = PLAYHEAD_W + 2;
@@ -4583,7 +4866,7 @@ class AudioTimeline {
       }
       ctx.restore();
       ctx.save();
-      ctx.scale(dpr, dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
     const phX = trackX + this.playhead / duration * trackW;
     this._lastPlayheadX = phX;
@@ -5239,12 +5522,29 @@ class EditorModal {
         }
       },
       onResetRequested: () => {
-        var _a;
+        var _a, _b, _c;
         this.editManager.reset();
         this.audioEditManager.reset();
         this.audioMixer.clearSegmentSelection();
+        this.audioMixer.setMasterVolume(1);
+        (_a = this.audioTimeline) == null ? void 0 : _a.setSelectedIndex(-1);
+        (_b = this.audioTimeline) == null ? void 0 : _b.render();
+        this.cropOverlay.setRect(null);
+        this.speedControl.loadSpeedMap({});
+        this.transport.setPlaybackRate(1);
+        this.textPanel.loadOverlays([]);
+        this._refreshTextPreview();
+        this.colorGradingPanel.loadState({});
+        this.filtersPanel.loadState({});
+        this.shaderPanel.loadState({});
+        this.relightPanel.loadState({});
+        this.exportSettingsPanel.loadState({});
+        this.composePanel.loadState({});
+        this.aiComposePanel.loadState({});
+        this.transformPanel.loadState({});
+        this._applyCSSPreview();
         this._pushUndo();
-        (_a = this.nleTimeline) == null ? void 0 : _a.render();
+        (_c = this.nleTimeline) == null ? void 0 : _c.render();
       }
     });
     const timelineSlot = document.createElement("div");
@@ -5319,6 +5619,8 @@ class EditorModal {
         this.audioEditManager.init(info.duration || 1);
         this.cropOverlay.setVideoDimensions(info.width || 640, info.height || 480);
         this.textPreview.setVideoDimensions(info.width || 640, info.height || 480);
+        this.transport.setFps(info.fps || 30);
+        this.transport.setTotalDuration(info.duration || 1);
         if (initialState && initialState.segments.length > 0) {
           this.editManager.segments = initialState.segments.map(
             ([start, end], i) => ({
@@ -6042,6 +6344,16 @@ const editorCSS = `/* ═══════════════════�
     padding: 0 8px;
     letter-spacing: 0.5px;
     user-select: none;
+}
+
+.veditor-frame-counter {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--ve-text-dim);
+    padding: 0 8px;
+    letter-spacing: 0.3px;
+    user-select: none;
+    border-left: 1px solid var(--ve-border);
 }
 
 /* ── Tools Panel (tabbed sidebar) ────────────────────────────────── */

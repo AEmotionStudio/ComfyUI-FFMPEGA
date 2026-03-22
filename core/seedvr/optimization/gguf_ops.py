@@ -66,15 +66,13 @@ class _GGUFQuantizedBase(nn.Module):
     
     def _apply(self, fn):
         """
-        Override _apply to handle GGUF quantized weight device movement properly.
-        This ensures model.to(device) works correctly with quantized weights.
+        Override _apply to keep quantized weights on CPU for memory efficiency.
+        Only biases and other non-quantized parameters are moved to the target device.
+        Quantized weights are dequantized per-layer to GPU during forward pass.
         """
-        # Handle quantized weight if it exists
-        if 'quantized_weight' in self._buffers:
-            # Apply the function (device/dtype conversion) to the quantized weight
-            self._buffers['quantized_weight'] = fn(self._buffers['quantized_weight'])
-        
-        # Let parent class handle parameters and other buffers
+        # SKIP moving quantized_weight — it stays on CPU to save VRAM.
+        # The forward pass dequantizes per-layer to GPU via input.device.
+        # Let parent class handle parameters (bias) and other buffers normally.
         return super()._apply(fn)
     
     @torch._dynamo.disable
@@ -145,7 +143,7 @@ class GGUFQuantizedLinear(_GGUFQuantizedBase):
         self.out_features = out_features
     
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        # Get precision-optimized weight
+        # Get precision-optimized weight (dequantized from CPU to GPU)
         weight = self.get_dequantized_weight_for_compute(input)
         
         # Validate weight shape after dequantization
@@ -156,7 +154,12 @@ class GGUFQuantizedLinear(_GGUFQuantizedBase):
                             level="ERROR", category="precision", force=True)
             raise RuntimeError(f"Dequantized linear weight has incorrect shape: {weight.shape} vs expected {expected_shape}")
         
-        return torch.nn.functional.linear(input, weight, self.bias)
+        # Ensure bias is on the same device as the computation
+        bias = self.bias
+        if bias is not None and bias.device != input.device:
+            bias = bias.to(input.device)
+        
+        return torch.nn.functional.linear(input, weight, bias)
 
 class GGUFQuantizedConv2d(_GGUFQuantizedBase):
     """Quantized Conv2d layer with on-the-fly dequantization"""
@@ -191,7 +194,12 @@ class GGUFQuantizedConv2d(_GGUFQuantizedBase):
             raise RuntimeError(f"Dequantized conv weight has incorrect shape: {weight.shape} vs expected {expected_shape}")
         
         # Standard conv2d operation
-        return torch.nn.functional.conv2d(input, weight, self.bias, self.stride, 
+        # Ensure bias is on the same device as the computation
+        bias = self.bias
+        if bias is not None and bias.device != input.device:
+            bias = bias.to(input.device)
+        
+        return torch.nn.functional.conv2d(input, weight, bias, self.stride, 
                                          self.padding, self.dilation, self.groups)
 
 

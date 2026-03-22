@@ -134,6 +134,22 @@ def main():
     else:
         print("[FFMPEGA] ✓ AudioX companion deps already installed")
 
+    # --- stable-audio-tools (Foundation-1 music sample generation) ---
+    # Foundation-1 uses the vanilla stable-audio-tools package (NOT the AudioX fork).
+    # Both co-exist: AudioX registers as 'audiox', stable-audio-tools as 'stable_audio_tools'.
+    # Install with --no-deps to avoid pulling training-only dependencies.
+    if not is_installed("stable-audio-tools"):
+        print("[FFMPEGA] Installing stable-audio-tools for Foundation-1 (--no-deps)...")
+        result = subprocess.run(
+            [*pip, "--no-deps", "stable-audio-tools"],
+        )
+        if result.returncode == 0:
+            print("[FFMPEGA] ✓ stable-audio-tools installed successfully")
+        else:
+            print("[FFMPEGA] ✗ stable-audio-tools installation failed — generate_sample will be unavailable")
+    else:
+        print("[FFMPEGA] ✓ stable-audio-tools already installed")
+
     # --- SAM-Audio (audio separation / sound isolation) ---
     # SAM-Audio from Meta — Segment Anything Model for Audio.
     # Install with --no-deps to avoid pulling imagebind, laion-clap,

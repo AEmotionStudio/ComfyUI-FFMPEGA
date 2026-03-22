@@ -457,6 +457,15 @@ def run_normalcrafter(
     if not frames:
         raise RuntimeError(f"No frames extracted from video: {video_path}")
 
+    # Clamp window_size to frame count — window can't exceed available frames
+    if window_size > len(frames):
+        log.info(
+            "[NormalCrafter] Clamping window_size %d → %d (only %d frames)",
+            window_size, len(frames), len(frames),
+        )
+        window_size = len(frames)
+        time_step_size = min(time_step_size, window_size)
+
     log.info(
         "[NormalCrafter] Running inference: %d frames, window=%d, "
         "time_step=%d, max_res=%d",
@@ -539,6 +548,15 @@ def run_normalcrafter_frames(
     )
     if not frames:
         raise RuntimeError(f"No frames extracted from video: {video_path}")
+
+    # Clamp window_size to frame count
+    if window_size > len(frames):
+        log.info(
+            "[NormalCrafter] Clamping window_size %d → %d (only %d frames)",
+            window_size, len(frames), len(frames),
+        )
+        window_size = len(frames)
+        time_step_size = min(time_step_size, window_size)
 
     log.info(
         "[NormalCrafter] Running inference for relight: %d frames",

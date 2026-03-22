@@ -1,7 +1,7 @@
 var __defProp = Object.defineProperty;
 var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
-import { D as iconSkipStart, E as iconStepBack, F as iconPlay, G as iconStepForward, H as iconRepeat, I as iconPause, J as iconCursor, K as iconSplit, L as iconTrash, M as iconReset, N as iconReverse, O as iconCurve, P as iconFilm, u as iconGauge } from "./CropOverlay-CFlj408e.js";
+import { Q as iconSkipStart, R as iconStepBack, S as iconPlay, T as iconStepForward, U as iconRepeat, V as iconPause, W as iconCursor, X as iconSplit, Y as iconTrash, n as iconReset, Z as iconReverse, _ as iconCurve, $ as iconFilm, L as iconGauge } from "./icons-BOh8YpxI.js";
 function captureFrame(video, time) {
   return new Promise((resolve) => {
     video.currentTime = time;
@@ -197,6 +197,7 @@ class TransportBar {
     __publicField(this, "video", null);
     __publicField(this, "callbacks");
     __publicField(this, "timeDisplay");
+    __publicField(this, "frameDisplay");
     __publicField(this, "playBtn");
     __publicField(this, "loopBtn");
     __publicField(this, "shuttleSpeed", 1);
@@ -212,6 +213,8 @@ class TransportBar {
     __publicField(this, "_transitions", []);
     __publicField(this, "_lastSegIdx", -1);
     __publicField(this, "_audioEditManager", null);
+    __publicField(this, "_fps", 30);
+    __publicField(this, "_totalDuration", 0);
     this.callbacks = callbacks;
     this.container = document.createElement("div");
     this.container.className = "veditor-transport";
@@ -228,10 +231,15 @@ class TransportBar {
     this.timeDisplay.setAttribute("data-tool-id", "veditor-timecode");
     this.timeDisplay.setAttribute("aria-label", "Current time / total duration");
     this.timeDisplay.setAttribute("aria-live", "polite");
+    this.frameDisplay = document.createElement("span");
+    this.frameDisplay.className = "veditor-frame-counter";
+    this.frameDisplay.textContent = "F: 0 / 0";
+    this.frameDisplay.setAttribute("data-tool-id", "veditor-frame-counter");
+    this.frameDisplay.setAttribute("aria-label", "Current frame / total frames");
     this.loopBtn = this._makeBtn(iconRepeat, "Toggle loop playback", () => this._toggleLoop(), "veditor-loop-btn");
     this.loopBtn.classList.add("active");
     this.loopBtn.setAttribute("aria-pressed", "true");
-    this.container.append(goStart, stepBack, this.playBtn, stepFwd, this.timeDisplay, this.loopBtn);
+    this.container.append(goStart, stepBack, this.playBtn, stepFwd, this.timeDisplay, this.frameDisplay, this.loopBtn);
     this._keyHandler = (e) => this._onKeyDown(e);
     document.addEventListener("keydown", this._keyHandler);
   }
@@ -346,6 +354,14 @@ class TransportBar {
   /** Bind the audio edit manager for live volume enforcement */
   setAudioEditManager(mgr) {
     this._audioEditManager = mgr;
+  }
+  /** Set the video frame rate (from backend probe). Also fixes frame-step size. */
+  setFps(fps) {
+    this._fps = fps > 0 ? fps : 30;
+  }
+  /** Set total source duration (for frame count when no edit manager). */
+  setTotalDuration(dur) {
+    this._totalDuration = dur > 0 ? dur : 0;
   }
   /** Update playback rate live (used by speed controls for preview). */
   setPlaybackRate(rate) {
@@ -492,7 +508,7 @@ class TransportBar {
   _stepFrame(direction) {
     if (!this.video) return;
     this.video.pause();
-    const fps = 30;
+    const fps = this._fps;
     const dt = direction / fps;
     let newTime = this.video.currentTime + dt;
     if (this._editManager) {
@@ -584,6 +600,8 @@ class TransportBar {
   _updateTimeDisplay() {
     if (!this.video) return;
     const currentTime = this._targetTime !== null ? this._targetTime : this.video.currentTime;
+    let displayTime = currentTime;
+    let displayDur = this.video.duration || this._totalDuration;
     if (this._editManager) {
       const mgr = this._editManager;
       const segs = mgr.segments;
@@ -598,11 +616,20 @@ class TransportBar {
         outputTime = Math.min(outputTime, outputDur);
       }
       this.timeDisplay.textContent = `${this._formatTime(outputTime)} / ${this._formatTime(outputDur)}`;
+      displayTime = outputTime;
+      displayDur = outputDur;
     } else {
       const current = this._formatTime(currentTime);
       const total = this._formatTime(this.video.duration || 0);
       this.timeDisplay.textContent = `${current} / ${total}`;
     }
+    const fps = this._fps;
+    const currentFrame = Math.min(
+      Math.floor(displayTime * fps) + 1,
+      Math.round(displayDur * fps)
+    );
+    const totalFrames = Math.round(displayDur * fps);
+    this.frameDisplay.textContent = `F: ${Math.max(currentFrame, 0)} / ${totalFrames}`;
   }
   _formatTime(seconds) {
     if (!isFinite(seconds)) return "00:00.00";
@@ -1254,8 +1281,8 @@ class EditToolbar {
     );
     const resetBtn = this._makeToolBtn(
       iconReset,
-      "Reset",
-      "Reset all segments (R)",
+      "Reset All",
+      "Reset all settings (R)",
       "veditor-action-reset",
       () => this.callbacks.onResetRequested()
     );

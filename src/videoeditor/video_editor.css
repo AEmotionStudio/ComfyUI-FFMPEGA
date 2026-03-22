@@ -403,6 +403,16 @@
     user-select: none;
 }
 
+.veditor-frame-counter {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--ve-text-dim);
+    padding: 0 8px;
+    letter-spacing: 0.3px;
+    user-select: none;
+    border-left: 1px solid var(--ve-border);
+}
+
 /* ── Tools Panel (tabbed sidebar) ────────────────────────────────── */
 
 .veditor-modal-tools {

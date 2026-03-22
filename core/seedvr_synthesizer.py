@@ -51,6 +51,22 @@ SEEDVR_CONFIGS = {
         "download_size": "~3 GB",
         "vram": "~8-12 GB",
     },
+    "seedvr2_3b_gguf": {
+        "description": "SeedVR2 3B GGUF Q4 — lowest VRAM, good quality",
+        "dit_model": "seedvr2_ema_3b-Q4_K_M.gguf",
+        "vae_model": "ema_vae_fp16.safetensors",
+        "size": "3B",
+        "download_size": "~2 GB",
+        "vram": "~6-8 GB (with BlockSwap)",
+    },
+    "seedvr2_7b_fp8": {
+        "description": "SeedVR2 7B FP8 — highest quality, needs more VRAM",
+        "dit_model": "seedvr2_ema_7b_fp8_e4m3fn.safetensors",
+        "vae_model": "ema_vae_fp16.safetensors",
+        "size": "7B",
+        "download_size": "~8 GB",
+        "vram": "~16-24 GB",
+    },
     "seedvr2_7b_gguf": {
         "description": "SeedVR2 7B GGUF Q4 — highest quality, quantized for lower VRAM",
         "dit_model": "seedvr2_ema_7b-Q4_K_M.gguf",

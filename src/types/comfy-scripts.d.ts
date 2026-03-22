@@ -27,6 +27,16 @@ declare module 'comfyui/api' {
     export const api: ComfyAPI;
 }
 
+// Three.js CDN imports (loaded dynamically at runtime)
+declare module 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js' {
+    const THREE: any;
+    export = THREE;
+}
+declare module 'https://unpkg.com/three@0.170.0/build/three.module.min.js' {
+    const THREE: any;
+    export = THREE;
+}
+
 // CSS inline imports (Vite)
 declare module '*.css?inline' {
     const content: string;

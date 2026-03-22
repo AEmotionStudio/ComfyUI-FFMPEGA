@@ -347,12 +347,22 @@ async def process_effects_pipeline(
     steps = data.get("pipeline", [])
     raw_ffmpeg = data.get("raw_ffmpeg", "")
     effects_mode = data.get("effects_mode", "empty")
+    overlay_text = data.get("overlay_text", "")
+    use_prompt_text = data.get("use_prompt_as_text", False)
 
+    # When mode is empty but text is available, auto-inject a text_overlay step
     if effects_mode == "empty" and not raw_ffmpeg:
-        raise RuntimeError(
-            "Effects Builder: no effects selected and no raw FFmpeg filters. "
-            "Please select at least one effect or provide raw filters."
-        )
+        has_text = bool(overlay_text and overlay_text.strip())
+        has_prompt_text = bool(use_prompt_text and prompt and prompt.strip())
+        if has_text or has_prompt_text:
+            steps = [{"skill": "text_overlay", "params": {}}]
+            effects_mode = "skills"
+            logger.info("Effects Builder: auto-injected text_overlay step from text input")
+        else:
+            raise RuntimeError(
+                "Effects Builder: no effects selected and no raw FFmpeg filters. "
+                "Please select at least one effect or provide raw filters."
+            )
 
     logger.info(
         "Effects Builder mode: %s — %d skills, raw=%s",
@@ -404,6 +414,22 @@ async def process_effects_pipeline(
         if skill_name:
             pipeline.add_step(skill_name, params)
 
+    # --- Inject overlay text into text_overlay steps ---
+    # Priority: overlay_text (from raw_ffmpeg box) > prompt (when use_prompt_as_text)
+    effective_text = overlay_text.strip() if overlay_text else ""
+    if not effective_text and use_prompt_text and prompt:
+        effective_text = prompt.strip()
+
+    if effective_text:
+        _TEXT_OVERLAY_SKILLS = {"text_overlay", "text", "drawtext", "title", "subtitle", "caption"}
+        for step in steps:
+            skill = step.get("skill", "")
+            params = step.get("params", {})
+            if skill in _TEXT_OVERLAY_SKILLS and not params.get("text"):
+                params["text"] = effective_text
+        logger.info("Effects Builder: injected overlay text (%d chars) into text_overlay steps",
+                     len(effective_text))
+
     # --- Inject extra inputs (multi-input for concat/grid/etc.) ---
     assert _inject_extra_inputs_fn is not None, "_inject_extra_inputs_fn must be provided"
     (
@@ -439,16 +465,26 @@ async def process_effects_pipeline(
 
     # Inject raw FFmpeg filters (appended to video filter chain)
     if raw_ffmpeg and raw_ffmpeg.strip():
-        for raw_filter in raw_ffmpeg.strip().split(","):
+        # Collapse newlines → commas so multi-line input is treated
+        # as comma-separated filters instead of breaking the command.
+        sanitized = raw_ffmpeg.replace("\r", "").replace("\n", ",")
+        for raw_filter in sanitized.strip().split(","):
             raw_filter = raw_filter.strip()
-            if raw_filter:
-                # Parse "name=params" into a Filter object
-                if "=" in raw_filter:
-                    name, _, param_str = raw_filter.partition("=")
+            if not raw_filter:
+                continue
+            # Basic validation: a valid filter is either "name=params"
+            # or a standalone filter name (alphanumeric/underscores).
+            if "=" in raw_filter:
+                name, _, param_str = raw_filter.partition("=")
+                if name.strip().replace("_", "").isalnum():
                     command.video_filters.add_filter(name.strip(), {"": param_str})
                 else:
-                    command.video_filters.add_filter(raw_filter)
-        logger.info("Effects Builder: appended raw filters: %s", raw_ffmpeg.strip())
+                    logger.warning("Effects Builder: skipped invalid raw filter: %s", raw_filter)
+            elif raw_filter.replace("_", "").isalnum():
+                command.video_filters.add_filter(raw_filter)
+            else:
+                logger.warning("Effects Builder: skipped invalid raw filter: %s", raw_filter)
+        logger.info("Effects Builder: appended raw filters: %s", sanitized.strip())
 
     logger.debug("Effects Builder command: %s", command.to_string())
 
@@ -469,12 +505,16 @@ async def process_effects_pipeline(
     # --- Collect frame/audio output ---
     unique_id = str(kwargs.get("unique_id", ""))
     hidden_prompt = kwargs.get("hidden_prompt") or {}
+    # Resample audio if user toggled the option (e.g. 96kHz → 48kHz for MP3)
+    _resample = kwargs.get("audio_resample_rate", "off")
+    _resample_rate = int(_resample) if _resample and _resample != "off" else None
     images_tensor, audio_out = collect_frame_output(
         media_converter=media_converter,
         output_path=output_path,
         unique_id=unique_id,
         hidden_prompt=hidden_prompt,
         removes_audio="-an" in command.output_options,
+        resample_rate=_resample_rate,
     )
 
     # --- Mask overlay (if auto_mask was used) ---
@@ -1308,6 +1348,599 @@ async def process_audiox_music_only(
             f"Audio mode: {audio_output_mode}\n"
             f"Source had audio: {has_audio}\n\n"
             f"Generated music: {audio_file}\n"
+            f"Output: {output_path}"
+        )
+
+        return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
+    finally:
+        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        if audio_file and os.path.exists(audio_file):
+            try:
+                os.remove(audio_file)
+            except OSError:
+                pass
+        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+            if not os.listdir(temp_render_dir):
+                shutil.rmtree(temp_render_dir, ignore_errors=True)
+
+async def process_foundation1_only(
+    # dependencies
+    media_converter,
+    # parameters
+    prompt: str,
+    audio_output_mode: str,
+    effective_video_path: str,
+    video_metadata,
+    save_output: bool,
+    output_path: str,
+    preview_mode: bool,
+    quality_preset: str,
+    crf: int,
+    encoding_preset: str,
+    temp_video_from_images: Optional[str] = None,
+    temp_video_with_audio: Optional[str] = None,
+    **kwargs,
+) -> tuple[torch.Tensor, dict, str, str, str, str]:
+    """Run Foundation-1 sample generation directly without any LLM involvement.
+
+    Generates a music sample/loop from a text prompt using Foundation-1,
+    then muxes the result into the output video.
+
+    Args:
+        prompt: Text description to guide sample generation (or preset name).
+        audio_output_mode: "auto"/"replace" to discard original audio,
+                           "mix" to blend, "save_only" to skip muxing.
+
+    Returns the standard 6-tuple:
+        (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
+    """
+    # Treat "auto" as "replace" in no-LLM context
+    if audio_output_mode == "auto":
+        audio_output_mode = "replace"
+    logger.info(
+        "Foundation-1 sample-only mode: prompt=%r, mode=%s", prompt, audio_output_mode,
+    )
+
+    # --- Import Foundation-1 ---
+    try:
+        try:
+            from ..core.foundation1_synthesizer import generate_sample
+        except ImportError:
+            from core.foundation1_synthesizer import generate_sample  # type: ignore
+    except ImportError:
+        raise RuntimeError(
+            "Foundation-1 is not available. Install with: "
+            "pip install --no-deps stable-audio-tools"
+        )
+
+    # --- Build output path ---
+    output_path, temp_render_dir = build_output_path(
+        effective_video_path=effective_video_path,
+        save_output=save_output,
+        output_path=output_path,
+        preview_mode=preview_mode,
+    )
+
+    # --- Extract Foundation-1 widget params ---
+    f1_preset = kwargs.pop("f1_preset", "none")
+    f1_instrument = kwargs.pop("f1_instrument", "none")
+    f1_fx = kwargs.pop("f1_fx", "none")
+    f1_structure = kwargs.pop("f1_structure", "none")
+    f1_negative_prompt = kwargs.pop("f1_negative_prompt", "")
+    f1_bpm_str = kwargs.pop("f1_bpm", "auto")
+    f1_bars_str = kwargs.pop("f1_bars", "auto")
+    f1_key = kwargs.pop("f1_key", "")
+    f1_duration = kwargs.pop("f1_duration", 0.0)
+    f1_steps = kwargs.pop("f1_steps", 100)
+    f1_cfg_scale = kwargs.pop("f1_cfg_scale", 7.0)
+    f1_style_transfer = kwargs.pop("f1_style_transfer", False)
+    f1_noise_level = kwargs.pop("f1_noise_level", 0.7)
+    audio_a = kwargs.pop("audio_a", None)
+
+    # Convert string dropdowns to ints
+    f1_bpm = int(f1_bpm_str) if f1_bpm_str != "auto" else 0
+    f1_bars = int(f1_bars_str) if f1_bars_str != "auto" else 0
+
+    # Build enhanced prompt from instrument/FX/structure dropdowns
+    prompt_parts = []
+    if f1_instrument and f1_instrument != "none":
+        # Capitalize for Foundation-1's tag format
+        prompt_parts.append(f1_instrument.replace("_", " ").title())
+    if f1_fx and f1_fx != "none":
+        # Convert underscored names to Foundation-1 tag format
+        prompt_parts.append(f1_fx.replace("_", " ").title())
+    if f1_structure and f1_structure != "none":
+        prompt_parts.append(f1_structure.replace("_", " ").title())
+    if prompt_parts:
+        # Prepend instrument/FX/structure tags to user prompt
+        tags = ", ".join(prompt_parts)
+        prompt = f"{tags}, {prompt}" if prompt.strip() else tags
+
+    logger.info(
+        "Foundation-1 params: preset=%s, instrument=%s, fx=%s, structure=%s, "
+        "bpm=%s, bars=%s, key=%r, duration=%.1f, steps=%d, cfg=%.1f, "
+        "style_transfer=%s, noise_level=%.2f",
+        f1_preset, f1_instrument, f1_fx, f1_structure,
+        f1_bpm, f1_bars, f1_key, f1_duration, f1_steps, f1_cfg_scale,
+        f1_style_transfer, f1_noise_level,
+    )
+
+    # --- Generate audio via Foundation-1 ---
+    audio_file = None
+    try:
+        if f1_style_transfer and audio_a is not None:
+            # Style transfer mode: restyle connected audio_a
+            try:
+                try:
+                    from ..core.foundation1_synthesizer import style_transfer_audio
+                except ImportError:
+                    from core.foundation1_synthesizer import style_transfer_audio  # type: ignore
+            except ImportError:
+                raise RuntimeError(
+                    "Foundation-1 style_transfer_audio not available. "
+                    "Ensure foundation1_synthesizer.py is up-to-date."
+                )
+
+            # Extract audio_a waveform to a temp wav file for the synthesizer
+            import tempfile as _tf
+            import numpy as _np
+            from scipy.io import wavfile as _wavfile
+
+            waveform = audio_a.get("waveform")  # shape: [batch, channels, samples]
+            sr = audio_a.get("sample_rate", 44100)
+            if waveform is None:
+                raise RuntimeError("audio_a has no waveform — connect an audio source")
+
+            # Write to temp file
+            tmp_audio = _tf.NamedTemporaryFile(suffix=".wav", delete=False)
+            tmp_audio.close()
+            audio_np = waveform.squeeze(0).cpu().numpy()  # [channels, samples]
+            if audio_np.ndim == 2:
+                audio_np = audio_np.T  # → [samples, channels]
+            audio_np = _np.clip(audio_np, -1.0, 1.0).astype(_np.float32)
+            _wavfile.write(tmp_audio.name, int(sr), audio_np)
+
+            audio_file = style_transfer_audio(
+                input_audio_path=tmp_audio.name,
+                prompt=prompt,
+                negative_prompt=f1_negative_prompt,
+                preset=f1_preset if f1_preset != "none" else "",
+                bpm=f1_bpm,
+                bars=f1_bars,
+                key=f1_key,
+                init_noise_level=f1_noise_level,
+                steps=f1_steps,
+                cfg_scale=f1_cfg_scale,
+            )
+
+            # Clean up temp input
+            try:
+                os.remove(tmp_audio.name)
+            except OSError:
+                pass
+        else:
+            # Standard generation mode
+            audio_file = generate_sample(
+                prompt=prompt,
+                negative_prompt=f1_negative_prompt,
+                preset=f1_preset if f1_preset != "none" else "",
+                bpm=f1_bpm,
+                bars=f1_bars,
+                key=f1_key,
+                duration=f1_duration if f1_duration > 0 else None,
+                steps=f1_steps,
+                cfg_scale=f1_cfg_scale,
+            )
+    except Exception as e:
+        logger.error("Foundation-1 sample-only: generation failed: %s", e)
+        try:
+            try:
+                from ..core.foundation1_synthesizer import cleanup as _f1_cleanup
+            except ImportError:
+                from core.foundation1_synthesizer import cleanup as _f1_cleanup  # type: ignore
+            _f1_cleanup()
+        except Exception:
+            pass
+        raise RuntimeError(f"Foundation-1 sample generation failed: {e}") from e
+
+    # --- Detect if source video has audio ---
+    has_audio = False
+    has_real_video = bool(effective_video_path and effective_video_path.strip()
+                         and os.path.isfile(effective_video_path))
+    if has_real_video and video_metadata and video_metadata.primary_audio:
+        has_audio = True
+
+    # --- Audio-only output (no video connected) or save_only ---
+    if audio_output_mode == "save_only" or not has_real_video:
+        # Just output the generated audio file directly
+        shutil.copy2(audio_file, output_path)
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=False,
+        )
+        mode_label = "save_only" if audio_output_mode == "save_only" else "audio-only"
+        analysis = (
+            f"Foundation-1 Sample-Only Mode (no LLM) — {mode_label}\n"
+            f"Prompt: {prompt or '(no text prompt)'}\n"
+            f"Generated sample: {audio_file}\n"
+            f"Output: {output_path}"
+        )
+        return (images_tensor, audio_out, output_path, "", analysis, "")
+
+    # --- Build ffmpeg command to mux generated audio into real video ---
+    _ffmpeg = _get_ffmpeg_bin()
+    effective_crf = crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23)
+    effective_preset = encoding_preset if encoding_preset != "auto" else _PRESET_MAP.get(quality_preset, "medium")
+
+    if audio_output_mode == "mix" and has_audio:
+        ffmpeg_cmd = [
+            _ffmpeg, "-y",
+            "-i", effective_video_path,
+            "-i", audio_file,
+            "-filter_complex",
+            "[0:a][1:a]amix=inputs=2:duration=shortest[aout]",
+            "-map", "0:v",
+            "-map", "[aout]",
+            "-c:v", "libx264",
+            "-crf", str(effective_crf),
+            "-preset", effective_preset,
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "192k",
+        ]
+    else:
+        ffmpeg_cmd = [
+            _ffmpeg, "-y",
+            "-i", effective_video_path,
+            "-i", audio_file,
+            "-map", "0:v",
+            "-map", "1:a",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "192k",
+        ]
+
+    if preview_mode:
+        if audio_output_mode == "mix" and has_audio:
+            ffmpeg_cmd.extend(["-vf", "scale=480:trunc(ow/a/2)*2", "-t", "10"])
+        else:
+            ffmpeg_cmd = [
+                _ffmpeg, "-y",
+                "-i", effective_video_path,
+                "-i", audio_file,
+                "-map", "0:v",
+                "-map", "1:a",
+                "-vf", "scale=480:trunc(ow/a/2)*2",
+                "-t", "10",
+                "-c:v", "libx264",
+                "-crf", str(effective_crf),
+                "-preset", effective_preset,
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-shortest",
+            ]
+
+    ffmpeg_cmd.append(output_path)
+
+    logger.debug("Foundation-1 sample-only ffmpeg command: %s", " ".join(ffmpeg_cmd))
+    try:
+        proc = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"Foundation-1 sample-only mode: ffmpeg mux failed:\n{proc.stderr[-500:]}"
+            )
+
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=False,
+        )
+
+        cmd_log = " ".join(ffmpeg_cmd)
+        analysis = (
+            f"Foundation-1 Sample-Only Mode (no LLM)\n"
+            f"Prompt: {prompt or '(no text prompt)'}\n"
+            f"Audio mode: {audio_output_mode}\n"
+            f"Source had audio: {has_audio}\n\n"
+            f"Generated sample: {audio_file}\n"
+            f"Output: {output_path}"
+        )
+
+        return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
+    finally:
+        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        if audio_file and os.path.exists(audio_file):
+            try:
+                os.remove(audio_file)
+            except OSError:
+                pass
+        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+            if not os.listdir(temp_render_dir):
+                shutil.rmtree(temp_render_dir, ignore_errors=True)
+
+
+async def process_fish_speech_only(
+    # dependencies
+    media_converter,
+    # parameters
+    prompt: str,
+    audio_output_mode: str,
+    effective_video_path: str,
+    video_metadata,
+    save_output: bool,
+    output_path: str,
+    preview_mode: bool,
+    quality_preset: str,
+    crf: int,
+    encoding_preset: str,
+    temp_video_from_images: Optional[str] = None,
+    temp_video_with_audio: Optional[str] = None,
+    **kwargs,
+) -> tuple[torch.Tensor, dict, str, str, str, str]:
+    """Run Fish Speech TTS directly without any LLM involvement.
+
+    Generates speech audio from text using Fish Speech S2 Pro,
+    then muxes the result into the output video.
+
+    Args:
+        prompt: Text to synthesize. Supports inline tags like ``[whisper]``,
+                ``[excited]``, ``<|speaker:0|>``, etc.
+        audio_output_mode: "auto"/"replace" to discard original audio,
+                           "mix" to blend, "save_only" to skip muxing.
+
+    Returns the standard 6-tuple:
+        (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
+    """
+    # Treat "auto" as "replace" in no-LLM context
+    if audio_output_mode == "auto":
+        audio_output_mode = "replace"
+    logger.info(
+        "Fish Speech TTS mode: prompt=%r, mode=%s", prompt[:80], audio_output_mode,
+    )
+
+    # --- Import Fish Speech synthesizer ---
+    try:
+        try:
+            from ..core.fish_speech_synthesizer import generate_speech
+        except ImportError:
+            from core.fish_speech_synthesizer import generate_speech  # type: ignore
+    except ImportError:
+        raise RuntimeError(
+            "Fish Speech is not available. Install with: "
+            "pip install --no-deps fish-speech"
+        )
+
+    # --- Build output path ---
+    output_path, temp_render_dir = build_output_path(
+        effective_video_path=effective_video_path,
+        save_output=save_output,
+        output_path=output_path,
+        preview_mode=preview_mode,
+    )
+
+    # --- Extract Fish Speech widget params ---
+    fish_model_variant = kwargs.pop("fish_model_variant", "bf16")
+    fish_voice = kwargs.pop("fish_voice", "")
+    fish_emotion = kwargs.pop("fish_emotion", "(none)")
+    fish_temperature = kwargs.pop("fish_temperature", 0.7)
+    fish_top_p = kwargs.pop("fish_top_p", 0.7)
+    fish_repetition_penalty = kwargs.pop("fish_repetition_penalty", 1.2)
+
+    # Normalize emotion tag
+    emotion_tag = ""
+    if fish_emotion and fish_emotion != "(none)":
+        emotion_tag = fish_emotion
+
+    # Resolve voice references — priority: audio inputs > fish_voice library
+    # Supports multi-speaker: audio_a → speaker:0, audio_b → speaker:1
+    reference_audio = None
+    reference_audios = None
+    voice_name = None
+
+    # 1. Check for connected audio inputs (direct reference audio)
+    from .output_handler import audio_dict_to_wav
+    audio_a = kwargs.pop("audio_a", None)
+    audio_b = kwargs.pop("audio_b", None)
+
+    ref_paths = []  # list of (wav_path, label) tuples
+    for label, audio_dict in [("speaker_0", audio_a), ("speaker_1", audio_b)]:
+        if audio_dict is not None and isinstance(audio_dict, dict):
+            try:
+                wav_path = audio_dict_to_wav(audio_dict)
+                if wav_path and os.path.isfile(wav_path):
+                    ref_paths.append((wav_path, label))
+                    logger.info(
+                        "Fish Speech: %s reference voice → %s", label, wav_path,
+                    )
+            except Exception as e:
+                logger.warning(
+                    "Fish Speech: could not extract %s for voice cloning: %s",
+                    label, e,
+                )
+
+    if len(ref_paths) >= 2:
+        # Multi-speaker mode
+        reference_audios = ref_paths
+        logger.info("Fish Speech: multi-speaker mode with %d references", len(ref_paths))
+    elif len(ref_paths) == 1:
+        # Single speaker mode
+        reference_audio = ref_paths[0][0]
+
+    # 2. Fallback: voice library name or direct path
+    if not reference_audio and not reference_audios and fish_voice and fish_voice.strip():
+        voice_str = fish_voice.strip()
+        if os.path.isfile(voice_str):
+            reference_audio = voice_str
+        else:
+            voice_name = voice_str
+
+    logger.info(
+        "Fish Speech params: variant=%s, voice=%s, emotion=%s, "
+        "temperature=%.2f, top_p=%.2f, rep_penalty=%.2f",
+        fish_model_variant, fish_voice or "(default)",
+        fish_emotion, fish_temperature, fish_top_p, fish_repetition_penalty,
+    )
+
+    # --- Generate speech ---
+    audio_file = None
+    try:
+        audio_file = generate_speech(
+            text=prompt,
+            reference_audio=reference_audio,
+            reference_audios=reference_audios,
+            voice_name=voice_name,
+            emotion_tag=emotion_tag,
+            variant=fish_model_variant,
+            temperature=fish_temperature,
+            top_p=fish_top_p,
+            repetition_penalty=fish_repetition_penalty,
+        )
+    except Exception as e:
+        logger.error("Fish Speech TTS: generation failed: %s", e)
+        try:
+            try:
+                from ..core.fish_speech_synthesizer import cleanup as _fs_cleanup
+            except ImportError:
+                from core.fish_speech_synthesizer import cleanup as _fs_cleanup  # type: ignore
+            _fs_cleanup()
+        except Exception:
+            pass
+        raise RuntimeError(f"Fish Speech generation failed: {e}") from e
+
+    # --- Detect if source video has audio ---
+    has_audio = False
+    has_real_video = bool(effective_video_path and effective_video_path.strip()
+                         and os.path.isfile(effective_video_path))
+    if has_real_video and video_metadata and video_metadata.primary_audio:
+        has_audio = True
+
+    # --- Audio-only output (no video connected) or save_only ---
+    if audio_output_mode == "save_only" or not has_real_video:
+        # Just output the generated audio file directly
+        shutil.copy2(audio_file, output_path)
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=False,
+        )
+        mode_label = "save_only" if audio_output_mode == "save_only" else "audio-only"
+        analysis = (
+            f"Fish Speech TTS Mode (no LLM) — {mode_label}\n"
+            f"Text: {prompt[:100] or '(no text)'}{'...' if len(prompt) > 100 else ''}\n"
+            f"Voice: {fish_voice or '(default)'}\n"
+            f"Emotion: {fish_emotion}\n"
+            f"Generated audio: {audio_file}\n"
+            f"Output: {output_path}"
+        )
+        return (images_tensor, audio_out, output_path, "", analysis, "")
+
+    # --- Build ffmpeg command to mux generated audio into real video ---
+    _ffmpeg = _get_ffmpeg_bin()
+    effective_crf = crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23)
+    effective_preset = encoding_preset if encoding_preset != "auto" else _PRESET_MAP.get(quality_preset, "medium")
+
+    if audio_output_mode == "mix" and has_audio:
+        ffmpeg_cmd = [
+            _ffmpeg, "-y",
+            "-i", effective_video_path,
+            "-i", audio_file,
+            "-filter_complex",
+            "[0:a][1:a]amix=inputs=2:duration=shortest[aout]",
+            "-map", "0:v",
+            "-map", "[aout]",
+            "-c:v", "libx264",
+            "-crf", str(effective_crf),
+            "-preset", effective_preset,
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "192k",
+        ]
+    else:
+        ffmpeg_cmd = [
+            _ffmpeg, "-y",
+            "-i", effective_video_path,
+            "-i", audio_file,
+            "-map", "0:v",
+            "-map", "1:a",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "192k",
+        ]
+
+    if preview_mode:
+        if audio_output_mode == "mix" and has_audio:
+            ffmpeg_cmd.extend(["-vf", "scale=480:trunc(ow/a/2)*2", "-t", "10"])
+        else:
+            ffmpeg_cmd = [
+                _ffmpeg, "-y",
+                "-i", effective_video_path,
+                "-i", audio_file,
+                "-map", "0:v",
+                "-map", "1:a",
+                "-vf", "scale=480:trunc(ow/a/2)*2",
+                "-t", "10",
+                "-c:v", "libx264",
+                "-crf", str(effective_crf),
+                "-preset", effective_preset,
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-shortest",
+            ]
+
+    ffmpeg_cmd.append(output_path)
+
+    logger.debug("Fish Speech TTS ffmpeg command: %s", " ".join(ffmpeg_cmd))
+    try:
+        proc = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"Fish Speech TTS mode: ffmpeg mux failed:\n{proc.stderr[-500:]}"
+            )
+
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=False,
+        )
+
+        cmd_log = " ".join(ffmpeg_cmd)
+        analysis = (
+            f"Fish Speech TTS Mode (no LLM)\n"
+            f"Text: {prompt[:100] or '(no text)'}{'...' if len(prompt) > 100 else ''}\n"
+            f"Voice: {fish_voice or '(default)'}\n"
+            f"Emotion: {fish_emotion}\n"
+            f"Audio mode: {audio_output_mode}\n"
+            f"Source had audio: {has_audio}\n\n"
+            f"Generated audio: {audio_file}\n"
             f"Output: {output_path}"
         )
 
@@ -3375,6 +4008,8 @@ async def process_kiwi_edit_only(
     kiwi_flow_shift = kwargs.get("kiwi_flow_shift", 5.0)
     kiwi_task_type = kwargs.get("kiwi_task_type", "auto")
     kiwi_scheduler = kwargs.get("kiwi_scheduler", "unipc")
+    kiwi_lora_enabled = kwargs.get("kiwi_lora_enabled", False)
+    kiwi_lora_variant = kwargs.get("kiwi_lora_variant", "high_noise")
 
     # --- Import Kiwi-Edit synthesizer ---
     try:
@@ -3458,6 +4093,7 @@ async def process_kiwi_edit_only(
             flow_shift=float(kiwi_flow_shift),
             task_type=str(kiwi_task_type),
             scheduler=str(kiwi_scheduler),
+            lora_variant=str(kiwi_lora_variant) if kiwi_lora_enabled else None,
         )
         output_path = edited_path
 
@@ -3528,10 +4164,215 @@ async def process_kiwi_edit_only(
             f"Flow shift: {kiwi_flow_shift}\n"
             f"Task type: {kiwi_task_type}\n"
             f"Scheduler: {kiwi_scheduler}\n"
+            f"LoRA: {kiwi_lora_variant if kiwi_lora_enabled else 'disabled'}\n"
             f"Long video: {kiwi_long_video}\n"
             f"Prompt: {prompt or '(none)'}\n"
             f"Reference images: {'yes' if has_ref else 'no'}\n\n"
             f"Source: {effective_video_path}\n"
+            f"Output: {output_path}"
+        )
+
+        return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
+    finally:
+        # --- Cleanup temp files (always runs, even on error) ---
+        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+            if not os.listdir(temp_render_dir):
+                shutil.rmtree(temp_render_dir, ignore_errors=True)
+
+
+async def process_dreamid_omni_only(
+    # parameters
+    prompt: str,
+    effective_video_path: str,
+    video_metadata,
+    save_output: bool,
+    output_path: str,
+    preview_mode: bool,
+    quality_preset: str,
+    crf: int,
+    encoding_preset: str,
+    image_a=None,
+    audio_a=None,
+    temp_video_from_images: Optional[str] = None,
+    temp_video_with_audio: Optional[str] = None,
+    **kwargs,
+) -> tuple[torch.Tensor, dict, str, str, str, str]:
+    """Run DreamID-Omni identity-preserving talking-head video generation without LLM.
+
+    Requires face image(s) on image_a and reference audio on audio_a.
+    The prompt describes the scene/action for the generated video.
+
+    Returns the standard 6-tuple:
+        (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
+    """
+    logger.info("DreamID-Omni mode: prompt=%r", prompt)
+
+    # --- Extract DreamID parameters from kwargs ---
+    dreamid_resolution = kwargs.get("dreamid_resolution", "auto")
+    dreamid_precision = kwargs.get("dreamid_precision", "auto")
+    dreamid_steps = int(kwargs.get("dreamid_steps", 50))
+    dreamid_seed = int(kwargs.get("dreamid_seed", 100))
+    dreamid_solver = kwargs.get("dreamid_solver", "unipc")
+    dreamid_video_cfg = float(kwargs.get("dreamid_video_cfg", 3.0))
+    dreamid_video_ref_cfg = float(kwargs.get("dreamid_video_ref_cfg", 1.5))
+    dreamid_audio_cfg = float(kwargs.get("dreamid_audio_cfg", 4.0))
+    dreamid_audio_ref_cfg = float(kwargs.get("dreamid_audio_ref_cfg", 2.0))
+
+    # --- Import DreamID-Omni synthesizer ---
+    try:
+        try:
+            from ..core.dreamid_omni_synthesizer import (
+                generate_video as _dreamid_generate,
+                cleanup as _dreamid_cleanup,
+                _audio_dict_to_wav,
+                _tensor_to_image,
+            )
+        except ImportError:
+            from core.dreamid_omni_synthesizer import (  # type: ignore
+                generate_video as _dreamid_generate,
+                cleanup as _dreamid_cleanup,
+                _audio_dict_to_wav,
+                _tensor_to_image,
+            )
+    except ImportError:
+        raise RuntimeError(
+            "DreamID-Omni is not available. "
+            "Ensure core/dreamid_omni_synthesizer.py "
+            "and core/dreamid_omni/ exist."
+        )
+
+    # --- Validate inputs ---
+    if image_a is None:
+        raise RuntimeError(
+            "DreamID-Omni requires at least one face reference image. "
+            "Connect a face image to image_a."
+        )
+    if audio_a is None:
+        raise RuntimeError(
+            "DreamID-Omni requires reference audio. "
+            "Connect an audio clip to audio_a."
+        )
+
+    # --- Build output path ---
+    output_path, temp_render_dir = build_output_path(
+        effective_video_path=effective_video_path,
+        save_output=save_output,
+        output_path=output_path,
+        preview_mode=preview_mode,
+    )
+
+    # --- Convert image_a tensor → temp PNG files ---
+    import numpy as _np
+    face_image_paths = []
+    temp_files = []
+    try:
+        if hasattr(image_a, 'shape') and len(image_a.shape) == 4:
+            # Batch: [B, H, W, C]
+            for idx in range(min(image_a.shape[0], 2)):  # Max 2 faces
+                tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                tmp.close()
+                _tensor_to_image(image_a[idx], tmp.name)
+                face_image_paths.append(tmp.name)
+                temp_files.append(tmp.name)
+        elif hasattr(image_a, 'shape') and len(image_a.shape) == 3:
+            # Single: [H, W, C]
+            tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+            tmp.close()
+            _tensor_to_image(image_a, tmp.name)
+            face_image_paths.append(tmp.name)
+            temp_files.append(tmp.name)
+
+        if not face_image_paths:
+            raise RuntimeError("Could not extract face images from image_a tensor")
+
+        logger.info("DreamID-Omni: %d face image(s) extracted", len(face_image_paths))
+
+        # --- Convert audio_a AUDIO dict → temp WAV ---
+        audio_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        audio_wav.close()
+        _audio_dict_to_wav(audio_a, audio_wav.name)
+        audio_paths = [audio_wav.name]
+        temp_files.append(audio_wav.name)
+        logger.info("DreamID-Omni: audio extracted to %s", audio_wav.name)
+
+        # --- Generate ---
+        generated_path = _dreamid_generate(
+            prompt=prompt or "",
+            face_image_paths=face_image_paths,
+            audio_paths=audio_paths,
+            output_path=output_path,
+            resolution_preset=dreamid_resolution,
+            seed=dreamid_seed,
+            steps=dreamid_steps,
+            solver_name=dreamid_solver,
+            shift=5.0,
+            video_cfg_scale=dreamid_video_cfg,
+            video_ref_cfg_scale=dreamid_video_ref_cfg,
+            audio_cfg_scale=dreamid_audio_cfg,
+            audio_ref_cfg_scale=dreamid_audio_ref_cfg,
+            precision=dreamid_precision,
+        )
+        output_path = generated_path
+
+        cmd_log = f"dreamid_omni generate_video → {output_path}"
+
+    except Exception as e:
+        logger.error("DreamID-Omni mode failed: %s", e)
+        try:
+            _dreamid_cleanup()
+        except Exception:
+            pass
+        raise RuntimeError(f"DreamID-Omni generation failed: {e}") from e
+
+    finally:
+        # Clean up temp face/audio files
+        for fp in temp_files:
+            try:
+                if os.path.exists(fp):
+                    os.remove(fp)
+            except OSError:
+                pass
+
+    try:
+        # --- Collect frame/audio output ---
+        try:
+            try:
+                from ..core.media_converter import MediaConverter
+            except ImportError:
+                from core.media_converter import MediaConverter  # type: ignore
+            media_converter = MediaConverter()
+        except Exception:
+            media_converter = None
+
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=False,
+        )
+
+        # --- Build analysis string ---
+        analysis = (
+            f"⚠️ DreamID-Omni Mode (WIP / Experimental)\n"
+            f"Resolution: {dreamid_resolution}\n"
+            f"Steps: {dreamid_steps}\n"
+            f"Seed: {dreamid_seed}\n"
+            f"Solver: {dreamid_solver}\n"
+            f"Video CFG: {dreamid_video_cfg}\n"
+            f"Video Ref CFG: {dreamid_video_ref_cfg}\n"
+            f"Audio CFG: {dreamid_audio_cfg}\n"
+            f"Audio Ref CFG: {dreamid_audio_ref_cfg}\n"
+            f"Faces: {len(face_image_paths)}\n"
+            f"Prompt: {prompt or '(none)'}\n\n"
             f"Output: {output_path}"
         )
 
@@ -3584,7 +4425,7 @@ async def process_ai_upscale_only(
 
     upscale_output = None
     temp_render_dir = None
-    _SEEDVR_MODELS = {"seedvr2_3b_fp8", "seedvr2_7b_gguf"}
+    _SEEDVR_MODELS = {"seedvr2_3b_fp8", "seedvr2_3b_gguf", "seedvr2_7b_fp8", "seedvr2_7b_gguf"}
 
     # --- Build output path (same pattern as flux_klein and other no-LLM modes) ---
     output_path, temp_render_dir = build_output_path(
@@ -3677,16 +4518,18 @@ async def process_ai_upscale_only(
 
         logger.info("[AIUpscale] Upscale output: %s", upscale_output)
 
-        # Place into final location
-        if save_output and output_path:
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            shutil.copy2(upscale_output, output_path)
-            cmd_log = f"cp {upscale_output} {output_path}"
-        else:
-            output_path = upscale_output
-            # Prevent the finally block from deleting the file we're using
-            upscale_output = None
-            cmd_log = f"ai_upscale → {output_path}"
+        # Always save upscale output to the ComfyUI output folder.
+        # Upscaling is expensive — the result should always be persisted.
+        if not save_output or not output_path:
+            # Force an output path even if save_output was False
+            import folder_paths  # type: ignore[import-not-found]
+            out_dir = folder_paths.get_output_directory()
+            stem = os.path.splitext(os.path.basename(effective_video_path))[0]
+            output_path = os.path.join(out_dir, f"{stem}_upscaled.mp4")
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        shutil.copy2(upscale_output, output_path)
+        cmd_log = f"ai_upscale → {output_path}"
+        logger.info("[AIUpscale] Saved to: %s", output_path)
 
         # --- Collect frame/audio output ---
         unique_id = str(kwargs.get("unique_id", ""))

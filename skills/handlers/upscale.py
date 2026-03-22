@@ -15,7 +15,7 @@ _GAN_MODELS = {
     "realesrgan_x4plus", "realesrgan_x4_anime",
     "hat_x4", "dat_x4", "swinir_x4",
 }
-_SEEDVR_MODELS = {"seedvr2_3b_fp8", "seedvr2_7b_gguf"}
+_SEEDVR_MODELS = {"seedvr2_3b_fp8", "seedvr2_3b_gguf", "seedvr2_7b_fp8", "seedvr2_7b_gguf"}
 _VALID_MODELS = _GAN_MODELS | _SEEDVR_MODELS
 _VALID_SCALES = {2, 4}
 _VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv"}

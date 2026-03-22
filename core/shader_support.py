@@ -201,6 +201,75 @@ _FALLBACK_MAP: dict[str, str] = {
         "colorbalance=rs=0.2:gs=0.1:bs=0.4,"
         "eq=saturation=1.8:contrast=1.5:brightness=-0.05"
     ),
+    # ── NPR & Stylized (batch 4) ──────────────────────────────────
+    "anime_pro": (
+        "edgedetect=mode=colormix:high=0.15,"
+        "eq=saturation=1.5:contrast=1.4"
+    ),
+    "watercolor": (
+        "boxblur=3:1,"
+        "eq=saturation=0.85:contrast=1.1,"
+        "colorbalance=rs=0.02:gs=0.01:bs=-0.01"
+    ),
+    "pop_art": (
+        "eq=saturation=2.5:contrast=1.5,"
+        "edgedetect=mode=colormix:high=0.1"
+    ),
+    "woodcut": (
+        "edgedetect=low=0.1:high=0.3:mode=colormix,"
+        "negate,eq=saturation=0:brightness=0.05,"
+        "colorbalance=rs=0.02:gs=0.01:bs=-0.01"
+    ),
+    "chromatic_prism": (
+        "rgbashift=rh=4:bh=-4:rv=1:bv=-1,"
+        "eq=brightness=0.05:saturation=1.2"
+    ),
+    "anime_glow": (
+        "gblur=sigma=5,"
+        "eq=brightness=0.15:saturation=0.9"
+    ),
+    "comic_book": (
+        "edgedetect=mode=colormix:high=0.12,"
+        "eq=saturation=1.6:contrast=1.4"
+    ),
+    "watercolor_bleed": (
+        "boxblur=4:1,"
+        "eq=saturation=0.8:contrast=1.05,"
+        "colorbalance=rs=0.015:gs=0.005:bs=-0.01"
+    ),
+    "retro_dither": (
+        "scale=iw/4:ih/4:flags=neighbor,"
+        "scale=iw*4:ih*4:flags=neighbor,"
+        "eq=saturation=1.2:contrast=1.1"
+    ),
+    "neon_wireframe": (
+        "edgedetect=mode=colormix:high=0.08,"
+        "eq=brightness=0.2:saturation=2.5:contrast=1.3"
+    ),
+    # ── Depth-Native (read depth per-pixel via SBS) ─────────
+    "toon_3d": (
+        "edgedetect=mode=colormix:high=0.12,"
+        "eq=saturation=1.4:contrast=1.5"
+    ),
+    "depth_fog": (
+        "boxblur=2:1,"
+        "eq=brightness=-0.05:saturation=0.7:contrast=0.85,"
+        "colorbalance=rs=0.05:gs=0.03:bs=0.02"
+    ),
+    "focus_pull": (
+        "gblur=sigma=3,"
+        "eq=brightness=0.02:contrast=1.05"
+    ),
+    "relief_sculpt": (
+        "edgedetect=mode=colormix:high=0.1,"
+        "eq=saturation=0.4:contrast=1.6,"
+        "colorbalance=rs=0.03:gs=0.02:bs=-0.02"
+    ),
+    "depth_watercolor": (
+        "boxblur=3:1,"
+        "eq=saturation=0.8:contrast=1.1,"
+        "colorbalance=rs=0.015:gs=0.008:bs=-0.008"
+    ),
 }
 
 
@@ -286,6 +355,15 @@ PRESET_CATEGORIES: dict[str, list[str]] = {
     "💥 Experimental": [
         "pixel_sort", "geometric_shatter", "supernova", "fractal_loop",
         "kaleidoscope", "spirals", "singularity_box",
+    ],
+    "🎭 NPR & Stylized": [
+        "anime_pro", "anime_glow", "comic_book", "pop_art",
+        "watercolor", "watercolor_bleed", "woodcut", "chromatic_prism",
+        "retro_dither", "neon_wireframe",
+    ],
+    "🔮 Depth-Native": [
+        "toon_3d", "depth_fog", "focus_pull",
+        "relief_sculpt", "depth_watercolor",
     ],
 }
 

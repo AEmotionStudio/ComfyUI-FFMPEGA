@@ -192,6 +192,7 @@ export function registerLoadVideoNode(
         let _effAvailFrames = 0;
         let _effFps = 0;
         let _effSkipFirst = 0;
+        let _effEveryNth = 1;
         let _effInfoText = "";
 
         // Info overlay (defined early — referenced by videoEl events)
@@ -267,6 +268,7 @@ export function registerLoadVideoNode(
             _effAvailFrames = availFrames;
             _effFps = effFps;
             _effSkipFirst = skipFirst;
+            _effEveryNth = everyNth;
         };
 
         videoEl.addEventListener("loadedmetadata", () => {
@@ -332,12 +334,13 @@ export function registerLoadVideoNode(
             }
             if (_srcMeta && _srcMeta.fps > 0 && _effAvailFrames > 0 && _effInfoText) {
                 const elapsed = Math.max(0, videoEl.currentTime - _playStart);
+                // Map elapsed time → raw frame index, then account for nth-frame selection
+                const rawFrame = Math.floor(elapsed * _effFps);
                 const curFrame = Math.min(
-                    Math.floor(elapsed * _effFps) + 1,
+                    Math.floor(rawFrame / _effEveryNth) + 1,
                     _effAvailFrames,
                 );
-                const srcFrame = curFrame + _effSkipFirst;
-                infoEl.textContent = `▶ ${curFrame}/${_effAvailFrames} (src frame ${srcFrame}) • ${_effInfoText}`;
+                infoEl.textContent = `▶ ${curFrame}/${_effAvailFrames} • ${_effInfoText}`;
             }
         });
 

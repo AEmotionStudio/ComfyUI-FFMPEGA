@@ -743,6 +743,8 @@ def _f_auto_mask(p):
     _enable_minimax_remover = bool(p.get("_enable_minimax_remover", False))
     # Whether Kiwi-Edit is enabled (off by default)
     _enable_kiwi_edit = bool(p.get("_enable_kiwi_edit", False))
+    # Whether DreamID-Omni is enabled (off by default)
+    _enable_dreamid_omni = bool(p.get("_enable_dreamid_omni", False))
 
     _base_cache_key = str(p.get("edit_prompt", effect))
     # Prefix the cache key with the active model so switching between

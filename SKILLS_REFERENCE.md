@@ -2494,4 +2494,31 @@ AI-generate synchronized audio/sound effects from video content or text descript
 > [!WARNING]
 > MMAudio model weights are licensed **CC-BY-NC 4.0** (non-commercial use only). By downloading and using them you accept the [CC-BY-NC 4.0 license](https://creativecommons.org/licenses/by-nc/4.0/).
 
+---
+
+### fish_speech
+AI text-to-speech with voice cloning and emotion control using Fish Speech S2 Pro. Supports 80+ languages, inline emotion/prosody tags, and multi-speaker generation.
+| Parameter | Type | Default | Choices/Range |
+|-----------|------|---------|---------------|
+| `text` | string | *(required)* | text to synthesize (supports inline tags like `[whisper]Hello [excited]World!`) |
+| `voice` | string | *(empty)* | voice library name or path to .wav reference (10-30s). Empty = default voice |
+| `emotion` | choice | (none) | (none), [happy], [sad], [angry], [excited], [whisper], [shouting], [laughing], [crying], [singing], [pause], [breath], [emphasis], [sigh], [nervous], [calm], [serious], [cheerful], [sarcastic], [surprised], [disgusted], [fearful], [tender], [monotone], [fast], [slow], [loud], [soft] |
+| `model_variant` | choice | fp8 | fp8 (~12 GB VRAM), bf16 (~24 GB VRAM) |
+| `temperature` | float | 0.7 | 0.1 to 1.0 |
+| `top_p` | float | 0.7 | 0.1 to 1.0 |
+| `repetition_penalty` | float | 1.2 | 1.0 to 2.0 |
+
+**Example prompts:**
+- "Say 'Hello, welcome to my channel!' in a cheerful voice"
+- "Generate speech: 'The quick brown fox' with whispering emotion"
+- "Clone this voice and narrate the text"
+- "Create a voiceover for this video"
+
+**Aliases:** `tts`, `text_to_speech`, `speech`, `narrate`, `voiceover`, `voice_clone`, `fish_tts`
+
+> [!NOTE]
+> **First run** downloads Fish Speech S2 Pro (~6.5 GB FP8 or ~10.4 GB BF16) to `ComfyUI/models/fish_speech/`.
+> **VRAM:** ~12 GB (FP8, recommended for RTX 4070) or ~24 GB (BF16).
+> **Voice library:** Save `.wav` references (10-30s) and `.txt` transcripts to `models/fish_speech/voices/<name>/`.
+> **License:** Fish Audio Research License — free for research/non-commercial. Commercial use requires separate license. Attribution required.
 

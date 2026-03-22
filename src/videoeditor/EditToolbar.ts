@@ -64,7 +64,7 @@ export class EditToolbar {
         );
 
         const resetBtn = this._makeToolBtn(
-            iconReset, 'Reset', 'Reset all segments (R)',
+            iconReset, 'Reset All', 'Reset all settings (R)',
             'veditor-action-reset', () => this.callbacks.onResetRequested(),
         );
 

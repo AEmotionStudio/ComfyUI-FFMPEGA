@@ -54,7 +54,7 @@ class TestShaderSupport:
         """Should discover built-in shader presets."""
         from core.shader_support import list_available_shaders
         shaders = list_available_shaders()
-        assert len(shaders) >= 55, f"Expected >=55 shaders, got {len(shaders)}: {shaders}"
+        assert len(shaders) >= 70, f"Expected >=70 shaders, got {len(shaders)}: {shaders}"
         expected = {
             "crt", "vhs", "holographic", "glitch", "voronoi",
             "water_ripple", "night_vision", "force_field",
@@ -70,6 +70,13 @@ class TestShaderSupport:
             "lava_lamp", "vaporwave", "supernova", "fractal_loop",
             "kaleidoscope", "ebruli", "spirals", "space_tunnel",
             "singularity", "blueprint", "singularity_box",
+            # NPR & Stylized
+            "anime_pro", "watercolor", "pop_art", "woodcut",
+            "chromatic_prism", "anime_glow", "comic_book",
+            "watercolor_bleed", "retro_dither", "neon_wireframe",
+            # Depth-Native
+            "toon_3d", "depth_fog", "focus_pull",
+            "relief_sculpt", "depth_watercolor",
         }
         assert expected.issubset(set(shaders)), \
             f"Missing presets: {expected - set(shaders)}"
@@ -119,6 +126,13 @@ class TestShaderSupport:
             "lava_lamp", "vaporwave", "supernova", "fractal_loop",
             "kaleidoscope", "ebruli", "spirals", "space_tunnel",
             "singularity", "blueprint", "singularity_box",
+            # NPR & Stylized
+            "anime_pro", "watercolor", "pop_art", "woodcut",
+            "chromatic_prism", "anime_glow", "comic_book",
+            "watercolor_bleed", "retro_dither", "neon_wireframe",
+            # Depth-Native
+            "toon_3d", "depth_fog", "focus_pull",
+            "relief_sculpt", "depth_watercolor",
         ]
         for p in presets:
             fb = get_fallback_filter(p)
@@ -420,6 +434,13 @@ class TestGLSLPresets:
             "lava_lamp", "vaporwave", "supernova", "fractal_loop",
             "kaleidoscope", "ebruli", "spirals", "space_tunnel",
             "singularity", "blueprint", "singularity_box",
+            # NPR & Stylized
+            "anime_pro", "watercolor", "pop_art", "woodcut",
+            "chromatic_prism", "anime_glow", "comic_book",
+            "watercolor_bleed", "neon_wireframe",
+            # Depth-Native
+            "toon_3d", "depth_fog", "focus_pull",
+            "relief_sculpt", "depth_watercolor",
         ]
         shaders_dir = _get_shaders_dir()
         for name in animated:
@@ -432,8 +453,8 @@ class TestGLSLPresets:
         from core.shader_support import _get_shaders_dir
         shaders_dir = _get_shaders_dir()
         glsl_files = list(shaders_dir.glob("*.glsl"))
-        assert len(glsl_files) == 55, \
-            f"Expected 55 presets, found {len(glsl_files)}: {[f.stem for f in glsl_files]}"
+        assert len(glsl_files) == 70, \
+            f"Expected 70 presets, found {len(glsl_files)}: {[f.stem for f in glsl_files]}"
 
 
 # --- ShaderOverlayNode (Dedicated No-LLM Node) ------------------------------
@@ -475,7 +496,7 @@ class TestShaderOverlayNode:
         assert "vhs" in choices
         assert "force_field" in choices
         assert "🎲 random" in choices
-        assert len(choices) >= 57  # none + random + 55 presets + category headers
+        assert len(choices) >= 72  # none + random + 70 presets + category headers
 
     def test_input_types_has_chaining(self):
         """Node should have preset_2/preset_3 for shader chaining."""

@@ -104,13 +104,18 @@ class MediaConverter:
         except Exception:
             return torch.zeros(1, 64, 64, 3, dtype=torch.float32)
 
-    def extract_audio(self, video_path: str) -> dict:
+    def extract_audio(self, video_path: str, resample_rate: int = None) -> dict:
         """Extract audio from a video and return as ComfyUI AUDIO dict.
 
         Returns a dict with 'waveform' (Tensor of shape [1, channels, samples])
         and 'sample_rate' (int), compatible with ComfyUI's standard AUDIO type.
 
         If the video has no audio stream, returns a short silent mono buffer.
+
+        Args:
+            video_path: Path to the video file to extract audio from.
+            resample_rate: If set, resample audio to this rate (e.g. 44100, 48000).
+                          Ensures compatibility with MP3 and other codec encoders.
         """
         ffmpeg_bin = get_ffmpeg_bin()
         ffprobe_bin = get_ffprobe_bin()
@@ -131,13 +136,19 @@ class MediaConverter:
 
         # Extract raw PCM audio via ffmpeg
         try:
-            res = subprocess.run(
-                [ffmpeg_bin, "-i", video_path, "-f", "f32le", "-"],
-                capture_output=True, check=True,
-            )
+            cmd = [ffmpeg_bin, "-i", video_path]
+            if resample_rate:
+                cmd.extend(["-ar", str(resample_rate)])
+            cmd.extend(["-f", "f32le", "-"])
+            res = subprocess.run(cmd, capture_output=True, check=True)
             audio = torch.frombuffer(bytearray(res.stdout), dtype=torch.float32)
             match = re.search(r", (\d+) Hz, (\w+), ", res.stderr.decode("utf-8", "backslashreplace"))
-            if match:
+            if resample_rate:
+                ar = resample_rate
+                ac = 2  # default stereo
+                if match:
+                    ac = {"mono": 1, "stereo": 2}.get(match.group(2), 2)
+            elif match:
                 ar = int(match.group(1))
                 ac = {"mono": 1, "stereo": 2}.get(match.group(2), 2)
             else:

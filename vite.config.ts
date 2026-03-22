@@ -9,9 +9,10 @@ export default defineConfig({
                 'ffmpega_ui': resolve(__dirname, 'src/ffmpega_ui.ts'),
                 'ffmpega_effects_ui': resolve(__dirname, 'src/ffmpega_effects_ui.ts'),
                 'video_preview': resolve(__dirname, 'src/loadlast/video_preview.ts'),
-                'contact_sheet': resolve(__dirname, 'src/loadlast/contact_sheet.ts'),
+                'image_preview': resolve(__dirname, 'src/loadlast/image_preview.ts'),
                 'video_editor': resolve(__dirname, 'src/videoeditor/video_editor.ts'),
                 'facepoke_ui': resolve(__dirname, 'src/nodes/facepoke_ui.ts'),
+                'frame_picker_ui': resolve(__dirname, 'src/nodes/frame_picker_ui.ts'),
             },
             formats: ['es'],
             fileName: (_format, entryName) => `${entryName}.js`

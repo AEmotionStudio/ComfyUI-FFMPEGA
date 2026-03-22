@@ -231,6 +231,14 @@ class SkillComposer:
         "vocal2bgm": "ace_step",
         "lrc": "ace_step",
         "stem_separate": "ace_step",
+        # Foundation-1 — Music Sample/Loop Generation
+        "sample": "foundation1",
+        "loop": "foundation1",
+        "foundation": "foundation1",
+        "music_sample": "foundation1",
+        "sample_loop": "foundation1",
+        "music_loop": "foundation1",
+        "generate_sample": "foundation1",
     }
 
     def __init__(self, registry: Optional[SkillRegistry] = None):
@@ -811,6 +819,8 @@ class SkillComposer:
                 step.params["_enable_minimax_remover"] = pipeline.metadata["_enable_minimax_remover"]
             if "_enable_kiwi_edit" in pipeline.metadata:
                 step.params["_enable_kiwi_edit"] = pipeline.metadata["_enable_kiwi_edit"]
+            if "_enable_dreamid_omni" in pipeline.metadata:
+                step.params["_enable_dreamid_omni"] = pipeline.metadata["_enable_dreamid_omni"]
             if "_audio_output_mode" in pipeline.metadata:
                 step.params["_audio_output_mode"] = pipeline.metadata["_audio_output_mode"]
             # Provide mutable reference so handlers can write back metadata
@@ -1511,6 +1521,8 @@ def _get_dispatch() -> dict:
         _f_audio_inpaint,
         # ACE-Step music generation / cover / repaint
         _f_ace_step,
+        # Foundation-1 music sample / loop generation
+        _f_generate_sample,
         # lip sync (MuseTalk)
         _f_lip_sync,
         # portrait animation (LivePortrait)
@@ -1748,6 +1760,15 @@ def _get_dispatch() -> dict:
         "vocal2bgm": _f_ace_step,
         "lrc": _f_ace_step,
         "stem_separate": _f_ace_step,
+        # Foundation-1 — Music Sample/Loop Generation
+        "foundation1": _f_generate_sample,
+        "generate_sample": _f_generate_sample,
+        "sample": _f_generate_sample,
+        "loop": _f_generate_sample,
+        "foundation": _f_generate_sample,
+        "music_sample": _f_generate_sample,
+        "sample_loop": _f_generate_sample,
+        "music_loop": _f_generate_sample,
         # MuseTalk — Lip Sync
         "lip_sync": _f_lip_sync,
         "lipsync": _f_lip_sync,

@@ -356,14 +356,17 @@ def register_skills(registry: SkillRegistry) -> None:
                     "'hat_x4' (SOTA quality), 'dat_x4' (balanced), "
                     "'swinir_x4' (classical SR), "
                     "'seedvr2_3b_fp8' (diffusion, great quality), "
-                    "'seedvr2_7b_gguf' (diffusion, highest quality)"
+                    "'seedvr2_3b_gguf' (diffusion, lowest VRAM), "
+                    "'seedvr2_7b_fp8' (diffusion, highest quality), "
+                    "'seedvr2_7b_gguf' (diffusion, highest quality quantized)"
                 ),
                 required=False,
                 default="realesrgan_x4plus",
                 choices=[
                     "realesrgan_x4plus", "realesrgan_x4_anime",
                     "hat_x4", "dat_x4", "swinir_x4",
-                    "seedvr2_3b_fp8", "seedvr2_7b_gguf",
+                    "seedvr2_3b_fp8", "seedvr2_3b_gguf",
+                    "seedvr2_7b_fp8", "seedvr2_7b_gguf",
                 ],
             ),
             SkillParameter(
@@ -391,7 +394,9 @@ def register_skills(registry: SkillRegistry) -> None:
             "ai_upscale:model=dat_x4,scale_factor=2 - 2x upscale with DAT",
             "ai_upscale:tile_size=256 - Lower VRAM usage with smaller tiles",
             "ai_upscale:model=seedvr2_3b_fp8 - Diffusion upscale (great quality)",
-            "ai_upscale:model=seedvr2_7b_gguf - Highest quality diffusion upscale",
+            "ai_upscale:model=seedvr2_3b_gguf - Diffusion upscale (lowest VRAM)",
+            "ai_upscale:model=seedvr2_7b_fp8 - Highest quality diffusion upscale",
+            "ai_upscale:model=seedvr2_7b_gguf - Highest quality diffusion upscale (quantized)",
         ],
         tags=[
             "upscale", "super_resolution", "enhance", "4k", "hd",

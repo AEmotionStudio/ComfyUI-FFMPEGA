@@ -365,6 +365,64 @@ class TestMultiInputHandlers:
         })
         assert "vstack" in r.filter_complex
 
+    def test_split_screen_fit_height_no_padding(self):
+        """fit=height should scale to shared height with no pad filter."""
+        r = _f_split_screen({
+            "_extra_input_count": 1,
+            "_extra_input_paths": ["/extra.mp4"],
+            "layout": "horizontal",
+            "fit": "height",
+            "height": 720,
+        })
+        assert "hstack" in r.filter_complex
+        assert "scale=-2:720" in r.filter_complex
+        assert "pad=" not in r.filter_complex
+
+    def test_split_screen_fit_height_vertical(self):
+        """fit=height + vertical should scale to shared width."""
+        r = _f_split_screen({
+            "_extra_input_count": 1,
+            "_extra_input_paths": ["/extra.mp4"],
+            "layout": "vertical",
+            "fit": "height",
+            "width": 1280,
+        })
+        assert "vstack" in r.filter_complex
+        assert "scale=1280:-2" in r.filter_complex
+        assert "pad=" not in r.filter_complex
+
+    def test_split_screen_fit_cell_has_padding(self):
+        """fit=cell should use the legacy padded cell layout."""
+        r = _f_split_screen({
+            "_extra_input_count": 1,
+            "_extra_input_paths": ["/extra.mp4"],
+            "fit": "cell",
+            "width": 640,
+            "height": 480,
+        })
+        assert "pad=" in r.filter_complex
+        assert "hstack" in r.filter_complex
+
+    def test_split_screen_gap_uses_xstack(self):
+        """When gap > 0, xstack should be used instead of hstack/vstack."""
+        r = _f_split_screen({
+            "_extra_input_count": 1,
+            "_extra_input_paths": ["/extra.mp4"],
+            "gap": 8,
+        })
+        assert "xstack" in r.filter_complex
+        assert "hstack" not in r.filter_complex
+
+    def test_split_screen_zero_gap_uses_hstack(self):
+        """gap=0 should use simple hstack (default)."""
+        r = _f_split_screen({
+            "_extra_input_count": 1,
+            "_extra_input_paths": ["/extra.mp4"],
+            "gap": 0,
+        })
+        assert "hstack" in r.filter_complex
+        assert "xstack" not in r.filter_complex
+
     def test_pip_basic(self):
         r = _f_pip({
             "position": "bottom_right",

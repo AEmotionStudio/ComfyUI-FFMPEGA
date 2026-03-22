@@ -23,6 +23,10 @@ from .ace_step import (  # noqa: F401
     _f_ace_step,
 )
 
+from .generate_sample import (  # noqa: F401
+    _f_generate_sample,
+)
+
 from .audio_inpaint import (  # noqa: F401
     _f_audio_inpaint,
 )

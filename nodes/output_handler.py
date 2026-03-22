@@ -140,8 +140,13 @@ def collect_frame_output(
     unique_id: str,
     hidden_prompt: dict,
     removes_audio: bool,
+    resample_rate: int = None,
 ) -> tuple[torch.Tensor, dict]:
-    """Extract output frames and audio. Returns (images_tensor, audio_out)."""
+    """Extract output frames and audio. Returns (images_tensor, audio_out).
+
+    Args:
+        resample_rate: If set, resample extracted audio to this rate (Hz).
+    """
     images_connected = False
     if unique_id and hidden_prompt:
         for node_id, node_data in hidden_prompt.items():
@@ -170,7 +175,7 @@ def collect_frame_output(
     if removes_audio:
         audio_out = {"waveform": torch.zeros(1, 1, 1, dtype=torch.float32), "sample_rate": 44100}
     else:
-        audio_out = media_converter.extract_audio(output_path)
+        audio_out = media_converter.extract_audio(output_path, resample_rate=resample_rate)
 
     return images_tensor, audio_out
 

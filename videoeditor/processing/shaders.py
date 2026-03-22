@@ -23,6 +23,26 @@ def has_shader(shader_json: str) -> bool:
         return False
 
 
+def get_depth_config(shader_json: str) -> dict:
+    """Extract depth configuration from ShaderPanel state JSON.
+
+    Returns:
+        Dict with enable_vda, enable_normals, depth_encoder, depth_strength keys.
+        All default to safe no-op values if not present.
+    """
+    try:
+        data = json.loads(shader_json)
+    except (json.JSONDecodeError, TypeError):
+        return {"enable_vda": False, "enable_normals": False, "depth_encoder": "vits", "depth_strength": 1.0}
+
+    return {
+        "enable_vda": bool(data.get("enable_vda", False)),
+        "enable_normals": bool(data.get("enable_normals", False)),
+        "depth_encoder": data.get("depth_encoder", "vits"),
+        "depth_strength": float(data.get("depth_strength", 1.0)),
+    }
+
+
 def build_shader_filter(shader_json: str) -> tuple[list[str], str]:
     """Build FFmpeg filters from ShaderPanel state JSON.
 

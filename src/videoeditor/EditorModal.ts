@@ -446,9 +446,40 @@ export class EditorModal {
                 }
             },
             onResetRequested: () => {
+                // Reset timeline segments
                 this.editManager.reset();
                 this.audioEditManager.reset();
                 this.audioMixer.clearSegmentSelection();
+                this.audioMixer.setMasterVolume(1.0);
+                this.audioTimeline?.setSelectedIndex(-1);
+                this.audioTimeline?.render();
+
+                // Reset crop
+                this.cropOverlay.setRect(null);
+
+                // Reset speed
+                this.speedControl.loadSpeedMap({});
+                this.transport.setPlaybackRate(1.0);
+
+                // Reset text overlays
+                this.textPanel.loadOverlays([]);
+                this._refreshTextPreview();
+
+                // Reset FX panels to defaults
+                this.colorGradingPanel.loadState({});
+                this.filtersPanel.loadState({});
+                this.shaderPanel.loadState({});
+                this.relightPanel.loadState({});
+                this.exportSettingsPanel.loadState({});
+
+                // Reset compose panels
+                this.composePanel.loadState({});
+                this.aiComposePanel.loadState({});
+                this.transformPanel.loadState({});
+
+                // Reset CSS preview
+                this._applyCSSPreview();
+
                 this._pushUndo();
                 this.nleTimeline?.render();
             },
@@ -544,6 +575,8 @@ export class EditorModal {
                 this.audioEditManager.init(info.duration || 1);
                 this.cropOverlay.setVideoDimensions(info.width || 640, info.height || 480);
                 this.textPreview.setVideoDimensions(info.width || 640, info.height || 480);
+                this.transport.setFps(info.fps || 30);
+                this.transport.setTotalDuration(info.duration || 1);
 
                 // Load segments from initial state
                 if (initialState && initialState.segments.length > 0) {

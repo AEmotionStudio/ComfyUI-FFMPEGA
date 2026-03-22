@@ -101,6 +101,9 @@ response.json
 errors_2.md
 command.md
 VENV_NOTES.md
+VRAM_MANAGEMENT.md
+DOLPHIN_THUMBNAILS.md
+DREAMID_OMNI_STATUS.md
 
 # Package manager lock files
 

@@ -575,8 +575,13 @@ def _load_model_weights(model: torch.nn.Module, checkpoint_path: str, target_dev
              category=model_type_lower, force=True)
     
     # Load state dict from file
+    # For GGUF models, always load quantized weights to CPU.
+    # GGUFQuantizedLinear layers dequantize per-layer to GPU during forward pass,
+    # which saves ~4 GB VRAM vs loading all quantized data onto the GPU.
     debug.start_timer(f"{model_type_lower}_weights_load")
-    state = load_quantized_state_dict(checkpoint_path, target_device, debug)
+    is_gguf = checkpoint_path.endswith('.gguf')
+    load_device = torch.device("cpu") if is_gguf else target_device
+    state = load_quantized_state_dict(checkpoint_path, load_device, debug)
     debug.end_timer(f"{model_type_lower}_weights_load", f"{model_type} weights loaded from file")
     
     # Apply dtype conversion if requested
@@ -587,8 +592,13 @@ def _load_model_weights(model: torch.nn.Module, checkpoint_path: str, target_dev
     _log_weight_stats(state, used_meta, model_type, debug)
     
     # Handle GGUF or standard loading
-    if checkpoint_path.endswith('.gguf'):
+    if is_gguf:
         model = _load_gguf_weights(model, state, used_meta, model_type_lower, debug)
+        # Move non-quantized parameters (norms, biases, embeddings) from CPU to GPU.
+        # We can't use model.to(device) because some tensors may still be on meta device.
+        # Our _GGUFQuantizedBase._apply override keeps quantized buffers on CPU.
+        if target_device.type != "cpu":
+            _move_cpu_params_to_device(model, target_device)
     else:
         model = _load_standard_weights(model, state, used_meta, model_type, model_type_lower, debug)
     
@@ -600,6 +610,39 @@ def _load_model_weights(model: torch.nn.Module, checkpoint_path: str, target_dev
         initialize_meta_buffers(model, target_device, debug)
     
     return model
+
+
+def _move_cpu_params_to_device(model: torch.nn.Module, device: torch.device) -> None:
+    """
+    Move non-quantized parameters and buffers from CPU to device.
+    
+    Skips:
+    - Meta tensors (handled by initialize_meta_buffers)
+    - Quantized GGUF buffers (stay on CPU for per-layer dequantization)
+    
+    This is used instead of model.to(device) for GGUF models because:
+    1. Some tensors may still be on meta device (would crash model.to())
+    2. Quantized weight buffers must stay on CPU to save VRAM
+    """
+    with torch.no_grad():
+        # Move parameters (weights, biases, norms, etc.)
+        for name, param in model.named_parameters():
+            if param.device.type == "cpu":
+                param.data = param.data.to(device)
+        
+        # Move non-quantized buffers
+        for name, buf in model.named_buffers():
+            if buf.device.type == "cpu" and not _is_quantized_tensor(buf):
+                # Only move non-quantized CPU buffers to GPU
+                new_buf = buf.to(device)
+                # Preserve any custom attributes (tensor_type, tensor_shape, etc.)
+                parts = name.rsplit(".", 1)
+                if len(parts) == 2:
+                    parent_name, buf_name = parts
+                    parent = dict(model.named_modules())[parent_name]
+                    parent._buffers[buf_name] = new_buf
+                else:
+                    model._buffers[name] = new_buf
 
 
 def _convert_state_dtype(state: Dict[str, torch.Tensor], target_dtype: torch.dtype, 

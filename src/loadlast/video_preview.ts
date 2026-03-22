@@ -1362,6 +1362,27 @@ app.registerExtension({
                 updatePlaybackMarkers();
             });
 
+            // ─── Live frame counter during playback ───────────────
+            videoEl.addEventListener('timeupdate', () => {
+                if (currentMode !== VIEW_MODES.PLAYBACK) return;
+                const dur = videoEl.duration;
+                if (!dur || !isFinite(dur) || videoFps <= 0) return;
+
+                const totalFrames = Math.round(dur * videoFps);
+                const mfWidget = node.widgets?.find((w: any) => w.name === 'max_frames');
+                const maxFrames = mfWidget ? Number(mfWidget.value) || 0 : 0;
+                const effFrames = (maxFrames > 0 && maxFrames < totalFrames) ? maxFrames : totalFrames;
+
+                const curFrame = Math.min(
+                    Math.floor(videoEl.currentTime * videoFps) + 1,
+                    effFrames,
+                );
+
+                const sel = selections.get(VIEW_MODES.PLAYBACK);
+                const selInfo = sel.size ? ` │ ${sel.size} selected` : '';
+                infoEl.textContent = `▶ ${curFrame}/${effFrames}f │ ${buildInfoText()}${selInfo}`;
+            });
+
             // ─── max_frames playback capping ──────────────────────
             // Cap video playback at the time corresponding to max_frames
             // so the user sees exactly what will be decoded.

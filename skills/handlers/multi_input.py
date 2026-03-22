@@ -471,10 +471,30 @@ def _f_xfade(p):
 
 
 def _f_split_screen(p):
-    """Show videos/images side-by-side or top-to-bottom."""
+    """Show videos/images side-by-side or top-to-bottom.
+
+    Supports two fit modes:
+    - **height** (default): Scale each input to a common height (horizontal)
+      or common width (vertical) while preserving aspect ratio.  No padding,
+      no black bars — truly edge-to-edge.
+    - **cell**: Force all cells to a fixed ``width × height`` with letterbox
+      padding (legacy behavior).
+
+    ``gap`` controls the pixel gap between cells (default 0).
+    """
     layout = str(p.get("layout", "horizontal")).lower()
-    cell_w = int(p.get("width", 960))
-    cell_h = int(p.get("height", 540))
+    fit = str(p.get("fit", "height")).lower()
+    gap = int(p.get("gap", 0))
+    # In fit=height mode, prefer the main video's actual dimensions so the
+    # largest input sets the standard (no downsizing).  The composer fills
+    # skill defaults (width=960, height=540) BEFORE calling handlers, so we
+    # must explicitly check _input_* first.
+    if fit == "height":
+        cell_w = int(p.get("_input_width") or p.get("width") or 960)
+        cell_h = int(p.get("_input_height") or p.get("height") or 540)
+    else:
+        cell_w = int(p.get("width") or p.get("_input_width") or 960)
+        cell_h = int(p.get("height") or p.get("_input_height") or 540)
     duration = float(p.get("duration", 10.0))
     n_extra = int(p.get("_extra_input_count", 0))
 
@@ -486,32 +506,59 @@ def _f_split_screen(p):
     if total < 2:
         return make_result()
 
-    fps = 25
+    fps = int(p.get("_input_fps", 25))
+    extra_paths = p.get("_extra_input_paths", [])
     parts = []
     labels = []
 
+    is_horizontal = layout == "horizontal"
+
     for i, idx in enumerate(cells):
         lbl = f"[_sp{i}]"
-        extra_paths = p.get("_extra_input_paths", [])
         is_video = (idx == 0) or (idx - 1 < len(extra_paths) and _is_video_file(extra_paths[idx - 1]))
-        if is_video:
-            parts.append(
-                f"[{idx}:v]scale={cell_w}:{cell_h}:force_original_aspect_ratio=decrease,"
-                f"pad={cell_w}:{cell_h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1{lbl}"
+
+        # Build the scale expression depending on fit mode
+        if fit == "height":
+            if is_horizontal:
+                # Match height, auto-compute width (no padding)
+                scale_expr = f"scale=-2:{cell_h}:force_original_aspect_ratio=disable,setsar=1"
+            else:
+                # Match width, auto-compute height (no padding)
+                scale_expr = f"scale={cell_w}:-2:force_original_aspect_ratio=disable,setsar=1"
+        else:
+            # Legacy cell mode — fixed size with letterbox padding
+            scale_expr = (
+                f"scale={cell_w}:{cell_h}:force_original_aspect_ratio=decrease,"
+                f"pad={cell_w}:{cell_h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1"
             )
+
+        if is_video:
+            parts.append(f"[{idx}:v]{scale_expr},fps={fps}{lbl}")
         else:
             n_frames = int(duration * fps)
             parts.append(
                 f"[{idx}:v]loop=loop={n_frames}:size=1:start=0,"
-                f"setpts=N/{fps}/TB,"
-                f"scale={cell_w}:{cell_h}:force_original_aspect_ratio=decrease,"
-                f"pad={cell_w}:{cell_h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1{lbl}"
+                f"setpts=N/{fps}/TB,{scale_expr}{lbl}"
             )
         labels.append(lbl)
 
-    stack_filter = "hstack" if layout == "horizontal" else "vstack"
     label_str = "".join(labels)
-    parts.append(f"{label_str}{stack_filter}=inputs={total}")
+
+    if gap > 0:
+        # Use xstack with explicit layout positions to add gaps
+        layout_parts = []
+        for i in range(total):
+            if is_horizontal:
+                x = f"{i}*(w0+{gap})" if i > 0 else "0"
+                layout_parts.append(f"{x}_0")
+            else:
+                y = f"{i}*(h0+{gap})" if i > 0 else "0"
+                layout_parts.append(f"0_{y}")
+        layout_str = "|".join(layout_parts)
+        parts.append(f"{label_str}xstack=inputs={total}:layout={layout_str}:fill=black")
+    else:
+        stack_filter = "hstack" if is_horizontal else "vstack"
+        parts.append(f"{label_str}{stack_filter}=inputs={total}")
 
     opts = []
     if duration > 0:

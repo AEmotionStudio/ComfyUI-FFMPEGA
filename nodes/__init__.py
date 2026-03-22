@@ -102,3 +102,37 @@ if "FFMPEGAVideoEditor" in NODE_CLASS_MAPPINGS:
 # Add FacePoke name only if successfully imported
 if "FFMPEGAFacePoke" in NODE_CLASS_MAPPINGS:
     __all__.append("FacePokeNode")
+
+# --- FramePicker node ---
+try:
+    from .frame_picker_node import FramePickerNode
+    if FramePickerNode is None:
+        raise ImportError("FramePickerNode failed to load")
+
+    NODE_CLASS_MAPPINGS["FFMPEGAFramePicker"] = FramePickerNode
+    NODE_DISPLAY_NAME_MAPPINGS["FFMPEGAFramePicker"] = "Frame Picker (FFMPEGA)"
+except ImportError:
+    logging.getLogger("FFMPEGA").debug(
+        "[FFMPEGA] FramePicker node not available (import error)", exc_info=True
+    )
+
+# Add FramePicker name only if successfully imported
+if "FFMPEGAFramePicker" in NODE_CLASS_MAPPINGS:
+    __all__.append("FramePickerNode")
+
+# --- FaceCam node ---
+try:
+    from .facecam_node import FaceCamNode
+    if FaceCamNode is None:
+        raise ImportError("FaceCamNode failed to load")
+
+    NODE_CLASS_MAPPINGS["FFMPEGAFaceCam"] = FaceCamNode
+    NODE_DISPLAY_NAME_MAPPINGS["FFMPEGAFaceCam"] = "FaceCam (FFMPEGA)"
+except ImportError:
+    logging.getLogger("FFMPEGA").debug(
+        "[FFMPEGA] FaceCam node not available (import error)", exc_info=True
+    )
+
+# Add FaceCam name only if successfully imported
+if "FFMPEGAFaceCam" in NODE_CLASS_MAPPINGS:
+    __all__.append("FaceCamNode")

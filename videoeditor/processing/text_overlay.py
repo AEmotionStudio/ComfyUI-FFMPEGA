@@ -45,9 +45,7 @@ def build_drawtext_filters(overlays_json: str) -> list[str]:
 
     filters: list[str] = []
     for ov in overlays:
-        f = _build_single_drawtext(ov)
-        if f:
-            filters.append(f)
+        filters.extend(_build_single_drawtext(ov))
 
     return filters
 
@@ -120,62 +118,130 @@ def _resolve_position(value, axis: str) -> str:
     return "0"
 
 
-def _build_single_drawtext(ov: dict) -> str | None:
-    """Build a single drawtext filter string from an overlay dict."""
+def _build_single_drawtext(ov: dict) -> list[str]:
+    """Build drawtext filter string(s) from an overlay dict.
+
+    Multi-line text is split into separate drawtext filters (one per line)
+    to avoid FFmpeg rendering ``\\n`` as rectangle glyphs.
+
+    Returns a list of drawtext filter strings (one per line of text).
+    """
     text = ov.get("text", "").strip()
     if not text:
-        return None
+        return []
 
-    escaped = _escape_drawtext(text)
     font_size = max(8, int(ov.get("font_size", 48)))
     color = ov.get("color", "white")
-    font = ov.get("font")  # user-provided font path, or None
+    font = ov.get("font")  # user-provided font name/path, or None
 
     x_expr = _resolve_position(ov.get("x", "center"), "x")
-    y_expr = _resolve_position(ov.get("y", "bottom"), "y")
+    raw_y = str(ov.get("y", "bottom")).strip().lower()
+    base_y_expr = _resolve_position(ov.get("y", "bottom"), "y")
 
-    parts = [
-        f"drawtext=text='{escaped}'",
-        f"fontsize={font_size}",
-        f"fontcolor={color}",
-        f"x={x_expr}",
-        f"y={y_expr}",
-    ]
-
-    # Optional font file — only when user specifies a custom path.
-    # When omitted, FFmpeg uses its own cross-platform default font.
-    if font:
-        parts.append(f"fontfile='{font}'")
-
-    # Time range (enable between start and end)
+    # Time range enable expression
+    enable_expr = ""
     start_time = ov.get("start_time")
     end_time = ov.get("end_time")
 
     if start_time is not None and end_time is not None:
         try:
-            st = float(start_time)
-            et = float(end_time)
-            parts.append(
-                f"enable='between(t,{st:.3f},{et:.3f})'"
-            )
+            st, et = float(start_time), float(end_time)
+            enable_expr = f":enable='between(t,{st:.3f},{et:.3f})'"
         except (ValueError, TypeError):
             pass
     elif start_time is not None:
         try:
             st = float(start_time)
-            parts.append(f"enable='gte(t,{st:.3f})'")
+            enable_expr = f":enable='gte(t,{st:.3f})'"
         except (ValueError, TypeError):
             pass
     elif end_time is not None:
         try:
             et = float(end_time)
-            parts.append(f"enable='lte(t,{et:.3f})'")
+            enable_expr = f":enable='lte(t,{et:.3f})'"
         except (ValueError, TypeError):
             pass
 
-    # Add subtle shadow for readability
-    parts.append("shadowcolor=black@0.5")
-    parts.append("shadowx=2")
-    parts.append("shadowy=2")
+    # Split multi-line text into individual lines
+    lines = text.split("\n")
+    # Strip \r from each line (textarea \r\n endings)
+    lines = [line.replace("\r", "").rstrip() for line in lines]
+    # Remove empty trailing lines
+    while lines and not lines[-1]:
+        lines.pop()
 
-    return ":".join(parts)
+    if not lines:
+        return []
+
+    # Font file — only for actual file paths (e.g. /usr/share/fonts/foo.ttf).
+    # CSS generic names like 'sans-serif', 'serif', 'monospace' are ignored
+    # since FFmpeg can't resolve them; it uses its default font instead.
+    font_part = ""
+    if font and ("/" in font or "\\" in font or font.endswith((".ttf", ".otf"))):
+        font_part = f":fontfile='{_escape_drawtext(font)}'"
+
+    filters: list[str] = []
+    num_lines = len(lines)
+    line_spacing = int(font_size * 1.3)  # ~130% line height
+
+    for i, line in enumerate(lines):
+        if not line.strip():
+            continue  # skip blank lines but count them for spacing
+
+        escaped = _escape_drawtext(line)
+
+        # Compute y offset based on position mode:
+        # - bottom/75%: stack upward (last line at base, earlier lines above)
+        # - top: stack downward (first line at base, later lines below)
+        # - center: center the block vertically
+        if num_lines == 1:
+            y_expr = base_y_expr
+        elif raw_y in ("bottom",) or raw_y.endswith("%"):
+            # Bottom-anchored: last line at base_y, earlier lines above
+            offset = (num_lines - 1 - i) * line_spacing
+            if offset == 0:
+                y_expr = base_y_expr
+            else:
+                y_expr = f"({base_y_expr})-{offset}"
+        elif raw_y in ("center", "middle"):
+            # Center the block: shift up by half the block height
+            half_block = (num_lines - 1) * line_spacing // 2
+            offset = i * line_spacing - half_block
+            if offset == 0:
+                y_expr = base_y_expr
+            elif offset > 0:
+                y_expr = f"({base_y_expr})+{offset}"
+            else:
+                y_expr = f"({base_y_expr})-{-offset}"
+        else:
+            # Top-anchored (default): stack downward
+            if i == 0:
+                y_expr = base_y_expr
+            else:
+                y_expr = f"({base_y_expr})+{i * line_spacing}"
+
+        parts = [
+            f"drawtext=text='{escaped}'",
+            f"fontsize={font_size}",
+            f"fontcolor={color}",
+            f"x={x_expr}",
+            f"y={y_expr}",
+        ]
+
+        if font_part:
+            parts.append(font_part.lstrip(":"))
+
+        # Shadow for readability
+        parts.extend([
+            "shadowcolor=black@0.5",
+            "shadowx=2",
+            "shadowy=2",
+        ])
+
+        dt = ":".join(parts)
+        if enable_expr:
+            dt += enable_expr
+
+        filters.append(dt)
+
+    return filters

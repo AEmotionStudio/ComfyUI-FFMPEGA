@@ -179,12 +179,12 @@ _MODEL_INFO: dict[str, dict] = {
     "seedvr2": {
         "name": "SeedVR2 (Diffusion Video/Image Upscaler)",
         "size": "~3-4 GB (DiT) + ~300 MB (VAE)",
-        "url": "https://huggingface.co/numz/SeedVR2_comfyUI",
-        "mirror_repo": "AInVFX/SeedVR2_comfyUI",
+        "url": "https://huggingface.co/AEmotionStudio/SeedVR2-models",
+        "mirror_repo": "AEmotionStudio/SeedVR2-models",
         "license": "Apache-2.0",
         "manual": "Download DiT model (e.g. seedvr2_ema_3b_fp8_e4m3fn.safetensors) "
                   "and ema_vae_fp16.safetensors from "
-                  "https://huggingface.co/numz/SeedVR2_comfyUI "
+                  "https://huggingface.co/AEmotionStudio/SeedVR2-models "
                   "and place them in the SeedVR2 cache directory.",
     },
     "kiwi_edit_instruct": {
@@ -241,6 +241,45 @@ _MODEL_INFO: dict[str, dict] = {
         "mirror_repo": "AEmotionStudio/kiwi-edit-instruct-reference-fp8",
         "license": "MIT",
         "manual": "Downloaded automatically when Kiwi-Edit is used.",
+    },
+    "dreamid_omni": {
+        "name": "DreamID-Omni (Fusion DiT)",
+        "size": "~5 GB",
+        "url": "https://github.com/Guoxu1233/DreamID-Omni",
+        "mirror_repo": "AEmotionStudio/dreamid-omni",
+        "license": "Apache-2.0",
+        "manual": "Download dreamid_omni.safetensors from "
+                  "https://github.com/Guoxu1233/DreamID-Omni "
+                  "and place it in ComfyUI/models/dreamid_omni/DreamID_Omni/.",
+    },
+    "dreamid_omni_wan": {
+        "name": "DreamID-Omni Wan2.2 (T5 + VAE)",
+        "size": "~10.5 GB",
+        "url": "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B",
+        "mirror_repo": "AEmotionStudio/dreamid-omni-wan",
+        "license": "Apache-2.0",
+        "manual": "Download Wan2.2_VAE.pth, models_t5_umt5-xxl-enc-bf16.pth, and "
+                  "google/umt5-xxl/ from https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B "
+                  "and place them in ComfyUI/models/dreamid_omni/Wan2.2-TI2V-5B/.",
+    },
+    "dreamid_omni_mmaudio": {
+        "name": "DreamID-Omni MMAudio (Audio VAE)",
+        "size": "~350 MB",
+        "url": "https://huggingface.co/hkchengrex/MMAudio",
+        "mirror_repo": "AEmotionStudio/dreamid-omni-mmaudio",
+        "license": "CC-BY-NC 4.0",
+        "manual": "Download ext_weights/v1-16.pth and ext_weights/best_netG.pt from "
+                  "https://huggingface.co/hkchengrex/MMAudio "
+                  "and place them in ComfyUI/models/dreamid_omni/MMAudio/ext_weights/.",
+    },
+    "facecam": {
+        "name": "FaceCam (Portrait Camera Control)",
+        "size": "~16.8 GB (high+low bf16) + ~44 MB (gaussians.ply)",
+        "url": "https://huggingface.co/wlyu/FaceCam",
+        "license": "Apache-2.0",
+        "manual": "Run: python scripts/merge_facecam_shards.py to download "
+                  "and merge FaceCam bf16 checkpoints into "
+                  "ComfyUI/models/diffusion_models/.",
     },
 }
 

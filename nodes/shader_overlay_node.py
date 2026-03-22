@@ -66,6 +66,7 @@ class ShaderOverlayNode:
     @classmethod
     def INPUT_TYPES(cls):
         _RES_CHOICES = ["0.25", "0.5", "1.0", "2.0"]
+        _DEPTH_ENCODERS = ["vits", "vitb", "vitl"]
         _BLEND_CHOICES = [
             "normal", "addition", "multiply",
             "screen", "overlay", "softlight",
@@ -199,6 +200,60 @@ class ShaderOverlayNode:
                         "the masked target (i.e. the background)."
                     ),
                 }),
+                "enable_vda": ("BOOLEAN", {
+                    "default": False,
+                    "label_on": "VDA depth ON",
+                    "label_off": "VDA depth OFF",
+                    "tooltip": (
+                        "Enable Video Depth Anything depth estimation. "
+                        "Provides per-pixel depth for depth-native shaders "
+                        "and post-composite depth masking for regular shaders."
+                    ),
+                }),
+                "enable_normals": ("BOOLEAN", {
+                    "default": False,
+                    "label_on": "NormalCrafter ON",
+                    "label_off": "NormalCrafter OFF",
+                    "tooltip": (
+                        "Enable NormalCrafter surface normal estimation. "
+                        "Provides per-pixel surface normals for enhanced "
+                        "lighting, rim effects, and emboss in depth-native shaders."
+                    ),
+                }),
+                "depth_encoder": (_DEPTH_ENCODERS, {
+                    "default": "vits",
+                    "tooltip": (
+                        "VDA model variant. vits=fast (~102 MB), "
+                        "vitb=balanced (~390 MB), vitl=highest quality (~670 MB)."
+                    ),
+                }),
+                "depth_input": ("STRING", {
+                    "default": "",
+                    "forceInput": True,
+                    "tooltip": (
+                        "External depth map video path. When provided, "
+                        "skips VDA inference and uses this depth map directly."
+                    ),
+                }),
+                "normals_input": ("STRING", {
+                    "default": "",
+                    "forceInput": True,
+                    "tooltip": (
+                        "External normal map video path. When provided, "
+                        "skips NormalCrafter inference and uses this directly."
+                    ),
+                }),
+                "depth_strength": ("FLOAT", {
+                    "default": 1.0,
+                    "min": 0.0,
+                    "max": 1.0,
+                    "step": 0.05,
+                    "display": "slider",
+                    "tooltip": (
+                        "How strongly depth modulates shader intensity "
+                        "(0 = no depth effect, 1 = full depth modulation)."
+                    ),
+                }),
                 "fps": ("FLOAT", {
                     "default": 24.0,
                     "min": 1.0,
@@ -227,7 +282,10 @@ class ShaderOverlayNode:
         m.update(mask_target.encode())
         for k in ("preset_2", "preset_3", "intensity_2", "intensity_3",
                   "speed", "hue_shift", "blend_mode", "phase",
-                  "shader_params", "resolution_scale"):
+                  "shader_params", "resolution_scale",
+                  "enable_vda", "enable_normals",
+                  "depth_encoder", "depth_input", "normals_input",
+                  "depth_strength"):
             m.update(str(kwargs.get(k, "")).encode())
         return m.hexdigest()
 
@@ -250,6 +308,12 @@ class ShaderOverlayNode:
         resolution_scale: str = "1.0",
         mask_target: str = "",
         invert_mask: bool = False,
+        enable_vda: bool = False,
+        enable_normals: bool = False,
+        depth_encoder: str = "vits",
+        depth_input: str = "",
+        normals_input: str = "",
+        depth_strength: float = 1.0,
         fps: float = 24.0,
     ):
         """Apply shader(s) and return processed frames + video path."""
@@ -410,6 +474,102 @@ class ShaderOverlayNode:
 
         display_name = "+".join(preset_names)
 
+        # ── Depth-native SBS pipeline ────────────────────────────────
+        # If the shader reads depth/normals per-pixel, run enabled AI
+        # passes and pack into SBS (2W or 3W) before shader execution.
+        _is_depth_native = False
+        _original_resolved = resolved_path
+        _panel_count = 2  # default for 2-panel SBS
+
+        try:
+            try:
+                from ..core.depth_shader_bridge import is_depth_native as _check_dn
+            except ImportError:
+                from core.depth_shader_bridge import is_depth_native as _check_dn
+            _is_depth_native = any(_check_dn(p) for p in preset_names)
+        except ImportError:
+            pass
+
+        # For depth-native shaders, auto-enable VDA if no toggles set
+        _want_vda = enable_vda or _is_depth_native
+        _want_normals = enable_normals
+
+        if _is_depth_native or _want_vda or _want_normals:
+            passes = []
+            if _want_vda:
+                passes.append("VDA")
+            if _want_normals:
+                passes.append("NormalCrafter")
+            log.info(
+                "🔮 [ShaderOverlay] AI passes: %s — running SBS pipeline...",
+                " + ".join(passes),
+            )
+            try:
+                try:
+                    from ..core.depth_shader_bridge import (
+                        generate_depth_map as _gen_depth,
+                        generate_normal_map as _gen_normals,
+                        pack_sbs as _pack,
+                    )
+                except ImportError:
+                    from core.depth_shader_bridge import (  # type: ignore
+                        generate_depth_map as _gen_depth,
+                        generate_normal_map as _gen_normals,
+                        pack_sbs as _pack,
+                    )
+
+                # ── Generate depth map ──
+                _depth_path = None
+                if _want_vda:
+                    if depth_input and depth_input.strip() and os.path.isfile(depth_input.strip()):
+                        _depth_path = depth_input.strip()
+                        log.info("[ShaderOverlay] Using external depth: %s", _depth_path)
+                    else:
+                        _depth_path = _gen_depth(
+                            resolved_path, encoder=depth_encoder,
+                        )
+                    if not _depth_path:
+                        log.warning("⚠️  VDA depth failed.")
+
+                # ── Generate normal map ──
+                _normals_path = None
+                if _want_normals:
+                    if normals_input and normals_input.strip() and os.path.isfile(normals_input.strip()):
+                        _normals_path = normals_input.strip()
+                        log.info("[ShaderOverlay] Using external normals: %s", _normals_path)
+                    else:
+                        _normals_path = _gen_normals(resolved_path)
+                    if not _normals_path:
+                        log.warning("⚠️  NormalCrafter normals failed.")
+
+                # ── Pack SBS ──
+                if _depth_path or _normals_path:
+                    sbs_packed = _pack(
+                        resolved_path,
+                        depth_path=_depth_path,
+                        normals_path=_normals_path,
+                    )
+                    if sbs_packed:
+                        # Calculate panel count
+                        _panel_count = 1 + (1 if _depth_path else 0) + (1 if _normals_path else 0)
+                        resolved_path = sbs_packed
+                        log.info(
+                            "[ShaderOverlay] SBS packed (%d panels): %s",
+                            _panel_count, sbs_packed,
+                        )
+                    else:
+                        log.warning("⚠️  SBS pack failed — running without AI passes.")
+                        _is_depth_native = False
+                        _panel_count = 1
+                else:
+                    log.warning("⚠️  No AI outputs — running shader without SBS.")
+                    _is_depth_native = False
+                    _panel_count = 1
+            except Exception as exc:
+                log.error("⚠️  SBS pipeline error: %s", exc)
+                _is_depth_native = False
+                _panel_count = 1
+
         if has_libplacebo():
             log.info(
                 "⚡ [ShaderOverlay] Applying '%s' via libplacebo (GPU) "
@@ -443,8 +603,8 @@ class ShaderOverlayNode:
                     output_path,
                 ]
             else:
-                frames = self._decode_video(resolved_path)
-                return (frames, resolved_path)
+                frames = self._decode_video(_original_resolved)
+                return (frames, _original_resolved)
         else:
             # Fallback to FFmpeg filters (first preset only)
             fallback = get_fallback_filter(preset_names[0]) if preset_names else None
@@ -455,8 +615,8 @@ class ShaderOverlayNode:
                     "GPU-accelerated shaders.",
                     display_name,
                 )
-                frames = self._decode_video(resolved_path)
-                return (frames, resolved_path)
+                frames = self._decode_video(_original_resolved)
+                return (frames, _original_resolved)
 
             log.warning(
                 "⚠️  [ShaderOverlay] libplacebo not available — using FFmpeg "
@@ -504,29 +664,68 @@ class ShaderOverlayNode:
                     "[ShaderOverlay] FFmpeg failed (rc=%d): %s",
                     result.returncode, result.stderr[-500:] if result.stderr else "",
                 )
-                frames = self._decode_video(resolved_path)
-                return (frames, resolved_path)
+                frames = self._decode_video(_original_resolved)
+                return (frames, _original_resolved)
         except subprocess.TimeoutExpired:
             log.error("[ShaderOverlay] FFmpeg timed out after 300s")
-            frames = self._decode_video(resolved_path)
-            return (frames, resolved_path)
+            frames = self._decode_video(_original_resolved)
+            return (frames, _original_resolved)
 
         if not os.path.isfile(output_path) or os.path.getsize(output_path) == 0:
             log.error("[ShaderOverlay] Output file empty or missing")
-            frames = self._decode_video(resolved_path)
-            return (frames, resolved_path)
+            frames = self._decode_video(_original_resolved)
+            return (frames, _original_resolved)
+
+        # ── SBS unpack (crop left panel → W×H) ────────────────────────
+        if _panel_count > 1:
+            try:
+                try:
+                    from ..core.depth_shader_bridge import unpack_sbs as _unpack
+                except ImportError:
+                    from core.depth_shader_bridge import unpack_sbs as _unpack  # type: ignore
+
+                unpacked = _unpack(output_path, _original_resolved, panel_count=_panel_count)
+                if unpacked:
+                    output_path = unpacked
+                    log.info("✅ [ShaderOverlay] SBS unpacked (%d panels): %s", _panel_count, output_path)
+                else:
+                    log.warning("⚠️  SBS unpack failed — using raw SBS output.")
+            except Exception as exc:
+                log.error("⚠️  SBS unpack error: %s", exc)
 
         log.info(
             "✅ [ShaderOverlay] Applied '%s' shader (intensity=%.0f%%): %s",
             display_name, intensity * 100, output_path,
         )
 
-        # ── SAM3 masking: composite shader onto masked region only ────
+        # ── Post-composite SAM3/depth masking ────────────────────────
+        # If SBS was used, depth/normals are already baked into the
+        # shader output. Only SAM3 masking may still be applied.
+        # For regular shaders with enable_vda, use foreground_focus mode.
         has_mask_target = bool(mask_target and mask_target.strip())
-        if has_mask_target:
-            output_path = self._apply_masked(
-                resolved_path, output_path, mask_target.strip(),
-                invert_mask, temp_dir,
+
+        if _panel_count > 1:
+            # SBS shaders: depth/normals baked in — only SAM3 postcomp
+            if has_mask_target:
+                output_path = self._apply_depth_masked(
+                    _original_resolved, output_path, temp_dir,
+                    mask_target=mask_target.strip(),
+                    invert_mask=invert_mask,
+                    depth_mode="none",  # No redundant depth
+                    depth_encoder=depth_encoder,
+                    depth_input=depth_input,
+                    depth_strength=depth_strength,
+                )
+        elif has_mask_target or (_want_vda and not _is_depth_native):
+            # Regular shader with SAM3 and/or VDA post-composite
+            output_path = self._apply_depth_masked(
+                _original_resolved, output_path, temp_dir,
+                mask_target=mask_target.strip() if has_mask_target else "",
+                invert_mask=invert_mask,
+                depth_mode="foreground_focus" if _want_vda else "none",
+                depth_encoder=depth_encoder,
+                depth_input=depth_input,
+                depth_strength=depth_strength,
             )
 
         frames = self._decode_video(output_path)
@@ -688,5 +887,146 @@ class ShaderOverlayNode:
                 mask_target, masked_output,
             )
             return masked_output
+
+        return shaded_path
+
+    @staticmethod
+    def _apply_depth_masked(
+        original_path: str,
+        shaded_path: str,
+        temp_dir: str,
+        *,
+        mask_target: str = "",
+        invert_mask: bool = False,
+        depth_mode: str = "none",
+        depth_encoder: str = "vits",
+        depth_input: str = "",
+        depth_strength: float = 1.0,
+    ) -> str:
+        """Composite shaded video using depth map, SAM3 mask, or both.
+
+        Three compositing paths:
+        1. SAM3 only (depth_mode=none, mask_target set) — binary masking
+        2. Depth only (depth_mode set, no mask_target) — depth-weighted blend
+        3. SAM3 + Depth (both set) — multiplied mask for object-aware depth
+
+        Returns the composited output path, or shaded_path on failure.
+        """
+        has_mask = bool(mask_target)
+        has_depth = depth_mode != "none"
+
+        # ── SAM3-only path (legacy behavior) ──
+        if has_mask and not has_depth:
+            return ShaderOverlayNode._apply_masked(
+                original_path, shaded_path, mask_target,
+                invert_mask, temp_dir,
+            )
+
+        # ── Import depth bridge ──
+        try:
+            try:
+                from ..core.depth_shader_bridge import (
+                    generate_depth_map,
+                    generate_combined_mask,
+                    composite_with_depth_mask,
+                )
+            except ImportError:
+                from core.depth_shader_bridge import (  # type: ignore
+                    generate_depth_map,
+                    generate_combined_mask,
+                    composite_with_depth_mask,
+                )
+        except ImportError:
+            log.error(
+                "⚠️  [ShaderOverlay] depth_shader_bridge not available — "
+                "applying shader to entire frame."
+            )
+            return shaded_path
+
+        # ── Get or generate depth map ──
+        depth_path = None
+        if depth_input and depth_input.strip() and os.path.isfile(depth_input.strip()):
+            depth_path = depth_input.strip()
+            log.info("[ShaderOverlay] Using external depth map: %s", depth_path)
+        else:
+            log.info(
+                "[ShaderOverlay] Running VDA depth prepass (encoder=%s)...",
+                depth_encoder,
+            )
+            depth_path = generate_depth_map(
+                original_path,
+                encoder=depth_encoder,
+            )
+
+        if depth_path is None:
+            log.warning(
+                "⚠️  [ShaderOverlay] Depth map generation failed — "
+                "applying shader to entire frame."
+            )
+            # If we also have SAM3 mask target, fall back to SAM3-only
+            if has_mask:
+                return ShaderOverlayNode._apply_masked(
+                    original_path, shaded_path, mask_target,
+                    invert_mask, temp_dir,
+                )
+            return shaded_path
+
+        # ── Generate SAM3 mask if needed ──
+        sam3_mask_path = None
+        if has_mask:
+            try:
+                try:
+                    from ..core.sam3_masker import mask_video_subprocess as _sam3
+                except ImportError:
+                    from core.sam3_masker import mask_video_subprocess as _sam3
+
+                sam3_mask_path = _sam3(
+                    video_path=original_path,
+                    prompt=mask_target,
+                )
+                if sam3_mask_path and os.path.isfile(sam3_mask_path):
+                    log.info(
+                        "[ShaderOverlay] SAM3 mask for '%s': %s",
+                        mask_target, sam3_mask_path,
+                    )
+                else:
+                    log.warning(
+                        "⚠️  [ShaderOverlay] SAM3 mask failed — "
+                        "using depth-only compositing."
+                    )
+                    sam3_mask_path = None
+            except Exception as exc:
+                log.error(
+                    "⚠️  [ShaderOverlay] SAM3 mask failed: %s — "
+                    "using depth-only compositing.", exc,
+                )
+                sam3_mask_path = None
+
+        # ── Generate combined mask (depth × SAM3 or depth-only) ──
+        final_mask = generate_combined_mask(
+            video_path=original_path,
+            depth_path=depth_path,
+            sam3_mask_path=sam3_mask_path,
+            depth_mode=depth_mode,
+            depth_strength=depth_strength,
+        )
+
+        # ── Composite ──
+        result_path = composite_with_depth_mask(
+            original_path=original_path,
+            shaded_path=shaded_path,
+            mask_path=final_mask,
+            invert=invert_mask,
+        )
+
+        if result_path and os.path.isfile(result_path):
+            mode_desc = depth_mode
+            if has_mask:
+                mode_desc = f"SAM3('{mask_target}') × {depth_mode}"
+            log.info(
+                "✅ [ShaderOverlay] Depth-composited (%s): %s",
+                mode_desc, result_path,
+            )
+            return result_path
 
         return shaded_path

@@ -130,7 +130,35 @@ def resolve_inputs(
         temp_video_from_images = dummy.name
         effective_video_path = dummy.name
     else:
-        effective_video_path = video_path
+        # No video, images, or extra media — generate a minimal black video
+        # so audio-only modes (generate_sample, ace_step, etc.) still work.
+        if not video_path or not video_path.strip():
+            # Calculate duration from audio_a if available, otherwise default to 1s
+            dummy_dur = 1
+            if audio_a is not None and isinstance(audio_a, dict):
+                try:
+                    wf = audio_a.get("waveform")
+                    sr = audio_a.get("sample_rate", 44100)
+                    if wf is not None and sr:
+                        # Audio duration + 10s safety buffer for effects that
+                        # lengthen audio (e.g. reverb tails, loudnorm padding)
+                        dummy_dur = max(1, int(wf.shape[-1] / sr) + 10)
+                except Exception:
+                    pass
+            dummy = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+            dummy.close()
+            import subprocess
+            subprocess.run(
+                ["ffmpeg", "-y", "-f", "lavfi", "-i",
+                 f"color=c=black:s=1920x1080:d={dummy_dur}:r=25",
+                 "-c:v", "libx264", "-t", str(dummy_dur), dummy.name],
+                capture_output=True,
+            )
+            temp_video_from_images = dummy.name
+            effective_video_path = dummy.name
+            logger.info("No video input — created dummy black video for audio-only mode (%ds)", dummy_dur)
+        else:
+            effective_video_path = video_path
 
     try:
         from ..core.sanitize import validate_video_path  # type: ignore[import-not-found]

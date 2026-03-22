@@ -155,7 +155,7 @@ class FFMPEGAgentNode:
                                "Select 'custom' to type any model name manually. "
                                "Select 'none' to skip the LLM entirely and use no_llm_mode instead (manual pipeline, SAM3, Whisper, or MMAudio).",
                 }),
-                "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles", "generate_audio", "generate_music", "audio_inpaint", "audio_separate", "ace_step", "lip_sync", "animate_portrait", "marigold", "normalcrafter", "video_depth", "flux_klein", "kiwi_edit", "minimax_remover", "ai_upscale", "rembg", "onion_skin", "comparison"], {
+                "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles", "generate_audio", "generate_music", "foundation1", "fish_speech", "audio_inpaint", "audio_separate", "ace_step", "lip_sync", "animate_portrait", "marigold", "normalcrafter", "video_depth", "flux_klein", "kiwi_edit", "minimax_remover", "dreamid_omni", "ai_upscale", "rembg", "onion_skin", "comparison"], {
                     "default": "manual",
                     "tooltip": "What to do when llm_model is 'none'. "
                                "'manual' runs the Effects Builder pipeline directly (no AI). "
@@ -164,6 +164,8 @@ class FFMPEGAgentNode:
                                "'karaoke_subtitles' runs Whisper and burns word-by-word karaoke subtitles. "
                                "'generate_audio' uses MMAudio to synthesize audio from video/prompt. "
                                "'generate_music' uses AudioX to generate music from video/prompt (CC-BY-NC). "
+                               "'foundation1' uses Foundation-1 to generate BPM/key-aware music loops from prompt. "
+                               "'fish_speech' uses Fish Speech S2 Pro for text-to-speech with voice cloning and emotion control (80+ languages). "
                                "'audio_inpaint' uses AudioX to inpaint/complete audio (CC-BY-NC). "
                                "'audio_separate' uses SAM-Audio to isolate specific sounds from audio — prompt describes what to isolate (e.g. 'drums', 'vocals'). "
                                "'lip_sync' uses MuseTalk to sync lip movements to connected audio_a. "
@@ -488,12 +490,101 @@ class FFMPEGAgentNode:
                                "'heun' = Flow Match Heun (higher quality per step, 2x cost). "
                                "'dpm++' = DPM++ Multistep (alternative fast solver).",
                 }),
+                "kiwi_lora_enabled": ("BOOLEAN", {
+                    "default": False,
+                    "label_on": "LoRA On",
+                    "label_off": "LoRA Off",
+                    "tooltip": "Enable LightX2V distill LoRA for 4-step inference. "
+                               "Dramatically speeds up Kiwi-Edit by reducing steps from 50 to 4. "
+                               "Downloads the LoRA (~600 MB) on first use from lightx2v/Wan2.2-Distill-Loras.",
+                }),
+                "kiwi_lora_variant": (["high_noise", "low_noise"], {
+                    "default": "high_noise",
+                    "tooltip": "LightX2V LoRA noise variant (only used when kiwi_lora_enabled is On). "
+                               "'high_noise' = more creative/diverse output. "
+                               "'low_noise' = more faithful to the original input.",
+                }),
                 # ── Advanced: MiniMax-Remover ─────────────────────────────
                 "use_minimax_remover": ("BOOLEAN", {
                     "default": False,
                     "label_on": "MiniMax On",
                     "label_off": "MiniMax Off",
                     "tooltip": "Enable MiniMax-Remover for high-quality video object removal (auto_mask:effect=remove). Uses a purpose-built DiT model (~2.5 GB, ~5–8 GB VRAM). Takes priority over FLUX Klein for removal when both are enabled. When OFF, removal falls back to FLUX Klein (if enabled) or LaMa (~200 MB).",
+                }),
+
+                # ── Advanced: DreamID-Omni (WIP) ────────────────────────────
+                "use_dreamid_omni": ("BOOLEAN", {
+                    "default": False,
+                    "label_on": "DreamID On ⚠️ WIP",
+                    "label_off": "DreamID Off",
+                    "tooltip": "⚠️ EXPERIMENTAL / WORK IN PROGRESS — Quality may be poor on low-VRAM GPUs. "
+                               "Enable DreamID-Omni for identity-preserving video generation with speech. "
+                               "Generates video where subjects speak with their voice and face identity preserved. "
+                               "Heavy model (~15+ GB VRAM). OFF by default for low-VRAM GPUs. "
+                               "Requires face image(s) on image_a and reference audio on audio_a.",
+                }),
+                "dreamid_precision": (["auto", "fp8", "bf16"], {
+                    "default": "auto",
+                    "tooltip": "DreamID-Omni model precision. "
+                               "'auto' = prefer FP8 if available (~12 GB), else BF16 (~23 GB). "
+                               "'fp8' = FP8 quantized (fastest, lowest VRAM, requires converted checkpoint). "
+                               "'bf16' = BFloat16 (best quality, higher VRAM).",
+                }),
+                "dreamid_resolution": (["auto", "992x512", "1280x704"], {
+                    "default": "auto",
+                    "tooltip": "DreamID-Omni output resolution (used in 'dreamid_omni' no_llm_mode). "
+                               "'auto' = pick based on available VRAM (~30+ GB → 1280x704, else 992x512). "
+                               "'992x512' = standard quality, lower VRAM (~20 GB). "
+                               "'1280x704' = high quality, higher VRAM (~30+ GB).",
+                }),
+                "dreamid_steps": ("INT", {
+                    "default": 50,
+                    "min": 1,
+                    "max": 100,
+                    "step": 1,
+                    "tooltip": "Number of diffusion sampling steps for DreamID-Omni. Default 50. Lower = faster but lower quality.",
+                }),
+                "dreamid_seed": ("INT", {
+                    "default": 100,
+                    "min": 0,
+                    "max": 2147483647,
+                    "step": 1,
+                    "tooltip": "Random seed for DreamID-Omni. Set a fixed value for reproducible results.",
+                }),
+                "dreamid_solver": (["unipc", "euler", "dpm++"], {
+                    "default": "unipc",
+                    "tooltip": "Solver for DreamID-Omni denoising. "
+                               "'unipc' = UniPC predictor-corrector (default, fast). "
+                               "'euler' = Flow Match Euler. "
+                               "'dpm++' = DPM++ Multistep.",
+                }),
+                "dreamid_video_cfg": ("FLOAT", {
+                    "default": 3.0,
+                    "min": 1.0,
+                    "max": 10.0,
+                    "step": 0.5,
+                    "tooltip": "Video classifier-free guidance scale. Higher = stronger prompt adherence. Default 3.0.",
+                }),
+                "dreamid_video_ref_cfg": ("FLOAT", {
+                    "default": 1.5,
+                    "min": 0.0,
+                    "max": 5.0,
+                    "step": 0.5,
+                    "tooltip": "Video reference (face identity) guidance scale. Higher = stronger identity preservation. Default 1.5.",
+                }),
+                "dreamid_audio_cfg": ("FLOAT", {
+                    "default": 4.0,
+                    "min": 1.0,
+                    "max": 10.0,
+                    "step": 0.5,
+                    "tooltip": "Audio classifier-free guidance scale. Higher = stronger audio guidance. Default 4.0.",
+                }),
+                "dreamid_audio_ref_cfg": ("FLOAT", {
+                    "default": 2.0,
+                    "min": 0.0,
+                    "max": 5.0,
+                    "step": 0.5,
+                    "tooltip": "Audio reference guidance scale. Higher = stronger voice identity preservation. Default 2.0.",
                 }),
 
                 # ── Advanced: SAM-Audio ──────────────────────────────────
@@ -550,7 +641,7 @@ class FFMPEGAgentNode:
                 }),
 
                 # ── Advanced: AI Upscale ───────────────────────────────────
-                "upscale_model": (["realesrgan_x4plus", "realesrgan_x4_anime", "hat_x4", "dat_x4", "swinir_x4", "seedvr2_3b_fp8", "seedvr2_7b_gguf", "rtx_vsr"], {
+                "upscale_model": (["realesrgan_x4plus", "realesrgan_x4_anime", "hat_x4", "dat_x4", "swinir_x4", "seedvr2_3b_fp8", "seedvr2_3b_gguf", "seedvr2_7b_fp8", "seedvr2_7b_gguf", "rtx_vsr"], {
                     "default": "realesrgan_x4plus",
                     "tooltip": "AI upscaler model (used in 'ai_upscale' no_llm_mode). "
                                "'realesrgan_x4plus' = fast general-purpose. "
@@ -559,7 +650,9 @@ class FFMPEGAgentNode:
                                "'dat_x4' = balanced (DAT-2). "
                                "'swinir_x4' = classical SR. "
                                "'seedvr2_3b_fp8' = diffusion upscaler, great quality (~8-12 GB VRAM). "
-                               "'seedvr2_7b_gguf' = highest quality diffusion upscaler (~8-12 GB VRAM). "
+                               "'seedvr2_3b_gguf' = diffusion upscaler, lowest VRAM (~6-8 GB). "
+                               "'seedvr2_7b_fp8' = highest quality diffusion upscaler (~16-24 GB VRAM). "
+                               "'seedvr2_7b_gguf' = highest quality diffusion upscaler, quantized (~8-12 GB VRAM). "
                                "'rtx_vsr' = NVIDIA RTX Video Super Resolution (hardware-accelerated, RTX GPU required).",
                 }),
                 "upscale_scale": (["4", "2"], {
@@ -618,11 +711,23 @@ class FFMPEGAgentNode:
                 "audio_output_mode": (["auto", "replace", "mix", "save_only"], {
                     "default": "auto",
                     "tooltip": "How to combine AI-generated audio with existing audio. "
-                               "Applies to all audio-generating modes: generate_audio (MMAudio), generate_music (AudioX), audio_inpaint (AudioX), audio_separate (SAM-Audio), ace_step. "
+                               "Applies to all audio-generating modes: generate_audio (MMAudio), generate_music (AudioX), foundation1 (Foundation-1), fish_speech (Fish Speech TTS), audio_inpaint (AudioX), audio_separate (SAM-Audio), ace_step. "
                                "'auto' lets the LLM decide in agentic mode; defaults to 'replace' in no-LLM modes. "
                                "'replace' replaces existing audio entirely. "
                                "'mix' blends generated audio with the original track. "
                                "'save_only' generates the audio file without muxing it into the video.",
+                }),
+
+                # ── Advanced: Audio Resample Rate ──────────────────────────
+                "audio_resample_rate": (["off", "44100", "48000"], {
+                    "default": "off",
+                    "tooltip": "Resample the audio output to this sample rate. "
+                               "Enable this if your audio effects (e.g. clean_audio with loudnorm) "
+                               "produce non-standard sample rates (like 96kHz) that ComfyUI's "
+                               "Save Audio MP3 node can't handle. "
+                               "'off' = pass through original sample rate. "
+                               "'44100' = CD quality, universal MP3 compatibility. "
+                               "'48000' = studio quality, universal compatibility.",
                 }),
 
                 # ── Advanced: Onion Skin ──────────────────────────────────
@@ -731,6 +836,156 @@ class FFMPEGAgentNode:
                     "placeholder": "e.g. 4/4, 3/4, 6/8",
                     "tooltip": "Target time signature for ACE-Step. "
                                "Leave empty for automatic. Only used when no_llm_mode = 'ace_step'.",
+                }),
+
+                # ── Advanced: Foundation-1 controls ────────────────────────
+                "f1_preset": (["none", "warm_pad", "synth_lead", "bass_loop", "string_ensemble", "electric_piano", "plucked_arp", "ambient_texture", "brass_stab", "guitar_clean", "mallet_vibes"], {
+                    "default": "none",
+                    "tooltip": "Built-in timbre preset for Foundation-1. "
+                               "Provides structured instrument/timbre tags. "
+                               "Combine with a text prompt for customization. "
+                               "Only used when no_llm_mode = 'foundation1'.",
+                }),
+                "f1_instrument": (["none", "synth", "keys", "bass", "strings", "mallet", "winds", "guitar", "brass", "vocals", "plucked"], {
+                    "default": "none",
+                    "tooltip": "Instrument family to guide Foundation-1 generation. "
+                               "Appended to prompt automatically. 'none' = let the prompt decide. "
+                               "Only used when no_llm_mode = 'foundation1'.",
+                }),
+                "f1_fx": (["none", "dry", "low_reverb", "medium_reverb", "high_reverb", "plate_reverb", "low_delay", "medium_delay", "ping_pong_delay", "stereo_delay", "low_distortion", "medium_distortion", "phaser", "bitcrush", "chorus"], {
+                    "default": "none",
+                    "tooltip": "FX processing applied to Foundation-1 output. "
+                               "'dry' = minimal processing, other options add specific effects. "
+                               "Only used when no_llm_mode = 'foundation1'.",
+                }),
+                "f1_structure": (["none", "chord_progression", "melody", "arp", "sustained", "staccato", "legato", "triplets", "rhythmic", "rising", "falling", "simple", "complex"], {
+                    "default": "none",
+                    "tooltip": "Musical structure/notation tag to guide phrasing. "
+                               "Controls melodic motion, rhythmic behavior, and harmonic feel. "
+                               "Only used when no_llm_mode = 'foundation1'.",
+                }),
+                "f1_negative_prompt": ("STRING", {
+                    "default": "",
+                    "multiline": True,
+                    "placeholder": "e.g. harsh, distorted, noise",
+                    "tooltip": "Negative prompt describing what to avoid in Foundation-1 output. "
+                               "Only used when no_llm_mode = 'foundation1'.",
+                }),
+                "f1_bpm": (["auto", "100", "110", "120", "128", "130", "140", "150"], {
+                    "default": "auto",
+                    "tooltip": "Target BPM. Foundation-1 supports specific BPM denominations. "
+                               "'auto' = let the model decide. "
+                               "Only used when no_llm_mode = 'foundation1'.",
+                }),
+                "f1_bars": (["auto", "4", "8"], {
+                    "default": "auto",
+                    "tooltip": "Number of bars for the loop. Foundation-1 supports 4 or 8 bars. "
+                               "'auto' = let the model decide. Combined with BPM for precise duration. "
+                               "Only used when no_llm_mode = 'foundation1'.",
+                }),
+                "f1_key": ("STRING", {
+                    "default": "",
+                    "multiline": False,
+                    "placeholder": "e.g. C major, A minor, F# dorian",
+                    "tooltip": "Musical key and mode. Supports all keys and modes. "
+                               "Leave empty for automatic. "
+                               "Only used when no_llm_mode = 'foundation1'.",
+                }),
+                "f1_duration": ("FLOAT", {
+                    "default": 0.0,
+                    "min": 0.0,
+                    "max": 60.0,
+                    "step": 0.5,
+                    "tooltip": "Duration in seconds. 0 = auto-calculate from BPM/bars (or default 10s). "
+                               "Max 60s. Only used when no_llm_mode = 'foundation1'.",
+                }),
+                "f1_steps": ("INT", {
+                    "default": 100,
+                    "min": 10,
+                    "max": 250,
+                    "step": 10,
+                    "tooltip": "Number of diffusion steps. Higher = better quality but slower. "
+                               "100 is a good default. Only used when no_llm_mode = 'foundation1'.",
+                }),
+                "f1_cfg_scale": ("FLOAT", {
+                    "default": 7.0,
+                    "min": 1.0,
+                    "max": 15.0,
+                    "step": 0.5,
+                    "tooltip": "Classifier-free guidance scale. Higher = follows prompt more closely. "
+                               "7.0 is a good default. Only used when no_llm_mode = 'foundation1'.",
+                }),
+                "f1_style_transfer": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "Enable audio style transfer mode. "
+                               "When on, Foundation-1 takes connected audio_a input and re-styles it "
+                               "based on the text prompt — like img2img but for audio. "
+                               "Requires audio_a to be connected. "
+                               "Only used when no_llm_mode = 'foundation1'.",
+                }),
+                "f1_noise_level": ("FLOAT", {
+                    "default": 0.7,
+                    "min": 0.0,
+                    "max": 1.0,
+                    "step": 0.05,
+                    "tooltip": "Style transfer strength. "
+                               "0.0 = keep original audio (no change), "
+                               "0.3 = subtle variation, "
+                               "0.7 = strong restyling (default), "
+                               "1.0 = fully regenerate (ignore source). "
+                               "Only used when f1_style_transfer is enabled.",
+                }),
+
+                # ── Advanced: Fish Speech TTS controls ──────────────────────
+                "fish_model_variant": (["bf16", "fp8"], {
+                    "default": "bf16",
+                    "tooltip": "Fish Speech model precision. "
+                               "'fp8' = FP8 quantized (~12 GB VRAM, recommended). "
+                               "'bf16' = full BF16 precision (~24 GB VRAM). "
+                               "Only used when no_llm_mode = 'fish_speech'.",
+                }),
+                "fish_voice": ("STRING", {
+                    "default": "",
+                    "multiline": False,
+                    "placeholder": "Voice name or path to .wav reference",
+                    "tooltip": "Voice reference for cloning. Enter a name from the voice library "
+                               "(models/fish_speech/voices/) or a path to a .wav file (10-30s). "
+                               "Leave empty for default voice. "
+                               "Only used when no_llm_mode = 'fish_speech'.",
+                }),
+                "fish_emotion": (["(none)", "[happy]", "[sad]", "[angry]", "[excited]", "[whisper]", "[shouting]", "[laughing]", "[laughing tone]", "[chuckling]", "[chuckle]", "[crying]", "[singing]", "[pause]", "[short pause]", "[breath]", "[inhale]", "[exhale]", "[emphasis]", "[sigh]", "[tsk]", "[nervous]", "[calm]", "[serious]", "[cheerful]", "[sarcastic]", "[surprised]", "[shocked]", "[disgusted]", "[fearful]", "[tender]", "[delight]", "[monotone]", "[interrupting]", "[fast]", "[slow]", "[loud]", "[soft]", "[low voice]", "[volume up]", "[volume down]", "[echo]", "[panting]", "[clearing throat]", "[audience laughter]", "[with strong accent]"], {
+                    "default": "(none)",
+                    "tooltip": "Emotion/prosody tag prepended to the text. "
+                               "Fish Speech supports 15K+ inline tags — including free-form "
+                               "descriptions like '[whisper in small voice]' or "
+                               "'[professional broadcast tone]'. Type tags directly in the prompt "
+                               "for fine-grained control. Only used when no_llm_mode = 'fish_speech'.",
+                }),
+                "fish_temperature": ("FLOAT", {
+                    "default": 0.8,
+                    "min": 0.1,
+                    "max": 1.0,
+                    "step": 0.05,
+                    "tooltip": "Sampling temperature for Fish Speech. "
+                               "Lower = more deterministic, higher = more varied. "
+                               "Only used when no_llm_mode = 'fish_speech'.",
+                }),
+                "fish_top_p": ("FLOAT", {
+                    "default": 0.8,
+                    "min": 0.1,
+                    "max": 1.0,
+                    "step": 0.05,
+                    "tooltip": "Top-p (nucleus) sampling for Fish Speech. "
+                               "Only used when no_llm_mode = 'fish_speech'.",
+                }),
+                "fish_repetition_penalty": ("FLOAT", {
+                    "default": 1.1,
+                    "min": 1.0,
+                    "max": 2.0,
+                    "step": 0.05,
+                    "tooltip": "Repetition penalty for Fish Speech. "
+                               "Higher values reduce repetitive patterns. "
+                               "Only used when no_llm_mode = 'fish_speech'.",
                 }),
 
                 # ── Advanced: LivePortrait expression controls ─────────────
@@ -1267,9 +1522,9 @@ class FFMPEGAgentNode:
         """Delegate to output_handler module."""
         return _oh.handle_audio_output(command, pipeline, self.media_converter, audio_a, audio_source, audio_mode, output_path, **kwargs)
 
-    def _collect_frame_output(self, output_path, unique_id, hidden_prompt, removes_audio):
+    def _collect_frame_output(self, output_path, unique_id, hidden_prompt, removes_audio, resample_rate=None):
         """Delegate to output_handler module."""
-        return _oh.collect_frame_output(self.media_converter, output_path, unique_id, hidden_prompt, removes_audio)
+        return _oh.collect_frame_output(self.media_converter, output_path, unique_id, hidden_prompt, removes_audio, resample_rate=resample_rate)
 
     # ------------------------------------------------------------------ #
     #  Main entry point                                                   #
@@ -1313,8 +1568,10 @@ class FFMPEGAgentNode:
         use_flux_klein: bool = False,
         use_kiwi_edit: bool = False,
         use_minimax_remover: bool = False,
+        use_dreamid_omni: bool = False,
         flux_smoothing: str = "none",
         audio_output_mode: str = "auto",
+        audio_resample_rate: str = "off",
         ace_negative_prompt: str = "",
         ace_cover_strength: float = 0.5,
         ace_steps: int = 8,
@@ -1322,6 +1579,19 @@ class FFMPEGAgentNode:
         ace_bpm: str = "",
         ace_key: str = "",
         ace_time_sig: str = "",
+        f1_preset: str = "none",
+        f1_instrument: str = "none",
+        f1_fx: str = "none",
+        f1_structure: str = "none",
+        f1_negative_prompt: str = "",
+        f1_bpm: str = "auto",
+        f1_bars: str = "auto",
+        f1_key: str = "",
+        f1_duration: float = 0.0,
+        f1_steps: int = 100,
+        f1_cfg_scale: float = 7.0,
+        f1_style_transfer: bool = False,
+        f1_noise_level: float = 0.7,
         batch_mode: bool = False,
         video_folder: str = "",
         file_pattern: str = "*.mp4",
@@ -1329,6 +1599,12 @@ class FFMPEGAgentNode:
         track_tokens: bool = True,
         log_usage: bool = False,
         allow_model_downloads: bool = True,
+        fish_model_variant: str = "bf16",
+        fish_voice: str = "",
+        fish_emotion: str = "(none)",
+        fish_temperature: float = 0.8,
+        fish_top_p: float = 0.8,
+        fish_repetition_penalty: float = 1.1,
         **kwargs,  # hidden: prompt (PROMPT dict), extra_pnginfo (EXTRA_PNGINFO)
     ) -> tuple[torch.Tensor, dict, str, str, str, str, str]:
         """Process the video based on the natural language prompt.
@@ -1397,6 +1673,65 @@ class FFMPEGAgentNode:
             )
             return result6 + (mask_points or "",)
 
+        # --- Foundation-1 (audio-only, no video resolution needed) ---
+        if no_llm_mode == "foundation1":
+            result6 = await self._process_foundation1_only(
+                prompt=prompt,
+                audio_output_mode=audio_output_mode,
+                effective_video_path=video_path or "",
+                video_metadata=None,
+                save_output=save_output,
+                output_path=output_path,
+                preview_mode=preview_mode,
+                quality_preset=quality_preset,
+                crf=crf,
+                encoding_preset=encoding_preset,
+                temp_video_from_images=None,
+                temp_video_with_audio=None,
+                f1_preset=f1_preset,
+                f1_instrument=f1_instrument,
+                f1_fx=f1_fx,
+                f1_structure=f1_structure,
+                f1_negative_prompt=f1_negative_prompt,
+                f1_bpm=f1_bpm,
+                f1_bars=f1_bars,
+                f1_key=f1_key,
+                f1_duration=f1_duration,
+                f1_steps=f1_steps,
+                f1_cfg_scale=f1_cfg_scale,
+                f1_style_transfer=f1_style_transfer,
+                f1_noise_level=f1_noise_level,
+                audio_a=audio_a,
+                **kwargs,
+            )
+            return result6 + (mask_points or "",)
+
+        # --- Fish Speech TTS (audio-only, no video resolution needed) ---
+        if no_llm_mode == "fish_speech":
+            result6 = await self._process_fish_speech_only(
+                prompt=prompt,
+                audio_output_mode=audio_output_mode,
+                effective_video_path=video_path or "",
+                video_metadata=None,
+                save_output=save_output,
+                output_path=output_path,
+                preview_mode=preview_mode,
+                quality_preset=quality_preset,
+                crf=crf,
+                encoding_preset=encoding_preset,
+                temp_video_from_images=None,
+                temp_video_with_audio=None,
+                fish_model_variant=fish_model_variant,
+                fish_voice=fish_voice,
+                fish_emotion=fish_emotion,
+                fish_temperature=fish_temperature,
+                fish_top_p=fish_top_p,
+                fish_repetition_penalty=fish_repetition_penalty,
+                audio_a=audio_a,
+                **kwargs,
+            )
+            return result6 + (mask_points or "",)
+
         # --- Resolve inputs ---
         (
             effective_video_path,
@@ -1447,7 +1782,7 @@ class FFMPEGAgentNode:
 
         if not prompt.strip():
             # manual + whisper + lip_sync modes don't need a prompt
-            if llm_model != "none" or no_llm_mode not in ("manual", "transcribe", "karaoke_subtitles", "generate_audio", "generate_music", "audio_inpaint", "audio_separate", "ace_step", "lip_sync", "animate_portrait", "marigold", "normalcrafter", "video_depth", "kiwi_edit", "minimax_remover", "ai_upscale", "rembg", "onion_skin"):
+            if llm_model != "none" or no_llm_mode not in ("manual", "transcribe", "karaoke_subtitles", "generate_audio", "generate_music", "foundation1", "fish_speech", "audio_inpaint", "audio_separate", "ace_step", "lip_sync", "animate_portrait", "marigold", "normalcrafter", "video_depth", "kiwi_edit", "minimax_remover", "dreamid_omni", "ai_upscale", "rembg", "onion_skin"):
                 raise ValueError("Prompt cannot be empty")
 
         # --- Analyze input video ---
@@ -1491,6 +1826,7 @@ class FFMPEGAgentNode:
                     use_flux_klein=use_flux_klein,
                     use_kiwi_edit=use_kiwi_edit,
                     use_minimax_remover=use_minimax_remover,
+                    use_dreamid_omni=use_dreamid_omni,
                     flux_smoothing=flux_smoothing,
                     temp_video_from_images=temp_video_from_images,
                     temp_video_with_audio=temp_video_with_audio,
@@ -1499,6 +1835,7 @@ class FFMPEGAgentNode:
                     _all_video_paths=_all_video_paths,
                     _all_image_paths=_all_image_paths,
                     _all_text_inputs=_all_text_inputs,
+                    audio_resample_rate=audio_resample_rate,
                     **kwargs,
                 )
                 return result6 + (mask_points or "",)
@@ -1885,6 +2222,25 @@ class FFMPEGAgentNode:
                 if _sam3_mask_path and result6[2]:
                     _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
                 return result6 + (mask_points or "",)
+            # DreamID-Omni mode (identity-preserving talking-head generation)
+            if no_llm_mode == "dreamid_omni":
+                result6 = await _nollm.process_dreamid_omni_only(
+                    prompt=prompt,
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
+                    image_a=image_a,
+                    audio_a=audio_a,
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    **kwargs,
+                )
+                return result6 + (mask_points or "",)
             # AI Upscale mode (spandrel-based super-resolution)
             if no_llm_mode == "ai_upscale":
                 result6 = await self._process_ai_upscale_only(
@@ -2024,6 +2380,7 @@ class FFMPEGAgentNode:
                     use_flux_klein=use_flux_klein,
                     use_kiwi_edit=use_kiwi_edit,
                     use_minimax_remover=use_minimax_remover,
+                    use_dreamid_omni=use_dreamid_omni,
                     flux_smoothing=flux_smoothing,
                     temp_video_from_images=temp_video_from_images,
                     temp_video_with_audio=temp_video_with_audio,
@@ -2032,6 +2389,7 @@ class FFMPEGAgentNode:
                     _all_video_paths=_all_video_paths,
                     _all_image_paths=_all_image_paths,
                     _all_text_inputs=_all_text_inputs,
+                    audio_resample_rate=audio_resample_rate,
                     **kwargs,
                 )
                 return result6 + (mask_points or "",)
@@ -2040,7 +2398,7 @@ class FFMPEGAgentNode:
                 "No-LLM 'manual' mode requires an Effects Builder node or "
                 "FFMPEGA Text node. Connect one to the pipeline_json or "
                 "text_a input, or switch no_llm_mode to 'sam3_masking', "
-                "'transcribe', 'karaoke_subtitles', 'generate_audio', 'generate_music', 'audio_inpaint', 'audio_separate', 'ace_step', 'lip_sync', 'marigold', 'normalcrafter', 'video_depth', 'flux_klein', 'kiwi_edit', 'minimax_remover', or 'ai_upscale'."
+                "'transcribe', 'karaoke_subtitles', 'generate_audio', 'generate_music', 'generate_sample', 'fish_speech', 'audio_inpaint', 'audio_separate', 'ace_step', 'lip_sync', 'marigold', 'normalcrafter', 'video_depth', 'flux_klein', 'kiwi_edit', 'minimax_remover', or 'ai_upscale'."
             )
         # --- Build connected-inputs context string ---
         connected_inputs_str = self._build_connected_inputs_summary(
@@ -2222,6 +2580,7 @@ class FFMPEGAgentNode:
             unique_id=unique_id,
             hidden_prompt=hidden_prompt,
             removes_audio=removes_audio,
+            resample_rate=int(audio_resample_rate) if audio_resample_rate and audio_resample_rate != "off" else None,
         )
 
         # --- Sanitize API key from workflow metadata ---
@@ -2264,7 +2623,7 @@ class FFMPEGAgentNode:
     #  Effects Builder support                                             #
     # ------------------------------------------------------------------ #
 
-    async def _process_effects_pipeline(self, pipeline_json, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, whisper_device="cpu", whisper_model="large-v3", sam3_device="gpu", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", use_flux_klein=False, use_kiwi_edit=False, use_minimax_remover=False, flux_smoothing="none", temp_video_from_images=None, temp_video_with_audio=None, image_a=None, audio_a=None, _all_video_paths=None, _all_image_paths=None, _all_text_inputs=None, **kwargs):
+    async def _process_effects_pipeline(self, pipeline_json, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, whisper_device="cpu", whisper_model="large-v3", sam3_device="gpu", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", use_flux_klein=False, use_kiwi_edit=False, use_minimax_remover=False, use_dreamid_omni=False, flux_smoothing="none", temp_video_from_images=None, temp_video_with_audio=None, image_a=None, audio_a=None, _all_video_paths=None, _all_image_paths=None, _all_text_inputs=None, **kwargs):
         """Delegate to nollm_modes module."""
         return await _nollm.process_effects_pipeline(
             composer=self.composer, process_manager=self.process_manager,
@@ -2281,6 +2640,7 @@ class FFMPEGAgentNode:
             use_flux_klein=use_flux_klein,
             use_kiwi_edit=use_kiwi_edit,
             use_minimax_remover=use_minimax_remover,
+            use_dreamid_omni=use_dreamid_omni,
             flux_smoothing=flux_smoothing,
             temp_video_from_images=temp_video_from_images,
             temp_video_with_audio=temp_video_with_audio,
@@ -2368,7 +2728,43 @@ class FFMPEGAgentNode:
         )
 
     # ------------------------------------------------------------------ #
-    #  ACE-Step music generation mode (no LLM)                             #
+    #  Foundation-1 sample-only mode (no LLM)                              #
+    # ------------------------------------------------------------------ #
+
+    async def _process_foundation1_only(self, prompt, audio_output_mode, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+        """Delegate to nollm_modes module."""
+        return await _nollm.process_foundation1_only(
+            media_converter=self.media_converter,
+            prompt=prompt, audio_output_mode=audio_output_mode,
+            effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
+        )
+
+    # ------------------------------------------------------------------ #
+    #  Fish Speech TTS mode (no LLM)                                       #
+    # ------------------------------------------------------------------ #
+
+    async def _process_fish_speech_only(self, prompt, audio_output_mode, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+        """Delegate to nollm_modes module."""
+        return await _nollm.process_fish_speech_only(
+            media_converter=self.media_converter,
+            prompt=prompt, audio_output_mode=audio_output_mode,
+            effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
+        )
+
     # ------------------------------------------------------------------ #
 
     async def _process_ace_step_only(self, prompt, audio_output_mode, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):

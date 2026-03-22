@@ -240,7 +240,7 @@ export class AudioTimeline {
         if (duration <= 0) return;
 
         ctx.save();
-        ctx.scale(dpr, dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
         // Erase old playhead (restore to track background)
         if (this._lastPlayheadX >= 0) {
@@ -298,7 +298,7 @@ export class AudioTimeline {
 
             ctx.restore();
             ctx.save();
-            ctx.scale(dpr, dpr);
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         }
 
         // Draw new playhead
