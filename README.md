@@ -5,7 +5,7 @@
 **The ultimate video editing suite for ComfyUI — edit with natural language or hands-on manual controls.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-2.18.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-2.19.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-2-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 [![Downloads](https://img.shields.io/badge/dynamic/json?color=blueviolet&label=Downloads&query=downloads.smart_count&url=https://raw.githubusercontent.com/AEmotionStudio/ComfyUI-FFMPEGA/refs/heads/badges/traffic_stats.json&style=for-the-badge&logo=github)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
@@ -24,20 +24,21 @@
 
 ---
 
-## 🚀 What's New in v2.18.0
+## 🚀 What's New in v2.19.0
 
-*   🎬 **Kiwi-Edit AI Video Editing** — text-instruction and reference-image video editing powered by WAN 2.2. FP8 (~5 GB) and BF16 (~10 GB) precision with long video chunking
-*   🎯 **SAM3 + Kiwi-Edit** — use SAM3 pre-masking to precisely target objects before Kiwi-Edit processing
-*   🎛️ **Kiwi-Edit Advanced Controls** — seed (reproducibility), flow shift (denoising aggressiveness), task type override, and 4 scheduler options (UniPC, Euler, Heun, DPM++)
-*   ⚡ **RTX Video Super Resolution** — hardware-accelerated AI upscaling on RTX Tensor Cores with upscale, denoise, and deblur modes
-*   🔬 **SeedVR AI Upscaling** — high-quality video upscaling with SeedVR 2 diffusion pipeline (3B and 7B variants)
-*   😊 **FacePoke Expression Presets** — predefined facial expression parameter sets for quick emotion editing
+*   🗣️ **DreamID-Omni (WIP)** — identity-preserving talking-head video generation. Face image + audio + text prompt → video with preserved identity and voice. FP8 native matmul, sequential layer offloading, streaming VAE decode for 12 GB GPUs
+*   📹 **FaceCam Node** — portrait video camera control via [FaceCam](https://github.com/weijielyu/FaceCam) (CVPR 2026). Camera orbit, zoom, tilt presets with KSampler Advanced chaining support
+*   🎙️ **Fish Speech TTS** — Fish Audio S2 Pro text-to-speech with 80+ languages, voice cloning, emotion tags, and multi-speaker support. FP8 for ~12 GB VRAM
+*   🎵 **Foundation-1 Music Samples** — production-ready musical loop generation with tempo-sync, key awareness, and style transfer
+*   🖼️ **Frame Picker Node** — interactive frame selection and reordering with contact-sheet grid, drag-and-drop, and bulk tools
+*   🎨 **15 New GLSL Shaders** — anime_glow, comic_book, depth_fog, focus_pull, pop_art, toon_3d, watercolor, and more. **70 shaders** total
 
 <details>
 <summary><b>📋 Previous Releases</b></summary>
 
 | Version | Highlights |
 | :--- | :--- |
+| **v2.18.0** | Kiwi-Edit AI video editing, SAM3 + Kiwi-Edit, RTX Video Super Resolution, SeedVR AI Upscaling, FacePoke expression presets |
 | **v2.17.0** | FacePoke interactive face editor, driving video reference, shader effects system, Flux Klein FP8, onion skin compositing, unified audio output mode |
 | **v2.16.0** | ACE-Step AI music generation, SAM-Audio source separation, Video Editor v2 (10 panels), AudioX vocal enhancement, NormalCrafter, Video Depth Anything |
 | **v2.15.0** | MiniMax-Remover, 5 new no-LLM modes, auto-VRAM tile sizing, VRAM management overhaul |
@@ -94,7 +95,7 @@ Works with **Ollama** (local, free), **OpenAI**, **Anthropic**, **Google Gemini*
 <td width="50%">
 
 ### 🎨 200+ Skills
-200+ video editing skills across visual effects, audio processing, spatial transforms, temporal edits, encoding, cinematic presets, vintage looks, social media, creative effects, text animations, editing & composition, audio visualization, multi-input operations, transitions, concat, split screen, and AI-powered skills (ACE-Step music generation, SAM-Audio source separation, AudioX vocal enhancement, Whisper transcription, SAM3 masking, MiniMax-Remover object removal, MMAudio generation, MuseTalk lip sync, LivePortrait face animation, NormalCrafter surface normals, Video Depth estimation, AI Upscaling, Marigold dense vision).
+200+ video editing skills across visual effects, audio processing, spatial transforms, temporal edits, encoding, cinematic presets, vintage looks, social media, creative effects, text animations, editing & composition, audio visualization, multi-input operations, transitions, concat, split screen, and AI-powered skills (DreamID-Omni talking-head generation, FaceCam camera control, Fish Speech TTS, Foundation-1 music samples, ACE-Step music generation, SAM-Audio source separation, AudioX vocal enhancement, Whisper transcription, SAM3 masking, MiniMax-Remover object removal, MMAudio generation, MuseTalk lip sync, LivePortrait face animation, NormalCrafter surface normals, Video Depth estimation, AI Upscaling, Marigold dense vision).
 
 </td>
 </tr>
@@ -521,6 +522,10 @@ All models are mirrored to first-party [AEmotionStudio](https://huggingface.co/A
 | **AudioX** (Vocal Enhancement) | ~1 GB | `ComfyUI/models/audiox/` | AudioX chaining with ACE-Step | [AEmotionStudio/audiox](https://huggingface.co/AEmotionStudio/audiox) |
 | **NormalCrafter** (Surface Normals) | ~2 GB | `ComfyUI/models/normalcrafter/` | `normalcrafter` no-LLM mode | [AEmotionStudio/NormalCrafter](https://huggingface.co/AEmotionStudio/NormalCrafter) |
 | **Kiwi-Edit** (AI Video Editing) | ~5 GB (FP8) / ~10 GB (BF16) | `ComfyUI/models/kiwi_edit_*` | `kiwi_edit` no-LLM mode | [AEmotionStudio/Kiwi-Edit-Instruct](https://huggingface.co/AEmotionStudio/Kiwi-Edit-Instruct) |
+| **DreamID-Omni** (Talking Head) ⚠️ WIP | ~12 GB (FP8) / ~23 GB (BF16) | `ComfyUI/models/dreamid_omni/` | `dreamid_omni` no-LLM mode | [AEmotionStudio/dreamid-omni](https://huggingface.co/AEmotionStudio/dreamid-omni) |
+| **FaceCam** (Camera Control) | ~16.8 GB (high+low bf16) | `ComfyUI/models/diffusion_models/` | FaceCam node | [AEmotionStudio/facecam-wan2.2-14b-bf16](https://huggingface.co/AEmotionStudio/facecam-wan2.2-14b-bf16) |
+| **Fish Speech S2 Pro** (TTS) | ~6.5 GB (FP8) / ~10.4 GB (BF16) | `ComfyUI/models/fish_speech/` | `fish_speech` no-LLM mode | [AEmotionStudio/fish-speech-s2-pro](https://huggingface.co/AEmotionStudio/fish-speech-s2-pro) |
+| **Foundation-1** (Music Samples) | ~2 GB | `ComfyUI/models/foundation1/` | `foundation1` no-LLM mode | [AEmotionStudio/foundation1-models](https://huggingface.co/AEmotionStudio/foundation1-models) |
 
 > [!NOTE]
 > Models are only downloaded when you use the corresponding skill for the first time. Core FFmpeg editing skills (200+ of them) require **zero model downloads**.
@@ -529,7 +534,7 @@ All models are mirrored to first-party [AEmotionStudio](https://huggingface.co/A
 
 ## 🎛️ Nodes
 
-FFMPEGA provides **11 nodes** that work together:
+FFMPEGA provides **14 nodes** that work together:
 
 > [!TIP]
 > **One task per run.** Instead of cramming multiple edits into a single prompt, focus each run on one editing task — then feed the output back into FFMPEGA for the next. This keeps context low and model focus high, leading to significantly better results. Chain FFMPEGA Agent → Save Video → Load Video Path → FFMPEGA Agent for multi-step workflows.
@@ -548,7 +553,7 @@ FFMPEGA provides **11 nodes** that work together:
 | `video_path` | STRING | Absolute path to source video. Used as ffmpeg input unless `images_a` is connected. |
 | `prompt` | STRING | Natural language editing instruction (e.g. *"Add cinematic letterbox"*, *"Speed up 2x"*). Not required in `manual` mode. |
 | `llm_model` | DROPDOWN | AI model selection — local Ollama models, CLI tools, or cloud APIs. Select `none` for no-LLM mode. |
-| `no_llm_mode` | DROPDOWN | Mode when `llm_model` is `none`: `manual` (Effects Builder, default), `sam3_masking`, `transcribe`, `karaoke_subtitles`, `generate_audio`, `lip_sync`, `animate_portrait`, `marigold`, `video_depth`, `flux_klein`, `kiwi_edit`, `minimax_remover`, `ai_upscale`, `ace_step`, `audio_separate`, `normalcrafter`, `rembg`. |
+| `no_llm_mode` | DROPDOWN | Mode when `llm_model` is `none`: `manual` (Effects Builder, default), `sam3_masking`, `transcribe`, `karaoke_subtitles`, `generate_audio`, `generate_music`, `foundation1`, `fish_speech`, `audio_inpaint`, `audio_separate`, `ace_step`, `lip_sync`, `animate_portrait`, `marigold`, `normalcrafter`, `video_depth`, `flux_klein`, `kiwi_edit`, `minimax_remover`, `dreamid_omni`, `ai_upscale`, `rembg`, `onion_skin`, `comparison`. |
 | `quality_preset` | DROPDOWN | Output quality: `draft`, `standard`, `high`, `lossless`. |
 | `seed` | INT | Change to force re-execution with the same prompt. Supports randomize control. |
 
@@ -856,11 +861,74 @@ Scans ComfyUI's output/temp directories for the newest video. Decodes frames (wi
 
 </details>
 
+<details>
+<summary><b>FaceCam (FFMPEGA)</b> — Portrait video camera control with orbits, zooms, and tilts.</summary>
+
+Portrait video generation using [FaceCam](https://github.com/weijielyu/FaceCam) (CVPR 2026). Uses 2+2 architecture: Wan2.2 14B GGUF base models + FaceCam bf16 partial checkpoints. Supports KSampler Advanced-style controls for multi-node chaining (HIGH model for trajectory, LOW model for detail refinement).
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `image` | IMAGE | Source face image or video frame. |
+| `model_high` | MODEL | Wan2.2 GGUF base model (from "Load Diffusion Model"). |
+| `model_low` | MODEL | Wan2.2 GGUF base model for refinement pass. |
+| `camera_preset` | DROPDOWN | Camera movement preset (orbit, zoom, tilt, etc.) with detailed tooltips. |
+| `add_noise` | DROPDOWN | `enable` / `disable` — KSampler Advanced noise control. |
+| `start_at_step` | INT | Step to start denoising at. |
+| `end_at_step` | INT | Step to stop denoising at. |
+| `return_with_leftover_noise` | DROPDOWN | `enable` / `disable` — preserve noise for chaining. |
+
+| Output | Description |
+| :--- | :--- |
+| `LATENT` | Latent output for chaining to next FaceCam node |
+| `images` | Decoded video frames |
+
+</details>
+
+<details>
+<summary><b>Frame Picker (FFMPEGA)</b> — Interactive frame selection and reordering with contact-sheet grid.</summary>
+
+Browse video frames in a contact-sheet grid, select/deselect with click (Shift+click for range, Ctrl+click for toggle), reorder via drag-and-drop. Bulk tools: Select All, Deselect All, Invert Selection, Every Nth Frame. Pause mode blocks execution until selection is applied.
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `images` | IMAGE | *(optional)* Video frames from upstream. |
+| `video_path` | STRING | *(optional)* Path to video file. |
+
+| Output | Description |
+| :--- | :--- |
+| `images` | Selected frames in user-defined order |
+| `video_path` | Path to temp video of selected frames |
+| `frame_count` | Number of selected frames |
+| `selection_json` | JSON array of selected frame indices |
+
+</details>
+
+<details>
+<summary><b>Shader Overlay (FFMPEGA)</b> — GPU-accelerated GLSL shader effects with chaining, depth modes, and animation.</summary>
+
+Apply up to 3 stacked GLSL shaders with per-layer animation speed, hue shift, blend mode, and opacity control. Supports depth-aware shader application (foreground focus, background focus, depth outline, atmospheric) via Video Depth Anything integration, and SAM3 object masking for targeted shader effects. 70 built-in shader presets plus random mode.
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `images` | IMAGE | Video frames to apply shaders to. |
+| `shader_1` | DROPDOWN | First shader effect (70 options + `random`). |
+| `shader_2` | DROPDOWN | *(optional)* Second stacked shader. |
+| `shader_3` | DROPDOWN | *(optional)* Third stacked shader. |
+| `animation_speed` | FLOAT | Animation speed multiplier (0.1–5.0). |
+| `blend_mode` | DROPDOWN | Blend mode for shader compositing. |
+| `depth_mode` | DROPDOWN | Depth-aware application mode. |
+
+| Output | Description |
+| :--- | :--- |
+| `images` | Processed video frames with shader effects |
+
+</details>
+
 ---
 
 ## 🎯 Skill System
 
-FFMPEGA includes a comprehensive skill system with **218 operations** organized into categories. Use them in two ways: let the **AI agent** select skills from your prompt, or pick them yourself with the **Effects Builder** — no LLM needed.
+FFMPEGA includes a comprehensive skill system with **226 operations** organized into categories. Use them in two ways: let the **AI agent** select skills from your prompt, or pick them yourself with the **Effects Builder** — no LLM needed.
 
 > 📄 **See [SKILLS_REFERENCE.md](SKILLS_REFERENCE.md) for the complete skill reference with all parameters and example prompts.**
 >
@@ -1211,7 +1279,7 @@ FFMPEGA includes a comprehensive skill system with **218 operations** organized 
 </details>
 
 <details>
-<summary><b>🤖 AI-Powered (10 skills)</b></summary>
+<summary><b>🤖 AI-Powered (18 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -1219,16 +1287,26 @@ FFMPEGA includes a comprehensive skill system with **218 operations** organized 
 | `karaoke_subtitles` | Word-by-word karaoke subtitles with progressive color fill (Whisper) |
 | `auto_mask` | SAM3-powered object segmentation from text prompts |
 | `generate_audio` | AI-generate synchronized audio/foley from video + text (MMAudio) |
+| `generate_music` | AI music generation with ACE-Step 1.5 — text-to-music, style-guided covers |
+| `generate_sample` | AI music sample generation with Foundation-1 — tempo-synced loops |
+| `audio_inpaint` | AI audio repair and enhancement using AudioX/ACE-Step pipeline |
+| `audio_separate` | AI source separation with SAM-Audio — split into vocal/drum/bass/other stems |
 | `lip_sync` | AI lip sync with MuseTalk — synchronize lip movements to audio |
 | `animate_portrait` | AI face animation with LivePortrait — transfer expressions from driving video |
+| `fish_speech` | AI text-to-speech with Fish Audio S2 Pro — 80+ languages, voice cloning, emotion tags |
+| `dreamid_omni` | ⚠️ WIP — AI talking-head video generation with identity and voice preservation (DreamID-Omni) |
+| `kiwi_edit` | AI video editing with Kiwi-Edit — text-instruction and reference-image editing |
 | `remove_background` | AI background removal with BRIA RMBG — 6 model choices |
 | `ai_upscale` | AI super-resolution upscaling with Real-ESRGAN, HAT, DAT, or SwinIR — auto-VRAM tile sizing |
 | `video_depth` | Temporal depth estimation with Video Depth Anything — consistent depth maps across frames |
 | `marigold` | Dense vision analysis with Marigold — depth, normals, appearance, and lighting estimation |
+| `ace_step` | AI music generation with ACE-Step 1.5 — direct no-LLM mode for quick generation |
 
 > ⚠️ **License Notice:** The `generate_audio` skill uses [MMAudio](https://github.com/hkchengrex/MMAudio) model weights which are licensed under **CC-BY-NC 4.0** (non-commercial use only). Model weights are downloaded on first use — by downloading them you accept the [CC-BY-NC 4.0 license](https://creativecommons.org/licenses/by-nc/4.0/). The FFMPEGA code itself remains GPL-3.0.
 
 > ⚠️ **License Notice:** The `auto_mask:effect=remove` skill (when `use_minimax_remover=On`) uses [MiniMax-Remover](https://github.com/zibojia/MiniMax-Remover) model weights which are licensed under **CC-BY-NC 4.0** (non-commercial use only). Model weights are downloaded on first use — by downloading them you accept the [CC-BY-NC 4.0 license](https://creativecommons.org/licenses/by-nc/4.0/). The vendored code is Apache 2.0.
+
+> ⚠️ **License Notice:** Fish Speech S2 Pro is under the Fish Audio Research License — free for research/non-commercial use, commercial use requires a separate license from Fish Audio.
 
 </details>
 

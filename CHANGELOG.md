@@ -5,6 +5,69 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.0] - 2026-03-21
+
+### Added
+- **DreamID-Omni (WIP)**: Identity-preserving talking-head video generation with speech. Takes a face image, reference audio, and text prompt to generate video of a person speaking with identity and voice preserved. Full vendored Alibaba DreamID-Omni framework with Wan2.2 Video VAE, MMAudio Audio VAE, T5 text encoder, and Fusion DiT. *(dreamid_omni no-LLM mode)*
+  - ⚠️ Marked as **Work In Progress** — quality may be poor on low-VRAM GPUs due to aggressive memory optimizations.
+  - **FP8 Native Matmul**: Patched 732 Linear layers for hardware-accelerated FP8 computation (`torch._scaled_mm`) with BF16 fallback for non-aligned dimensions.
+  - **Sequential Layer Offloading**: 40 DiT block pairs offload CPU↔GPU per step (~1-2 GiB peak vs ~12 GiB full model).
+  - **T5 Unload After Encoding**: Frees ~10 GB system RAM after text encoding, reloads on next generation.
+  - **Streaming VAE Decode**: Decoded frames move to CPU immediately; feat_map cache offloads to CPU between frames. Prevents OOM during video decode on 12 GB GPUs.
+  - **SageAttention Fallback**: Cascade: Flash Attention 3 → Flash Attention 2 → SageAttention → PyTorch SDPA.
+  - **FP8 Conversion Script**: New `scripts/convert_dreamid_omni_precision.py` for creating FP8 model variants.
+  - **10 Advanced Widgets**: `dreamid_precision`, `dreamid_resolution`, `dreamid_steps`, `dreamid_seed`, `dreamid_solver`, `dreamid_video_cfg`, `dreamid_video_ref_cfg`, `dreamid_audio_cfg`, `dreamid_audio_ref_cfg`, `dreamid_negative_prompt` — all dynamically shown only when `no_llm_mode = dreamid_omni`.
+- **FaceCam Node**: New standalone portrait video camera control node powered by [FaceCam](https://github.com/weijielyu/FaceCam) (CVPR 2026). Uses 2+2 architecture: Wan2.2 14B GGUF base models + FaceCam bf16 partial checkpoints (self-attention + patch_embedding layers). Supports camera orbit, zoom, tilt presets with KSampler Advanced-style controls (add_noise, start/end step, return_with_leftover_noise) for multi-node chaining. Auto-downloads from AEmotionStudio/facecam-wan2.2-14b-bf16.
+  - **Camera Presets**: Professional camera movement presets with detailed tooltips explaining each non-intuitive preset name.
+  - **Auto Model Loading**: FaceCam HIGH and LOW models auto-load by default.
+  - **Optional Auto-Download**: Configurable auto-download from HuggingFace with toggle control.
+  - **Shard Merge Script**: New `scripts/merge_facecam_shards.py` for merging multi-shard model downloads.
+- **Fish Speech TTS**: New Fish Audio S2 Pro integration for AI-powered text-to-speech with fine-grained prosody and emotion control. Supports 80+ languages, long-form TTS with sentence-aware chunking, voice cloning from 10-30s reference audio, inline emotion/prosody tags (`[whisper]`, `[excited]`, etc.), and multi-speaker mode. FP8 inference for ~12 GB VRAM on RTX 4070+. *(fish_speech no-LLM mode)*
+- **Foundation-1 Music Samples**: New Foundation-1 integration for AI-powered music sample generation. Generates production-ready musical loops using Foundation-1 (fine-tuned on stable-audio-open-1.0). Supports text-to-sample with tempo-sync, key awareness, built-in presets for common instruments, and style transfer with configurable noise level. *(foundation1 no-LLM mode)*
+- **Frame Picker Node**: New interactive frame selection and reordering node. Browse video frames via contact-sheet grid, select/deselect with click/shift+click/ctrl+click, reorder via drag-and-drop, bulk tools (Select All, Deselect All, Invert, Every Nth). Full TypeScript UI with filmstrip preview.
+- **Load Last Image Node**: New node for loading the most recently generated image. Updated CSS and preview functionality.
+- **Depth Shader Bridge**: New `core/depth_shader_bridge.py` — orchestrates Video Depth Anything depth prepass with SAM3 mask composition for depth-aware shader application. 5 depth modes: foreground_focus, background_focus, depth_outline, atmospheric, full_depth.
+- **15 New GLSL Shaders**: `anime_glow`, `anime_pro`, `chromatic_prism`, `comic_book`, `depth_fog`, `depth_watercolor`, `focus_pull`, `neon_wireframe`, `pop_art`, `relief_sculpt`, `retro_dither`, `toon_3d`, `watercolor`, `watercolor_bleed`, `woodcut`. Total shader count: **70 shaders**.
+- **Generate Sample Handler**: New `skills/handlers/generate_sample.py` for Foundation-1 music sample generation via LLM skill pipeline.
+- **DreamID-Omni Technical Documentation**: New `docs/DREAMID_OMNI_STATUS.md` — comprehensive guide covering all 7 problems solved, solutions, current quality issues, performance numbers, and remaining work.
+- **DreamID-Omni Tests**: New `tests/test_dreamid_omni.py` with 43 tests covering attention fallback cascade, FP8 matmul alignment, synthesizer wiring, no-LLM mode, model manager, and VRAM management.
+- **FaceCam Tests**: New `tests/test_facecam.py` covering model detection, auto-download, preset loading, and node chaining.
+- **Fish Speech Tests**: New `tests/test_fish_speech_synthesizer.py` covering model loading, voice cloning, TTS generation, and VRAM management.
+- **Foundation-1 Tests**: New `tests/test_foundation1_synthesizer.py` covering model loading, sample generation, presets, and style transfer.
+- **Frame Picker Tests**: New `tests/test_frame_picker.py` covering frame selection, reordering, bulk operations, and UI integration.
+- **Depth Shader Tests**: New `tests/test_depth_shader.py` covering depth mode selection, VDA integration, and mask composition.
+
+### Changed
+- **Model Registry**: Added `dreamid_omni`, `dreamid_omni_fp8`, `facecam_high`, `facecam_low`, `fish_speech`, and `foundation1` entries to `core/model_manager.py` with sizes, HuggingFace repos, and download instructions.
+- **VRAM Utils**: Added DreamID-Omni, FaceCam, Fish Speech, and Foundation-1 cleanup support.
+- **Node Count**: Updated from 9 to **12 nodes** (added FaceCam, Frame Picker, Load Last Image).
+- **Effects Node**: Expanded to 5 effect slots with parameter help in the UI.
+- **Shader Overlay Node**: Enhanced with depth-aware shader modes and SAM3 mask integration.
+- **Video Editor**: Shader panel integration, improved transport bar, audio timeline enhancements, and edit toolbar icons overhaul.
+- **Install Script**: Updated `install.py` with dependencies for DreamID-Omni, FaceCam, Fish Speech, and Foundation-1.
+- **SeedVR**: Updated model loader, GGUF ops, and model registry configuration.
+- **Text Overlay Rendering**: Improved line break handling, Y-axis positioning, and newline character support.
+- **Split Screen Output**: Output dimensions now match the largest input video instead of downscaling to fixed height.
+- **Audio Processing**: Fixed sample rate mismatch for MP3 encoding and 1-second audio truncation when using audio-only effects.
+- **Vite Config**: Updated build configuration for new Frame Picker and Load Last Image entry points.
+- **Test Suite**: Expanded from 1,182 to **1,877 tests**, 0 failures.
+
+### Fixed
+- **DreamID-Omni OOM**: Multiple VAE decode OOM fixes — streaming frame decode, feat_map cache offloading, FP16 VAE activation, T5 model RAM unloading.
+- **FP8 Matmul Alignment**: Fixed `RuntimeError: mat2 shape must be divisible by 16` in FP8 models — falls back to BF16 for non-aligned dimensions (e.g., audio Head with `out_dim=20`).
+- **Flash Attention Assertion**: Replaced hard assertion `assert FLASH_ATTN_2_AVAILABLE` with SageAttention/SDPA fallback cascade.
+- **Text Overlay Line Breaks**: Fixed newline characters rendering as rectangle glyphs; corrected Y-axis positioning for multi-line text.
+- **Split Screen Dimensions**: Fixed output video downscaling to fixed 540px height; now uses largest input video dimensions.
+- **Audio Sample Rate**: Fixed sample rate mismatch causing MP3 encoding failures with user-controlled resample option.
+- **Audio Truncation**: Fixed 1-second audio truncation when processing audio-only effects by correcting dummy video handling.
+- **Kiwi-Edit Synthesizer**: Fixed model cleanup and resource management.
+- **NormalCrafter Synthesizer**: Fixed resource cleanup and model offloading.
+- **Handler Imports**: Updated `skills/handlers/__init__.py` with new handler registrations.
+- **Multi-Input Handler**: Improved split screen output dimension calculation for mismatched aspect ratios.
+- **Upscale Handler**: Enhanced resource management and error handling.
+
+---
+
 ## [2.18.0] - 2026-03-16
 
 ### Added
