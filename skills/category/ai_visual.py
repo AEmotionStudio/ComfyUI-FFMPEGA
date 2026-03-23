@@ -358,7 +358,10 @@ def register_skills(registry: SkillRegistry) -> None:
                     "'seedvr2_3b_fp8' (diffusion, great quality), "
                     "'seedvr2_3b_gguf' (diffusion, lowest VRAM), "
                     "'seedvr2_7b_fp8' (diffusion, highest quality), "
-                    "'seedvr2_7b_gguf' (diffusion, highest quality quantized)"
+                    "'seedvr2_7b_gguf' (diffusion, highest quality quantized), "
+                    "'flashvsr_full' (one-step diffusion, best quality), "
+                    "'flashvsr_tiny' (one-step diffusion, fast), "
+                    "'flashvsr_tiny_long' (one-step diffusion, long video, low VRAM)"
                 ),
                 required=False,
                 default="realesrgan_x4plus",
@@ -367,6 +370,7 @@ def register_skills(registry: SkillRegistry) -> None:
                     "hat_x4", "dat_x4", "swinir_x4",
                     "seedvr2_3b_fp8", "seedvr2_3b_gguf",
                     "seedvr2_7b_fp8", "seedvr2_7b_gguf",
+                    "flashvsr_full", "flashvsr_tiny", "flashvsr_tiny_long",
                 ],
             ),
             SkillParameter(
@@ -397,11 +401,15 @@ def register_skills(registry: SkillRegistry) -> None:
             "ai_upscale:model=seedvr2_3b_gguf - Diffusion upscale (lowest VRAM)",
             "ai_upscale:model=seedvr2_7b_fp8 - Highest quality diffusion upscale",
             "ai_upscale:model=seedvr2_7b_gguf - Highest quality diffusion upscale (quantized)",
+            "ai_upscale:model=flashvsr_full - FlashVSR best quality one-step diffusion",
+            "ai_upscale:model=flashvsr_tiny - FlashVSR fast mode",
+            "ai_upscale:model=flashvsr_tiny_long - FlashVSR for long videos (low VRAM)",
         ],
         tags=[
             "upscale", "super_resolution", "enhance", "4k", "hd",
             "ai_upscale", "esrgan", "swinir", "hat", "dat",
             "seedvr2", "diffusion", "temporal",
+            "flashvsr", "one-step", "streaming",
             "detail", "resolution", "enlarge", "ai",
         ],
     ))

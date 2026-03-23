@@ -407,28 +407,18 @@ export function registerAgentNode(
             };
         }
 
-        // --- save_output → output_path visibility ---
-        const saveWidget = this.widgets?.find((w: ComfyWidget) => w.name === "save_output");
-        const outputPathWidget = this.widgets?.find((w: ComfyWidget) => w.name === "output_path");
-        if (saveWidget && outputPathWidget) {
-            function updateSaveVisibility(): void {
-                toggleWidget(outputPathWidget, Boolean(saveWidget!.value));
-                fitHeight();
-            }
-
-            updateSaveVisibility();
-            const origSaveCb = saveWidget.callback;
-            saveWidget.callback = function (...args: unknown[]) {
-                origSaveCb?.apply(this, args);
-                updateSaveVisibility();
-            };
+        // --- Always-hidden widgets (functional but not shown) ---
+        const alwaysHidden = [
+            "video_path", "save_output", "output_path",
+            "preview_mode", "crf", "encoding_preset",
+        ];
+        for (const name of alwaysHidden) {
+            const w = this.widgets?.find((ww: ComfyWidget) => ww.name === name);
+            if (w) toggleWidget(w, false);
         }
 
         // --- advanced_options toggle → all advanced widgets visibility ---
         const advancedWidget = this.widgets?.find((w: ComfyWidget) => w.name === "advanced_options");
-        const previewWidget = this.widgets?.find((w: ComfyWidget) => w.name === "preview_mode");
-        const crfWidget = this.widgets?.find((w: ComfyWidget) => w.name === "crf");
-        const encodingWidget = this.widgets?.find((w: ComfyWidget) => w.name === "encoding_preset");
         const subtitleWidget = this.widgets?.find((w: ComfyWidget) => w.name === "subtitle_path");
         const advVisionWidget = this.widgets?.find((w: ComfyWidget) => w.name === "use_vision");
         const advVerifyWidget = this.widgets?.find((w: ComfyWidget) => w.name === "verify_output");
@@ -475,6 +465,7 @@ export function registerAgentNode(
             const showFluxKleinMode = showAdvanced && mode === "flux_klein";
             const showKiwiEdit = showAdvanced && mode === "kiwi_edit";
             const showDreamidOmni = showAdvanced && mode === "dreamid_omni";
+            const showScail = showAdvanced && mode === "scail";
             const showFoundation1 = showAdvanced && mode === "foundation1";
             const showFishSpeech = showAdvanced && mode === "fish_speech";
 
@@ -569,6 +560,16 @@ export function registerAgentNode(
                 if (w) toggleWidget(w, showDreamidOmni);
             }
 
+            // SCAIL pose-driven animation widgets
+            const scailWidgetNames = [
+                "scail_precision", "scail_steps", "scail_guidance",
+                "scail_shift", "scail_solver", "scail_seed",
+            ];
+            for (const name of scailWidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showScail);
+            }
+
             // ACE-Step widgets
             const aceWidgetNames = [
                 "ace_negative_prompt", "ace_cover_strength", "ace_steps",
@@ -620,6 +621,16 @@ export function registerAgentNode(
             for (const name of comparisonWidgetNames) {
                 const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
                 if (w) toggleWidget(w, showComparison);
+            }
+
+            // Video Matting widgets
+            const showMatting = showAdvanced && mode === "video_matting";
+            const mattingWidgetNames = [
+                "matting_output", "matting_background", "matting_max_size",
+            ];
+            for (const name of mattingWidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showMatting);
             }
 
             // LivePortrait expression controls (animate_portrait mode)
@@ -690,9 +701,6 @@ export function registerAgentNode(
 
         function updateAdvancedVisibility(): void {
             const show = Boolean(advancedWidget?.value);
-            if (previewWidget) toggleWidget(previewWidget, show);
-            if (crfWidget) toggleWidget(crfWidget, show);
-            if (encodingWidget) toggleWidget(encodingWidget, show);
             if (batchWidget) toggleWidget(batchWidget, show);
             const showBatch = show && Boolean(batchWidget?.value);
             if (folderWidget) toggleWidget(folderWidget, showBatch);

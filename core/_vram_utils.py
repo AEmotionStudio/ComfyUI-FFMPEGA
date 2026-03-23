@@ -47,6 +47,9 @@ ALL_SYNTHESIZER_MODULES: tuple[str, ...] = (
     "facecam_synthesizer",
     "dreamid_omni_synthesizer",
     "fish_speech_synthesizer",
+    "matanyone2_synthesizer",
+    "flashvsr_synthesizer",
+    "scail_synthesizer",
 )
 
 _freeing_vram = False

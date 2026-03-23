@@ -152,6 +152,10 @@ _image_model_device = None  # last device the image model was loaded on
 _video_model = None
 _video_model_device = None  # last device the video model was loaded on
 
+import threading
+_image_model_lock = threading.Lock()
+_video_model_lock = threading.Lock()
+
 
 # ---------------------------------------------------------------------------
 #  Model directory & checkpoint discovery
@@ -428,116 +432,134 @@ def load_image_model(device: str = "gpu"):
 
     use_cpu = device.lower() == "cpu"
     target_device = "cpu" if use_cpu else "cuda"
-    # Guard: fall back to CPU if CUDA was requested but isn't available
-    if target_device == "cuda":
-        import torch as _torch_check
-        if not _torch_check.cuda.is_available():
-            log.warning("CUDA unavailable, loading SAM3 image model on CPU")
-            target_device = "cpu"
-            use_cpu = True
 
-    if _image_model is not None and _image_processor is not None:
-        # If device changed, move model to new device
-        if _image_model_device != target_device:
-            import torch
-            actual_device = target_device
-            if actual_device == "cuda" and not torch.cuda.is_available():
-                log.warning("CUDA unavailable, keeping SAM3 image model on CPU")
-                actual_device = "cpu"
-            _image_model.to(torch.device(actual_device))
-            _image_model_device = actual_device
+    # Fast path: model already cached (no lock needed for read)
+    if _image_model is not None and _image_model_device == target_device:
         return _image_model, _image_processor
 
-    _patch_sam3_imports()
+    # Serialize loading to prevent duplicate copies on concurrent requests
+    with _image_model_lock:
+        # Double-check inside lock (another thread may have loaded while we waited)
+        if _image_model is not None and _image_model_device == target_device:
+            return _image_model, _image_processor
 
-    try:
-        from sam3.model_builder import build_sam3_image_model
-        from sam3.model.sam3_image_processor import Sam3Processor
-    except ImportError:
-        raise ImportError(
-            "SAM3 is not installed. Install with: "
-            "pip install --no-deps git+https://github.com/facebookresearch/sam3.git"
-        )
+        # Guard: fall back to CPU if CUDA was requested but isn't available
+        if target_device == "cuda":
+            import torch as _torch_check
+            if not _torch_check.cuda.is_available():
+                log.warning("CUDA unavailable, loading SAM3 image model on CPU")
+                target_device = "cpu"
+                use_cpu = True
 
-    if use_cpu:
-        log.info("SAM3 image model: CPU mode (avoids VRAM pressure, slower)")
-    else:
-        _free_vram()
+        if _image_model is not None and _image_processor is not None:
+            # If device changed, move model to new device
+            if _image_model_device != target_device:
+                import torch
+                actual_device = target_device
+                if actual_device == "cuda" and not torch.cuda.is_available():
+                    log.warning("CUDA unavailable, keeping SAM3 image model on CPU")
+                    actual_device = "cpu"
+                _image_model.to(torch.device(actual_device))
+                _image_model_device = actual_device
+            return _image_model, _image_processor
 
-    checkpoint_path = _find_checkpoint()
+        _patch_sam3_imports()
 
-    # Determine loading strategy based on file extension
-    if checkpoint_path.endswith(".safetensors"):
-        log.info("Loading SAM3 image model from safetensors: %s", checkpoint_path)
+        try:
+            from sam3.model_builder import build_sam3_image_model
+            from sam3.model.sam3_image_processor import Sam3Processor
+        except ImportError:
+            raise ImportError(
+                "SAM3 is not installed. Install with: "
+                "pip install --no-deps git+https://github.com/facebookresearch/sam3.git"
+            )
 
-        # Try accelerate zero-copy init (allocates model with 0 bytes)
-        _used_empty = False
-        if _HAS_ACCELERATE:
-            try:
-                log.info("Using accelerate init_empty_weights for SAM3 image model")
-                with init_empty_weights():
+        if use_cpu:
+            log.info("SAM3 image model: CPU mode (avoids VRAM pressure, slower)")
+        else:
+            _free_vram()
+
+        checkpoint_path = _find_checkpoint()
+
+        # Determine loading strategy based on file extension
+        if checkpoint_path.endswith(".safetensors"):
+            log.info("Loading SAM3 image model from safetensors: %s", checkpoint_path)
+
+            # Try accelerate zero-copy init (allocates model with 0 bytes)
+            _used_empty = False
+            if _HAS_ACCELERATE:
+                try:
+                    log.info("Using accelerate init_empty_weights for SAM3 image model")
+                    with init_empty_weights():
+                        model = build_sam3_image_model(
+                            checkpoint_path=None,
+                            load_from_HF=False,
+                            enable_inst_interactivity=True,
+                            device="cpu",
+                        )
+                    _used_empty = True
+                except Exception as e:
+                    log.info(
+                        "init_empty_weights failed for SAM3 image model (%s), "
+                        "falling back to standard init", e,
+                    )
                     model = build_sam3_image_model(
                         checkpoint_path=None,
                         load_from_HF=False,
+                        enable_inst_interactivity=True,
+                        device="cpu",
                     )
-                _used_empty = True
-            except Exception as e:
-                log.info(
-                    "init_empty_weights failed for SAM3 image model (%s), "
-                    "falling back to standard init", e,
-                )
+            else:
                 model = build_sam3_image_model(
                     checkpoint_path=None,
                     load_from_HF=False,
+                    enable_inst_interactivity=True,
+                    device="cpu",
                 )
-        else:
-            model = build_sam3_image_model(
-                checkpoint_path=None,
-                load_from_HF=False,
-            )
 
-        ckpt = _load_state_dict(checkpoint_path, device="cpu")
-        ckpt = _remap_image_keys(model, ckpt)
-        _warn_if_bad_checkpoint(ckpt, model, "image")
+            ckpt = _load_state_dict(checkpoint_path, device="cpu")
+            ckpt = _remap_image_keys(model, ckpt)
+            _warn_if_bad_checkpoint(ckpt, model, "image")
 
-        load_device = "cpu" if use_cpu else target_device
-        if _used_empty:
-            _load_efficient(model, ckpt, device=load_device)
+            load_device = "cpu" if use_cpu else target_device
+            if _used_empty:
+                _load_efficient(model, ckpt, device=load_device)
+            else:
+                _load_efficient(model, ckpt, device="cpu")
+                if not use_cpu:
+                    import torch
+                    model.to(torch.device(target_device))
         else:
-            _load_efficient(model, ckpt, device="cpu")
-            if not use_cpu:
-                import torch
-                model.to(torch.device(target_device))
-    else:
-        # .pt file — monkey-patch torch.load for weights_only compat
-        log.info("Loading SAM3 image model from .pt: %s", checkpoint_path)
+            # .pt file — monkey-patch torch.load for weights_only compat
+            log.info("Loading SAM3 image model from .pt: %s", checkpoint_path)
+            import torch
+            _orig_load = torch.load
+            def _patched_load(*args, **kwargs):
+                kwargs["weights_only"] = False
+                return _orig_load(*args, **kwargs)
+            torch.load = _patched_load
+            try:
+                model = build_sam3_image_model(
+                    checkpoint_path=checkpoint_path,
+                    load_from_HF=False,
+                    enable_inst_interactivity=True,
+                )
+            finally:
+                torch.load = _orig_load
+
+        # Note: SAM3 handles its own dtype management (bf16 autocast).
+        # Do NOT call model.float() — it breaks mixed-precision inference.
+
         import torch
-        _orig_load = torch.load
-        def _patched_load(*args, **kwargs):
-            kwargs["weights_only"] = False
-            return _orig_load(*args, **kwargs)
-        torch.load = _patched_load
-        try:
-            model = build_sam3_image_model(
-                checkpoint_path=checkpoint_path,
-                load_from_HF=False,
-            )
-        finally:
-            torch.load = _orig_load
+        if use_cpu:
+            model.to(torch.device("cpu"))
 
-    # Note: SAM3 handles its own dtype management (bf16 autocast).
-    # Do NOT call model.float() — it breaks mixed-precision inference.
+        _image_model = model
+        _image_model_device = target_device
+        _image_processor = Sam3Processor(model)
 
-    import torch
-    if use_cpu:
-        model.to(torch.device("cpu"))
-
-    _image_model = model
-    _image_model_device = target_device
-    _image_processor = Sam3Processor(model)
-
-    log.info("SAM3 image model loaded successfully on %s", target_device.upper())
-    return _image_model, _image_processor
+        log.info("SAM3 image model loaded successfully on %s", target_device.upper())
+        return _image_model, _image_processor
 
 
 def load_video_model(device: str = "gpu"):
@@ -558,139 +580,153 @@ def load_video_model(device: str = "gpu"):
 
     use_cpu = device.lower() == "cpu"
     target_device = "cpu" if use_cpu else "cuda"
-    # Guard: fall back to CPU if CUDA was requested but isn't available
-    if target_device == "cuda":
-        import torch as _torch_check
-        if not _torch_check.cuda.is_available():
-            log.warning("CUDA unavailable, loading SAM3 video model on CPU")
-            target_device = "cpu"
-            use_cpu = True
 
-    if _video_model is not None:
-        # If device changed, move model to new device
-        if _video_model_device != target_device:
-            import torch
-            actual_device = target_device
-            if actual_device == "cuda" and not torch.cuda.is_available():
-                log.warning("CUDA unavailable, keeping SAM3 video model on CPU")
-                actual_device = "cpu"
-            _video_model.to(torch.device(actual_device))
-            _video_model_device = actual_device
+    # Fast path: model already cached (no lock needed for read)
+    if _video_model is not None and _video_model_device == target_device:
         return _video_model
 
-    _patch_sam3_imports()
+    # Serialize loading to prevent duplicate copies on concurrent requests
+    with _video_model_lock:
+        # Double-check inside lock
+        if _video_model is not None and _video_model_device == target_device:
+            return _video_model
 
-    try:
-        from sam3.model_builder import build_sam3_video_model
-    except ImportError:
-        raise ImportError(
-            "SAM3 is not installed. Install with: "
-            "pip install --no-deps git+https://github.com/facebookresearch/sam3.git"
-        )
+        # Guard: fall back to CPU if CUDA was requested but isn't available
+        if target_device == "cuda":
+            import torch as _torch_check
+            if not _torch_check.cuda.is_available():
+                log.warning("CUDA unavailable, loading SAM3 video model on CPU")
+                target_device = "cpu"
+                use_cpu = True
 
-    if use_cpu:
-        log.info("SAM3 video model: CPU mode (avoids VRAM frame-loading OOM, slower)")
-    else:
-        _free_vram()
+        if _video_model is not None:
+            # If device changed, move model to new device
+            if _video_model_device != target_device:
+                import torch
+                actual_device = target_device
+                if actual_device == "cuda" and not torch.cuda.is_available():
+                    log.warning("CUDA unavailable, keeping SAM3 video model on CPU")
+                    actual_device = "cpu"
+                _video_model.to(torch.device(actual_device))
+                _video_model_device = actual_device
+            return _video_model
 
-    checkpoint_path = _find_checkpoint()
-    log.info("Loading SAM3 video model from: %s", checkpoint_path)
+        _patch_sam3_imports()
 
-    import torch
+        try:
+            from sam3.model_builder import build_sam3_video_model
+        except ImportError:
+            raise ImportError(
+                "SAM3 is not installed. Install with: "
+                "pip install --no-deps git+https://github.com/facebookresearch/sam3.git"
+            )
 
-    if checkpoint_path.endswith(".safetensors"):
-        # build_sam3_video_model uses torch.load internally which can't
-        # handle safetensors. Build without checkpoint, then load manually.
-        log.info("Loading SAM3 video model from safetensors: %s", checkpoint_path)
+        if use_cpu:
+            log.info("SAM3 video model: CPU mode (avoids VRAM frame-loading OOM, slower)")
+        else:
+            _free_vram()
 
-        # Try accelerate zero-copy init
-        _used_empty = False
-        if _HAS_ACCELERATE:
-            try:
-                log.info("Using accelerate init_empty_weights for SAM3 video model")
+        checkpoint_path = _find_checkpoint()
+        log.info("Loading SAM3 video model from: %s", checkpoint_path)
+
+        import torch
+
+        if checkpoint_path.endswith(".safetensors"):
+            # build_sam3_video_model uses torch.load internally which can't
+            # handle safetensors. Build without checkpoint, then load manually.
+            log.info("Loading SAM3 video model from safetensors: %s", checkpoint_path)
+
+            # Try accelerate zero-copy init
+            _used_empty = False
+            if _HAS_ACCELERATE:
+                try:
+                    log.info("Using accelerate init_empty_weights for SAM3 video model")
+                    if use_cpu:
+                        _orig_cuda_available = torch.cuda.is_available
+                        torch.cuda.is_available = lambda: False
+                    try:
+                        with init_empty_weights():
+                            model = build_sam3_video_model(
+                                checkpoint_path=None,
+                                load_from_HF=False,
+                                device="cpu",
+                            )
+                        _used_empty = True
+                    finally:
+                        if use_cpu:
+                            torch.cuda.is_available = _orig_cuda_available
+                except Exception as e:
+                    log.info(
+                        "init_empty_weights failed for SAM3 video model (%s), "
+                        "falling back to standard init", e,
+                    )
+                    # Fall through to standard init below
+
+            if not _used_empty:
                 if use_cpu:
                     _orig_cuda_available = torch.cuda.is_available
                     torch.cuda.is_available = lambda: False
-                try:
-                    with init_empty_weights():
+                    try:
                         model = build_sam3_video_model(
                             checkpoint_path=None,
                             load_from_HF=False,
+                            device="cpu",
                         )
-                    _used_empty = True
-                finally:
-                    if use_cpu:
+                    finally:
                         torch.cuda.is_available = _orig_cuda_available
-            except Exception as e:
-                log.info(
-                    "init_empty_weights failed for SAM3 video model (%s), "
-                    "falling back to standard init", e,
-                )
-                # Fall through to standard init below
-
-        if not _used_empty:
-            if use_cpu:
-                _orig_cuda_available = torch.cuda.is_available
-                torch.cuda.is_available = lambda: False
-                try:
+                else:
                     model = build_sam3_video_model(
                         checkpoint_path=None,
                         load_from_HF=False,
+                        device="cpu",
                     )
-                finally:
-                    torch.cuda.is_available = _orig_cuda_available
+
+            ckpt = _load_state_dict(checkpoint_path, device="cpu")
+            ckpt = _remap_video_keys(ckpt)
+            _warn_if_bad_checkpoint(ckpt, model, "video")
+
+            load_device = "cpu" if use_cpu else target_device
+            if _used_empty:
+                _load_efficient(model, ckpt, device=load_device)
             else:
+                _load_efficient(model, ckpt, device="cpu")
+                if not use_cpu:
+                    model.to(torch.device(target_device))
+        else:
+            # .pt file — sam3's builder uses torch.load(weights_only=True)
+            # which fails on PyTorch 2.6+ with some checkpoints.
+            # Monkey-patch torch.load to use weights_only=False.
+            _orig_load = torch.load
+            def _patched_load(*args, **kwargs):
+                kwargs["weights_only"] = False
+                return _orig_load(*args, **kwargs)
+            torch.load = _patched_load
+            if use_cpu:
+                _orig_cuda_available = torch.cuda.is_available
+                torch.cuda.is_available = lambda: False
+            try:
                 model = build_sam3_video_model(
-                    checkpoint_path=None,
+                    checkpoint_path=checkpoint_path,
                     load_from_HF=False,
                 )
+            finally:
+                torch.load = _orig_load
+                if use_cpu:
+                    torch.cuda.is_available = _orig_cuda_available
 
-        ckpt = _load_state_dict(checkpoint_path, device="cpu")
-        ckpt = _remap_video_keys(ckpt)
-        _warn_if_bad_checkpoint(ckpt, model, "video")
+        # Note: SAM3's Sam3TrackerPredictor.__init__ enters a permanent bfloat16
+        # autocast context. This is by design — SAM3 uses mixed-precision bf16
+        # inference. Do NOT call model.float() or disable autocast; it breaks
+        # the model's internal dtype expectations.
 
-        load_device = "cpu" if use_cpu else target_device
-        if _used_empty:
-            _load_efficient(model, ckpt, device=load_device)
-        else:
-            _load_efficient(model, ckpt, device="cpu")
-            if not use_cpu:
-                model.to(torch.device(target_device))
-    else:
-        # .pt file — sam3's builder uses torch.load(weights_only=True)
-        # which fails on PyTorch 2.6+ with some checkpoints.
-        # Monkey-patch torch.load to use weights_only=False.
-        _orig_load = torch.load
-        def _patched_load(*args, **kwargs):
-            kwargs["weights_only"] = False
-            return _orig_load(*args, **kwargs)
-        torch.load = _patched_load
         if use_cpu:
-            _orig_cuda_available = torch.cuda.is_available
-            torch.cuda.is_available = lambda: False
-        try:
-            model = build_sam3_video_model(
-                checkpoint_path=checkpoint_path,
-                load_from_HF=False,
-            )
-        finally:
-            torch.load = _orig_load
-            if use_cpu:
-                torch.cuda.is_available = _orig_cuda_available
+            # Belt-and-suspenders: explicitly move any remaining CUDA tensors to CPU
+            model.to(torch.device("cpu"))
 
-    # Note: SAM3's Sam3TrackerPredictor.__init__ enters a permanent bfloat16
-    # autocast context. This is by design — SAM3 uses mixed-precision bf16
-    # inference. Do NOT call model.float() or disable autocast; it breaks
-    # the model's internal dtype expectations.
-
-    if use_cpu:
-        # Belt-and-suspenders: explicitly move any remaining CUDA tensors to CPU
-        model.to(torch.device("cpu"))
-
-    _video_model = model
-    _video_model_device = target_device
-    log.info("SAM3 video model loaded successfully on %s", target_device.upper())
-    return _video_model
+        _video_model = model
+        _video_model_device = target_device
+        log.info("SAM3 video model loaded successfully on %s", target_device.upper())
+        return _video_model
 
 
 # ---------------------------------------------------------------------------
@@ -738,11 +774,331 @@ def mask_image_with_text(
     return combined
 
 
+def mask_image_with_points(
+    image_path: str,
+    points: list,
+    labels: list,
+    image_width: int = 0,
+    image_height: int = 0,
+    device: str = "gpu",
+    min_score: float = 0.5,
+    multi_object: bool = False,
+    box: list | None = None,
+) -> np.ndarray:
+    """Generate mask from point prompts using SAM3's interactive predictor.
+
+    Uses ``Sam3Processor.set_image()`` to prepare backbone features, then calls
+    ``model.predict_inst()`` which properly routes features through SAM3's
+    SAM2-based interactive predictor for point-prompted segmentation.
+
+    Args:
+        image_path: Path to the image file.
+        points: List of [x, y] pixel coordinates on the image.
+        labels: List of 1 (foreground) / 0 (background) for each point.
+        image_width: Width of the image the points were drawn on (for scaling).
+            If 0, uses the actual image width (no scaling).
+        image_height: Height of the image the points were drawn on (for scaling).
+            If 0, uses the actual image height (no scaling).
+        device: "gpu" (default) or "cpu".
+        min_score: Minimum confidence score to accept a mask (0.0–1.0).
+            If no mask meets this threshold, returns empty mask.
+        multi_object: If True, treat each positive point as a separate object.
+            Generates independent masks per point and OR-combines them.
+        box: Optional bounding box [x1, y1, x2, y2] for SAM3 box prompt.
+            Coordinates are in the same space as points (image_width × image_height).
+            Can be combined with point prompts for refinement.
+
+    Returns:
+        Binary mask as numpy array (H, W) where 255=masked, 0=unmasked.
+    """
+    import torch
+    from PIL import Image
+
+    if not points or not labels:
+        log.warning("mask_image_with_points: no points provided")
+        img = Image.open(image_path).convert("RGB")
+        return np.zeros((img.height, img.width), dtype=np.uint8)
+
+    model, processor = load_image_model(device=device)
+
+    image = Image.open(image_path).convert("RGB")
+    w, h = image.size
+
+    # Scale points from source image dimensions to actual frame dimensions
+    src_w = image_width if image_width > 0 else w
+    src_h = image_height if image_height > 0 else h
+    scale_x = w / src_w
+    scale_y = h / src_h
+
+    scaled_points = []
+    valid_labels = []
+    for pt, lbl in zip(points, labels):
+        if not isinstance(pt, (list, tuple)) or len(pt) < 2:
+            continue
+        try:
+            px = float(pt[0]) * scale_x
+            py = float(pt[1]) * scale_y
+            # Clamp to image bounds
+            px = max(0.0, min(float(w - 1), px))
+            py = max(0.0, min(float(h - 1), py))
+            scaled_points.append([px, py])
+            valid_labels.append(int(lbl))
+        except (TypeError, ValueError):
+            continue
+
+    if not scaled_points and not box:
+        log.warning("mask_image_with_points: no valid points or box after scaling")
+        return np.zeros((h, w), dtype=np.uint8)
+
+    n_pos = sum(1 for l in valid_labels if l == 1)
+    n_neg = sum(1 for l in valid_labels if l == 0)
+    log.info(
+        "mask_image_with_points: %d points (%d pos, %d neg) on %dx%d image "
+        "(min_score=%.2f, multi_object=%s, box=%s)",
+        len(scaled_points), n_pos, n_neg, w, h, min_score, multi_object,
+        bool(box),
+    )
+
+    # --- Scale box coordinates if provided ---
+    scaled_box = None
+    if box and len(box) == 4:
+        try:
+            bx1 = max(0.0, min(float(w - 1), float(box[0]) * scale_x))
+            by1 = max(0.0, min(float(h - 1), float(box[1]) * scale_y))
+            bx2 = max(0.0, min(float(w - 1), float(box[2]) * scale_x))
+            by2 = max(0.0, min(float(h - 1), float(box[3]) * scale_y))
+            scaled_box = [bx1, by1, bx2, by2]
+            log.info("mask_image_with_points: box [%.0f,%.0f,%.0f,%.0f]",
+                     bx1, by1, bx2, by2)
+        except (TypeError, ValueError):
+            log.warning("mask_image_with_points: invalid box coords, ignoring")
+
+    # --- Multi-object mode: one prediction per positive point ---
+    if multi_object and n_pos > 1:
+        # Separate positive and negative points
+        neg_points = [p for p, l in zip(scaled_points, valid_labels) if l == 0]
+        neg_labels = [0] * len(neg_points)
+
+        combined_mask = np.zeros((h, w), dtype=np.uint8)
+        per_object_masks = []  # list of (mask, score) per accepted object
+        accepted = 0
+
+        with torch.inference_mode():
+            state = processor.set_image(image)
+
+            for i, (pt, lbl) in enumerate(zip(scaled_points, valid_labels)):
+                if lbl != 1:
+                    continue  # skip negative points
+
+                # Each positive point + all negative points
+                obj_pts = [pt] + neg_points
+                obj_lbls = [1] + neg_labels
+
+                pt_coords = np.array(obj_pts, dtype=np.float32)
+                pt_labels_arr = np.array(obj_lbls, dtype=np.int32)
+
+                masks, scores, _ = model.predict_inst(
+                    inference_state=state,
+                    point_coords=pt_coords,
+                    point_labels=pt_labels_arr,
+                    multimask_output=True,  # always get 3 candidates
+                )
+
+                if masks.ndim == 4:
+                    masks = masks.squeeze(0)
+                if masks.shape[0] == 0:
+                    continue
+
+                best_idx = np.argmax(scores)
+                if float(scores[best_idx]) < min_score:
+                    log.info(
+                        "mask_image_with_points: object %d rejected "
+                        "(score=%.3f < min_score=%.2f)",
+                        i, float(scores[best_idx]), min_score,
+                    )
+                    continue
+
+                best_mask = masks[best_idx]
+                while best_mask.ndim > 2:
+                    best_mask = best_mask.squeeze(0)
+
+                obj_mask = (best_mask > 0).astype(np.uint8) * 255
+                combined_mask = np.maximum(combined_mask, obj_mask)
+                per_object_masks.append(obj_mask)
+                accepted += 1
+                log.info(
+                    "mask_image_with_points: object %d accepted "
+                    "(score=%.3f)",
+                    i, float(scores[best_idx]),
+                )
+
+        if accepted == 0:
+            log.warning(
+                "mask_image_with_points: no objects passed threshold "
+                "(min_score=%.2f)", min_score,
+            )
+            return np.zeros((h, w), dtype=np.uint8)
+
+        coverage = 100.0 * np.count_nonzero(combined_mask) / combined_mask.size
+        log.info(
+            "mask_image_with_points: multi-object mask "
+            "(%d objects, coverage=%.1f%%)",
+            accepted, coverage,
+        )
+        # Return tuple: (combined_mask, per_object_masks_list)
+        return combined_mask, per_object_masks
+
+    # --- Standard single-object mode ---
+    point_coords = np.array(scaled_points, dtype=np.float32)
+    point_labels = np.array(valid_labels, dtype=np.int32)
+
+    # Prepend box corners if box prompt was provided
+    if scaled_box:
+        box_pts = np.array([[scaled_box[0], scaled_box[1]],
+                            [scaled_box[2], scaled_box[3]]], dtype=np.float32)
+        box_lbls = np.array([2, 3], dtype=np.int32)  # SAM2: 2=TL, 3=BR
+        point_coords = np.concatenate([box_pts, point_coords], axis=0)
+        point_labels = np.concatenate([box_lbls, point_labels], axis=0)
+
+    with torch.inference_mode():
+        # 1. Prepare backbone features via Sam3Processor (includes sam2_backbone_out)
+        state = processor.set_image(image)
+
+        # 2. Use model.predict_inst() which routes sam2_backbone_out through
+        #    the interactive predictor with proper feature preparation.
+        #    Single point → multimask_output=True for best of 3 masks
+        #    Multiple points or box → multimask_output=False
+        multi = (len(scaled_points) == 1 and not scaled_box)
+        masks, scores, _ = model.predict_inst(
+            inference_state=state,
+            point_coords=point_coords,
+            point_labels=point_labels,
+            multimask_output=multi,
+        )
+
+    # masks shape: (C, H, W) where C=3 (multi) or C=1 (single)
+    if masks.ndim == 4:
+        masks = masks.squeeze(0)
+    if masks.shape[0] == 0:
+        log.warning("mask_image_with_points: SAM3 returned no masks")
+        return np.zeros((h, w), dtype=np.uint8)
+
+    # Pick the best mask by score
+    best_idx = np.argmax(scores)
+
+    # Check against minimum confidence threshold
+    if float(scores[best_idx]) < min_score:
+        log.warning(
+            "mask_image_with_points: best mask rejected "
+            "(score=%.3f < min_score=%.2f)",
+            float(scores[best_idx]), min_score,
+        )
+        return np.zeros((h, w), dtype=np.uint8)
+
+    best_mask = masks[best_idx]
+
+    # Squeeze any extra dims
+    while best_mask.ndim > 2:
+        best_mask = best_mask.squeeze(0)
+
+    result = (best_mask > 0).astype(np.uint8) * 255
+    coverage = 100.0 * np.count_nonzero(result) / result.size
+    log.info(
+        "mask_image_with_points: mask generated (score=%.3f, coverage=%.1f%%)",
+        float(scores[best_idx]), coverage,
+    )
+    return result
+
+
+def refine_mask_grabcut(
+    image_path: str,
+    mask_np: np.ndarray,
+    iterations: int = 5,
+) -> np.ndarray:
+    """Refine a binary mask using OpenCV's GrabCut algorithm.
+
+    Uses the initial SAM3 mask to create a trimap (definite FG, probable FG,
+    definite BG) and runs GrabCut to snap edges to actual image boundaries.
+
+    Args:
+        image_path: Path to the original RGB image.
+        mask_np: Binary mask (H, W) uint8, 255=foreground, 0=background.
+        iterations: Number of GrabCut iterations (default 5).
+
+    Returns:
+        Refined binary mask (H, W) uint8, 255=foreground, 0=background.
+    """
+    try:
+        import cv2
+    except ImportError:
+        log.warning("refine_mask_grabcut: OpenCV not available, returning original mask")
+        return mask_np
+
+    try:
+        img = cv2.imread(image_path)
+        if img is None:
+            log.warning("refine_mask_grabcut: could not read image")
+            return mask_np
+
+        h, w = mask_np.shape[:2]
+        if img.shape[:2] != (h, w):
+            img = cv2.resize(img, (w, h), interpolation=cv2.INTER_LINEAR)
+
+        # Build trimap from SAM3 mask
+        gc_mask = np.full((h, w), cv2.GC_BGD, dtype=np.uint8)
+
+        # Definite foreground: eroded mask (inner region)
+        kernel_fg = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+        fg_eroded = cv2.erode(mask_np, kernel_fg, iterations=1)
+        gc_mask[fg_eroded > 127] = cv2.GC_FGD
+
+        # Probable foreground: mask border region (between eroded and dilated)
+        kernel_border = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+        fg_dilated = cv2.dilate(mask_np, kernel_border, iterations=1)
+        prob_fg = (mask_np > 127) & (fg_eroded <= 127)
+        gc_mask[prob_fg] = cv2.GC_PR_FGD
+
+        # Probable background: the dilation border
+        prob_bg = (fg_dilated > 127) & (mask_np <= 127)
+        gc_mask[prob_bg] = cv2.GC_PR_BGD
+
+        # Check we have enough FG/BG pixels for GrabCut to work
+        n_fgd = np.count_nonzero(gc_mask == cv2.GC_FGD)
+        n_bgd = np.count_nonzero(gc_mask == cv2.GC_BGD)
+        if n_fgd < 10 or n_bgd < 10:
+            log.info("refine_mask_grabcut: not enough FG/BG for GrabCut, skipping")
+            return mask_np
+
+        bgd_model = np.zeros((1, 65), np.float64)
+        fgd_model = np.zeros((1, 65), np.float64)
+
+        cv2.grabCut(img, gc_mask, None, bgd_model, fgd_model,
+                    iterations, cv2.GC_INIT_WITH_MASK)
+
+        # Extract refined mask
+        refined = np.where(
+            (gc_mask == cv2.GC_FGD) | (gc_mask == cv2.GC_PR_FGD),
+            np.uint8(255), np.uint8(0),
+        )
+
+        old_coverage = 100.0 * np.count_nonzero(mask_np) / mask_np.size
+        new_coverage = 100.0 * np.count_nonzero(refined) / refined.size
+        log.info(
+            "refine_mask_grabcut: refined mask (%d iters, "
+            "coverage %.1f%% → %.1f%%)",
+            iterations, old_coverage, new_coverage,
+        )
+        return refined
+
+    except Exception as e:
+        log.warning("refine_mask_grabcut: failed: %s, returning original", e)
+        return mask_np
 
 
 # ---------------------------------------------------------------------------
 #  Video masking with text prompts
 # ---------------------------------------------------------------------------
+
 
 def _get_video_fps(video_path: str) -> float:
     """Extract FPS from a video file using ffprobe.
@@ -1528,14 +1884,18 @@ def mask_video(
 # Default overlay palette — perceptually distinct colors (RGB, 0-255).
 # Matches the style from SAM3's visualization_utils.draw_masks_to_frame().
 _OVERLAY_PALETTE = np.array([
-    [0, 200, 200],    # teal/cyan (primary — matches SAM3 repo screenshots)
-    [255, 100, 100],  # coral red
-    [100, 255, 100],  # lime green
-    [100, 100, 255],  # periwinkle blue
-    [255, 200, 50],   # amber
-    [200, 100, 255],  # violet
-    [255, 150, 200],  # pink
+    [0, 212, 170],    # teal (primary — matches SAM3 repo screenshots)
+    [220, 60, 180],   # magenta
+    [255, 160, 40],   # orange
+    [40, 180, 255],   # cyan
+    [120, 220, 40],   # lime
+    [160, 80, 255],   # violet
+    [255, 100, 100],  # coral
     [50, 255, 200],   # mint
+    [255, 200, 50],   # amber
+    [255, 150, 200],  # pink
+    [80, 100, 255],   # indigo
+    [180, 255, 50],   # chartreuse
 ], dtype=np.uint8)
 
 # OpenCV operates in BGR, so convert the RGB palette once

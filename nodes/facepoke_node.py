@@ -1162,8 +1162,8 @@ class FacePokeNode:
 
     CATEGORY = "FFMPEGA"
     FUNCTION = "execute"
-    RETURN_TYPES = ("IMAGE", "STRING", "AUDIO", "FLOAT", "INT", "STRING")
-    RETURN_NAMES = ("images", "video_path", "audio", "fps", "frame_count", "edit_data")
+    RETURN_TYPES = ("IMAGE", "STRING", "AUDIO", "STRING")
+    RETURN_NAMES = ("images", "video_path", "audio", "edit_data")
     OUTPUT_NODE = True
 
     # Cache for images→video conversions (keyed by node_id)
@@ -1300,7 +1300,7 @@ class FacePokeNode:
             return {
                 "ui": {"text": ["Connect a video path, IMAGE tensor, "
                                 "or upload a video"]},
-                "result": (empty_frames, "", silent_audio, 0.0, 0, ""),
+                "result": (empty_frames, "", silent_audio, ""),
             }
 
         # ── Extract audio from video if no upstream audio ──
@@ -1322,8 +1322,7 @@ class FacePokeNode:
             frames = self._load_frames(resolved_path)
             return {
                 "ui": {"video_path": [resolved_path]},
-                "result": (frames, resolved_path, audio,
-                           actual_fps, frames.shape[0], ""),
+                "result": (frames, resolved_path, audio, ""),
             }
 
         # ── Check for server-side edits (from Apply Edits button) ──
@@ -1358,8 +1357,7 @@ class FacePokeNode:
 
             return {
                 "ui": {"video_path": [output_path]},
-                "result": (frames, output_path, audio,
-                           actual_fps, frames.shape[0], edit_json),
+                "result": (frames, output_path, audio, edit_json),
             }
 
         # ── First run: show editor UI and pause ──
@@ -1381,7 +1379,7 @@ class FacePokeNode:
                         "edit_data": edit_data or "{}",
                     }],
                 },
-                "result": tuple(blocked for _ in range(6)),
+                "result": tuple(blocked for _ in range(4)),
             }
         except ImportError:
             logger.warning(
@@ -1390,7 +1388,6 @@ class FacePokeNode:
             frames = self._load_frames(resolved_path)
             return {
                 "result": (frames, resolved_path, audio,
-                           actual_fps, frames.shape[0],
                            edit_data or "{}"),
             }
 

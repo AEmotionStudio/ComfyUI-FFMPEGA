@@ -505,8 +505,8 @@ class LoadLastVideo:
     FUNCTION = "load"
     OUTPUT_NODE = True
 
-    RETURN_TYPES = ("IMAGE", "IMAGE", "AUDIO", "STRING", "STRING", "INT", "FLOAT", "FLOAT")
-    RETURN_NAMES = ("images", "selected_frames", "audio", "video_path", "image_paths", "frame_count", "fps", "duration")
+    RETURN_TYPES = ("IMAGE", "IMAGE", "AUDIO", "STRING", "STRING", "MASK")
+    RETURN_NAMES = ("images", "selected_frames", "audio", "video_path", "image_paths", "mask")
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -567,6 +567,12 @@ class LoadLastVideo:
                     "default": "",
                     "forceInput": True,
                     "tooltip": "Override: path to a video file. Overrides auto-discovery.",
+                }),
+                "mask": ("MASK", {
+                    "tooltip": (
+                        "Optional upstream MASK pass-through. "
+                        "Forwarded as-is to the mask output."
+                    ),
                 }),
             },
             "hidden": {
@@ -648,6 +654,7 @@ class LoadLastVideo:
         images=None,
         audio=None,
         video_path: str = "",
+        mask=None,
         frame_select_mode: str = "manual",
         auto_timestamps: str = "",
         pause_for_selection: bool = False,
@@ -663,7 +670,8 @@ class LoadLastVideo:
 
         empty_frames = torch.zeros(1, 512, 512, 3)
         silent_audio = {"waveform": torch.zeros(1, 1, 1), "sample_rate": 44100}
-        empty_result = (empty_frames, empty_frames, silent_audio, "", "", 0, 0.0, 0.0)
+        empty_mask = mask if mask is not None else torch.zeros(1, 512, 512, dtype=torch.float32)
+        empty_result = (empty_frames, empty_frames, silent_audio, "", "", empty_mask)
 
         # --- Resolve video source (priority: images > video_path > auto) ---
         resolved_path = None
@@ -817,14 +825,14 @@ class LoadLastVideo:
             logger.warning("[LoadLast] Failed to decode video: %s — %s", resolved_path, e)
             return {
                 "ui": {"video": [], "gifs": []},
-                "result": (empty_frames, empty_frames, silent_audio, resolved_path, "", 0, 0.0, 0.0),
+                "result": (empty_frames, empty_frames, silent_audio, resolved_path, "", empty_mask),
             }
 
         if frames is None or frames.shape[0] == 0:
             logger.warning("[LoadLast] No frames decoded from: %s", resolved_path)
             return {
                 "ui": {"video": [], "gifs": []},
-                "result": (empty_frames, empty_frames, silent_audio, resolved_path, "", 0, 0.0, 0.0),
+                "result": (empty_frames, empty_frames, silent_audio, resolved_path, "", empty_mask),
             }
 
         # --- Extract audio (input override wins) ---
@@ -865,7 +873,7 @@ class LoadLastVideo:
                 logger.info("[LoadLast] Paused — waiting for frame selection")
                 return {
                     "ui": {"video": [preview], "gifs": [preview]},
-                    "result": tuple(blocked for _ in range(8)),
+                    "result": tuple(blocked for _ in range(6)),
                 }
             except ImportError:
                 logger.warning(
@@ -904,7 +912,7 @@ class LoadLastVideo:
             "result": (
                 frames, selected_frames, audio,
                 resolved_path, image_paths_str,
-                frame_count, fps, duration,
+                empty_mask,
             ),
         }
 

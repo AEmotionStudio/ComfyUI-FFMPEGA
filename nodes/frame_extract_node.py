@@ -91,6 +91,12 @@ class FrameExtractNode:
                         "mask points."
                     ),
                 }),
+                "mask": ("MASK", {
+                    "tooltip": (
+                        "Optional upstream MASK pass-through. "
+                        "Forwarded as-is to the mask output."
+                    ),
+                }),
             },
             "hidden": {
                 "mask_points_data": "STRING",
@@ -98,19 +104,17 @@ class FrameExtractNode:
             },
         }
 
-    RETURN_TYPES = ("IMAGE", "AUDIO", "INT", "FLOAT", "FLOAT", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("frames", "audio", "frame_count", "fps", "duration", "video_path", "mask_points", "crop_data")
+    RETURN_TYPES = ("IMAGE", "AUDIO", "STRING", "STRING", "STRING", "MASK")
+    RETURN_NAMES = ("frames", "audio", "video_path", "mask_points", "crop_data", "mask")
     OUTPUT_TOOLTIPS = (
         "Extracted video frames as a batched image tensor.",
         "Audio from the extracted segment in ComfyUI AUDIO format.",
-        "Number of frames extracted.",
-        "Source video FPS (native frame rate, not extraction rate).",
-        "Actual duration of the extracted segment in seconds.",
         "Resolved absolute path to the video file.",
         "JSON-encoded point selection data from the Point Selector. "
         "Connect to FFMPEGA Agent's mask_points input for guided masking.",
         "JSON-encoded crop rectangle from the Crop Selector. "
         "Format: {\"x\":N, \"y\":N, \"w\":N, \"h\":N}.",
+        "Upstream MASK pass-through (or empty mask if not connected).",
     )
     FUNCTION = "extract_frames"
     OUTPUT_NODE = True
@@ -141,6 +145,7 @@ class FrameExtractNode:
         audio=None,
         input_video_path=None,
         mask_points=None,
+        mask=None,
     ) -> dict:
         """Extract frames and audio from video.
 
@@ -282,12 +287,10 @@ class FrameExtractNode:
             "result": (
                 frames_tensor,
                 audio_out,
-                frame_count,
-                source_fps,
-                round(actual_duration, 3),
                 video_path,
                 mask_points_data or "",
                 crop_data or "",
+                mask if mask is not None else torch.zeros(1, height or 480, width or 640, dtype=torch.float32),
             ),
         }
 

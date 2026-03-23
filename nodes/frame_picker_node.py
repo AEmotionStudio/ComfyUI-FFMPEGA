@@ -289,9 +289,8 @@ class FramePickerNode:
 
     CATEGORY = "FFMPEGA"
     FUNCTION = "execute"
-    RETURN_TYPES = ("IMAGE", "STRING", "AUDIO", "FLOAT", "INT", "STRING")
-    RETURN_NAMES = ("images", "video_path", "audio", "fps",
-                    "frame_count", "selected_indices")
+    RETURN_TYPES = ("IMAGE", "STRING", "AUDIO", "STRING", "MASK")
+    RETURN_NAMES = ("images", "video_path", "audio", "selected_indices", "mask")
     OUTPUT_NODE = True
 
     # Cache for images→video conversions (keyed by node_id)
@@ -341,6 +340,13 @@ class FramePickerNode:
                     "tooltip": "Framerate for IMAGE tensor input. "
                                "0 = auto-detect from source.",
                 }),
+                "mask": ("MASK", {
+                    "tooltip": (
+                        "Optional upstream MASK pass-through. "
+                        "When connected, selected frames extract "
+                        "corresponding mask frames."
+                    ),
+                }),
             },
             "hidden": {
                 "_edit_action": ("STRING", {"default": "none"}),
@@ -375,6 +381,7 @@ class FramePickerNode:
         video_path: str = "",
         audio=None,
         fps: float = 0.0,
+        mask=None,
         _edit_action: str = "none",
         unique_id=None,
         **kwargs,
@@ -397,6 +404,7 @@ class FramePickerNode:
         empty_frames = torch.zeros(1, 512, 512, 3)
         silent_audio = {
             "waveform": torch.zeros(1, 1, 1), "sample_rate": 44100}
+        empty_mask = mask if mask is not None else torch.zeros(1, 512, 512, dtype=torch.float32)
 
         # ── Resolve video source (priority: video_path > images) ──
         resolved_path = None
@@ -424,7 +432,7 @@ class FramePickerNode:
             return {
                 "ui": {"text": ["Connect a video path, IMAGE tensor, "
                                 "or upload a video"]},
-                "result": (empty_frames, "", silent_audio, 0.0, 0, "[]"),
+                "result": (empty_frames, "", silent_audio, "[]", empty_mask),
             }
 
         # ── Extract audio from video if no upstream audio ──
@@ -452,8 +460,7 @@ class FramePickerNode:
             return {
                 "ui": {"video_path": [resolved_path]},
                 "result": (frames, resolved_path, audio,
-                           actual_fps, frames.shape[0],
-                           json.dumps(all_indices)),
+                           json.dumps(all_indices), empty_mask),
             }
 
         # ── Check for server-side selection (from Apply button) ──
@@ -480,10 +487,21 @@ class FramePickerNode:
                 resolved_path, selected, actual_fps, transforms)
             selected_json = json.dumps(selected)
 
+            # Extract matching mask frames for selection
+            if mask is not None and mask.shape[0] > 1:
+                valid_idx = [i for i in selected if 0 <= i < mask.shape[0]]
+                if valid_idx:
+                    selected_mask = mask[valid_idx]
+                else:
+                    selected_mask = empty_mask
+            else:
+                selected_mask = empty_mask
+
             return {
                 "ui": {"video_path": [output_path]},
                 "result": (frames, output_path, audio,
-                           actual_fps, frames.shape[0], selected_json),
+                           selected_json,
+                           selected_mask),
             }
 
         if _edit_action == "passthrough":
@@ -492,8 +510,7 @@ class FramePickerNode:
             return {
                 "ui": {"video_path": [resolved_path]},
                 "result": (frames, resolved_path, audio,
-                           actual_fps, frames.shape[0],
-                           json.dumps(all_indices)),
+                           json.dumps(all_indices), empty_mask),
             }
 
         # ── First run: show picker UI and pause ──
@@ -514,7 +531,7 @@ class FramePickerNode:
                         "height": height,
                     }],
                 },
-                "result": tuple(blocked for _ in range(6)),
+                "result": tuple(blocked for _ in range(5)),
             }
         except ImportError:
             logger.warning(
@@ -524,8 +541,7 @@ class FramePickerNode:
             all_indices = list(range(frames.shape[0]))
             return {
                 "result": (frames, resolved_path, audio,
-                           actual_fps, frames.shape[0],
-                           json.dumps(all_indices)),
+                           json.dumps(all_indices), empty_mask),
             }
 
     # ─── Private helpers ────────────────────────────────────────────

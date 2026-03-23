@@ -8,6 +8,7 @@ from .load_image_path_node import LoadImagePathNode
 from .load_video_path_node import LoadVideoPathNode
 from .text_input_node import TextInputNode
 from .save_video_node import SaveVideoNode
+from .save_image_node import SaveImageNode
 from .media_bridge_node import MediaBridgeNode
 from .effects_node import FFMPEGAEffectsNode
 from .shader_overlay_node import ShaderOverlayNode
@@ -19,6 +20,7 @@ NODE_CLASS_MAPPINGS = {
     "FFMPEGALoadImagePath": LoadImagePathNode,
     "FFMPEGALoadVideoPath": LoadVideoPathNode,
     "FFMPEGASaveVideo": SaveVideoNode,
+    "FFMPEGASaveImage": SaveImageNode,
     "FFMPEGAMediaBridge": MediaBridgeNode,
     "FFMPEGATextInput": TextInputNode,
     "FFMPEGAEffects": FFMPEGAEffectsNode,
@@ -32,6 +34,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FFMPEGALoadImagePath": "Load Image Path (FFMPEGA)",
     "FFMPEGALoadVideoPath": "Load Video Path (FFMPEGA)",
     "FFMPEGASaveVideo": "Save Video (FFMPEGA)",
+    "FFMPEGASaveImage": "Save Image (FFMPEGA)",
     "FFMPEGAMediaBridge": "Media Bridge (FFMPEGA)",
     "FFMPEGATextInput": "FFMPEGA Text",
     "FFMPEGAEffects": "FFMPEGA Effects Builder",
@@ -83,6 +86,7 @@ __all__ = [
     "LoadImagePathNode",
     "LoadVideoPathNode",
     "SaveVideoNode",
+    "SaveImageNode",
     "MediaBridgeNode",
     "TextInputNode",
     "FFMPEGAEffectsNode",

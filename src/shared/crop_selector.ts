@@ -196,6 +196,7 @@ export function applyCropPreview(
 export function openCropSelector(
     node: CropSelectorNode,
     videoSrc: string,
+    startTimeSec: number = 0,
 ): void {
     ensureCropStyles();
 
@@ -386,7 +387,9 @@ export function openCropSelector(
 
         // Capture initial frame (skip past potential black frame)
         try {
-            const initialTime = Math.min(0.1, videoDuration * 0.01);
+            const initialTime = startTimeSec > 0
+                ? startTimeSec
+                : Math.min(0.1, videoDuration * 0.01);
             const dataUrl = await captureFrameAt(tmpVideo, initialTime);
             frameImg.src = dataUrl;
         } catch {

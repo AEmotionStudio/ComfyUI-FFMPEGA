@@ -24,6 +24,12 @@ interface MaskPointsData {
     image_height: number;
     mode?: EditorMode;
     mask_data?: string;
+    // Mask post-processing settings
+    mask_expand?: number;
+    mask_feather?: number;
+    mask_invert?: boolean;
+    mask_threshold?: number;
+    mask_multi_object?: boolean;
 }
 
 /** Node with optional mask widget */
@@ -142,6 +148,94 @@ export function openPointSelector(
     statusBar.setAttribute("role", "status");
     statusBar.setAttribute("aria-live", "polite");
     overlay.appendChild(statusBar);
+
+    // ── Mask Settings Panel ──
+    const settingsPanel = document.createElement("div");
+    settingsPanel.style.cssText = `
+        display:flex;gap:16px;align-items:center;margin-top:8px;
+        color:#ccc;font-size:12px;flex-wrap:wrap;
+        padding:8px 12px;background:rgba(255,255,255,0.04);
+        border:1px solid rgba(255,255,255,0.08);border-radius:6px;
+    `;
+
+    const makeSliderControl = (
+        label: string, min: number, max: number, value: number, step: number, unit: string,
+    ): { wrap: HTMLElement; slider: HTMLInputElement; valLabel: HTMLSpanElement } => {
+        const wrap = document.createElement("div");
+        wrap.style.cssText = "display:flex;align-items:center;gap:4px;";
+        const lbl = document.createElement("span");
+        lbl.textContent = label;
+        lbl.style.cssText = "font-size:11px;color:#999;white-space:nowrap;";
+        const slider = document.createElement("input");
+        slider.type = "range";
+        slider.min = String(min);
+        slider.max = String(max);
+        slider.value = String(value);
+        slider.step = String(step);
+        slider.style.cssText = "width:80px;accent-color:#0cf;height:4px;";
+        const valLabel = document.createElement("span");
+        valLabel.textContent = `${value}${unit}`;
+        valLabel.style.cssText = "font-size:11px;min-width:32px;font-family:monospace;";
+        slider.oninput = (): void => { valLabel.textContent = `${slider.value}${unit}`; };
+        wrap.append(lbl, slider, valLabel);
+        return { wrap, slider, valLabel };
+    };
+
+    const makeToggle = (label: string, checked: boolean): { wrap: HTMLElement; cb: HTMLInputElement } => {
+        const wrap = document.createElement("label");
+        wrap.style.cssText = "display:flex;align-items:center;gap:4px;cursor:pointer;font-size:11px;color:#999;";
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = checked;
+        cb.style.cssText = "accent-color:#0cf;";
+        const span = document.createElement("span");
+        span.textContent = label;
+        wrap.append(cb, span);
+        return { wrap, cb };
+    };
+
+    // Restore existing settings or defaults
+    const expandCtrl = makeSliderControl("Expand:", -50, 50, existing.mask_expand ?? 0, 1, "px");
+    const featherCtrl = makeSliderControl("Feather:", 0, 50, existing.mask_feather ?? 0, 1, "px");
+    const threshCtrl = makeSliderControl("Threshold:", 0, 100, Math.round((existing.mask_threshold ?? 0.5) * 100), 5, "%");
+    const invertToggle = makeToggle("Invert", existing.mask_invert ?? false);
+    const multiObjToggle = makeToggle("Multi-Object", existing.mask_multi_object ?? false);
+    // Reset button
+    const resetBtn = document.createElement("button");
+    resetBtn.textContent = "↺ Reset";
+    resetBtn.style.cssText = `
+        font-size:11px;padding:3px 8px;border:1px solid rgba(255,255,255,0.15);
+        border-radius:4px;background:transparent;color:#aaa;cursor:pointer;
+        transition:all 0.15s;
+    `;
+    resetBtn.onmouseenter = (): void => { resetBtn.style.background = "rgba(255,255,255,0.08)"; resetBtn.style.color = "#fff"; };
+    resetBtn.onmouseleave = (): void => { resetBtn.style.background = "transparent"; resetBtn.style.color = "#aaa"; };
+    resetBtn.onclick = (): void => {
+        expandCtrl.slider.value = "0"; expandCtrl.valLabel.textContent = "0px";
+        featherCtrl.slider.value = "0"; featherCtrl.valLabel.textContent = "0px";
+        threshCtrl.slider.value = "50"; threshCtrl.valLabel.textContent = "50%";
+        invertToggle.cb.checked = false;
+        multiObjToggle.cb.checked = false;
+        _greenOverlayDirty = true;
+        redraw();
+    };
+
+    settingsPanel.append(
+        expandCtrl.wrap, featherCtrl.wrap, threshCtrl.wrap,
+        invertToggle.wrap, multiObjToggle.wrap, resetBtn,
+    );
+    overlay.appendChild(settingsPanel);
+
+    // Hook settings controls → live preview
+    const onSettingsChanged = (): void => {
+        _greenOverlayDirty = true;
+        redraw();
+    };
+    expandCtrl.slider.addEventListener("input", onSettingsChanged);
+    featherCtrl.slider.addEventListener("input", onSettingsChanged);
+    threshCtrl.slider.addEventListener("input", onSettingsChanged);
+    invertToggle.cb.addEventListener("change", onSettingsChanged);
+    multiObjToggle.cb.addEventListener("change", onSettingsChanged);
 
     // Button bar
     const btnBar = document.createElement("div");
@@ -276,14 +370,47 @@ export function openPointSelector(
                 _greenOverlay.height = canvas.height;
                 const tmpCtx = _greenOverlay.getContext("2d");
                 if (tmpCtx) {
+                    // Read current mask settings
+                    const expandVal = parseInt(expandCtrl.slider.value);
+                    const featherVal = parseInt(featherCtrl.slider.value);
+                    const invertVal = invertToggle.cb.checked;
+
+                    // Use blur to approximate expand + feather
+                    const totalBlur = (expandVal !== 0 ? Math.abs(expandVal) : 0) + featherVal;
+                    if (totalBlur > 0) {
+                        tmpCtx.filter = `blur(${totalBlur}px)`;
+                    }
                     tmpCtx.drawImage(maskOff, 0, 0, canvas.width, canvas.height);
+                    tmpCtx.filter = "none";
+
                     const imgData = tmpCtx.getImageData(0, 0, canvas.width, canvas.height);
+
+                    // Threshold for expand: grow → lower, shrink → higher
+                    let thresh = 128;
+                    if (expandVal > 0) thresh = Math.max(2, 128 - expandVal * 3);
+                    else if (expandVal < 0) thresh = Math.min(253, 128 + Math.abs(expandVal) * 3);
+
                     for (let i = 0; i < imgData.data.length; i += 4) {
-                        if (imgData.data[i] > 128) {
+                        const val = imgData.data[i]; // R channel (grayscale)
+                        const isMasked = featherVal > 0 && expandVal === 0
+                            ? val > 2   // soft mask: any non-zero
+                            : val > thresh;
+
+                        const showGreen = invertVal ? !isMasked : isMasked;
+
+                        if (showGreen) {
                             imgData.data[i] = 0;       // R
                             imgData.data[i + 1] = 220;  // G
                             imgData.data[i + 2] = 80;   // B
-                            imgData.data[i + 3] = 100;  // A
+                            if (featherVal > 0) {
+                                // Proportional alpha for soft edges
+                                const alphaVal = invertVal ? (255 - val) : val;
+                                imgData.data[i + 3] = Math.round(
+                                    Math.min(120, (alphaVal / 255) * 120),
+                                );
+                            } else {
+                                imgData.data[i + 3] = 100;
+                            }
                         } else {
                             imgData.data[i + 3] = 0; // transparent
                         }
@@ -294,7 +421,17 @@ export function openPointSelector(
             }
             ctx.drawImage(_greenOverlay, 0, 0);
 
-            statusBar.textContent = `Draw mode | ${imgW}×${imgH} | Brush: ${sizeSlider.value}px`;
+            // Status showing active settings
+            const activeSettings: string[] = [];
+            const ev = parseInt(expandCtrl.slider.value);
+            const fv = parseInt(featherCtrl.slider.value);
+            if (ev !== 0) activeSettings.push(`${ev > 0 ? "+" : ""}${ev}px expand`);
+            if (fv > 0) activeSettings.push(`${fv}px feather`);
+            if (invertToggle.cb.checked) activeSettings.push("inverted");
+            const settingsStr = activeSettings.length > 0
+                ? ` | ${activeSettings.join(", ")}`
+                : "";
+            statusBar.textContent = `Draw mode | ${imgW}×${imgH} | Brush: ${sizeSlider.value}px${settingsStr}`;
         }
     };
 
@@ -564,6 +701,11 @@ export function openPointSelector(
                 mask_data: b64,
                 image_width: imgW,
                 image_height: imgH,
+                mask_expand: parseInt(expandCtrl.slider.value),
+                mask_feather: parseInt(featherCtrl.slider.value),
+                mask_invert: invertToggle.cb.checked,
+                mask_threshold: parseInt(threshCtrl.slider.value) / 100,
+                mask_multi_object: multiObjToggle.cb.checked,
             });
         } else {
             data = JSON.stringify({
@@ -572,6 +714,11 @@ export function openPointSelector(
                 labels: lbls,
                 image_width: imgW,
                 image_height: imgH,
+                mask_expand: parseInt(expandCtrl.slider.value),
+                mask_feather: parseInt(featherCtrl.slider.value),
+                mask_invert: invertToggle.cb.checked,
+                mask_threshold: parseInt(threshCtrl.slider.value) / 100,
+                mask_multi_object: multiObjToggle.cb.checked,
             });
         }
         if (mpWidget) {

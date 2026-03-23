@@ -281,6 +281,27 @@ _MODEL_INFO: dict[str, dict] = {
                   "and merge FaceCam bf16 checkpoints into "
                   "ComfyUI/models/diffusion_models/.",
     },
+    "matanyone2": {
+        "name": "MatAnyone2 (Video Matting)",
+        "size": "~135 MB",
+        "url": "https://huggingface.co/AEmotionStudio/matanyone2",
+        "mirror_repo": "AEmotionStudio/matanyone2",
+        "license": "NTU S-Lab License 1.0 (non-commercial)",
+        "manual": "Download matanyone2.safetensors from "
+                  "https://huggingface.co/AEmotionStudio/matanyone2 "
+                  "and place it in ComfyUI/models/matanyone2/. "
+                  "⚠️ Non-commercial use only.",
+    },
+    "flashvsr": {
+        "name": "FlashVSR v1.1 (One-Step Video Super Resolution)",
+        "size": "~5 GB (DiT + VAE + LQ_proj + TCDecoder + Prompt)",
+        "url": "https://huggingface.co/AEmotionStudio/flashvsr-models",
+        "mirror_repo": "AEmotionStudio/flashvsr-models",
+        "license": "GPL-3.0",
+        "manual": "Download model files from "
+                  "https://huggingface.co/AEmotionStudio/flashvsr-models "
+                  "and place them in ComfyUI/models/FlashVSR/.",
+    },
 }
 
 

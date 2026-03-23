@@ -60,8 +60,8 @@ class ShaderOverlayNode:
     FUNCTION = "process"
     OUTPUT_NODE = False
 
-    RETURN_TYPES = ("IMAGE", "STRING")
-    RETURN_NAMES = ("images", "video_path")
+    RETURN_TYPES = ("IMAGE", "STRING", "MASK")
+    RETURN_NAMES = ("images", "video_path", "mask")
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -264,6 +264,12 @@ class ShaderOverlayNode:
                         "Ignored when video_path is used."
                     ),
                 }),
+                "mask": ("MASK", {
+                    "tooltip": (
+                        "Optional upstream MASK pass-through. "
+                        "Forwarded as-is to the mask output."
+                    ),
+                }),
             },
         }
 
@@ -315,8 +321,11 @@ class ShaderOverlayNode:
         normals_input: str = "",
         depth_strength: float = 1.0,
         fps: float = 24.0,
+        mask=None,
     ):
         """Apply shader(s) and return processed frames + video path."""
+        # Mask pass-through
+        empty_mask = mask if mask is not None else torch.zeros(1, 64, 64, dtype=torch.float32)
         # Treat category headers as no-op
         if preset.startswith("──"):
             preset = "none"
@@ -342,17 +351,17 @@ class ShaderOverlayNode:
 
         if resolved_path is None:
             log.info("[ShaderOverlay] No input connected")
-            return (empty_frames, "")
+            return (empty_frames, "", empty_mask)
 
         # ── Check if there is anything to do ──────────────────────────
         has_custom = bool(custom_shader_path and custom_shader_path.strip())
         if preset == "none" and preset_2 == "none" and preset_3 == "none" and not has_custom:
             frames = self._decode_video(resolved_path)
-            return (frames, resolved_path)
+            return (frames, resolved_path, empty_mask)
 
         if intensity <= 0.0 and not has_custom:
             frames = self._decode_video(resolved_path)
-            return (frames, resolved_path)
+            return (frames, resolved_path, empty_mask)
 
         # ── Import shader support ────────────────────────────────────
         try:
@@ -378,7 +387,7 @@ class ShaderOverlayNode:
                 "— cannot apply shader effects."
             )
             frames = self._decode_video(resolved_path)
-            return (frames, resolved_path)
+            return (frames, resolved_path, empty_mask)
 
         # validate_path is optional — only needed for custom shader paths
         _validate_path = None
@@ -416,17 +425,17 @@ class ShaderOverlayNode:
                 except Exception as e:
                     log.error("[ShaderOverlay] Invalid custom shader path: %s", e)
                     frames = self._decode_video(resolved_path)
-                    return (frames, resolved_path)
+                    return (frames, resolved_path, empty_mask)
 
             if not custom.endswith(".glsl"):
                 log.error("[ShaderOverlay] Custom shader must be a .glsl file")
                 frames = self._decode_video(resolved_path)
-                return (frames, resolved_path)
+                return (frames, resolved_path, empty_mask)
 
             if not os.path.isfile(custom):
                 log.error("[ShaderOverlay] Custom shader not found: %s", custom)
                 frames = self._decode_video(resolved_path)
-                return (frames, resolved_path)
+                return (frames, resolved_path, empty_mask)
 
             shader_paths.append(custom)
             preset_names.append(os.path.basename(custom).replace(".glsl", ""))
@@ -453,7 +462,7 @@ class ShaderOverlayNode:
 
         if not shader_paths:
             frames = self._decode_video(resolved_path)
-            return (frames, resolved_path)
+            return (frames, resolved_path, empty_mask)
 
         # ── Parse resolution scale ───────────────────────────────────
         try:
@@ -467,7 +476,7 @@ class ShaderOverlayNode:
         if not ffmpeg:
             log.error("[ShaderOverlay] FFmpeg not found")
             frames = self._decode_video(resolved_path)
-            return (frames, resolved_path)
+            return (frames, resolved_path, empty_mask)
 
         temp_dir = tempfile.mkdtemp(prefix="ffmpega_shader_")
         output_path = os.path.join(temp_dir, "shader_output.mp4")
@@ -604,7 +613,7 @@ class ShaderOverlayNode:
                 ]
             else:
                 frames = self._decode_video(_original_resolved)
-                return (frames, _original_resolved)
+                return (frames, _original_resolved, empty_mask)
         else:
             # Fallback to FFmpeg filters (first preset only)
             fallback = get_fallback_filter(preset_names[0]) if preset_names else None
@@ -616,7 +625,7 @@ class ShaderOverlayNode:
                     display_name,
                 )
                 frames = self._decode_video(_original_resolved)
-                return (frames, _original_resolved)
+                return (frames, _original_resolved, empty_mask)
 
             log.warning(
                 "⚠️  [ShaderOverlay] libplacebo not available — using FFmpeg "
@@ -665,16 +674,16 @@ class ShaderOverlayNode:
                     result.returncode, result.stderr[-500:] if result.stderr else "",
                 )
                 frames = self._decode_video(_original_resolved)
-                return (frames, _original_resolved)
+                return (frames, _original_resolved, empty_mask)
         except subprocess.TimeoutExpired:
             log.error("[ShaderOverlay] FFmpeg timed out after 300s")
             frames = self._decode_video(_original_resolved)
-            return (frames, _original_resolved)
+            return (frames, _original_resolved, empty_mask)
 
         if not os.path.isfile(output_path) or os.path.getsize(output_path) == 0:
             log.error("[ShaderOverlay] Output file empty or missing")
             frames = self._decode_video(_original_resolved)
-            return (frames, _original_resolved)
+            return (frames, _original_resolved, empty_mask)
 
         # ── SBS unpack (crop left panel → W×H) ────────────────────────
         if _panel_count > 1:
@@ -729,7 +738,7 @@ class ShaderOverlayNode:
             )
 
         frames = self._decode_video(output_path)
-        return (frames, output_path)
+        return (frames, output_path, empty_mask)
 
     # ── Helpers ──────────────────────────────────────────────────────
 

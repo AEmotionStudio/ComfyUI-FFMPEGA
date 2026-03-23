@@ -55,7 +55,9 @@ class TestAIUpscaleSkillRegistration:
         expected = {
             "realesrgan_x4plus", "realesrgan_x4_anime",
             "hat_x4", "dat_x4", "swinir_x4",
-            "seedvr2_3b_fp8", "seedvr2_7b_gguf",
+            "seedvr2_3b_fp8", "seedvr2_3b_gguf",
+            "seedvr2_7b_fp8", "seedvr2_7b_gguf",
+            "flashvsr_full", "flashvsr_tiny", "flashvsr_tiny_long",
         }
         assert set(choices) == expected
 
@@ -376,3 +378,58 @@ class TestSeedVR2Synthesizer:
         svr._runner = None
         svr.cleanup()  # Should not raise
         assert svr._runner is None
+
+
+# ------------------------------------------------------------------ #
+#  FlashVSR synthesizer
+# ------------------------------------------------------------------ #
+
+@pytest.mark.skipif(not _has_torch, reason="PyTorch not available")
+class TestFlashVSRSynthesizer:
+    """Verify the FlashVSR synthesizer module."""
+
+    def test_flashvsr_synthesizer_importable(self):
+        from core import flashvsr_synthesizer
+        assert hasattr(flashvsr_synthesizer, "upscale_image")
+        assert hasattr(flashvsr_synthesizer, "upscale_video")
+        assert hasattr(flashvsr_synthesizer, "cleanup")
+        assert hasattr(flashvsr_synthesizer, "FLASHVSR_CONFIGS")
+
+    def test_flashvsr_configs_complete(self):
+        from core.flashvsr_synthesizer import FLASHVSR_CONFIGS
+        assert "flashvsr_full" in FLASHVSR_CONFIGS
+        assert "flashvsr_tiny" in FLASHVSR_CONFIGS
+        assert "flashvsr_tiny_long" in FLASHVSR_CONFIGS
+
+    def test_flashvsr_configs_have_required_fields(self):
+        from core.flashvsr_synthesizer import FLASHVSR_CONFIGS
+        required = {"description", "mode", "sparse_ratio", "kv_ratio", "local_range", "size"}
+        for name, cfg in FLASHVSR_CONFIGS.items():
+            for field in required:
+                assert field in cfg, f"{name} missing field: {field}"
+
+    def test_flashvsr_in_vram_utils(self):
+        from core._vram_utils import ALL_SYNTHESIZER_MODULES
+        assert "flashvsr_synthesizer" in ALL_SYNTHESIZER_MODULES
+
+    def test_flashvsr_handler_accepts_flashvsr_models(self):
+        from skills.handlers.upscale import _VALID_MODELS, _FLASHVSR_MODELS
+        assert "flashvsr_full" in _VALID_MODELS
+        assert "flashvsr_tiny" in _VALID_MODELS
+        assert "flashvsr_tiny_long" in _VALID_MODELS
+        assert "flashvsr_full" in _FLASHVSR_MODELS
+
+    def test_flashvsr_in_model_manager(self):
+        from core.model_manager import _MODEL_INFO
+        assert "flashvsr" in _MODEL_INFO
+        info = _MODEL_INFO["flashvsr"]
+        assert "name" in info
+        assert "size" in info
+        assert "url" in info
+
+    def test_cleanup_when_no_pipeline(self):
+        """cleanup() should not error when no pipeline is loaded."""
+        import core.flashvsr_synthesizer as fvsr
+        fvsr._pipeline = None
+        fvsr.cleanup()  # Should not raise
+        assert fvsr._pipeline is None

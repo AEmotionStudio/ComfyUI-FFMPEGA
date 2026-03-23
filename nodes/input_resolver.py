@@ -98,7 +98,10 @@ def resolve_inputs(
         image_a is not None
         or any(k.startswith("image_") and not k.startswith("image_path_") and kwargs.get(k) is not None for k in kwargs)
         or len(_all_video_paths) > 0
-        or len(_all_image_paths) > 0
+        # NOTE: _all_image_paths intentionally excluded — image_path_a/b/c
+        # are reference images or masks for specific modes, not video content.
+        # Including them here incorrectly triggers dummy video creation when
+        # the only connection is e.g. a mask path for video matting.
     )
 
     if images_a is not None:

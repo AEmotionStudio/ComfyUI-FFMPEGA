@@ -16,7 +16,8 @@ _GAN_MODELS = {
     "hat_x4", "dat_x4", "swinir_x4",
 }
 _SEEDVR_MODELS = {"seedvr2_3b_fp8", "seedvr2_3b_gguf", "seedvr2_7b_fp8", "seedvr2_7b_gguf"}
-_VALID_MODELS = _GAN_MODELS | _SEEDVR_MODELS
+_FLASHVSR_MODELS = {"flashvsr_full", "flashvsr_tiny", "flashvsr_tiny_long"}
+_VALID_MODELS = _GAN_MODELS | _SEEDVR_MODELS | _FLASHVSR_MODELS
 _VALID_SCALES = {2, 4}
 _VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv"}
 
@@ -48,6 +49,39 @@ def _f_ai_upscale(params: dict) -> dict:
     # Determine if input is video or image
     ext = os.path.splitext(input_path)[1].lower()
     is_video = ext in _VIDEO_EXTS
+
+    # ── FlashVSR one-step diffusion upscaler ─────────────────────────
+    if model in _FLASHVSR_MODELS:
+        try:
+            try:
+                from core.flashvsr_synthesizer import upscale_image, upscale_video
+            except ImportError:
+                from ...core.flashvsr_synthesizer import upscale_image, upscale_video
+        except ImportError:
+            return {
+                "error": "FlashVSR upscaler is not available. "
+                         "Ensure core/flashvsr_synthesizer.py exists."
+            }
+
+        scale_factor = int(params.get("scale_factor", 4))
+        try:
+            if is_video:
+                output_path = upscale_video(
+                    input_path=input_path,
+                    model_name=model,
+                    scale=scale_factor,
+                )
+                return {"movie": output_path}
+            else:
+                output_path = upscale_image(
+                    input_path=input_path,
+                    model_name=model,
+                    scale=scale_factor,
+                )
+                return {"image": output_path}
+        except Exception as exc:
+            log.error("ai_upscale (FlashVSR) handler failed: %s", exc)
+            return {"error": f"FlashVSR upscaling failed: {exc}"}
 
     # ── SeedVR2 diffusion upscaler ────────────────────────────────────
     if model in _SEEDVR_MODELS:

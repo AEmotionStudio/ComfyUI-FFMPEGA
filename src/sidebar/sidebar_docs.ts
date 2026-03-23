@@ -136,7 +136,7 @@ export const NODE_DOCS: NodeDoc[] = [
             "images_to_path: insert between Load Video Upload and the Agent to free tensors early.",
             "path_to_images: quickly decode a video path into frames for downstream image processing.",
             "Audio is automatically extracted (path_to_images) or muxed in (images_to_path) when connected.",
-            "Outputs fps and frame_count in both modes for easy downstream use.",
+            "Lightweight bridge for quick conversions without full Load/Save nodes.",
         ],
         inputs: [
             { name: "mode", info: "images_to_path or path_to_images — pick the conversion direction." },

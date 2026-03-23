@@ -110,61 +110,10 @@ export function registerLoadVideoNode(
         this.color = "#5a4a2a";
         this.bgcolor = "#4a3a1a";
 
-        // --- Dynamic output slot visibility ---
-        const _syncDynamicOutputs = (): void => {
-            const imagesIn = node.findInputSlot("images");
-            const audioIn = node.findInputSlot("audio");
-
-            const anyConnected =
-                (imagesIn >= 0 && node.inputs[imagesIn].link != null) ||
-                (audioIn >= 0 && node.inputs[audioIn].link != null);
-
-            const imagesOut = node.findOutputSlot("images");
-            const audioOut = node.findOutputSlot("audio");
-            const hasOutputs = imagesOut >= 0 || audioOut >= 0;
-
-            if (anyConnected && !hasOutputs) {
-                node.addOutput("images", "IMAGE");
-                node.addOutput("audio", "AUDIO");
-            } else if (!anyConnected && hasOutputs) {
-                const aIdx = node.findOutputSlot("audio");
-                if (aIdx >= 0) node.removeOutput(aIdx);
-                const iIdx = node.findOutputSlot("images");
-                if (iIdx >= 0) node.removeOutput(iIdx);
-            }
-
-            node.setDirtyCanvas(true, true);
-        };
-
-        // Initial state: remove both outputs
-        requestAnimationFrame(() => {
-            const aIdx = node.findOutputSlot("audio");
-            if (aIdx >= 0) node.removeOutput(aIdx);
-            const iIdx = node.findOutputSlot("images");
-            if (iIdx >= 0) node.removeOutput(iIdx);
-            node.setDirtyCanvas(true, true);
-        });
-
-        // React to connection changes
-        const origOnCC = this.onConnectionsChange;
-        this.onConnectionsChange = function (
-            type: number, slotIndex: number,
-            isConnected: boolean, link: unknown, ioSlot: unknown,
-        ): void {
-            origOnCC?.apply(this, arguments as unknown as [number, number, boolean, unknown, unknown]);
-            if (type === LiteGraph.INPUT) {
-                const name = this.inputs?.[slotIndex]?.name;
-                if (name === "images" || name === "audio") {
-                    _syncDynamicOutputs();
-                }
-            }
-        };
-
         // Restore on workflow load
         const origConfigure = this.onConfigure;
         this.onConfigure = function (data: unknown): void {
             origConfigure?.apply(this, arguments as unknown as [unknown]);
-            requestAnimationFrame(_syncDynamicOutputs);
         };
 
         // Upload button (created early to appear above preview)
@@ -401,8 +350,180 @@ export function registerLoadVideoNode(
             }
         }, 500);
 
-        previewContainer.appendChild(videoEl);
+        const videoWrapper = document.createElement("div");
+        videoWrapper.style.cssText = "position:relative;width:100%;";
+        videoWrapper.appendChild(videoEl);
+        previewContainer.appendChild(videoWrapper);
         previewContainer.appendChild(infoEl);
+
+        // ── Mask preview overlay ──
+        // Canvas overlay that darkens unmasked areas when a mask is set
+        const maskOverlayCanvas = document.createElement("canvas");
+        maskOverlayCanvas.style.cssText =
+            "position:absolute;top:0;left:0;width:100%;height:100%;" +
+            "pointer-events:none;z-index:2;display:none;";
+        videoWrapper.appendChild(maskOverlayCanvas);
+
+        let _maskOverlayVisible = false;
+        let _maskOverlayDataHash = ""; // track changes to avoid redundant redraws
+
+        const showMaskOverlay = (): void => {
+            if (_maskOverlayVisible) {
+                maskOverlayCanvas.style.display = "block";
+            }
+        };
+        const hideMaskOverlay = (): void => {
+            maskOverlayCanvas.style.display = "none";
+        };
+
+        // Draw the mask onto the overlay canvas: dark where unmasked, clear where masked
+        const drawMaskOverlay = (maskImg: HTMLImageElement): void => {
+            const w = videoEl.videoWidth || maskImg.naturalWidth;
+            const h = videoEl.videoHeight || maskImg.naturalHeight;
+            if (!w || !h) return;
+
+            maskOverlayCanvas.width = w;
+            maskOverlayCanvas.height = h;
+            const ctx = maskOverlayCanvas.getContext("2d");
+            if (!ctx) return;
+
+            // Draw mask to read pixels
+            ctx.clearRect(0, 0, w, h);
+            ctx.drawImage(maskImg, 0, 0, w, h);
+            const imgData = ctx.getImageData(0, 0, w, h);
+
+            // Darken unmasked, clear masked (mask white=255=keep, black=0=darken)
+            for (let i = 0; i < imgData.data.length; i += 4) {
+                const val = imgData.data[i]; // grayscale mask value
+                if (val > 128) {
+                    // Masked region: fully transparent (clear)
+                    imgData.data[i] = 0;
+                    imgData.data[i + 1] = 0;
+                    imgData.data[i + 2] = 0;
+                    imgData.data[i + 3] = 0;
+                } else {
+                    // Unmasked region: dark wash
+                    imgData.data[i] = 0;
+                    imgData.data[i + 1] = 0;
+                    imgData.data[i + 2] = 0;
+                    imgData.data[i + 3] = 140;
+                }
+            }
+            ctx.putImageData(imgData, 0, 0);
+
+            _maskOverlayVisible = true;
+            showMaskOverlay();
+        };
+
+        // Refresh the mask overlay from current widget data
+        const refreshMaskOverlay = (): void => {
+            const showWidget = node.widgets?.find(
+                (w: ComfyWidget) => w.name === "show_mask_preview",
+            );
+            const showMask = showWidget?.value !== false;
+
+            const mpWidget = node.widgets?.find(
+                (w: ComfyWidget) => w.name === "mask_points_data",
+            );
+            const maskData = mpWidget?.value ? String(mpWidget.value) : "";
+
+            if (!showMask || !maskData || maskData === "undefined") {
+                _maskOverlayVisible = false;
+                hideMaskOverlay();
+                _maskOverlayDataHash = "";
+                return;
+            }
+
+            // Check if data changed
+            const hash = maskData.slice(0, 100) + maskData.length;
+            if (hash === _maskOverlayDataHash) return;
+            _maskOverlayDataHash = hash;
+
+            try {
+                const ptData = JSON.parse(maskData);
+
+                if (ptData.mode === "draw" && ptData.mask_data) {
+                    // Draw/nudge mode: decode base64 mask directly
+                    const img = new Image();
+                    img.onload = () => drawMaskOverlay(img);
+                    img.src = "data:image/png;base64," + ptData.mask_data;
+                } else if (ptData.points?.length > 0 || ptData.box) {
+                    // Point/box mode: fetch raw mask from SAM3 endpoint
+                    const vidWidget = node.widgets?.find(
+                        (w: ComfyWidget) => w.name === "video",
+                    );
+                    if (!vidWidget?.value) return;
+
+                    // Get frame path via first_frame endpoint
+                    fetch("/ffmpega/first_frame", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            video_path: "input/" + String(vidWidget.value),
+                        }),
+                    })
+                        .then(r => r.json())
+                        .then((info: { frame_path?: string }) => {
+                            // We need a frame image. Use the SAM3 endpoint to get raw mask
+                            const body: Record<string, unknown> = {
+                                frame_path: info.frame_path || "",
+                                points: ptData.points || [],
+                                labels: ptData.labels || [],
+                                image_width: ptData.image_width || 0,
+                                image_height: ptData.image_height || 0,
+                                multi_object: ptData.mask_multi_object || false,
+                                edge_refine: ptData.mask_edge_refine ?? false,
+                            };
+                            if (ptData.box) body.box = ptData.box;
+
+                            return fetch("/ffmpega/sam3_point_mask", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(body),
+                            });
+                        })
+                        .then(r => r.json())
+                        .then((data: { raw_mask_b64?: string }) => {
+                            if (data.raw_mask_b64) {
+                                const img = new Image();
+                                img.onload = () => drawMaskOverlay(img);
+                                img.src = "data:image/png;base64," + data.raw_mask_b64;
+                            }
+                        })
+                        .catch(() => { /* silently fail */ });
+                }
+            } catch {
+                // Invalid JSON
+            }
+        };
+
+        // Hide overlay during playback, show when paused
+        videoEl.addEventListener("play", hideMaskOverlay);
+        videoEl.addEventListener("pause", showMaskOverlay);
+        videoEl.addEventListener("ended", showMaskOverlay);
+        videoEl.addEventListener("loadedmetadata", () => {
+            setTimeout(refreshMaskOverlay, 500);
+        });
+
+        // Poll for widget changes (show_mask_preview toggle or mask_points_data update)
+        let _maskPollHash = "";
+        const maskPollInterval = setInterval(() => {
+            if (!node.graph) {
+                clearInterval(maskPollInterval);
+                return;
+            }
+            const showW = node.widgets?.find(
+                (w: ComfyWidget) => w.name === "show_mask_preview",
+            );
+            const mpW = node.widgets?.find(
+                (w: ComfyWidget) => w.name === "mask_points_data",
+            );
+            const pollHash = `${showW?.value}|${mpW?.value ? String(mpW.value).length : 0}`;
+            if (pollHash !== _maskPollHash) {
+                _maskPollHash = pollHash;
+                refreshMaskOverlay();
+            }
+        }, 1000);
 
         addDownloadOverlay(previewContainer, videoEl);
 
@@ -468,6 +589,7 @@ export function registerLoadVideoNode(
         const origOnRemoved = this.onRemoved;
         this.onRemoved = function (): void {
             clearInterval(lvPollInterval);
+            clearInterval(maskPollInterval);
             fileInput?.remove();
             origOnRemoved?.apply(this, arguments as unknown as []);
         };

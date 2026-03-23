@@ -391,6 +391,13 @@ class LoadLastImage:
                     "default": "",
                     "tooltip": "Only load files starting with this prefix.",
                 }),
+                "mask": ("MASK", {
+                    "tooltip": (
+                        "Optional upstream MASK pass-through. When "
+                        "connected, this mask is forwarded instead of "
+                        "the auto-generated one."
+                    ),
+                }),
             },
             "hidden": {
                 "unique_id": "UNIQUE_ID",
@@ -451,6 +458,7 @@ class LoadLastImage:
         pin_index: int = 0,
         source_folder: str = "",
         filename_filter: str = "",
+        mask=None,
         unique_id: str = "",
         _edit_state: str = "{}",
     ):

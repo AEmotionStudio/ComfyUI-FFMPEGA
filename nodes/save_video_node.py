@@ -44,16 +44,6 @@ class SaveVideoNode:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "video_path": ("STRING", {
-                    "forceInput": True,
-                    "tooltip": (
-                        "Path to a video file (typically from the "
-                        "FFMPEGA Agent's video_path output). The file "
-                        "already contains audio if the source had it. "
-                        "It will be copied as-is to ComfyUI's output "
-                        "directory."
-                    ),
-                }),
                 "filename_prefix": ("STRING", {
                     "default": "FFMPEGA",
                     "tooltip": (
@@ -64,6 +54,46 @@ class SaveVideoNode:
                 }),
             },
             "optional": {
+                "images": ("IMAGE", {
+                    "tooltip": (
+                        "Optional upstream IMAGE pass-through. "
+                        "When connected, forwarded directly to the "
+                        "images output instead of extracting frames "
+                        "from the video."
+                    ),
+                }),
+                "audio": ("AUDIO", {
+                    "tooltip": (
+                        "Optional upstream AUDIO pass-through. "
+                        "When connected, forwarded directly to the "
+                        "audio output instead of extracting audio "
+                        "from the video."
+                    ),
+                }),
+                "video_path": ("STRING", {
+                    "forceInput": True,
+                    "tooltip": (
+                        "Path to a video file (typically from the "
+                        "FFMPEGA Agent's video_path output). The file "
+                        "already contains audio if the source had it. "
+                        "It will be copied as-is to ComfyUI's output "
+                        "directory."
+                    ),
+                }),
+                "mask_points": ("STRING", {
+                    "forceInput": True,
+                    "tooltip": (
+                        "Optional upstream mask_points pass-through. "
+                        "Forwarded as-is to the mask_points output "
+                        "for downstream nodes."
+                    ),
+                }),
+                "mask": ("MASK", {
+                    "tooltip": (
+                        "Optional upstream MASK pass-through. "
+                        "Forwarded as-is to the mask output."
+                    ),
+                }),
                 "save_output": ("BOOLEAN", {
                     "default": True,
                     "label_on": "Save to Output",
@@ -83,14 +113,6 @@ class SaveVideoNode:
                         "the filename counter."
                     ),
                 }),
-                "mask_points": ("STRING", {
-                    "forceInput": True,
-                    "tooltip": (
-                        "Optional upstream mask_points pass-through. "
-                        "Forwarded as-is to the mask_points output "
-                        "for downstream nodes."
-                    ),
-                }),
             },
             "hidden": {
                 "prompt": "PROMPT",
@@ -98,8 +120,8 @@ class SaveVideoNode:
             },
         }
 
-    RETURN_TYPES = ("IMAGE", "AUDIO", "STRING", "STRING")
-    RETURN_NAMES = ("images", "audio", "video_path", "mask_points")
+    RETURN_TYPES = ("IMAGE", "AUDIO", "STRING", "STRING", "MASK")
+    RETURN_NAMES = ("images", "audio", "video_path", "mask_points", "mask")
     FUNCTION = "save_video"
     OUTPUT_NODE = True
     CATEGORY = "FFMPEGA"
@@ -119,6 +141,9 @@ class SaveVideoNode:
         save_output: bool = True,
         overwrite: bool = False,
         mask_points: str = "",
+        mask=None,
+        images=None,
+        audio=None,
         prompt=None,
         extra_pnginfo=None,
     ) -> dict:
@@ -141,7 +166,8 @@ class SaveVideoNode:
             silent_audio = {"waveform": torch.zeros(1, 1, 1), "sample_rate": 44100}
             return {
                 "ui": {"video": [], "file_size": ["0 B"]},
-                "result": (empty_tensor, silent_audio, "", mask_points or ""),
+                "result": (empty_tensor, silent_audio, "", mask_points or "",
+                           mask if mask is not None else torch.zeros(1, 64, 64, dtype=torch.float32)),
             }
 
         # Determine output path
@@ -228,11 +254,11 @@ class SaveVideoNode:
             "SaveVideo: %s (%s)", os.path.basename(output_path), size_str,
         )
 
-        # --- Extract frames as IMAGE tensor ---
-        images_tensor = self._extract_frames(output_path)
+        # --- Extract frames as IMAGE tensor (unless provided upstream) ---
+        images_tensor = images if images is not None else self._extract_frames(output_path)
 
-        # --- Extract audio ---
-        audio_out = self._extract_audio(output_path)
+        # --- Extract audio (unless provided upstream) ---
+        audio_out = audio if audio is not None else self._extract_audio(output_path)
 
         # Build UI data
         if save_output:
@@ -254,7 +280,8 @@ class SaveVideoNode:
                 "video": video_ui,
                 "file_size": [size_str],
             },
-            "result": (images_tensor, audio_out, output_path, mask_points or ""),
+            "result": (images_tensor, audio_out, output_path, mask_points or "",
+                       mask if mask is not None else torch.zeros(1, 64, 64, dtype=torch.float32)),
         }
 
     def _extract_frames(self, video_path: str) -> torch.Tensor:

@@ -69,17 +69,22 @@ class MediaBridgeNode:
                         "(images_to_path mode only)."
                     ),
                 }),
+                "mask": ("MASK", {
+                    "tooltip": (
+                        "Optional upstream MASK pass-through. "
+                        "Forwarded as-is to the mask output."
+                    ),
+                }),
             },
         }
 
-    RETURN_TYPES = ("STRING", "IMAGE", "AUDIO", "FLOAT", "INT")
-    RETURN_NAMES = ("video_path", "images", "audio", "fps", "frame_count")
+    RETURN_TYPES = ("STRING", "IMAGE", "AUDIO", "MASK")
+    RETURN_NAMES = ("video_path", "images", "audio", "mask")
     OUTPUT_TOOLTIPS = (
         "File path to the temp video (images_to_path) or empty string (path_to_images).",
         "Decoded video frames (path_to_images) or empty tensor (images_to_path).",
         "Extracted audio (path_to_images) or silent fallback (images_to_path).",
-        "Frames per second — always populated regardless of mode.",
-        "Total frame count — always populated regardless of mode.",
+        "Upstream MASK pass-through (or empty mask if not connected).",
     )
     FUNCTION = "convert"
     CATEGORY = "FFMPEGA"
@@ -96,6 +101,7 @@ class MediaBridgeNode:
         video_path: str | None = None,
         fps: int = 24,
         audio: dict | None = None,
+        mask=None,
     ) -> tuple:
         """Run the selected conversion.
 
@@ -109,10 +115,11 @@ class MediaBridgeNode:
         Returns:
             Tuple of (video_path, images, audio, fps, frame_count).
         """
+        empty_mask = mask if mask is not None else torch.zeros(1, 64, 64, dtype=torch.float32)
         if mode == "images_to_path":
-            return self._images_to_path(images, fps, audio)
+            return self._images_to_path(images, fps, audio) + (empty_mask,)
         else:
-            return self._path_to_images(video_path)
+            return self._path_to_images(video_path) + (empty_mask,)
 
     # ── images → path ────────────────────────────────────────────────
 
@@ -153,7 +160,7 @@ class MediaBridgeNode:
         empty_images = torch.zeros(1, 64, 64, 3, dtype=torch.float32)
         silent_audio = {"waveform": torch.zeros(1, 1, 1), "sample_rate": 44100}
 
-        return (out_path, empty_images, silent_audio, out_fps, frame_count)
+        return (out_path, empty_images, silent_audio)
 
     # ── path → images ────────────────────────────────────────────────
 
@@ -182,7 +189,7 @@ class MediaBridgeNode:
 
         logger.info("MediaBridge: path→images  %s  (%d frames, %.1f fps)", video_path, frame_count, fps)
 
-        return ("", images, audio, fps, frame_count)
+        return ("", images, audio)
 
     @staticmethod
     def _probe_fps(video_path: str) -> float:

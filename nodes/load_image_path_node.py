@@ -69,20 +69,27 @@ class LoadImagePathNode:
                         "mask points."
                     ),
                 }),
+                "mask": ("MASK", {
+                    "tooltip": (
+                        "Optional upstream MASK pass-through. "
+                        "Forwarded as-is to the mask output."
+                    ),
+                }),
             },
             "hidden": {
                 "mask_points_data": "STRING",
             },
         }
 
-    RETURN_TYPES = ("STRING", "STRING", "IMAGE")
-    RETURN_NAMES = ("image_path", "mask_points", "images")
+    RETURN_TYPES = ("STRING", "STRING", "IMAGE", "MASK")
+    RETURN_NAMES = ("image_path", "mask_points", "images", "mask")
     OUTPUT_TOOLTIPS = (
         "Absolute file path to the selected image. Connect to "
         "FFMPEGA Agent's image_path_a / image_path_b / … inputs.",
         "JSON-encoded point selection data from the Point Selector. "
         "Connect to FFMPEGA Agent's mask_points input for guided masking.",
         "Upstream IMAGE pass-through (or empty tensor if not connected).",
+        "Upstream MASK pass-through (or empty mask if not connected).",
     )
     FUNCTION = "load_image_path"
     CATEGORY = "FFMPEGA"
@@ -101,6 +108,7 @@ class LoadImagePathNode:
         images=None,
         image_path=None,
         mask_points=None,
+        mask=None,
     ) -> dict:
         """Resolve the image path and return it plus UI preview data.
 
@@ -201,7 +209,8 @@ class LoadImagePathNode:
             "ui": {
                 "images": ui_images,
             },
-            "result": (full_path, mask_points_data or "", images_out),
+            "result": (full_path, mask_points_data or "", images_out,
+                       mask if mask is not None else torch.zeros(1, 64, 64, dtype=torch.float32)),
         }
 
     @classmethod

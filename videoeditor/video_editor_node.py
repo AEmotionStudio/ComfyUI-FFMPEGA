@@ -59,8 +59,8 @@ class VideoEditorNode:
     FUNCTION = "process"
     OUTPUT_NODE = True
 
-    RETURN_TYPES = ("IMAGE", "STRING", "AUDIO", "FLOAT", "INT", "STRING")
-    RETURN_NAMES = ("images", "video_path", "audio", "fps", "frame_count", "mask_points")
+    RETURN_TYPES = ("IMAGE", "STRING", "AUDIO", "STRING", "MASK")
+    RETURN_NAMES = ("images", "video_path", "audio", "mask_points", "mask")
 
     # Class-level cache for tensor-to-file conversions (keyed by node_id)
     # Stores (file_path, content_hash) so re-execution with different
@@ -120,6 +120,14 @@ class VideoEditorNode:
                         "for downstream nodes."
                     ),
                 }),
+                "mask": ("MASK", {
+                    "tooltip": (
+                        "Optional upstream MASK tensor. When connected, "
+                        "the mask track is synchronized with video edits "
+                        "(segments, cuts, trims apply identically). "
+                        "Forwarded to the mask output."
+                    ),
+                }),
             },
             "hidden": {
                 "_edit_segments": ("STRING", {"default": "[]"}),
@@ -174,6 +182,7 @@ class VideoEditorNode:
         audio=None,
         fps: float = 0.0,
         mask_points: str = "",
+        mask=None,
         _edit_segments: str = "[]",
         _edit_action: str = "none",
         _crop_rect: str = "",
@@ -205,6 +214,7 @@ class VideoEditorNode:
         folder_paths = _get_folder_paths()
         empty_frames = torch.zeros(1, 512, 512, 3)
         silent_audio = {"waveform": torch.zeros(1, 1, 1), "sample_rate": 44100}
+        empty_mask = mask if mask is not None else torch.zeros(1, 512, 512, dtype=torch.float32)
 
         # --- Resolve video source (priority: video_path > images) ---
         # video_path always wins when connected, matching LoadVideoPathNode.
@@ -233,7 +243,7 @@ class VideoEditorNode:
             log.info("[VideoEditor] No input connected")
             return {
                 "ui": {"text": ["Connect a video path or IMAGE tensor"]},
-                "result": (empty_frames, "", silent_audio, 0.0, 0, mask_points or ""),
+                "result": (empty_frames, "", silent_audio, mask_points or "", empty_mask),
             }
 
         # --- Extract audio from video file if no upstream audio ---
@@ -249,12 +259,12 @@ class VideoEditorNode:
                 audio = silent_audio
             return {
                 "ui": {},
-                "result": (frames, resolved_path, audio, actual_fps, frame_count, mask_points or ""),
+                "result": (frames, resolved_path, audio, mask_points or "", empty_mask),
             }
 
         # --- Pause mode: ExecutionBlocker if no edits yet ---
         if _edit_action == "none":
-            return self._return_blocked(resolved_path, folder_paths, mask_points)
+            return self._return_blocked(resolved_path, folder_paths, mask_points, empty_mask)
 
         # --- Apply edits (user clicked Continue) ---
         if _edit_action == "passthrough":
@@ -295,7 +305,8 @@ class VideoEditorNode:
                     "ui": {},
                     "result": (
                         frames, resolved_path, audio,
-                        actual_fps, frame_count, mask_points or "",
+                        mask_points or "",
+                        empty_mask,
                     ),
                 }
 
@@ -343,11 +354,32 @@ class VideoEditorNode:
             if audio is None:
                 audio = silent_audio
 
+            # --- Mask track: apply same segment cuts to mask ---
+            edited_mask = empty_mask
+            if mask is not None and mask.shape[0] > 1:
+                try:
+                    import json as _json
+                    segs = _json.loads(_edit_segments) if _edit_segments and _edit_segments != "[]" else []
+                    if segs:
+                        # Each segment has start_frame/end_frame — pick those ranges
+                        mask_slices = []
+                        for seg in segs:
+                            sf = int(seg.get("start_frame", seg.get("startFrame", 0)))
+                            ef = int(seg.get("end_frame", seg.get("endFrame", mask.shape[0])))
+                            ef = min(ef, mask.shape[0])
+                            if sf < ef:
+                                mask_slices.append(mask[sf:ef])
+                        if mask_slices:
+                            edited_mask = torch.cat(mask_slices, dim=0)
+                except Exception as _e:
+                    log.debug("[VideoEditor] Mask segment sync failed: %s", _e)
+
             return {
                 "ui": {},
                 "result": (
                     frames, output_path, audio,
-                    actual_fps, frame_count, mask_points or "",
+                    mask_points or "",
+                    edited_mask,
                 ),
             }
 
@@ -359,7 +391,7 @@ class VideoEditorNode:
             audio = silent_audio
         return {
             "ui": {},
-            "result": (frames, resolved_path, audio, actual_fps, frame_count, mask_points or ""),
+            "result": (frames, resolved_path, audio, mask_points or "", empty_mask),
         }
 
     # ─── Private helpers ────────────────────────────────────────────
@@ -431,7 +463,7 @@ class VideoEditorNode:
         from ..core.images_to_video import images_to_video
         images_to_video(images, output_path, fps=fps)
 
-    def _return_blocked(self, resolved_path: str, folder_paths, mask_points: str = ""):
+    def _return_blocked(self, resolved_path: str, folder_paths, mask_points: str = "", empty_mask=None):
         """Return ExecutionBlocker to pause the workflow for editing."""
         try:
             from comfy_execution.graph import ExecutionBlocker
@@ -442,7 +474,7 @@ class VideoEditorNode:
                 "ui": {
                     "video_path": [resolved_path],
                 },
-                "result": tuple(blocked for _ in range(6)),
+                "result": tuple(blocked for _ in range(5)),
             }
         except ImportError:
             log.warning(
@@ -456,11 +488,13 @@ class VideoEditorNode:
             silent_audio = {
                 "waveform": torch.zeros(1, 1, 1), "sample_rate": 44100,
             }
+            _mask = empty_mask if empty_mask is not None else torch.zeros(1, 512, 512, dtype=torch.float32)
             return {
                 "ui": {},
                 "result": (
                     frames, resolved_path, silent_audio,
-                    actual_fps, frame_count, mask_points or "",
+                    mask_points or "",
+                    _mask,
                 ),
             }
 
