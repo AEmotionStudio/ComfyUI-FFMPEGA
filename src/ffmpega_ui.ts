@@ -13,6 +13,7 @@ import { registerNodeStyling } from "@ffmpega/nodes/node_styling";
 import { registerAgentNode } from "@ffmpega/nodes/agent_node";
 import { registerFrameExtractNode } from "@ffmpega/nodes/frame_extract_node";
 import { registerLoadVideoNode } from "@ffmpega/nodes/load_video_node";
+import { registerLoadMaskVideoNode } from "@ffmpega/nodes/load_mask_video_node";
 import { registerSaveVideoNode } from "@ffmpega/nodes/save_video_node";
 import { registerLoadImageNode } from "@ffmpega/nodes/load_image_node";
 import { registerTextInputNode } from "@ffmpega/nodes/text_input_node";
@@ -38,6 +39,7 @@ app.registerExtension({
         registerAgentNode(nodeType, nodeData);
         registerFrameExtractNode(nodeType, nodeData);
         registerLoadVideoNode(nodeType, nodeData);
+        registerLoadMaskVideoNode(nodeType, nodeData);
         registerSaveVideoNode(nodeType, nodeData);
         registerLoadImageNode(nodeType, nodeData);
         registerTextInputNode(nodeType, nodeData);

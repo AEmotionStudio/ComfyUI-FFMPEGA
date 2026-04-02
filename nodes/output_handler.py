@@ -166,16 +166,22 @@ def collect_frame_output(
 
     if images_connected:
         logger.info("images output is connected — loading all frames from output video")
-        images_tensor = media_converter.frames_to_tensor(output_path)
-        logger.debug("Output full frames shape: %s", images_tensor.shape)
+        if media_converter is not None:
+            images_tensor = media_converter.frames_to_tensor(output_path)
+        else:
+            images_tensor = extract_thumbnail_frame(output_path)
+            logger.warning("media_converter unavailable — using thumbnail instead of full frames")
+        logger.debug("Output frames shape: %s", images_tensor.shape)
     else:
         images_tensor = extract_thumbnail_frame(output_path)
         logger.debug("Output thumbnail shape: %s", images_tensor.shape)
 
     if removes_audio:
         audio_out = {"waveform": torch.zeros(1, 1, 1, dtype=torch.float32), "sample_rate": 44100}
-    else:
+    elif media_converter is not None:
         audio_out = media_converter.extract_audio(output_path, resample_rate=resample_rate)
+    else:
+        audio_out = {"waveform": torch.zeros(1, 1, 1, dtype=torch.float32), "sample_rate": 44100}
 
     return images_tensor, audio_out
 

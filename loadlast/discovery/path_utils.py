@@ -13,6 +13,11 @@ import os
 
 logger = logging.getLogger(__name__)
 
+# Track already-warned source paths to avoid spamming the console.
+# These functions are called on every JS poll (~5 s) and every
+# IS_CHANGED scheduler tick, so a repeated warning is pure noise.
+_warned_sources: set[str] = set()
+
 try:
     import folder_paths
 except ImportError:
@@ -75,9 +80,13 @@ def resolve_scan_dirs(source: str) -> list[str]:
     if s:
         s = os.path.realpath(s)
         if not os.path.isdir(s):
-            logger.warning("[LoadLast] source '%s' is not a directory, using defaults", s)
+            if s not in _warned_sources:
+                _warned_sources.add(s)
+                logger.warning("[LoadLast] source '%s' is not a directory, using defaults", s)
         elif not is_path_sandboxed(s):
-            logger.warning("[LoadLast] source '%s' is outside allowed directories, using defaults", s)
+            if s not in _warned_sources:
+                _warned_sources.add(s)
+                logger.warning("[LoadLast] source '%s' is outside allowed directories, using defaults", s)
         else:
             return [s]
     return get_scan_directories()

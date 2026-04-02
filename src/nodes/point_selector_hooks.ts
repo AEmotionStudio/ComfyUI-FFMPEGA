@@ -43,6 +43,13 @@ function captureFirstFrameAndOpen(
     tmpVideo.src = videoSrc;
     tmpVideo.currentTime = startTimeSec;
 
+    // Extract video file path from the URL to get on-disk frame path for SAM3
+    let videoFilePath = "";
+    try {
+        const u = new URL(videoSrc, window.location.origin);
+        videoFilePath = u.searchParams.get("filename") || u.searchParams.get("path") || "";
+    } catch { /* ignore */ }
+
     const seekTimeout = setTimeout(() => {
         flashNode(node, "#7a4a4a");
         tmpVideo.remove();
@@ -55,8 +62,27 @@ function captureFirstFrameAndOpen(
         c.height = tmpVideo.videoHeight;
         c.getContext("2d")!.drawImage(tmpVideo, 0, 0);
         const frameDataUrl = c.toDataURL("image/jpeg", 0.95);
-        openPointSelector(node, frameDataUrl, videoSrc);
         tmpVideo.remove();
+
+        // Get server-side frame path for SAM3
+        if (videoFilePath) {
+            const skipWidget = node.widgets?.find((w: ComfyWidget) => w.name === "skip_first_frames");
+            const skipFrames = Number(skipWidget?.value) || 0;
+            fetch("/ffmpega/first_frame", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ video_path: videoFilePath, skip_frames: skipFrames }),
+            })
+                .then(r => r.json())
+                .then((data: { frame_path?: string }) => {
+                    openPointSelector(node, frameDataUrl, videoSrc, data.frame_path || "");
+                })
+                .catch(() => {
+                    openPointSelector(node, frameDataUrl, videoSrc);
+                });
+        } else {
+            openPointSelector(node, frameDataUrl, videoSrc);
+        }
     }, { once: true });
 
     tmpVideo.addEventListener("error", () => {

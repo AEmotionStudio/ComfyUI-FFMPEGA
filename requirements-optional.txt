@@ -82,6 +82,15 @@ torchcodec
 
 
 # ---------------------------------------------------------------------------
+#  SHARP — 3D Gaussian View Synthesis (single image → 3DGS video)
+# ---------------------------------------------------------------------------
+# Install separately with --no-deps (avoids torch==2.8.0 pin):
+#   pip install --no-deps git+https://github.com/apple/ml-sharp.git
+# No companion deps needed — uses gsplat + timm + torch already in ComfyUI.
+# ⚠️ Model weights are Apple ML Research License (non-commercial only).
+
+
+# ---------------------------------------------------------------------------
 #  ACE-Step 1.5 — Music Generation, Cover, Repaint (ace_step mode)
 # ---------------------------------------------------------------------------
 # Install separately with --no-deps:

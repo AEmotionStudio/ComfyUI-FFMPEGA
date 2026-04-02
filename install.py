@@ -242,6 +242,21 @@ def main():
     else:
         print("[FFMPEGA] ✓ NormalCrafter already installed")
 
+    # --- SHARP (3D Gaussian view synthesis from single image) ---
+    # Install with --no-deps to avoid torch==2.8.0 pin.
+    # Uses gsplat, timm, torch already in ComfyUI venv.
+    if not is_installed("sharp"):
+        print("[FFMPEGA] Installing SHARP (--no-deps to avoid torch conflicts)...")
+        result = subprocess.run(
+            [*pip, "--no-deps", "git+https://github.com/apple/ml-sharp.git"],
+        )
+        if result.returncode == 0:
+            print("[FFMPEGA] ✓ SHARP installed successfully")
+        else:
+            print("[FFMPEGA] ✗ SHARP installation failed — sharp mode won't work")
+    else:
+        print("[FFMPEGA] ✓ SHARP already installed")
+
     # --- Rembg (background removal for rembg masking mode) ---
     if not is_installed("rembg"):
         print("[FFMPEGA] Installing rembg[cpu]...")

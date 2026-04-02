@@ -302,6 +302,59 @@ _MODEL_INFO: dict[str, dict] = {
                   "https://huggingface.co/AEmotionStudio/flashvsr-models "
                   "and place them in ComfyUI/models/FlashVSR/.",
     },
+    "svi": {
+        "name": "Stable Video Infinity 2.0 Pro LoRAs",
+        "size": "~500 MB (high + low noise LoRAs)",
+        "url": "https://huggingface.co/vita-video-gen/svi-model",
+        "mirror_repo": "AEmotionStudio/svi-loras",
+        "license": "Apache 2.0",
+        "manual": "Download SVI LoRA files from "
+                  "https://huggingface.co/vita-video-gen/svi-model "
+                  "and place them in ComfyUI/models/svi/version-2.0/. "
+                  "⚠️ Also requires Wan 2.2 I2V-A14B base model (~28 GB).",
+    },
+    "sharp": {
+        "name": "SHARP (3D Gaussian View Synthesis)",
+        "size": "~400 MB",
+        "url": "https://huggingface.co/AEmotionStudio/sharp",
+        "mirror_repo": "AEmotionStudio/sharp",
+        "license": "Apple ML Research License (research/non-commercial only)",
+        "manual": "Download sharp.safetensors from "
+                  "https://huggingface.co/AEmotionStudio/sharp "
+                  "and place it in ComfyUI/models/sharp/. "
+                  "⚠️ Model weights are research/non-commercial use only.",
+    },
+    "wan_animate_det": {
+        "name": "Wan-Animate YOLOv10m (Person Detector)",
+        "size": "~62 MB",
+        "url": "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B",
+        "mirror_repo": "Wan-AI/Wan2.2-Animate-14B",
+        "mirror_filename": "process_checkpoint/det/yolov10m.onnx",
+        "license": "Apache 2.0",
+        "manual": "Download yolov10m.onnx from "
+                  "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B "
+                  "and place it in models/wan_animate/det/.",
+    },
+    "wan_animate_pose": {
+        "name": "Wan-Animate ViTPose-H Wholebody (Pose Estimator)",
+        "size": "~2.5 GB (model.onnx + data.bin)",
+        "url": "https://huggingface.co/Kijai/vitpose_comfy",
+        "mirror_repo": "Kijai/vitpose_comfy",
+        "license": "Apache 2.0",
+        "manual": "Download vitpose_h_wholebody_model.onnx and vitpose_h_wholebody_data.bin from "
+                  "https://huggingface.co/Kijai/vitpose_comfy/tree/main/onnx "
+                  "and place them in models/wan_animate/pose2d/.",
+    },
+    "wan_animate_dit": {
+        "name": "Wan-Animate 14B DiT (FP8 Scaled)",
+        "size": "~18 GB",
+        "url": "https://huggingface.co/Kijai/WanVideo_comfy_fp8_scaled/tree/main/Wan22Animate",
+        "mirror_repo": "Kijai/WanVideo_comfy_fp8_scaled",
+        "license": "Apache 2.0",
+        "manual": "Download the Wan22Animate folder from "
+                  "https://huggingface.co/Kijai/WanVideo_comfy_fp8_scaled "
+                  "and place it in models/wan_animate/Wan22Animate/.",
+    },
 }
 
 

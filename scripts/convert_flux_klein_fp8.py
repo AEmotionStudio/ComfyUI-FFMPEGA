@@ -9,7 +9,7 @@ At load time: actual_weight = fp8_weight.to(bf16) * scale
 
 Converts the transformer (~7.7 GB) and text encoder (~8 GB) to FP8 scaled,
 producing a new `flux_klein_fp8/` directory that mirrors the original layout.
-The VAE, scheduler, tokenizer, and config files are symlinked/copied as-is.
+The VAE, scheduler, tokenizer, and config files are copied as-is.
 
 Usage:
     python scripts/convert_flux_klein_fp8.py
@@ -65,20 +65,43 @@ def convert_safetensors_file(input_path: str, output_path: str, label: str) -> d
     total_orig = 0
     total_new = 0
 
+    # Patterns that should NOT be quantized to FP8:
+    # - Normalization weights (RMSNorm, LayerNorm) — used in elementwise mul
+    # - Embedding weights — used in indexing ops
+    # - Modulation/projection weights — small 1D tensors
+    _SKIP_PATTERNS = (
+        "layernorm", "norm.", "norm_q.", "norm_k.", "norm_added_q.",
+        "norm_added_k.", "norm_out.", "embed_tokens", "modulation",
+        "x_embedder", "context_embedder", "proj_out",
+        "time_guidance_embed",
+    )
+
     for key, tensor in state_dict.items():
         total_orig += tensor.nbytes
 
-        if tensor.is_floating_point() and tensor.numel() > 1:
-            fp8_tensor, scale = quantize_to_fp8_scaled(tensor)
-            fp8_dict[key] = fp8_tensor
-            if scale is not None:
-                fp8_dict[f"{key}._scale"] = scale
-            total_new += fp8_tensor.nbytes + (scale.nbytes if scale is not None else 0)
-            converted += 1
-        else:
+        # Skip small tensors and non-float tensors
+        if not tensor.is_floating_point() or tensor.numel() <= 1:
             fp8_dict[key] = tensor
             total_new += tensor.nbytes
             skipped += 1
+            continue
+
+        # Skip norm/embedding/modulation weights — CUDA doesn't support
+        # elementwise ops on FP8 and these are small anyway
+        key_lower = key.lower()
+        if any(pat in key_lower for pat in _SKIP_PATTERNS):
+            fp8_dict[key] = tensor
+            total_new += tensor.nbytes
+            skipped += 1
+            continue
+
+        # Quantize large weight matrices to FP8
+        fp8_tensor, scale = quantize_to_fp8_scaled(tensor)
+        fp8_dict[key] = fp8_tensor
+        if scale is not None:
+            fp8_dict[f"{key}._scale"] = scale
+        total_new += fp8_tensor.nbytes + (scale.nbytes if scale is not None else 0)
+        converted += 1
 
     del state_dict
     gc.collect()
@@ -159,18 +182,18 @@ def main():
     shutil.copy2(model_index, os.path.join(output_dir, "model_index.json"))
     print("  Copied model_index.json")
 
-    # Symlink directories that don't need quantization
+    # Copy directories that don't need quantization (makes FP8 self-contained)
     for subdir in ("scheduler", "tokenizer", "vae"):
         src = os.path.join(input_dir, subdir)
         dst = os.path.join(output_dir, subdir)
         if os.path.isdir(src):
-            if os.path.exists(dst):
+            if os.path.exists(dst) or os.path.islink(dst):
                 if os.path.islink(dst):
                     os.unlink(dst)
                 else:
                     shutil.rmtree(dst)
-            os.symlink(os.path.abspath(src), dst)
-            print(f"  Symlinked {subdir}/")
+            shutil.copytree(src, dst)
+            print(f"  Copied {subdir}/")
 
     # Copy transformer config
     transformer_out_dir = os.path.join(output_dir, "transformer")

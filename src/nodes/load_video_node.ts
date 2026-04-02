@@ -110,10 +110,35 @@ export function registerLoadVideoNode(
         this.color = "#5a4a2a";
         this.bgcolor = "#4a3a1a";
 
-        // Restore on workflow load
+        // Restore on workflow load — repair invalid combo values from old workflows
         const origConfigure = this.onConfigure;
         this.onConfigure = function (data: unknown): void {
             origConfigure?.apply(this, arguments as unknown as [unknown]);
+
+            // Old workflows may have empty strings at indices where newer
+            // widgets now live. Repair invalid values so ComfyUI validation
+            // doesn't reject the prompt before execution.
+            if (this.widgets) {
+                // Combos: reset invalid values to first option (intended default)
+                const staticCombos = ["mask_mode", "mask_output_type"];
+                // INTs: reset non-numeric values to 0 (their default)
+                const intWidgets = ["custom_width", "custom_height"];
+
+                for (const w of this.widgets) {
+                    if (w.type === "combo" && staticCombos.includes(w.name) && w.options?.values) {
+                        const validValues = w.options.values as string[];
+                        if (validValues.length > 0 && !validValues.includes(String(w.value))) {
+                            w.value = validValues[0];
+                        }
+                    }
+                    if (intWidgets.includes(w.name)) {
+                        const v = w.value;
+                        if (v === "" || v === null || v === undefined || isNaN(Number(v))) {
+                            w.value = 0;
+                        }
+                    }
+                }
+            }
         };
 
         // Upload button (created early to appear above preview)

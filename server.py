@@ -914,6 +914,46 @@ async def edge_map(request):
         return web.json_response({"error": str(e)}, status=500)
 
 
+@server.PromptServer.instance.routes.post("/ffmpega/resolve_image_path")
+async def resolve_image_path(request):
+    """Resolve a ComfyUI input-dir filename to an absolute path.
+
+    Body JSON:
+        filename  — image filename from the file picker
+        subfolder — optional subdirectory within input dir
+
+    Returns JSON:
+        { "image_path": "/abs/path/to/image.png" }
+    """
+    import folder_paths as _fp
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON"}, status=400)
+
+    filename = body.get("filename", "").strip()
+    subfolder = body.get("subfolder", "").strip()
+
+    if not filename:
+        return web.json_response({"error": "No filename"}, status=400)
+
+    input_dir = _fp.get_input_directory()
+    if subfolder:
+        full_path = os.path.join(input_dir, subfolder, filename)
+    else:
+        full_path = os.path.join(input_dir, filename)
+    full_path = os.path.abspath(full_path)
+
+    if not os.path.isfile(full_path):
+        return web.json_response({"error": "File not found"}, status=404)
+
+    if not _is_path_sandboxed(full_path):
+        return web.json_response({"error": "Path not allowed"}, status=403)
+
+    return web.json_response({"image_path": full_path})
+
+
 @server.PromptServer.instance.routes.post("/ffmpega/sam3_point_mask")
 async def sam3_point_mask(request):
     """Generate a SAM3 mask from point prompts and return as base64 PNG.
@@ -964,6 +1004,14 @@ async def sam3_point_mask(request):
     loop = asyncio.get_running_loop()
 
     def _generate_mask():
+        # Offload other models to make room for SAM3
+        try:
+            import comfy.model_management as _mm
+            _dev = _mm.get_torch_device()
+            _mm.free_memory(6 * 1024 * 1024 * 1024, _dev)  # request 6 GiB
+            _mm.soft_empty_cache()
+        except Exception:
+            pass
         from .core.sam3_masker import mask_image_with_points
         return mask_image_with_points(
             image_path=frame_path,

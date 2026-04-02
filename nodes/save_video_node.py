@@ -56,10 +56,21 @@ class SaveVideoNode:
             "optional": {
                 "images": ("IMAGE", {
                     "tooltip": (
-                        "Optional upstream IMAGE pass-through. "
-                        "When connected, forwarded directly to the "
-                        "images output instead of extracting frames "
-                        "from the video."
+                        "Image batch to encode as video. When connected "
+                        "without a video_path, encodes the images into "
+                        "an MP4 video at the specified fps. When both "
+                        "images and video_path are provided, images are "
+                        "passed through to the output."
+                    ),
+                }),
+                "fps": ("INT", {
+                    "default": 24,
+                    "min": 1,
+                    "max": 120,
+                    "tooltip": (
+                        "Frame rate for encoding images to video. "
+                        "Only used when images are provided without "
+                        "a video_path."
                     ),
                 }),
                 "audio": ("AUDIO", {
@@ -144,6 +155,7 @@ class SaveVideoNode:
         mask=None,
         images=None,
         audio=None,
+        fps: int = 24,
         prompt=None,
         extra_pnginfo=None,
     ) -> dict:
@@ -158,6 +170,29 @@ class SaveVideoNode:
             or filename_prefix.strip().lower() in ("false", "true")
         ):
             filename_prefix = "FFMPEGA"
+
+        # --- Encode IMAGE batch → video if no video_path provided ---
+        temp_video_from_images = None
+        if (
+            (not video_path or not os.path.isfile(video_path))
+            and images is not None
+            and hasattr(images, "shape")
+            and images.shape[0] > 0
+        ):
+            try:
+                try:
+                    from ..core.media_converter import MediaConverter
+                except ImportError:
+                    from core.media_converter import MediaConverter  # type: ignore
+                mc = MediaConverter()
+                temp_video_from_images = mc.images_to_video(images, fps=fps)
+                video_path = temp_video_from_images
+                logger.info(
+                    "SaveVideo: encoded %d images → %s @ %d fps",
+                    images.shape[0], video_path, fps,
+                )
+            except Exception as e:
+                logger.error("SaveVideo: failed to encode images → video: %s", e)
 
         if not video_path or not os.path.isfile(video_path):
             # Return empty results when no video is available (e.g. mask
@@ -274,6 +309,13 @@ class SaveVideoNode:
                 "subfolder": "",
                 "type": "temp",
             }]
+
+        # Clean up temp video from images encoding
+        if temp_video_from_images and os.path.isfile(temp_video_from_images):
+            try:
+                os.remove(temp_video_from_images)
+            except OSError:
+                pass
 
         return {
             "ui": {

@@ -4,7 +4,7 @@
  * Features:
  * - Dynamic output slot (images) — hidden until input connected
  * - Upstream image preview on execution
- * - Point selector context menu
+ * - Point selector context menu (resolves image path for SAM3)
  */
 
 import { api } from "comfyui/api";
@@ -49,50 +49,10 @@ export function registerLoadImageNode(
         this.color = "#3a5a5a";
         this.bgcolor = "#2a4a4a";
 
-        // --- Dynamic output: hide "images" output until input connected ---
-        const _syncImagesOutput = (): void => {
-            const imagesIn = node.findInputSlot("images");
-            const connected = imagesIn >= 0
-                && node.inputs[imagesIn].link != null;
-            const imagesOut = node.findOutputSlot("images");
-            const hasOutput = imagesOut >= 0;
-
-            if (connected && !hasOutput) {
-                node.addOutput("images", "IMAGE");
-            } else if (!connected && hasOutput) {
-                const idx = node.findOutputSlot("images");
-                if (idx >= 0) node.removeOutput(idx);
-            }
-            node.setDirtyCanvas(true, true);
-        };
-
-        // Remove on creation
-        requestAnimationFrame(() => {
-            const idx = node.findOutputSlot("images");
-            if (idx >= 0) node.removeOutput(idx);
-            node.setDirtyCanvas(true, true);
-        });
-
-        // React to connection changes
-        const origOnCCImg = this.onConnectionsChange;
-        this.onConnectionsChange = function (
-            type: number, slotIndex: number,
-            isConnected: boolean, link: unknown, ioSlot: unknown,
-        ): void {
-            origOnCCImg?.apply(this, arguments as unknown as [number, number, boolean, unknown, unknown]);
-            if (type === LiteGraph.INPUT) {
-                const name = this.inputs?.[slotIndex]?.name;
-                if (name === "images") {
-                    _syncImagesOutput();
-                }
-            }
-        };
-
         // Restore on workflow load
         const origConfigureImg = this.onConfigure;
         this.onConfigure = function (data: unknown): void {
             origConfigureImg?.apply(this, arguments as unknown as [unknown]);
-            requestAnimationFrame(_syncImagesOutput);
         };
 
         // Handle execution results — update preview from upstream
@@ -146,11 +106,50 @@ export function registerLoadImageNode(
                     flashNode(self, "#7a4a4a");
                     return;
                 }
+
+                // Parse subfolder if present (ComfyUI sends "subfolder/file.png")
+                let resolvedFilename = filename;
+                let subfolder = "";
+                if (filename.includes("/") || filename.includes("\\")) {
+                    const sep = filename.includes("/") ? "/" : "\\";
+                    const parts = filename.split(sep);
+                    resolvedFilename = parts.pop()!;
+                    subfolder = parts.join(sep);
+                }
+
                 const params = new URLSearchParams({
-                    filename, type: "input",
+                    filename: resolvedFilename, type: "input",
+                    ...(subfolder ? { subfolder } : {}),
                 });
-                const src = api.apiURL("/view?" + params.toString());
-                openPointSelector(self, src);
+                const imgSrc = api.apiURL("/view?" + params.toString());
+
+                // Resolve the on-disk absolute path for SAM3 via server
+                fetch("/ffmpega/resolve_image_path", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        filename: resolvedFilename,
+                        subfolder,
+                    }),
+                })
+                    .then(r => r.json())
+                    .then((data: { image_path?: string }) => {
+                        openPointSelector(self, imgSrc, undefined, data.image_path || "");
+                    })
+                    .catch(() => {
+                        // Fallback: open without SAM3 path (draw mode still works)
+                        openPointSelector(self, imgSrc);
+                    });
+            },
+        }, {
+            content: "🧹 Clear Mask",
+            callback: () => {
+                const mpWidget = self.widgets?.find((w: ComfyWidget) => w.name === "mask_points_data");
+                if (mpWidget) {
+                    mpWidget.value = "";
+                }
+                self.setDirtyCanvas?.(true, true);
+                flashNode(self, "#4a7a4a");
             },
         }, null);
     };

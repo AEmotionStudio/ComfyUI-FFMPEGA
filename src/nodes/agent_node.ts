@@ -47,8 +47,8 @@ interface DynamicPrefixConfig {
 const DYNAMIC_PREFIXES: DynamicPrefixConfig[] = [
     { prefix: "images_", type: "IMAGE", excludes: [] },
     { prefix: "image_", type: "IMAGE", excludes: ["images_", "image_path_"] },
-    { prefix: "audio_", type: "AUDIO", excludes: [] },
-    { prefix: "video_", type: "STRING", excludes: ["video_path", "video_folder"] },
+    { prefix: "audio_", type: "AUDIO", excludes: ["audio_output_mode", "audio_resample_rate"] },
+    { prefix: "video_", type: "STRING", excludes: ["video_path", "video_folder", "video_depth_encoder", "video_depth_colormap"] },
     { prefix: "image_path_", type: "STRING", excludes: [] },
     { prefix: "text_", type: "STRING", excludes: [] },
 ];
@@ -368,6 +368,11 @@ export function registerAgentNode(
                 if (verifyWidget) toggleWidget(verifyWidget, !isNone);
                 if (visionWidget) toggleWidget(visionWidget, !isNone);
                 if (ptcWidget) toggleWidget(ptcWidget, !isNone);
+                // track_tokens and log_usage only relevant with an LLM
+                const ttWidget = node.widgets?.find((w: ComfyWidget) => w.name === "track_tokens");
+                const luWidget = node.widgets?.find((w: ComfyWidget) => w.name === "log_usage");
+                if (ttWidget) toggleWidget(ttWidget, !isNone);
+                if (luWidget) toggleWidget(luWidget, !isNone);
                 const noLlmModeWidget = node.widgets?.find((w: ComfyWidget) => w.name === "no_llm_mode");
                 if (noLlmModeWidget) {
                     toggleWidget(noLlmModeWidget, isNone);
@@ -411,6 +416,7 @@ export function registerAgentNode(
         const alwaysHidden = [
             "video_path", "save_output", "output_path",
             "preview_mode", "crf", "encoding_preset",
+            "batch_mode", "video_folder", "file_pattern", "max_concurrent",
         ];
         for (const name of alwaysHidden) {
             const w = this.widgets?.find((ww: ComfyWidget) => ww.name === name);
@@ -468,6 +474,8 @@ export function registerAgentNode(
             const showScail = showAdvanced && mode === "scail";
             const showFoundation1 = showAdvanced && mode === "foundation1";
             const showFishSpeech = showAdvanced && mode === "fish_speech";
+            const showSharp = showAdvanced && mode === "sharp";
+            const showWanAnimate = showAdvanced && mode === "wan_animate";
 
             // Marigold
             const mw = node.widgets?.find((w: ComfyWidget) => w.name === "marigold_output_type");
@@ -518,9 +526,15 @@ export function registerAgentNode(
             const nc = node.widgets?.find((w: ComfyWidget) => w.name === "normalcrafter_max_res");
             if (nc) toggleWidget(nc, showNormalcrafter);
 
-            // FLUX Klein model variant
-            const fkm = node.widgets?.find((w: ComfyWidget) => w.name === "flux_klein_model");
-            if (fkm) toggleWidget(fkm, showFluxKleinMode);
+            // FLUX Klein widgets
+            const fluxKleinWidgetNames = [
+                "flux_image_source", "flux_klein_steps", "flux_klein_guidance",
+                "flux_klein_seed", "flux_klein_width", "flux_klein_height",
+            ];
+            for (const wn of fluxKleinWidgetNames) {
+                const w = node.widgets?.find((w: ComfyWidget) => w.name === wn);
+                if (w) toggleWidget(w, showFluxKleinMode);
+            }
 
             // Kiwi-Edit widgets
             const kiwiWidgetNames = [
@@ -529,7 +543,6 @@ export function registerAgentNode(
                 "kiwi_steps", "kiwi_guidance", "kiwi_block_swap",
                 "kiwi_long_video", "kiwi_seed", "kiwi_flow_shift",
                 "kiwi_task_type", "kiwi_scheduler",
-                "kiwi_lora_enabled",
             ];
             for (const name of kiwiWidgetNames) {
                 const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
@@ -542,12 +555,6 @@ export function registerAgentNode(
             const kh = node.widgets?.find((ww: ComfyWidget) => ww.name === "kiwi_height");
             if (kw) toggleWidget(kw, showKiwiCustom);
             if (kh) toggleWidget(kh, showKiwiCustom);
-
-            // kiwi_lora_variant only visible when kiwi_lora_enabled = true
-            const kiwiLoraEnabled = node.widgets?.find((ww: ComfyWidget) => ww.name === "kiwi_lora_enabled");
-            const showKiwiLora = showKiwiEdit && Boolean(kiwiLoraEnabled?.value);
-            const klv = node.widgets?.find((ww: ComfyWidget) => ww.name === "kiwi_lora_variant");
-            if (klv) toggleWidget(klv, showKiwiLora);
 
             // DreamID-Omni widgets
             const dreamidWidgetNames = [
@@ -568,6 +575,54 @@ export function registerAgentNode(
             for (const name of scailWidgetNames) {
                 const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
                 if (w) toggleWidget(w, showScail);
+            }
+
+            // SVI 2.0 Pro (Stable Video Infinity) widgets
+            const showSvi = showAdvanced && mode === "svi";
+            const sviWidgetNames = [
+                "svi_num_clips", "svi_height", "svi_width", "svi_fps",
+                "svi_cfg_scale", "svi_overlap_frames", "svi_seed_multiplier",
+                "svi_steps", "svi_high_model_ratio", "svi_frames_per_clip",
+                "svi_variant", "svi_model_high", "svi_model_low",
+                "svi_lora_high", "svi_lora_low",
+                "svi_extra_lora_high", "svi_extra_lora_low",
+                "svi_vae", "svi_text_encoder", "svi_sampler", "svi_scheduler",
+            ];
+            for (const name of sviWidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showSvi);
+            }
+
+            // SHARP (3D Gaussian View Synthesis) widgets
+            const sharpWidgetNames = [
+                "sharp_trajectory", "sharp_num_frames", "sharp_max_disparity",
+                "sharp_max_zoom", "sharp_save_ply", "sharp_device",
+            ];
+            for (const name of sharpWidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showSharp);
+            }
+
+            // Wan-Animate (motion-driven character animation) widgets
+            const wanAnimateWidgetNames = [
+                "wan_animate_mode", "wan_animate_steps", "wan_animate_guidance",
+                "wan_animate_seed", "wan_animate_num_frames",
+                "wan_animate_height", "wan_animate_width",
+                "wan_animate_pose_strength", "wan_animate_face_strength",
+            ];
+            for (const name of wanAnimateWidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showWanAnimate);
+            }
+            // Dynamic LoRA slots: a always visible, b when a≠none, c when b≠none, d when c≠none
+            const wanLoraSlots = ["a", "b", "c", "d"];
+            let showNextLora = showWanAnimate;
+            for (const slot of wanLoraSlots) {
+                const loraW = node.widgets?.find((ww: ComfyWidget) => ww.name === `wan_animate_lora_${slot}`);
+                const strW = node.widgets?.find((ww: ComfyWidget) => ww.name === `wan_animate_lora_strength_${slot}`);
+                if (loraW) toggleWidget(loraW, showNextLora);
+                if (strW) toggleWidget(strW, showNextLora && String(loraW?.value ?? "none") !== "none");
+                showNextLora = showNextLora && String(loraW?.value ?? "none") !== "none";
             }
 
             // ACE-Step widgets
@@ -701,13 +756,10 @@ export function registerAgentNode(
 
         function updateAdvancedVisibility(): void {
             const show = Boolean(advancedWidget?.value);
-            if (batchWidget) toggleWidget(batchWidget, show);
-            const showBatch = show && Boolean(batchWidget?.value);
-            if (folderWidget) toggleWidget(folderWidget, showBatch);
-            if (patternWidget) toggleWidget(patternWidget, showBatch);
-            if (concurrentWidget) toggleWidget(concurrentWidget, showBatch);
-            if (trackTokensWidget) toggleWidget(trackTokensWidget, show);
-            if (logUsageWidget) toggleWidget(logUsageWidget, show);
+            const llm = node.widgets?.find((w: ComfyWidget) => w.name === "llm_model");
+            const isNone = llm?.value === "none";
+            if (trackTokensWidget) toggleWidget(trackTokensWidget, show && !isNone);
+            if (logUsageWidget) toggleWidget(logUsageWidget, show && !isNone);
             if (allowDownloadsWidget) toggleWidget(allowDownloadsWidget, show);
             // Mode-specific widgets are handled inside updateNoLlmModeVisibility
             updateNoLlmModeVisibility();
@@ -763,14 +815,18 @@ export function registerAgentNode(
             };
         }
 
-        // --- kiwi_lora_enabled → kiwi_lora_variant visibility ---
-        const kiwiLoraToggle = this.widgets?.find((w: ComfyWidget) => w.name === "kiwi_lora_enabled");
-        if (kiwiLoraToggle) {
-            const origKiwiLoraCb = kiwiLoraToggle.callback;
-            kiwiLoraToggle.callback = function (...args: unknown[]) {
-                origKiwiLoraCb?.apply(this, args);
-                updateAdvancedVisibility();
-            };
+
+
+        // --- wan_animate_lora_* → cascade next LoRA slot visibility ---
+        for (const slot of ["a", "b", "c", "d"]) {
+            const wanLoraSlotW = this.widgets?.find((w: ComfyWidget) => w.name === `wan_animate_lora_${slot}`);
+            if (wanLoraSlotW) {
+                const origCb = wanLoraSlotW.callback;
+                wanLoraSlotW.callback = function (...args: unknown[]) {
+                    origCb?.apply(this, args);
+                    updateAdvancedVisibility();
+                };
+            }
         }
 
         // --- marigold_output_type → colormap visibility ---
@@ -783,24 +839,7 @@ export function registerAgentNode(
             };
         }
 
-        // --- batch_mode → sub-widget visibility ---
-        if (batchWidget) {
-            function updateBatchVisibility(): void {
-                const showAdvanced = Boolean(advancedWidget?.value ?? true);
-                const show = Boolean(batchWidget!.value) && showAdvanced;
-                if (folderWidget) toggleWidget(folderWidget, show);
-                if (patternWidget) toggleWidget(patternWidget, show);
-                if (concurrentWidget) toggleWidget(concurrentWidget, show);
-                fitHeight();
-            }
-
-            updateBatchVisibility();
-            const origBatchCb = batchWidget.callback;
-            batchWidget.callback = function (...args: unknown[]) {
-                origBatchCb?.apply(this, args);
-                updateBatchVisibility();
-            };
-        }
+        // batch_mode and sub-widgets are permanently hidden (see alwaysHidden)
 
         // --- Dynamic input slots (auto-expand) ---
         const origOnConnectionsChange = this.onConnectionsChange;

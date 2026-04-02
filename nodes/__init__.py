@@ -6,6 +6,7 @@ from .agent_node import FFMPEGAgentNode
 from .frame_extract_node import FrameExtractNode
 from .load_image_path_node import LoadImagePathNode
 from .load_video_path_node import LoadVideoPathNode
+from .load_mask_video_node import LoadMaskVideoNode
 from .text_input_node import TextInputNode
 from .save_video_node import SaveVideoNode
 from .save_image_node import SaveImageNode
@@ -19,6 +20,7 @@ NODE_CLASS_MAPPINGS = {
     "FFMPEGAFrameExtract": FrameExtractNode,
     "FFMPEGALoadImagePath": LoadImagePathNode,
     "FFMPEGALoadVideoPath": LoadVideoPathNode,
+    "FFMPEGALoadMaskVideo": LoadMaskVideoNode,
     "FFMPEGASaveVideo": SaveVideoNode,
     "FFMPEGASaveImage": SaveImageNode,
     "FFMPEGAMediaBridge": MediaBridgeNode,
@@ -33,6 +35,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FFMPEGAFrameExtract": "Frame Extract (FFMPEGA)",
     "FFMPEGALoadImagePath": "Load Image Path (FFMPEGA)",
     "FFMPEGALoadVideoPath": "Load Video Path (FFMPEGA)",
+    "FFMPEGALoadMaskVideo": "Load Mask Video (FFMPEGA)",
     "FFMPEGASaveVideo": "Save Video (FFMPEGA)",
     "FFMPEGASaveImage": "Save Image (FFMPEGA)",
     "FFMPEGAMediaBridge": "Media Bridge (FFMPEGA)",
@@ -85,6 +88,7 @@ __all__ = [
     "FrameExtractNode",
     "LoadImagePathNode",
     "LoadVideoPathNode",
+    "LoadMaskVideoNode",
     "SaveVideoNode",
     "SaveImageNode",
     "MediaBridgeNode",

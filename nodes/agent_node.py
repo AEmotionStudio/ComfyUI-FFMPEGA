@@ -16,12 +16,34 @@ import torch  # type: ignore[import-not-found]
 
 import folder_paths  # type: ignore[import-not-found]
 
+try:
+    import comfy.samplers  # type: ignore[import-not-found]
+    _svi_samplers = comfy.samplers.KSampler.SAMPLERS
+    _svi_schedulers = comfy.samplers.KSampler.SCHEDULERS
+except (ImportError, AttributeError):
+    _svi_samplers = ["euler", "euler_ancestral", "dpmpp_2m", "dpmpp_2m_sde", "dpmpp_sde", "uni_pc"]
+    _svi_schedulers = ["normal", "karras", "exponential", "sgm_uniform", "simple", "ddim_uniform", "beta"]
+
 from . import input_resolver as _ir
 from . import output_handler as _oh
 from . import execution_engine as _ee
 from . import nollm_modes as _nollm
 from . import batch_processor as _bp
 from . import pipeline_assembler as _pa
+
+_IMAGE_EXTS = frozenset((".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp"))
+
+
+def _image_path_from_result6(result6: tuple) -> str:
+    """Extract image_path from a no-LLM result 6-tuple.
+
+    Returns the output path (index 2) if it points to an image file,
+    otherwise returns an empty string.
+    """
+    out = result6[2] if len(result6) > 2 else ""
+    if out and os.path.splitext(out)[1].lower() in _IMAGE_EXTS:
+        return out
+    return ""
 
 
 def _get_expression_presets() -> list[str]:
@@ -155,7 +177,7 @@ class FFMPEGAgentNode:
                                "Select 'custom' to type any model name manually. "
                                "Select 'none' to skip the LLM entirely and use no_llm_mode instead (manual pipeline, SAM3, Whisper, or MMAudio).",
                 }),
-                "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles", "generate_audio", "generate_music", "foundation1", "fish_speech", "audio_inpaint", "audio_separate", "ace_step", "lip_sync", "animate_portrait", "marigold", "normalcrafter", "video_depth", "flux_klein", "kiwi_edit", "minimax_remover", "dreamid_omni", "scail (WIP)", "ai_upscale", "rembg", "video_matting", "onion_skin", "comparison"], {
+                "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles", "generate_audio", "generate_music", "foundation1", "fish_speech", "audio_inpaint", "audio_separate", "ace_step", "lip_sync", "animate_portrait", "marigold", "normalcrafter", "video_depth", "flux_klein", "kiwi_edit", "minimax_remover", "dreamid_omni", "svi", "sharp", "wan_animate", "scail (WIP)", "ai_upscale", "rembg", "video_matting", "onion_skin", "comparison", "phyfps"], {
                     "default": "manual",
                     "tooltip": "What to do when llm_model is 'none'. "
                                "'manual' runs the Effects Builder pipeline directly (no AI). "
@@ -177,6 +199,9 @@ class FFMPEGAgentNode:
                                "'rembg' removes the video background using AI segmentation — choose model via rembg_model and background via rembg_background. "
                                "'video_matting' runs MatAnyone2 temporal video matting — uses SAM3 for auto-mask or connect mask to image_a. Choose output via matting_output (⚠️ non-commercial license). "
                                "'onion_skin' applies temporal ghosting (onion skin) — adjust blend mode, opacity, and trail decay in advanced options. "
+                               "'svi' runs SVI 2.0 Pro (Stable Video Infinity) to generate infinite-length videos — connect reference image to image_a, prompts are newline-separated (one per clip). "
+                               "'sharp' runs Apple SHARP for single-image 3D Gaussian view synthesis — connect image to image_a, renders a camera trajectory video in <1s (⚠️ research license). "
+                               "'phyfps' runs Visual Chronometer to predict the physical frame rate (PhyFPS) of the video — choose action via phyfps_action. "
                                "'comparison' creates a comparison video from two inputs (before/after) — connect video_a as the 'after' video. "
                                "Styles: swipe, split, side_by_side, diagonal, circular_reveal, difference.",
                 }),
@@ -366,13 +391,41 @@ class FFMPEGAgentNode:
                     "default": "none",
                     "tooltip": "Temporal smoothing for FLUX Klein effects (remove/edit). 'none' = no smoothing (fastest, least VRAM). 'gaussian' = Gaussian blur across time (reduces flicker, +700 MiB RAM). 'adaptive' = per-pixel deviation check, only smooths outlier frames (+700 MiB RAM).",
                 }),
-                "flux_klein_model": (["auto", "fp8", "bf16"], {
-                    "default": "auto",
-                    "tooltip": "FLUX Klein model variant (used in 'flux_klein' no_llm_mode or when use_flux_klein=On). "
-                               "'auto' = prefer FP8 if available, fall back to BF16 (~15 GB). "
-                               "'fp8' = FP8 scaled (~8 GB, half VRAM). "
-                               "'bf16' = full BF16 precision (~15 GB). "
-                               "Run scripts/convert_flux_klein_fp8.py to create the FP8 model.",
+                "flux_image_source": ("BOOLEAN", {
+                    "default": False,
+                    "label_on": "Image Input",
+                    "label_off": "Video Input",
+                    "tooltip": "When On, use the first connected image (image_a or image_path_a) as the source to edit. "
+                               "Subsequent images (image_path_b, etc.) become style references. "
+                               "When Off, the source comes from video_path as usual. "
+                               "Only used when no_llm_mode = 'flux_klein'.",
+                }),
+                "flux_klein_steps": ("INT", {
+                    "default": 4, "min": 1, "max": 50, "step": 1,
+                    "tooltip": "Number of denoising steps (used in 'flux_klein' no_llm_mode). "
+                               "4 = fast (~2s/frame), 20+ = higher quality but slower. "
+                               "Klein is distilled so low step counts work well.",
+                }),
+                "flux_klein_guidance": ("FLOAT", {
+                    "default": 1.0, "min": 0.0, "max": 10.0, "step": 0.5,
+                    "tooltip": "Classifier-free guidance scale (used in 'flux_klein' no_llm_mode). "
+                               "1.0 = creative/natural. 4.0+ = strict prompt adherence. "
+                               "Klein is distilled so guidance_scale=1.0 is typically optimal.",
+                }),
+                "flux_klein_seed": ("INT", {
+                    "default": 42, "min": 0, "max": 2147483647, "step": 1,
+                    "tooltip": "Random seed for reproducibility (used in 'flux_klein' no_llm_mode). "
+                               "Different seeds produce different edit variations.",
+                }),
+                "flux_klein_width": ("INT", {
+                    "default": 1024, "min": 256, "max": 2048, "step": 32,
+                    "tooltip": "Output width in pixels (used in 'flux_klein' no_llm_mode). "
+                               "Must be divisible by 32. Result is resized back to input dimensions after editing.",
+                }),
+                "flux_klein_height": ("INT", {
+                    "default": 1024, "min": 256, "max": 2048, "step": 32,
+                    "tooltip": "Output height in pixels (used in 'flux_klein' no_llm_mode). "
+                               "Must be divisible by 32. Result is resized back to input dimensions after editing.",
                 }),
 
                 # ── Advanced: Kiwi-Edit ──────────────────────────────────
@@ -498,20 +551,7 @@ class FFMPEGAgentNode:
                                "'heun' = Flow Match Heun (higher quality per step, 2x cost). "
                                "'dpm++' = DPM++ Multistep (alternative fast solver).",
                 }),
-                "kiwi_lora_enabled": ("BOOLEAN", {
-                    "default": False,
-                    "label_on": "LoRA On",
-                    "label_off": "LoRA Off",
-                    "tooltip": "Enable LightX2V distill LoRA for 4-step inference. "
-                               "Dramatically speeds up Kiwi-Edit by reducing steps from 50 to 4. "
-                               "Downloads the LoRA (~600 MB) on first use from lightx2v/Wan2.2-Distill-Loras.",
-                }),
-                "kiwi_lora_variant": (["high_noise", "low_noise"], {
-                    "default": "high_noise",
-                    "tooltip": "LightX2V LoRA noise variant (only used when kiwi_lora_enabled is On). "
-                               "'high_noise' = more creative/diverse output. "
-                               "'low_noise' = more faithful to the original input.",
-                }),
+
                 # ── Advanced: MiniMax-Remover ─────────────────────────────
                 "use_minimax_remover": ("BOOLEAN", {
                     "default": False,
@@ -858,7 +898,335 @@ class FFMPEGAgentNode:
                     "tooltip": "Label for the video_a input (right / after) in comparison mode.",
                 }),
 
-                # ── Advanced: ACE-Step Music Generation ───────────────────
+                # ── Advanced: PhyFPS (Visual Chronometer) ──────────────────
+                "phyfps_action": (["analyze_only", "correct"], {
+                    "default": "analyze_only",
+                    "tooltip": "Action for PhyFPS mode (used in 'phyfps' no_llm_mode). "
+                               "'analyze_only' predicts the physical frame rate without modifying the video. "
+                               "'correct' re-times the video so playback speed matches the detected PhyFPS.",
+                }),
+
+                # ── Advanced: SHARP (3D Gaussian View Synthesis) ───────────
+                "sharp_trajectory": (["rotate_forward", "swipe", "shake", "rotate"], {
+                    "default": "rotate_forward",
+                    "tooltip": "Camera trajectory type for SHARP 3D view synthesis (used in 'sharp' no_llm_mode). "
+                               "'rotate_forward' = orbit with zoom, 'swipe' = left-to-right, "
+                               "'shake' = horizontal + vertical, 'rotate' = full orbit.",
+                }),
+                "sharp_num_frames": ("INT", {
+                    "default": 60,
+                    "min": 10,
+                    "max": 300,
+                    "tooltip": "Number of frames in the SHARP trajectory video (used in 'sharp' no_llm_mode). "
+                               "More frames = smoother/longer video.",
+                }),
+                "sharp_max_disparity": ("FLOAT", {
+                    "default": 0.08,
+                    "min": 0.01,
+                    "max": 0.5,
+                    "step": 0.01,
+                    "tooltip": "Lateral camera movement range for SHARP (used in 'sharp' no_llm_mode). "
+                               "Higher = wider camera sweep.",
+                }),
+                "sharp_max_zoom": ("FLOAT", {
+                    "default": 0.15,
+                    "min": 0.0,
+                    "max": 1.0,
+                    "step": 0.05,
+                    "tooltip": "Zoom intensity for SHARP camera trajectory (used in 'sharp' no_llm_mode). "
+                               "Higher = more forward/backward motion.",
+                }),
+                "sharp_save_ply": (["false", "true"], {
+                    "default": "false",
+                    "tooltip": "Export the 3D Gaussian splat as a .ply file (used in 'sharp' no_llm_mode). "
+                               "PLY files are compatible with Luma, Nerfstudio, and other 3DGS viewers. "
+                               "Saved to the standard outputs folder.",
+                }),
+                "sharp_device": (["auto", "cuda", "cpu"], {
+                    "default": "auto",
+                    "tooltip": "Device for SHARP inference (used in 'sharp' no_llm_mode). "
+                               "Prediction works on all devices; video rendering requires CUDA.",
+                }),
+
+                # ── Advanced: Wan-Animate ────────────────────────────────
+                "wan_animate_mode": (["animate", "replace"], {
+                    "default": "animate",
+                    "tooltip": "Wan-Animate mode (used in 'wan_animate' no_llm_mode). "
+                               "'animate' = transfer motion to reference character. "
+                               "'replace' = replace person in driving video with reference character.",
+                }),
+                "wan_animate_steps": ("INT", {
+                    "default": 20,
+                    "min": 1,
+                    "max": 100,
+                    "tooltip": "Number of denoising steps (used in 'wan_animate' no_llm_mode). "
+                               "Higher = better quality but slower. 15-30 typical.",
+                }),
+                "wan_animate_guidance": ("FLOAT", {
+                    "default": 1.0,
+                    "min": 0.0,
+                    "max": 20.0,
+                    "step": 0.5,
+                    "tooltip": "Classifier-free guidance scale (used in 'wan_animate' no_llm_mode). "
+                               "1.0 = no guidance (fastest). Higher = more prompt adherence.",
+                }),
+                "wan_animate_seed": ("INT", {
+                    "default": 42,
+                    "min": 0,
+                    "max": 2147483647,
+                    "tooltip": "Random seed for reproducibility (used in 'wan_animate' no_llm_mode).",
+                }),
+                "wan_animate_num_frames": ("INT", {
+                    "default": 81,
+                    "min": 5,
+                    "max": 161,
+                    "step": 4,
+                    "tooltip": "Number of output frames (used in 'wan_animate' no_llm_mode). "
+                               "Must be 4n+1 for Wan 2.2 (e.g. 33, 49, 81, 121). "
+                               "If fewer driving frames exist, uses the driving frame count.",
+                }),
+                "wan_animate_height": ("INT", {
+                    "default": 480,
+                    "min": 128,
+                    "max": 1080,
+                    "step": 16,
+                    "tooltip": "Output height in pixels (used in 'wan_animate' no_llm_mode). "
+                               "Must be divisible by 16.",
+                }),
+                "wan_animate_width": ("INT", {
+                    "default": 832,
+                    "min": 128,
+                    "max": 1920,
+                    "step": 16,
+                    "tooltip": "Output width in pixels (used in 'wan_animate' no_llm_mode). "
+                               "Must be divisible by 16.",
+                }),
+                "wan_animate_pose_strength": ("FLOAT", {
+                    "default": 1.0,
+                    "min": 0.0,
+                    "max": 2.0,
+                    "step": 0.05,
+                    "tooltip": "Pose conditioning strength (used in 'wan_animate' no_llm_mode). "
+                               "1.0 = normal. Higher = stronger pose adherence.",
+                }),
+                "wan_animate_face_strength": ("FLOAT", {
+                    "default": 1.0,
+                    "min": 0.0,
+                    "max": 2.0,
+                    "step": 0.05,
+                    "tooltip": "Face conditioning strength (used in 'wan_animate' no_llm_mode). "
+                               "1.0 = normal. Higher = stronger face identity preservation.",
+                }),
+                # Dynamic LoRA slots (a → d), each with a strength slider.
+                # Slot b appears when slot a ≠ "none", c when b ≠ "none", etc.
+                **{f"wan_animate_lora_{s}": (["none"] + ([
+                    f for f in folder_paths.get_filename_list("loras")
+                ] if hasattr(folder_paths, "get_filename_list") else []), {
+                    "default": "none",
+                    "tooltip": f"LoRA slot {s.upper()} for Wan-Animate (used in 'wan_animate' no_llm_mode). "
+                               "Select a LoRA file. Selecting a value reveals the next slot.",
+                }) for s in ("a", "b", "c", "d")},
+                **{f"wan_animate_lora_strength_{s}": ("FLOAT", {
+                    "default": 1.0,
+                    "min": 0.0,
+                    "max": 2.0,
+                    "step": 0.05,
+                    "tooltip": f"Strength for LoRA slot {s.upper()} (used in 'wan_animate' no_llm_mode). "
+                               "1.0 = full strength.",
+                }) for s in ("a", "b", "c", "d")},
+
+                # ── Advanced: SVI 2.0 Pro ──────────────────────────────────
+                "svi_num_clips": ("INT", {
+                    "default": 10,
+                    "min": 1,
+                    "max": 200,
+                    "tooltip": "Number of clips to generate (used in 'svi' no_llm_mode). "
+                               "Each clip is ~81 frames. More clips = longer video. "
+                               "Only used when no_llm_mode = 'svi'.",
+                }),
+                "svi_height": ("INT", {
+                    "default": 480,
+                    "min": 128,
+                    "max": 1080,
+                    "step": 16,
+                    "tooltip": "Video height in pixels (used in 'svi' no_llm_mode). "
+                               "Only used when no_llm_mode = 'svi'.",
+                }),
+                "svi_width": ("INT", {
+                    "default": 832,
+                    "min": 128,
+                    "max": 1920,
+                    "step": 16,
+                    "tooltip": "Video width in pixels (used in 'svi' no_llm_mode). "
+                               "Only used when no_llm_mode = 'svi'.",
+                }),
+                "svi_fps": ("INT", {
+                    "default": 15,
+                    "min": 1,
+                    "max": 60,
+                    "tooltip": "Frames per second (used in 'svi' no_llm_mode). "
+                               "Only used when no_llm_mode = 'svi'.",
+                }),
+                "svi_cfg_scale": ("FLOAT", {
+                    "default": 4.0,
+                    "min": 1.0,
+                    "max": 20.0,
+                    "step": 0.5,
+                    "tooltip": "Classifier-free guidance scale (used in 'svi' no_llm_mode). "
+                               "Higher = more prompt adherence, lower = more creative. "
+                               "Only used when no_llm_mode = 'svi'.",
+                }),
+                "svi_overlap_frames": ("INT", {
+                    "default": 5,
+                    "min": 0,
+                    "max": 20,
+                    "tooltip": "Overlap frames between clips for smooth transitions (used in 'svi' no_llm_mode). "
+                               "Only used when no_llm_mode = 'svi'.",
+                }),
+                "svi_seed_multiplier": ("INT", {
+                    "default": 42,
+                    "min": 0,
+                    "max": 2147483647,
+                    "tooltip": "Seed multiplier — seed = clip_index × this value (used in 'svi' no_llm_mode). "
+                               "Only used when no_llm_mode = 'svi'.",
+                }),
+                "svi_steps": ("INT", {
+                    "default": 30,
+                    "min": 1,
+                    "max": 100,
+                    "tooltip": "Number of inference/sampling steps per clip. "
+                               "Higher = better quality but slower. 20-40 typical.",
+                }),
+                "svi_high_model_ratio": ("FLOAT", {
+                    "default": 0.5,
+                    "min": 0.0,
+                    "max": 1.0,
+                    "step": 0.05,
+                    "tooltip": "Fraction of steps using the HIGH-noise model (0-1). "
+                               "At this ratio of total steps, generation switches "
+                               "from high-noise LoRA to low-noise LoRA. "
+                               "Lower = more detail refinement by low-noise model.",
+                }),
+                "svi_frames_per_clip": ("INT", {
+                    "default": 81,
+                    "min": 17,
+                    "max": 161,
+                    "step": 4,
+                    "tooltip": "Frames generated per clip. Must be 4n+1 for Wan 2.2 (e.g. 33, 49, 81, 121). "
+                               "More frames = longer clips but more VRAM.",
+                }),
+                "svi_variant": (["pro", "standard"], {
+                    "default": "pro",
+                    "tooltip": "SVI variant: 'pro' has redesigned anchor + latent conditioning (better quality), "
+                               "'standard' is the original SVI 2.0 (used in 'svi' no_llm_mode). "
+                               "Only used when no_llm_mode = 'svi'.",
+                }),
+                "svi_model_high": ((lambda: sorted(set(["auto"] + [
+                    f for d in (
+                        folder_paths.get_folder_paths("unet")
+                        + folder_paths.get_folder_paths("diffusion_models")
+                    ) if os.path.isdir(d)
+                    for f in os.listdir(d)
+                    if f.endswith((".safetensors", ".gguf", ".bin", ".pt", ".pth", ".sft"))
+                ])))() if hasattr(folder_paths, "get_folder_paths") else ["auto"], {
+                    "default": "auto",
+                    "tooltip": "HIGH NOISE Wan 2.2 I2V-A14B model for SVI (used in 'svi' no_llm_mode). "
+                               "'auto' = auto-discover from ComfyUI model directories. "
+                               "Select the HighNoise variant (e.g. Wan2.2-I2V-A14B-HighNoise-Q3_K_S.gguf). "
+                               "Only used when no_llm_mode = 'svi'.",
+                }),
+                "svi_model_low": ((lambda: sorted(set(["auto"] + [
+                    f for d in (
+                        folder_paths.get_folder_paths("unet")
+                        + folder_paths.get_folder_paths("diffusion_models")
+                    ) if os.path.isdir(d)
+                    for f in os.listdir(d)
+                    if f.endswith((".safetensors", ".gguf", ".bin", ".pt", ".pth", ".sft"))
+                ])))() if hasattr(folder_paths, "get_folder_paths") else ["auto"], {
+                    "default": "auto",
+                    "tooltip": "LOW NOISE Wan 2.2 I2V-A14B model for SVI (used in 'svi' no_llm_mode). "
+                               "'auto' = auto-discover from ComfyUI model directories. "
+                               "Select the LowNoise variant (e.g. Wan2.2-I2V-A14B-LowNoise-Q3_K_S.gguf). "
+                               "Only used when no_llm_mode = 'svi'.",
+                }),
+                "svi_lora_high": ([
+                    "SVI_Wan2.2-I2V-A14B_high_noise_lora_v2.0_pro.safetensors",
+                    "SVI_Wan2.2-I2V-A14B_high_noise_lora_v2.0.safetensors",
+                ] + ([
+                    f for f in folder_paths.get_filename_list("loras")
+                    if "svi" in f.lower() and "high" in f.lower()
+                ] if hasattr(folder_paths, "get_filename_list") else []), {
+                    "default": "SVI_Wan2.2-I2V-A14B_high_noise_lora_v2.0_pro.safetensors",
+                    "tooltip": "SVI HIGH-noise LoRA (used in 'svi' no_llm_mode). "
+                               "Auto-downloads from HuggingFace if not present. "
+                               "Only used when no_llm_mode = 'svi'.",
+                }),
+                "svi_lora_low": ([
+                    "SVI_Wan2.2-I2V-A14B_low_noise_lora_v2.0_pro.safetensors",
+                    "SVI_Wan2.2-I2V-A14B_low_noise_lora_v2.0.safetensors",
+                ] + ([
+                    f for f in folder_paths.get_filename_list("loras")
+                    if "svi" in f.lower() and "low" in f.lower()
+                ] if hasattr(folder_paths, "get_filename_list") else []), {
+                    "default": "SVI_Wan2.2-I2V-A14B_low_noise_lora_v2.0_pro.safetensors",
+                    "tooltip": "SVI LOW-noise LoRA (used in 'svi' no_llm_mode). "
+                               "Auto-downloads from HuggingFace if not present. "
+                               "Only used when no_llm_mode = 'svi'.",
+                }),
+                "svi_extra_lora_high": (["none"] + (
+                    folder_paths.get_filename_list("loras")
+                    if hasattr(folder_paths, "get_filename_list") else []
+                ), {
+                    "default": "none",
+                    "tooltip": "Optional extra LoRA applied to the HIGH-noise model (stacked on top of SVI LoRA). "
+                               "Select any LoRA from your loras folder, or 'none' to skip. "
+                               "Only used when no_llm_mode = 'svi'.",
+                }),
+                "svi_extra_lora_low": (["none"] + (
+                    folder_paths.get_filename_list("loras")
+                    if hasattr(folder_paths, "get_filename_list") else []
+                ), {
+                    "default": "none",
+                    "tooltip": "Optional extra LoRA applied to the LOW-noise model (stacked on top of SVI LoRA). "
+                               "Select any LoRA from your loras folder, or 'none' to skip. "
+                               "Only used when no_llm_mode = 'svi'.",
+                }),
+                "svi_vae": (["auto"] + (
+                    folder_paths.get_filename_list("vae")
+                    if hasattr(folder_paths, "get_filename_list") else []
+                ), {
+                    "default": "auto",
+                    "tooltip": "VAE model for SVI. 'auto' finds Wan2.1_VAE.safetensors automatically. "
+                               "Select a specific VAE from your vae folder. "
+                               "Only used when no_llm_mode = 'svi'.",
+                }),
+                "svi_text_encoder": (["auto"] + sorted(set(
+                    (folder_paths.get_filename_list("text_encoders")
+                     if hasattr(folder_paths, "get_filename_list") else []) +
+                    (folder_paths.get_filename_list("clip")
+                     if hasattr(folder_paths, "get_filename_list") else []) +
+                    [f for d in (folder_paths.get_folder_paths("text_encoders") if hasattr(folder_paths, "get_folder_paths") else [])
+                     for f in (os.listdir(d) if os.path.isdir(d) else [])
+                     if f.endswith(".gguf")] +
+                    [f for d in (folder_paths.get_folder_paths("clip") if hasattr(folder_paths, "get_folder_paths") else [])
+                     for f in (os.listdir(d) if os.path.isdir(d) else [])
+                     if f.endswith(".gguf")]
+                )), {
+                    "default": "auto",
+                    "tooltip": "Text encoder for SVI (T5/UMT5). 'auto' finds best text encoder automatically. "
+                               "Select a specific model (safetensors, GGUF, etc.) from text_encoders or clip folders. "
+                               "Only used when no_llm_mode = 'svi'.",
+                }),
+                "svi_sampler": (_svi_samplers, {
+                    "default": "euler",
+                    "tooltip": "Sampler for SVI denoising. Default: euler. "
+                               "Only used when no_llm_mode = 'svi'.",
+                }),
+                "svi_scheduler": (_svi_schedulers, {
+                    "default": "normal",
+                    "tooltip": "Noise scheduler for SVI denoising. Default: normal. "
+                               "Only used when no_llm_mode = 'svi'.",
+                }),
                 "ace_negative_prompt": ("STRING", {
                     "default": "",
                     "multiline": False,
@@ -1210,8 +1578,8 @@ class FFMPEGAgentNode:
             },
         }
 
-    RETURN_TYPES = ("IMAGE", "AUDIO", "STRING", "STRING", "STRING", "STRING", "STRING", "MASK")
-    RETURN_NAMES = ("images", "audio", "video_path", "command_log", "analysis", "mask_overlay_path", "mask_points", "mask")
+    RETURN_TYPES = ("IMAGE", "AUDIO", "STRING", "STRING", "STRING", "STRING", "STRING", "STRING", "MASK")
+    RETURN_NAMES = ("images", "audio", "video_path", "command_log", "analysis", "mask_overlay_path", "mask_points", "image_path", "mask")
     OUTPUT_TOOLTIPS = (
         "Image frames from the output video. Returns ALL frames automatically when connected to a downstream node (e.g. VHS Video Combine). Returns only a thumbnail when unconnected (zero-memory preview).",
         "Audio extracted from the output video (or passed through from audio_a) in ComfyUI AUDIO format.",
@@ -1220,6 +1588,7 @@ class FFMPEGAgentNode:
         "LLM interpretation, estimated changes, pipeline steps, and any warnings.",
         "Path to a mask overlay preview video with SAM3-style colored contours. Connect to Save Video (FFMPEGA) to view the visual overlay.",
         "Pass-through of upstream mask_points JSON data for downstream nodes. Contains click coordinates and labels.",
+        "Absolute path to the output image file when the node produces a single image (e.g. Flux Klein single-image edit). Empty for video outputs.",
         "Raw binary MASK tensor for downstream compositing (MatAnyone2, inpainting, etc.). Upstream mask passthrough or empty mask if no mask source.",
     )
     FUNCTION = "process"
@@ -1754,7 +2123,7 @@ class FFMPEGAgentNode:
                 flux_smoothing=flux_smoothing,
                 pipeline_json=pipeline_json,
             )
-            return result6 + (mask_points or "", empty_mask)
+            return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
 
         # --- Foundation-1 (audio-only, no video resolution needed) ---
         if no_llm_mode == "foundation1":
@@ -1787,7 +2156,7 @@ class FFMPEGAgentNode:
                 audio_a=audio_a,
                 **kwargs,
             )
-            return result6 + (mask_points or "", empty_mask)
+            return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
 
         # --- Fish Speech TTS (audio-only, no video resolution needed) ---
         if no_llm_mode == "fish_speech":
@@ -1813,7 +2182,7 @@ class FFMPEGAgentNode:
                 audio_a=audio_a,
                 **kwargs,
             )
-            return result6 + (mask_points or "", empty_mask)
+            return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
 
         # --- Resolve inputs ---
         (
@@ -1865,7 +2234,7 @@ class FFMPEGAgentNode:
 
         if not prompt.strip():
             # manual + whisper + lip_sync modes don't need a prompt
-            if llm_model != "none" or no_llm_mode not in ("manual", "transcribe", "karaoke_subtitles", "generate_audio", "generate_music", "foundation1", "fish_speech", "audio_inpaint", "audio_separate", "ace_step", "lip_sync", "animate_portrait", "marigold", "normalcrafter", "video_depth", "kiwi_edit", "minimax_remover", "dreamid_omni", "scail (WIP)", "ai_upscale", "rembg", "video_matting", "onion_skin"):
+            if llm_model != "none" or no_llm_mode not in ("manual", "transcribe", "karaoke_subtitles", "generate_audio", "generate_music", "foundation1", "fish_speech", "audio_inpaint", "audio_separate", "ace_step", "lip_sync", "animate_portrait", "marigold", "normalcrafter", "video_depth", "kiwi_edit", "minimax_remover", "dreamid_omni", "svi", "sharp", "scail (WIP)", "ai_upscale", "rembg", "video_matting", "onion_skin"):
                 raise ValueError("Prompt cannot be empty")
 
         # --- Analyze input video ---
@@ -1921,7 +2290,7 @@ class FFMPEGAgentNode:
                     audio_resample_rate=audio_resample_rate,
                     **kwargs,
                 )
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # Whisper-only mode (transcribe or karaoke)
             if no_llm_mode in ("transcribe", "karaoke_subtitles"):
                 result6 = await self._process_whisper_only(
@@ -1940,7 +2309,7 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # SAM3-only mode (prompt = text target)
             if no_llm_mode == "sam3_masking":
                 result6 = await self._process_sam3_only(
@@ -1961,7 +2330,7 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # MMAudio-only mode (generate_audio from video/prompt)
             if no_llm_mode == "generate_audio":
                 result6 = await self._process_mmaudio_only(
@@ -1979,7 +2348,7 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # AudioX music-only mode (generate_music from video/prompt)
             if no_llm_mode == "generate_music":
                 result6 = await self._process_audiox_music_only(
@@ -1997,7 +2366,7 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # AudioX inpaint-only mode (audio_inpaint from video audio)
             if no_llm_mode == "audio_inpaint":
                 result6 = await self._process_audiox_inpaint_only(
@@ -2015,7 +2384,7 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # ACE-Step music generation mode
             if no_llm_mode == "ace_step":
                 result6 = await self._process_ace_step_only(
@@ -2042,7 +2411,7 @@ class FFMPEGAgentNode:
                     ace_time_sig=ace_time_sig,
                     **kwargs,
                 )
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # SAM-Audio separation mode (isolate sounds from audio)
             if no_llm_mode == "audio_separate":
                 result6 = await self._process_sam_audio_separate(
@@ -2060,7 +2429,7 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
 
             # ── SAM3 Pre-Masking for No-LLM Modes ──────────────────
             # When use_sam3 is on and we have a prompt, pre-generate a
@@ -2105,7 +2474,7 @@ class FFMPEGAgentNode:
                 )
                 if _sam3_mask_path and result6[2]:
                     _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # Animate portrait mode (LivePortrait from connected video_a)
             if no_llm_mode == "animate_portrait":
                 # video_a is the driving video
@@ -2183,7 +2552,7 @@ class FFMPEGAgentNode:
                 )
                 if _sam3_mask_path and result6[2]:
                     _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # Marigold mode (dense vision analysis)
             if no_llm_mode == "marigold":
                 result6 = await self._process_marigold_only(
@@ -2203,7 +2572,7 @@ class FFMPEGAgentNode:
                 )
                 if _sam3_mask_path and result6[2]:
                     _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # NormalCrafter mode (temporally consistent video normals)
             if no_llm_mode == "normalcrafter":
                 result6 = await self._process_normalcrafter_only(
@@ -2222,7 +2591,7 @@ class FFMPEGAgentNode:
                 )
                 if _sam3_mask_path and result6[2]:
                     _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # Video Depth Anything mode (temporal depth estimation)
             if no_llm_mode == "video_depth":
                 result6 = await self._process_video_depth_only(
@@ -2242,7 +2611,7 @@ class FFMPEGAgentNode:
                 )
                 if _sam3_mask_path and result6[2]:
                     _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # MiniMax-Remover mode
             if no_llm_mode == "minimax_remover":
                 result6 = await self._process_minimax_remover_only(
@@ -2261,7 +2630,7 @@ class FFMPEGAgentNode:
                 )
                 if _sam3_mask_path and result6[2]:
                     _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # FLUX Klein mode
             if no_llm_mode == "flux_klein":
                 result6 = await self._process_flux_klein_only(
@@ -2283,7 +2652,7 @@ class FFMPEGAgentNode:
                 )
                 if _sam3_mask_path and result6[2]:
                     _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # Kiwi-Edit mode (native video editing via instruction/reference)
             if no_llm_mode == "kiwi_edit":
                 result6 = await self._process_kiwi_edit_only(
@@ -2304,7 +2673,7 @@ class FFMPEGAgentNode:
                 )
                 if _sam3_mask_path and result6[2]:
                     _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # DreamID-Omni mode (identity-preserving talking-head generation)
             if no_llm_mode == "dreamid_omni":
                 result6 = await _nollm.process_dreamid_omni_only(
@@ -2323,7 +2692,62 @@ class FFMPEGAgentNode:
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
                 )
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
+            # SVI mode (infinite-length video generation)
+            if no_llm_mode == "svi":
+                result6 = await self._process_svi_only(
+                    prompt=prompt,
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
+                    image_a=image_a,
+                    image_path_a=image_path_a,
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    **kwargs,
+                )
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
+            # SHARP mode (single-image 3D Gaussian view synthesis)
+            if no_llm_mode == "sharp":
+                result6 = await self._process_sharp_only(
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
+                    image_a=image_a,
+                    image_path_a=image_path_a,
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    **kwargs,
+                )
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
+            # Wan-Animate mode (video-driven character animation)
+            if no_llm_mode == "wan_animate":
+                result6 = await self._process_wan_animate_only(
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
+                    image_a=image_a,
+                    image_path_a=image_path_a,
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    **kwargs,
+                )
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # SCAIL mode (WIP — pose-driven character animation)
             if no_llm_mode == "scail (WIP)":
                 result6 = await _nollm.process_scail_only(
@@ -2340,7 +2764,7 @@ class FFMPEGAgentNode:
                     image_path_a=image_path_a,
                     **kwargs,
                 )
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # AI Upscale mode (spandrel-based super-resolution)
             if no_llm_mode == "ai_upscale":
                 result6 = await self._process_ai_upscale_only(
@@ -2364,7 +2788,7 @@ class FFMPEGAgentNode:
                 )
                 if _sam3_mask_path and result6[2]:
                     _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # Rembg background removal mode
             if no_llm_mode == "rembg":
                 result6 = await self._process_rembg_only(
@@ -2380,11 +2804,12 @@ class FFMPEGAgentNode:
                     rembg_background=kwargs.pop("rembg_background", "transparent"),
                     temp_video_from_images=temp_video_from_images,
                     temp_video_with_audio=temp_video_with_audio,
+                    _all_image_paths=_all_image_paths,
                     **kwargs,
                 )
                 if _sam3_mask_path and result6[2]:
                     _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # Video Matting mode (MatAnyone2)
             if no_llm_mode == "video_matting":
                 result6 = await self._process_video_matting_only(
@@ -2408,7 +2833,7 @@ class FFMPEGAgentNode:
                     video_path=video_path,
                     **kwargs,
                 )
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # Onion Skin mode (temporal ghosting / composite)
             if no_llm_mode == "onion_skin":
                 result6 = await self._process_onion_skin_only(
@@ -2430,7 +2855,26 @@ class FFMPEGAgentNode:
                 )
                 if _sam3_mask_path and result6[2]:
                     _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
+            # PhyFPS mode (Visual Chronometer physical FPS analysis)
+            if no_llm_mode == "phyfps":
+                result6 = await self._process_phyfps_only(
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
+                    phyfps_action=kwargs.pop("phyfps_action", "analyze_only"),
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    **kwargs,
+                )
+                if _sam3_mask_path and result6[2]:
+                    _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # Comparison mode (A/B video comparison)
             if no_llm_mode == "comparison":
                 result6 = await self._process_comparison_only(
@@ -2453,7 +2897,7 @@ class FFMPEGAgentNode:
                 )
                 if _sam3_mask_path and result6[2]:
                     _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # Text inputs connected → build a text overlay pipeline
             if _all_text_inputs:
                 # Auto-generate a pipeline from text inputs
@@ -2516,7 +2960,7 @@ class FFMPEGAgentNode:
                     audio_resample_rate=audio_resample_rate,
                     **kwargs,
                 )
-                return result6 + (mask_points or "", empty_mask)
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # manual mode without Effects Builder or text
             raise RuntimeError(
                 "No-LLM 'manual' mode requires an Effects Builder node or "
@@ -2632,7 +3076,7 @@ class FFMPEGAgentNode:
             analysis = f"AI Skill produced video: {os.path.basename(movie_override)}"
             if hasattr(connector, 'close'):
                 await connector.close()
-            return (images_tensor, audio_out, output_path, cmd_log, analysis, "", mask_points or "", empty_mask)
+            return (images_tensor, audio_out, output_path, cmd_log, analysis, "", mask_points or "", "", empty_mask)
 
         # --- Execute ---
         result, pipeline, command = await self._execute_pipeline(
@@ -2741,7 +3185,7 @@ class FFMPEGAgentNode:
             save_output=save_output,
         )
 
-        return (images_tensor, audio_out, output_path, command.to_string(), analysis, mask_overlay_path, mask_points or "", empty_mask)
+        return (images_tensor, audio_out, output_path, command.to_string(), analysis, mask_overlay_path, mask_points or "", "", empty_mask)
 
     # ------------------------------------------------------------------ #
     #  Effects Builder support                                             #
@@ -3099,6 +3543,26 @@ class FFMPEGAgentNode:
         )
 
     # ------------------------------------------------------------------ #
+    #  SVI 2.0 Pro mode (no LLM)                                           #
+    # ------------------------------------------------------------------ #
+
+    async def _process_svi_only(self, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, image_a=None, image_path_a=None, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+        """Delegate to nollm_modes module."""
+        return await _nollm.process_svi_only(
+            prompt=prompt,
+            effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            image_a=image_a,
+            image_path_a=image_path_a,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
+        )
+
+    # ------------------------------------------------------------------ #
     #  FLUX Klein mode (no LLM)                                            #
     # ------------------------------------------------------------------ #
 
@@ -3208,6 +3672,21 @@ class FFMPEGAgentNode:
             **kwargs,
         )
 
+    async def _process_phyfps_only(self, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, phyfps_action="analyze_only", temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+        """Delegate to nollm_modes module."""
+        return await _nollm.process_phyfps_only(
+            media_converter=self.media_converter,
+            effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            phyfps_action=phyfps_action,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
+        )
+
     async def _process_comparison_only(self, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, comparison_style="swipe", comparison_labels=False, comparison_label_a="Before", comparison_label_b="After", _all_video_paths=None, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
         """Delegate to nollm_modes module."""
         return await _nollm.process_comparison_only(
@@ -3287,6 +3766,42 @@ class FFMPEGAgentNode:
             use_minimax_remover=use_minimax_remover,
             flux_smoothing=flux_smoothing,
         )
+
+    # ------------------------------------------------------------------ #
+    #  SHARP mode (no LLM)                                                 #
+    # ------------------------------------------------------------------ #
+
+    async def _process_sharp_only(self, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, image_a=None, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+        """Delegate to nollm_modes module."""
+        return await _nollm.process_sharp_only(
+            media_converter=self.media_converter,
+            effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            image_a=image_a,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
+        )
+
+    async def _process_wan_animate_only(self, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, image_a=None, image_path_a=None, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+        """Delegate Wan-Animate to nollm_modes module."""
+        return await _nollm.process_wan_animate_only(
+            media_converter=self.media_converter,
+            effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            image_a=image_a,
+            image_path_a=image_path_a,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
+        )
+
     @classmethod
     def IS_CHANGED(cls, video_path, prompt, seed=0, **kwargs):
         """Determine if the node needs to re-execute."""

@@ -21,7 +21,7 @@ Architecture follows the synthesizer pattern (flux_klein_editor, seedvr):
 - ``comfy.model_management`` VRAM coordination
 - FFmpeg frame extraction / re-encoding
 
-License: MIT (Kiwi-Edit) / Apache-2.0 (Wan 2.2 + Qwen2.5-VL)
+License: MIT (Kiwi-Edit) / Apache-2.0 (Qwen2.5-VL)
 """
 
 from __future__ import annotations
@@ -86,13 +86,7 @@ _DEFAULT_MAX_FRAMES = 81
 _DEFAULT_FPS = 15
 _CHUNK_OVERLAP = 8  # overlap frames between chunks for long video
 
-# LightX2V distill LoRA (4-step inference)
-_LORA_HF_REPO = "lightx2v/Wan2.2-Distill-Loras"
-_LORA_FILES = {
-    "high_noise": "wan2.2_t2v_A14b_high_noise_lora_rank64_lightx2v_4step_1217.safetensors",
-    "low_noise": "wan2.2_t2v_A14b_low_noise_lora_rank64_lightx2v_4step_1217.safetensors",
-}
-_LORA_STEPS = 4  # LightX2V distill LoRA is tuned for 4-step inference
+
 
 # Resolution presets: (height, width)
 RESOLUTION_PRESETS = {
@@ -231,47 +225,7 @@ def _download_model(model_dir: Path, variant: str) -> None:
     log.info("Kiwi-Edit %s downloaded from official repo: %s", variant, hf_repo)
 
 
-def _ensure_lora_downloaded(variant: str = "high_noise") -> Path:
-    """Download a LightX2V distill LoRA if not already cached.
 
-    Uses ``huggingface_hub.hf_hub_download()`` to fetch a single LoRA
-    safetensors file from the ``lightx2v/Wan2.2-Distill-Loras`` repo.
-
-    Args:
-        variant: ``"high_noise"`` or ``"low_noise"``.
-
-    Returns:
-        Path to the downloaded ``.safetensors`` file.
-    """
-    filename = _LORA_FILES.get(variant)
-    if not filename:
-        raise ValueError(
-            f"Unknown LoRA variant '{variant}'. "
-            f"Choose from: {list(_LORA_FILES.keys())}"
-        )
-
-    try:
-        from . import model_manager as _mm
-    except ImportError:
-        from core import model_manager as _mm  # type: ignore
-
-    _mm.require_downloads_allowed(f"kiwi_lora_{variant}")
-
-    try:
-        from huggingface_hub import hf_hub_download
-    except ImportError:
-        raise ImportError(
-            "huggingface_hub is required to download LightX2V LoRA. "
-            "Install with: pip install huggingface_hub"
-        )
-
-    log.info("Downloading LightX2V LoRA (%s): %s", variant, filename)
-    local_path = hf_hub_download(
-        repo_id=_LORA_HF_REPO,
-        filename=filename,
-    )
-    log.info("LightX2V LoRA ready: %s", local_path)
-    return Path(local_path)
 
 
 # ---------------------------------------------------------------------------
@@ -980,6 +934,23 @@ def _run_pipeline(
 
     pipe.source_embedder.forward = _gpu_se_forward
 
+    # --- Patch ref_embedder.forward ---
+    _orig_re_forward = pipe.ref_embedder.forward
+
+    def _gpu_re_forward(*args, **kwargs):
+        # Keep transformer alive — ref_embedder is called from _model_forward
+        _evict_all_except("ref_embedder", "transformer")
+        pipe.ref_embedder.to(gpu_device)
+        args = tuple(a.to(gpu_device) if isinstance(a, torch.Tensor) else a for a in args)
+        kwargs = {k: v.to(gpu_device) if isinstance(v, torch.Tensor) else v for k, v in kwargs.items()}
+        try:
+            return _orig_re_forward(*args, **kwargs)
+        finally:
+            pipe.ref_embedder.to(cpu_device)
+            torch.cuda.empty_cache()
+
+    pipe.ref_embedder.forward = _gpu_re_forward
+
     # --- Patch VAE encode/decode ---
     _orig_encode = pipe.vae.encode
     _orig_decode = pipe.vae.decode
@@ -1079,8 +1050,8 @@ def _run_pipeline(
             _block_hooks.extend([h1, h2])
 
     def _gpu_model_forward(*args, **kwargs):
-        # Keep source_embedder — it's called inside _model_forward
-        _evict_all_except("transformer", "source_embedder")
+        # Keep source_embedder + ref_embedder — both are called inside _model_forward
+        _evict_all_except("transformer", "source_embedder", "ref_embedder")
         if not _block_hooks:
             _setup_transformer_hooks()
         # Activate conv3d workaround for patch_embedding (also a Conv3d)
@@ -1127,6 +1098,7 @@ def _run_pipeline(
         pipe.vae.decode = _orig_decode
         pipe.mllm_encoder.forward = _orig_mllm_forward
         pipe.source_embedder.forward = _orig_se_forward
+        pipe.ref_embedder.forward = _orig_re_forward
         pipe._model_forward = _orig_model_forward
         torch.nn.Conv3d._conv_forward = _orig_conv3d_conv_forward
         # Restore _execution_device property
@@ -1399,7 +1371,7 @@ def edit_video(
     flow_shift: float = _DEFAULT_FLOW_SHIFT,
     task_type: str = "auto",
     scheduler: str = "unipc",
-    lora_variant: str | None = None,
+
 ) -> str:
     """Edit a video using Kiwi-Edit.
 
@@ -1489,24 +1461,7 @@ def edit_video(
         # Set scheduler (can change between runs without reloading)
         _set_scheduler(pipe, scheduler, flow_shift)
 
-        # --- LightX2V LoRA loading ---
-        _lora_loaded = False
-        if lora_variant:
-            try:
-                lora_path = _ensure_lora_downloaded(lora_variant)
-                pipe.load_lora_weights(str(lora_path))
-                _lora_loaded = True
-                steps = _LORA_STEPS
-                log.info(
-                    "[KiwiEdit] LightX2V LoRA loaded (%s), steps overridden to %d",
-                    lora_variant, steps,
-                )
-            except Exception as e:
-                log.warning(
-                    "[KiwiEdit] Failed to load LightX2V LoRA (%s): %s — "
-                    "continuing without LoRA",
-                    lora_variant, e,
-                )
+
 
         # Load video frames
         frames, fps = _load_video_frames(video_path, max_frames=max_frames * 2 if long_video else max_frames)
@@ -1555,14 +1510,5 @@ def edit_video(
         return output_path
 
     finally:
-        # Unload LoRA if it was loaded (before full cleanup)
-        if lora_variant and _lora_loaded:
-            try:
-                pipe = _pipeline
-                if pipe is not None:
-                    pipe.unload_lora_weights()
-                    log.info("[KiwiEdit] LightX2V LoRA unloaded")
-            except Exception as e:
-                log.debug("[KiwiEdit] LoRA unload skipped: %s", e)
         # Always free pipeline after use — Kiwi-Edit is very VRAM heavy
         cleanup()

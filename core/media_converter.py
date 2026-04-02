@@ -177,6 +177,18 @@ class MediaConverter:
 
         h, w = images.shape[1], images.shape[2]
 
+        # Dimension alignment: yuv420p requires even width and height.
+        # Pad odd dimensions using edge replication (matching VHS approach).
+        pad_w = (-w) % 2
+        pad_h = (-h) % 2
+        if pad_w or pad_h:
+            # ReplicationPad2d expects (left, right, top, bottom) on CHW
+            padding = (0, pad_w, 0, pad_h)
+            padfunc = torch.nn.ReplicationPad2d(padding)
+            # Permute (B,H,W,C) → (B,C,H,W), pad, then back to (B,H,W,C)
+            images = padfunc(images.permute(0, 3, 1, 2)).permute(0, 2, 3, 1).contiguous()
+            h, w = images.shape[1], images.shape[2]
+
         tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
         tmp.close()
 
@@ -187,10 +199,18 @@ class MediaConverter:
                 "-vcodec", "rawvideo",
                 "-s", f"{w}x{h}",
                 "-pix_fmt", "rgb24",
+                # Explicit full-range BT.709 color space to prevent
+                # color darkening during RGB → YUV conversion.
+                "-color_range", "pc",
+                "-colorspace", "rgb",
+                "-color_primaries", "bt709",
+                "-color_trc", "iec61966-2-1",  # sRGB transfer
                 "-r", str(fps),
                 "-i", "-",
                 "-c:v", "libx264",
                 "-pix_fmt", "yuv420p",
+                # Preserve full color range in output
+                "-color_range", "pc",
                 # Optimization: ultrafast provides ~6.5x speedup for temp files
                 "-preset", "ultrafast",
                 "-crf", "18",
@@ -210,7 +230,7 @@ class MediaConverter:
             end = min(start + CHUNK, n_frames)
             # Optimization: Use in-place operations (mul, clamp_) to avoid intermediate
             # float tensor allocation for the chunk scaling step.
-            chunk = images[start:end].mul(255.0).clamp_(0, 255).to(torch.uint8).cpu().numpy()
+            chunk = images[start:end].mul(255.0).clamp_(0, 255).to(torch.uint8).cpu().contiguous().numpy()
             assert proc.stdin is not None
             proc.stdin.write(chunk)  # type: ignore[arg-type]  # numpy buffer protocol
             del chunk

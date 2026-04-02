@@ -1,7 +1,7 @@
 import { app } from "../../scripts/app.js";
 import { u as updateDynamicSlots, S as SLOT_LABELS, s as setPrompt, R as RANDOM_PROMPTS, f as flashNode, h as handlePaste, c as createUploadButton, a as addDownloadOverlay, b as addVideoPreviewMenu } from "./_chunks/ui_helpers-CvUDB6-L.js";
 import { api } from "../../scripts/api.js";
-import { o as openPointSelector } from "./_chunks/point_selector-Cu3bGBHc.js";
+import { o as openPointSelector } from "./_chunks/point_selector-WUrkBg7b.js";
 import { C as CropOverlay } from "./_chunks/CropOverlay-H6yQHaMz.js";
 const NODE_COLORS = {
   "FFMPEGAPreview": ["#3a5a3a", "#2a4a2a"],
@@ -26,8 +26,8 @@ function registerNodeStyling(nodeType, nodeData) {
 const DYNAMIC_PREFIXES = [
   { prefix: "images_", type: "IMAGE", excludes: [] },
   { prefix: "image_", type: "IMAGE", excludes: ["images_", "image_path_"] },
-  { prefix: "audio_", type: "AUDIO", excludes: [] },
-  { prefix: "video_", type: "STRING", excludes: ["video_path", "video_folder"] },
+  { prefix: "audio_", type: "AUDIO", excludes: ["audio_output_mode", "audio_resample_rate"] },
+  { prefix: "video_", type: "STRING", excludes: ["video_path", "video_folder", "video_depth_encoder", "video_depth_colormap"] },
   { prefix: "image_path_", type: "STRING", excludes: [] },
   { prefix: "text_", type: "STRING", excludes: [] }
 ];
@@ -289,7 +289,7 @@ function registerAgentNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGAgent") return;
   const onNodeCreated = nodeType.prototype.onNodeCreated;
   nodeType.prototype.onNodeCreated = function() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J;
     const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
     const node = this;
     this.color = "#2a3a5a";
@@ -306,7 +306,7 @@ function registerAgentNode(nodeType, nodeData) {
     const llmWidget = (_a = this.widgets) == null ? void 0 : _a.find((w) => w.name === "llm_model");
     if (llmWidget) {
       let doUpdateLlmVisibility = function() {
-        var _a2, _b2;
+        var _a2, _b2, _c2, _d2;
         const model = llmWidget.value;
         const isNone = model === "none";
         toggleWidget(customWidget, model === "custom");
@@ -315,7 +315,11 @@ function registerAgentNode(nodeType, nodeData) {
         if (verifyWidget) toggleWidget(verifyWidget, !isNone);
         if (visionWidget) toggleWidget(visionWidget, !isNone);
         if (ptcWidget) toggleWidget(ptcWidget, !isNone);
-        const noLlmModeWidget = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "no_llm_mode");
+        const ttWidget = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "track_tokens");
+        const luWidget = (_b2 = node.widgets) == null ? void 0 : _b2.find((w) => w.name === "log_usage");
+        if (ttWidget) toggleWidget(ttWidget, !isNone);
+        if (luWidget) toggleWidget(luWidget, !isNone);
+        const noLlmModeWidget = (_c2 = node.widgets) == null ? void 0 : _c2.find((w) => w.name === "no_llm_mode");
         if (noLlmModeWidget) {
           toggleWidget(noLlmModeWidget, isNone);
           if (!noLlmModeWidget._cbHooked) {
@@ -330,7 +334,7 @@ function registerAgentNode(nodeType, nodeData) {
         }
         updateNoLlmModeVisibility();
         fitHeight();
-        const f1StyleTransferWidget = (_b2 = node.widgets) == null ? void 0 : _b2.find((w) => w.name === "f1_style_transfer");
+        const f1StyleTransferWidget = (_d2 = node.widgets) == null ? void 0 : _d2.find((w) => w.name === "f1_style_transfer");
         if (f1StyleTransferWidget && !f1StyleTransferWidget._cbHooked) {
           f1StyleTransferWidget._cbHooked = true;
           const origF1Cb = f1StyleTransferWidget.callback;
@@ -361,7 +365,11 @@ function registerAgentNode(nodeType, nodeData) {
       "output_path",
       "preview_mode",
       "crf",
-      "encoding_preset"
+      "encoding_preset",
+      "batch_mode",
+      "video_folder",
+      "file_pattern",
+      "max_concurrent"
     ];
     for (const name of alwaysHidden) {
       const w = (_h = this.widgets) == null ? void 0 : _h.find((ww) => ww.name === name);
@@ -376,10 +384,10 @@ function registerAgentNode(nodeType, nodeData) {
     (_o = this.widgets) == null ? void 0 : _o.find((w) => w.name === "sam3_max_objects");
     (_p = this.widgets) == null ? void 0 : _p.find((w) => w.name === "sam3_det_threshold");
     (_q = this.widgets) == null ? void 0 : _q.find((w) => w.name === "mask_output_type");
-    const batchWidget = (_r = this.widgets) == null ? void 0 : _r.find((w) => w.name === "batch_mode");
-    const folderWidget = (_s = this.widgets) == null ? void 0 : _s.find((w) => w.name === "video_folder");
-    const patternWidget = (_t = this.widgets) == null ? void 0 : _t.find((w) => w.name === "file_pattern");
-    const concurrentWidget = (_u = this.widgets) == null ? void 0 : _u.find((w) => w.name === "max_concurrent");
+    (_r = this.widgets) == null ? void 0 : _r.find((w) => w.name === "batch_mode");
+    (_s = this.widgets) == null ? void 0 : _s.find((w) => w.name === "video_folder");
+    (_t = this.widgets) == null ? void 0 : _t.find((w) => w.name === "file_pattern");
+    (_u = this.widgets) == null ? void 0 : _u.find((w) => w.name === "max_concurrent");
     const trackTokensWidget = (_v = this.widgets) == null ? void 0 : _v.find((w) => w.name === "track_tokens");
     const logUsageWidget = (_w = this.widgets) == null ? void 0 : _w.find((w) => w.name === "log_usage");
     const allowDownloadsWidget = (_x = this.widgets) == null ? void 0 : _x.find((w) => w.name === "allow_model_downloads");
@@ -389,7 +397,7 @@ function registerAgentNode(nodeType, nodeData) {
     (_B = this.widgets) == null ? void 0 : _B.find((w) => w.name === "video_depth_encoder");
     (_C = this.widgets) == null ? void 0 : _C.find((w) => w.name === "video_depth_colormap");
     function updateNoLlmModeVisibility() {
-      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o2, _p2, _q2, _r2, _s2, _t2, _u2, _v2, _w2, _x2, _y2, _z2, _A2, _B2, _C2, _D2, _E2, _F2, _G2, _H2, _I2, _J, _K, _L, _M, _N, _O, _P, _Q, _R;
+      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o2, _p2, _q2, _r2, _s2, _t2, _u2, _v2, _w2, _x2, _y2, _z2, _A2, _B2, _C2, _D2, _E2, _F2, _G2, _H2, _I2, _J2, _K, _L, _M, _N, _O, _P, _Q, _R, _S, _T, _U, _V, _W;
       const adv = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "advanced_options");
       const showAdvanced = Boolean(adv == null ? void 0 : adv.value);
       const llm = (_b2 = node.widgets) == null ? void 0 : _b2.find((w) => w.name === "llm_model");
@@ -412,6 +420,8 @@ function registerAgentNode(nodeType, nodeData) {
       const showScail = showAdvanced && mode === "scail";
       const showFoundation1 = showAdvanced && mode === "foundation1";
       const showFishSpeech = showAdvanced && mode === "fish_speech";
+      const showSharp = showAdvanced && mode === "sharp";
+      const showWanAnimate = showAdvanced && mode === "wan_animate";
       const mw = (_d2 = node.widgets) == null ? void 0 : _d2.find((w) => w.name === "marigold_output_type");
       const mc = (_e2 = node.widgets) == null ? void 0 : _e2.find((w) => w.name === "marigold_colormap");
       if (mw) toggleWidget(mw, showMarigold);
@@ -446,8 +456,18 @@ function registerAgentNode(nodeType, nodeData) {
       if (sam) toggleWidget(sam, showSamAudio);
       const nc = (_r2 = node.widgets) == null ? void 0 : _r2.find((w) => w.name === "normalcrafter_max_res");
       if (nc) toggleWidget(nc, showNormalcrafter);
-      const fkm = (_s2 = node.widgets) == null ? void 0 : _s2.find((w) => w.name === "flux_klein_model");
-      if (fkm) toggleWidget(fkm, showFluxKleinMode);
+      const fluxKleinWidgetNames = [
+        "flux_image_source",
+        "flux_klein_steps",
+        "flux_klein_guidance",
+        "flux_klein_seed",
+        "flux_klein_width",
+        "flux_klein_height"
+      ];
+      for (const wn of fluxKleinWidgetNames) {
+        const w = (_s2 = node.widgets) == null ? void 0 : _s2.find((w2) => w2.name === wn);
+        if (w) toggleWidget(w, showFluxKleinMode);
+      }
       const kiwiWidgetNames = [
         "kiwi_model",
         "kiwi_precision",
@@ -504,6 +524,70 @@ function registerAgentNode(nodeType, nodeData) {
         const w = (_A2 = node.widgets) == null ? void 0 : _A2.find((ww) => ww.name === name);
         if (w) toggleWidget(w, showScail);
       }
+      const showSvi = showAdvanced && mode === "svi";
+      const sviWidgetNames = [
+        "svi_num_clips",
+        "svi_height",
+        "svi_width",
+        "svi_fps",
+        "svi_cfg_scale",
+        "svi_overlap_frames",
+        "svi_seed_multiplier",
+        "svi_steps",
+        "svi_high_model_ratio",
+        "svi_frames_per_clip",
+        "svi_variant",
+        "svi_model_high",
+        "svi_model_low",
+        "svi_lora_high",
+        "svi_lora_low",
+        "svi_extra_lora_high",
+        "svi_extra_lora_low",
+        "svi_vae",
+        "svi_text_encoder",
+        "svi_sampler",
+        "svi_scheduler"
+      ];
+      for (const name of sviWidgetNames) {
+        const w = (_B2 = node.widgets) == null ? void 0 : _B2.find((ww) => ww.name === name);
+        if (w) toggleWidget(w, showSvi);
+      }
+      const sharpWidgetNames = [
+        "sharp_trajectory",
+        "sharp_num_frames",
+        "sharp_max_disparity",
+        "sharp_max_zoom",
+        "sharp_save_ply",
+        "sharp_device"
+      ];
+      for (const name of sharpWidgetNames) {
+        const w = (_C2 = node.widgets) == null ? void 0 : _C2.find((ww) => ww.name === name);
+        if (w) toggleWidget(w, showSharp);
+      }
+      const wanAnimateWidgetNames = [
+        "wan_animate_mode",
+        "wan_animate_steps",
+        "wan_animate_guidance",
+        "wan_animate_seed",
+        "wan_animate_num_frames",
+        "wan_animate_height",
+        "wan_animate_width",
+        "wan_animate_pose_strength",
+        "wan_animate_face_strength"
+      ];
+      for (const name of wanAnimateWidgetNames) {
+        const w = (_D2 = node.widgets) == null ? void 0 : _D2.find((ww) => ww.name === name);
+        if (w) toggleWidget(w, showWanAnimate);
+      }
+      const wanLoraSlots = ["a", "b", "c", "d"];
+      let showNextLora = showWanAnimate;
+      for (const slot of wanLoraSlots) {
+        const loraW = (_E2 = node.widgets) == null ? void 0 : _E2.find((ww) => ww.name === `wan_animate_lora_${slot}`);
+        const strW = (_F2 = node.widgets) == null ? void 0 : _F2.find((ww) => ww.name === `wan_animate_lora_strength_${slot}`);
+        if (loraW) toggleWidget(loraW, showNextLora);
+        if (strW) toggleWidget(strW, showNextLora && String((loraW == null ? void 0 : loraW.value) ?? "none") !== "none");
+        showNextLora = showNextLora && String((loraW == null ? void 0 : loraW.value) ?? "none") !== "none";
+      }
       const aceWidgetNames = [
         "ace_negative_prompt",
         "ace_cover_strength",
@@ -514,7 +598,7 @@ function registerAgentNode(nodeType, nodeData) {
         "ace_time_sig"
       ];
       for (const name of aceWidgetNames) {
-        const w = (_B2 = node.widgets) == null ? void 0 : _B2.find((ww) => ww.name === name);
+        const w = (_G2 = node.widgets) == null ? void 0 : _G2.find((ww) => ww.name === name);
         if (w) toggleWidget(w, showAceStep);
       }
       const f1WidgetNames = [
@@ -532,11 +616,11 @@ function registerAgentNode(nodeType, nodeData) {
         "f1_style_transfer"
       ];
       for (const name of f1WidgetNames) {
-        const w = (_C2 = node.widgets) == null ? void 0 : _C2.find((ww) => ww.name === name);
+        const w = (_H2 = node.widgets) == null ? void 0 : _H2.find((ww) => ww.name === name);
         if (w) toggleWidget(w, showFoundation1);
       }
-      const f1StyleWidget = (_D2 = node.widgets) == null ? void 0 : _D2.find((w) => w.name === "f1_style_transfer");
-      const f1NoiseWidget = (_E2 = node.widgets) == null ? void 0 : _E2.find((w) => w.name === "f1_noise_level");
+      const f1StyleWidget = (_I2 = node.widgets) == null ? void 0 : _I2.find((w) => w.name === "f1_style_transfer");
+      const f1NoiseWidget = (_J2 = node.widgets) == null ? void 0 : _J2.find((w) => w.name === "f1_noise_level");
       if (f1NoiseWidget) toggleWidget(f1NoiseWidget, showFoundation1 && Boolean(f1StyleWidget == null ? void 0 : f1StyleWidget.value));
       const fishWidgetNames = [
         "fish_model_variant",
@@ -547,12 +631,12 @@ function registerAgentNode(nodeType, nodeData) {
         "fish_repetition_penalty"
       ];
       for (const name of fishWidgetNames) {
-        const w = (_F2 = node.widgets) == null ? void 0 : _F2.find((ww) => ww.name === name);
+        const w = (_K = node.widgets) == null ? void 0 : _K.find((ww) => ww.name === name);
         if (w) toggleWidget(w, showFishSpeech);
       }
       const onionWidgetNames = ["onion_blend_mode", "onion_opacity", "onion_decay"];
       for (const name of onionWidgetNames) {
-        const w = (_G2 = node.widgets) == null ? void 0 : _G2.find((ww) => ww.name === name);
+        const w = (_L = node.widgets) == null ? void 0 : _L.find((ww) => ww.name === name);
         if (w) toggleWidget(w, showOnionSkin);
       }
       const comparisonWidgetNames = [
@@ -562,7 +646,7 @@ function registerAgentNode(nodeType, nodeData) {
         "comparison_label_b"
       ];
       for (const name of comparisonWidgetNames) {
-        const w = (_H2 = node.widgets) == null ? void 0 : _H2.find((ww) => ww.name === name);
+        const w = (_M = node.widgets) == null ? void 0 : _M.find((ww) => ww.name === name);
         if (w) toggleWidget(w, showComparison);
       }
       const showMatting = showAdvanced && mode === "video_matting";
@@ -572,7 +656,7 @@ function registerAgentNode(nodeType, nodeData) {
         "matting_max_size"
       ];
       for (const name of mattingWidgetNames) {
-        const w = (_I2 = node.widgets) == null ? void 0 : _I2.find((ww) => ww.name === name);
+        const w = (_N = node.widgets) == null ? void 0 : _N.find((ww) => ww.name === name);
         if (w) toggleWidget(w, showMatting);
       }
       const showLivePortrait = showAdvanced && mode === "animate_portrait";
@@ -599,7 +683,7 @@ function registerAgentNode(nodeType, nodeData) {
         "lp_sample_parts"
       ];
       for (const name of lpWidgetNames) {
-        const w = (_J = node.widgets) == null ? void 0 : _J.find((ww) => ww.name === name);
+        const w = (_O = node.widgets) == null ? void 0 : _O.find((ww) => ww.name === name);
         if (w) toggleWidget(w, showLivePortrait);
       }
       const sam3EligibleModes = /* @__PURE__ */ new Set([
@@ -617,42 +701,40 @@ function registerAgentNode(nodeType, nodeData) {
         "comparison"
       ]);
       const showUseSam3 = showAdvanced && sam3EligibleModes.has(mode);
-      const useSam3Widget = (_K = node.widgets) == null ? void 0 : _K.find((w) => w.name === "use_sam3");
+      const useSam3Widget = (_P = node.widgets) == null ? void 0 : _P.find((w) => w.name === "use_sam3");
       if (useSam3Widget) toggleWidget(useSam3Widget, showUseSam3);
       const useSam3On = showUseSam3 && Boolean(useSam3Widget == null ? void 0 : useSam3Widget.value);
       const showSam3 = showAdvanced && (!isNone || mode === "sam3_masking" || useSam3On);
       for (const wName of ["sam3_max_objects", "sam3_det_threshold", "mask_output_type"]) {
-        const w = (_L = node.widgets) == null ? void 0 : _L.find((ww) => ww.name === wName);
+        const w = (_Q = node.widgets) == null ? void 0 : _Q.find((ww) => ww.name === wName);
         if (w) toggleWidget(w, showSam3);
       }
       const showLlmToggles = showAdvanced && !isNone;
       for (const wName of ["use_flux_klein", "use_kiwi_edit", "use_minimax_remover", "use_dreamid_omni"]) {
-        const w = (_M = node.widgets) == null ? void 0 : _M.find((ww) => ww.name === wName);
+        const w = (_R = node.widgets) == null ? void 0 : _R.find((ww) => ww.name === wName);
         if (w) toggleWidget(w, showLlmToggles);
       }
-      const fluxKleinWidget = (_N = node.widgets) == null ? void 0 : _N.find((w) => w.name === "use_flux_klein");
-      const fsw = (_O = node.widgets) == null ? void 0 : _O.find((w) => w.name === "flux_smoothing");
+      const fluxKleinWidget = (_S = node.widgets) == null ? void 0 : _S.find((w) => w.name === "use_flux_klein");
+      const fsw = (_T = node.widgets) == null ? void 0 : _T.find((w) => w.name === "flux_smoothing");
       if (fsw) toggleWidget(fsw, showLlmToggles && Boolean(fluxKleinWidget == null ? void 0 : fluxKleinWidget.value));
       const _AUDIO_MODES = /* @__PURE__ */ new Set(["generate_audio", "generate_music", "foundation1", "fish_speech", "audio_inpaint", "audio_separate", "ace_step"]);
       const showAudioMode = showAdvanced && (!isNone || _AUDIO_MODES.has(mode));
-      const mmw = (_P = node.widgets) == null ? void 0 : _P.find((w) => w.name === "audio_output_mode");
+      const mmw = (_U = node.widgets) == null ? void 0 : _U.find((w) => w.name === "audio_output_mode");
       if (mmw) toggleWidget(mmw, showAudioMode);
       const showResample = showAdvanced && mode === "manual";
-      const arw = (_Q = node.widgets) == null ? void 0 : _Q.find((w) => w.name === "audio_resample_rate");
+      const arw = (_V = node.widgets) == null ? void 0 : _V.find((w) => w.name === "audio_resample_rate");
       if (arw) toggleWidget(arw, showResample);
       const showSubtitle = showAdvanced && (!isNone || mode === "manual" || mode === "transcribe" || mode === "karaoke_subtitles");
-      const sw = (_R = node.widgets) == null ? void 0 : _R.find((w) => w.name === "subtitle_path");
+      const sw = (_W = node.widgets) == null ? void 0 : _W.find((w) => w.name === "subtitle_path");
       if (sw) toggleWidget(sw, showSubtitle);
     }
     function updateAdvancedVisibility() {
+      var _a2;
       const show = Boolean(advancedWidget == null ? void 0 : advancedWidget.value);
-      if (batchWidget) toggleWidget(batchWidget, show);
-      const showBatch = show && Boolean(batchWidget == null ? void 0 : batchWidget.value);
-      if (folderWidget) toggleWidget(folderWidget, showBatch);
-      if (patternWidget) toggleWidget(patternWidget, showBatch);
-      if (concurrentWidget) toggleWidget(concurrentWidget, showBatch);
-      if (trackTokensWidget) toggleWidget(trackTokensWidget, show);
-      if (logUsageWidget) toggleWidget(logUsageWidget, show);
+      const llm = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "llm_model");
+      const isNone = (llm == null ? void 0 : llm.value) === "none";
+      if (trackTokensWidget) toggleWidget(trackTokensWidget, show && !isNone);
+      if (logUsageWidget) toggleWidget(logUsageWidget, show && !isNone);
       if (allowDownloadsWidget) toggleWidget(allowDownloadsWidget, show);
       updateNoLlmModeVisibility();
       fitHeight();
@@ -705,28 +787,22 @@ function registerAgentNode(nodeType, nodeData) {
         updateAdvancedVisibility();
       };
     }
-    const marigoldTypeWidget = (_I = this.widgets) == null ? void 0 : _I.find((w) => w.name === "marigold_output_type");
+    for (const slot of ["a", "b", "c", "d"]) {
+      const wanLoraSlotW = (_I = this.widgets) == null ? void 0 : _I.find((w) => w.name === `wan_animate_lora_${slot}`);
+      if (wanLoraSlotW) {
+        const origCb = wanLoraSlotW.callback;
+        wanLoraSlotW.callback = function(...args) {
+          origCb == null ? void 0 : origCb.apply(this, args);
+          updateAdvancedVisibility();
+        };
+      }
+    }
+    const marigoldTypeWidget = (_J = this.widgets) == null ? void 0 : _J.find((w) => w.name === "marigold_output_type");
     if (marigoldTypeWidget) {
       const origMtCb = marigoldTypeWidget.callback;
       marigoldTypeWidget.callback = function(...args) {
         origMtCb == null ? void 0 : origMtCb.apply(this, args);
         updateAdvancedVisibility();
-      };
-    }
-    if (batchWidget) {
-      let updateBatchVisibility = function() {
-        const showAdvanced = Boolean((advancedWidget == null ? void 0 : advancedWidget.value) ?? true);
-        const show = Boolean(batchWidget.value) && showAdvanced;
-        if (folderWidget) toggleWidget(folderWidget, show);
-        if (patternWidget) toggleWidget(patternWidget, show);
-        if (concurrentWidget) toggleWidget(concurrentWidget, show);
-        fitHeight();
-      };
-      updateBatchVisibility();
-      const origBatchCb = batchWidget.callback;
-      batchWidget.callback = function(...args) {
-        origBatchCb == null ? void 0 : origBatchCb.apply(this, args);
-        updateBatchVisibility();
       };
     }
     const origOnConnectionsChange = this.onConnectionsChange;
@@ -860,7 +936,7 @@ function registerAgentNode(nodeType, nodeData) {
     );
   };
 }
-const VIDEO_ACCEPT$1 = [
+const VIDEO_ACCEPT$2 = [
   "video/webm",
   "video/mp4",
   "video/x-matroska",
@@ -888,7 +964,7 @@ const VIDEO_EXTENSIONS$1 = [
   "gif"
 ];
 const WATCH_WIDGETS = ["video_path", "start_time", "duration", "fps", "max_frames"];
-const PASSTHROUGH_EVENTS$1 = [
+const PASSTHROUGH_EVENTS$2 = [
   "contextmenu",
   "pointerdown",
   "mousewheel",
@@ -909,7 +985,7 @@ function registerFrameExtractNode(nodeType, nodeData) {
     const node = this;
     this.color = "#2a4a5a";
     this.bgcolor = "#1a3a4a";
-    const { fileInput, uploadBtn, updateBtnStyle: updateUploadBtn } = createUploadButton(VIDEO_ACCEPT$1);
+    const { fileInput, uploadBtn, updateBtnStyle: updateUploadBtn } = createUploadButton(VIDEO_ACCEPT$2);
     document.body.append(fileInput);
     this.addDOMWidget("upload_button", "btn", uploadBtn, {
       serialize: false
@@ -958,7 +1034,7 @@ function registerFrameExtractNode(nodeType, nodeData) {
     previewContainer.appendChild(videoEl);
     previewContainer.appendChild(infoEl);
     addDownloadOverlay(previewContainer, videoEl);
-    for (const evt of PASSTHROUGH_EVENTS$1) {
+    for (const evt of PASSTHROUGH_EVENTS$2) {
       previewContainer.addEventListener(evt, (e) => {
         e.stopPropagation();
       }, true);
@@ -1224,7 +1300,7 @@ function registerFrameExtractNode(nodeType, nodeData) {
     return result;
   };
 }
-const VIDEO_ACCEPT = [
+const VIDEO_ACCEPT$1 = [
   "video/webm",
   "video/mp4",
   "video/x-matroska",
@@ -1252,7 +1328,7 @@ const VIDEO_EXTENSIONS = [
   "gif"
 ];
 const TRIM_WIDGETS = ["force_rate", "skip_first_frames", "frame_load_cap", "select_every_nth"];
-const PASSTHROUGH_EVENTS = [
+const PASSTHROUGH_EVENTS$1 = [
   "contextmenu",
   "pointerdown",
   "mousewheel",
@@ -1276,9 +1352,28 @@ function registerLoadVideoNode(nodeType, nodeData) {
     this.bgcolor = "#4a3a1a";
     const origConfigure = this.onConfigure;
     this.onConfigure = function(data) {
+      var _a2;
       origConfigure == null ? void 0 : origConfigure.apply(this, arguments);
+      if (this.widgets) {
+        const staticCombos = ["mask_mode", "mask_output_type"];
+        const intWidgets = ["custom_width", "custom_height"];
+        for (const w of this.widgets) {
+          if (w.type === "combo" && staticCombos.includes(w.name) && ((_a2 = w.options) == null ? void 0 : _a2.values)) {
+            const validValues = w.options.values;
+            if (validValues.length > 0 && !validValues.includes(String(w.value))) {
+              w.value = validValues[0];
+            }
+          }
+          if (intWidgets.includes(w.name)) {
+            const v = w.value;
+            if (v === "" || v === null || v === void 0 || isNaN(Number(v))) {
+              w.value = 0;
+            }
+          }
+        }
+      }
     };
-    const { fileInput, uploadBtn, updateBtnStyle: updateBtn } = createUploadButton(VIDEO_ACCEPT);
+    const { fileInput, uploadBtn, updateBtnStyle: updateBtn } = createUploadButton(VIDEO_ACCEPT$1);
     document.body.append(fileInput);
     this.addDOMWidget("upload_button", "btn", uploadBtn, {
       serialize: false
@@ -1598,7 +1693,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
       }
     }, 1e3);
     addDownloadOverlay(previewContainer, videoEl);
-    for (const evt of PASSTHROUGH_EVENTS) {
+    for (const evt of PASSTHROUGH_EVENTS$1) {
       previewContainer.addEventListener(evt, (e) => {
         e.stopPropagation();
       }, true);
@@ -1826,6 +1921,187 @@ function registerLoadVideoNode(nodeType, nodeData) {
     return result;
   };
 }
+const VIDEO_ACCEPT = [
+  "video/webm",
+  "video/mp4",
+  "video/x-matroska",
+  "video/quicktime",
+  "video/x-msvideo"
+].join(",");
+const PASSTHROUGH_EVENTS = [
+  "contextmenu",
+  "pointerdown",
+  "mousewheel",
+  "pointermove",
+  "pointerup"
+];
+function registerLoadMaskVideoNode(nodeType, nodeData) {
+  if (nodeData.name !== "FFMPEGALoadMaskVideo") return;
+  const onNodeCreated = nodeType.prototype.onNodeCreated;
+  nodeType.prototype.onNodeCreated = function() {
+    var _a;
+    const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
+    const node = this;
+    this.color = "#3a3a5a";
+    this.bgcolor = "#2a2a4a";
+    const { fileInput, uploadBtn } = createUploadButton(VIDEO_ACCEPT);
+    document.body.append(fileInput);
+    this.addDOMWidget("upload_button", "btn", uploadBtn, { serialize: false });
+    const previewContainer = document.createElement("div");
+    previewContainer.className = "ffmpega_preview";
+    previewContainer.style.cssText = "width:100%;background:#1a1a1a;border-radius:6px;overflow:hidden;position:relative;";
+    const videoEl = document.createElement("video");
+    videoEl.controls = true;
+    videoEl.loop = true;
+    videoEl.muted = true;
+    videoEl.setAttribute("aria-label", "Mask video preview");
+    videoEl.style.cssText = "width:100%;display:block;";
+    const infoEl = document.createElement("div");
+    infoEl.style.cssText = "padding:4px 8px;font-size:11px;color:#aaa;font-family:monospace;background:#111;";
+    infoEl.textContent = "No mask video selected";
+    infoEl.setAttribute("role", "status");
+    videoEl.addEventListener("loadedmetadata", () => {
+      var _a2;
+      previewWidget.aspectRatio = videoEl.videoWidth / videoEl.videoHeight;
+      const w = videoEl.videoWidth;
+      const h = videoEl.videoHeight;
+      const d = videoEl.duration;
+      const parts = [];
+      if (w && h) parts.push(`${w}×${h}`);
+      if (d && isFinite(d)) {
+        const m = Math.floor(d / 60);
+        const s = (d % 60).toFixed(1);
+        parts.push(m > 0 ? `${m}m ${s}s` : `${s}s`);
+      }
+      infoEl.textContent = parts.length ? parts.join(" | ") : "Loaded";
+      node.setSize([
+        node.size[0],
+        node.computeSize([node.size[0], node.size[1]])[1]
+      ]);
+      (_a2 = node == null ? void 0 : node.graph) == null ? void 0 : _a2.setDirtyCanvas(true);
+    });
+    videoEl.addEventListener("error", () => {
+      var _a2;
+      previewContainer.style.display = "none";
+      node.setSize([
+        node.size[0],
+        node.computeSize([node.size[0], node.size[1]])[1]
+      ]);
+      (_a2 = node == null ? void 0 : node.graph) == null ? void 0 : _a2.setDirtyCanvas(true);
+    });
+    previewContainer.appendChild(videoEl);
+    previewContainer.appendChild(infoEl);
+    addDownloadOverlay(previewContainer, videoEl);
+    for (const evt of PASSTHROUGH_EVENTS) {
+      previewContainer.addEventListener(evt, (e) => {
+        e.stopPropagation();
+      }, true);
+    }
+    const previewWidget = this.addDOMWidget(
+      "videopreview",
+      "preview",
+      previewContainer,
+      {
+        serialize: false,
+        hideOnZoom: false,
+        getValue() {
+          return previewContainer.value;
+        },
+        setValue(v) {
+          previewContainer.value = v;
+        }
+      }
+    );
+    previewWidget.aspectRatio = null;
+    previewWidget.computeSize = function(width) {
+      if (this.aspectRatio && previewContainer.style.display !== "none") {
+        const h = (node.size[0] - 20) / this.aspectRatio + 10;
+        return [width, Math.max(h, 0) + 30];
+      }
+      return [width, -4];
+    };
+    const updatePreview = (filename) => {
+      if (!filename) {
+        previewContainer.style.display = "none";
+        infoEl.textContent = "No mask video selected";
+        return;
+      }
+      previewContainer.style.display = "";
+      const params = new URLSearchParams({
+        filename,
+        type: "input",
+        timestamp: String(Date.now())
+      });
+      videoEl.src = api.apiURL("/view?" + params.toString());
+      infoEl.textContent = "Loading...";
+    };
+    const handleUpload = async (file) => {
+      var _a2;
+      const body = new FormData();
+      body.append("image", file);
+      try {
+        const resp = await fetch("/upload/image", { method: "POST", body });
+        if (resp.status !== 200) return false;
+        const data = await resp.json();
+        const filename = data.name;
+        if (maskVideoWidget) {
+          if (!maskVideoWidget.options.values.includes(filename)) {
+            maskVideoWidget.options.values.push(filename);
+          }
+          maskVideoWidget.value = filename;
+          (_a2 = maskVideoWidget.callback) == null ? void 0 : _a2.call(maskVideoWidget, filename);
+        }
+        updatePreview(filename);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    fileInput.onchange = async () => {
+      var _a2;
+      if ((_a2 = fileInput.files) == null ? void 0 : _a2.length) {
+        await handleUpload(fileInput.files[0]);
+      }
+    };
+    const maskVideoWidget = (_a = this.widgets) == null ? void 0 : _a.find(
+      (w) => w.name === "mask_video"
+    );
+    if (maskVideoWidget) {
+      const origCallback = maskVideoWidget.callback;
+      maskVideoWidget.callback = function(value) {
+        origCallback == null ? void 0 : origCallback.apply(this, arguments);
+        updatePreview(value);
+      };
+      if (maskVideoWidget.value) {
+        setTimeout(() => updatePreview(maskVideoWidget.value), 100);
+      }
+    }
+    const origOnExecuted = this.onExecuted;
+    this.onExecuted = function(data) {
+      var _a2;
+      origOnExecuted == null ? void 0 : origOnExecuted.apply(this, arguments);
+      if ((_a2 = data == null ? void 0 : data.video) == null ? void 0 : _a2[0]) {
+        const v = data.video[0];
+        const params = new URLSearchParams({
+          filename: v.filename,
+          subfolder: v.subfolder || "",
+          type: v.type || "input",
+          timestamp: String(Date.now())
+        });
+        previewContainer.style.display = "";
+        videoEl.src = api.apiURL("/view?" + params.toString());
+      }
+    };
+    const origOnRemoved = this.onRemoved;
+    this.onRemoved = function() {
+      fileInput == null ? void 0 : fileInput.remove();
+      origOnRemoved == null ? void 0 : origOnRemoved.apply(this, arguments);
+    };
+    const getVideoUrl = () => videoEl.src || null;
+    addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, getVideoUrl);
+    return result;
+  };
+}
 function registerSaveVideoNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGASaveVideo") return;
   const onNodeCreated = nodeType.prototype.onNodeCreated;
@@ -1953,42 +2229,11 @@ function registerLoadImageNode(nodeType, nodeData) {
   const origOnCreatedImg = nodeType.prototype.onNodeCreated;
   nodeType.prototype.onNodeCreated = function() {
     const result = origOnCreatedImg == null ? void 0 : origOnCreatedImg.apply(this, arguments);
-    const node = this;
     this.color = "#3a5a5a";
     this.bgcolor = "#2a4a4a";
-    const _syncImagesOutput = () => {
-      const imagesIn = node.findInputSlot("images");
-      const connected = imagesIn >= 0 && node.inputs[imagesIn].link != null;
-      const imagesOut = node.findOutputSlot("images");
-      const hasOutput = imagesOut >= 0;
-      if (connected && !hasOutput) {
-        node.addOutput("images", "IMAGE");
-      } else if (!connected && hasOutput) {
-        const idx = node.findOutputSlot("images");
-        if (idx >= 0) node.removeOutput(idx);
-      }
-      node.setDirtyCanvas(true, true);
-    };
-    requestAnimationFrame(() => {
-      const idx = node.findOutputSlot("images");
-      if (idx >= 0) node.removeOutput(idx);
-      node.setDirtyCanvas(true, true);
-    });
-    const origOnCCImg = this.onConnectionsChange;
-    this.onConnectionsChange = function(type, slotIndex, isConnected, link, ioSlot) {
-      var _a, _b;
-      origOnCCImg == null ? void 0 : origOnCCImg.apply(this, arguments);
-      if (type === LiteGraph.INPUT) {
-        const name = (_b = (_a = this.inputs) == null ? void 0 : _a[slotIndex]) == null ? void 0 : _b.name;
-        if (name === "images") {
-          _syncImagesOutput();
-        }
-      }
-    };
     const origConfigureImg = this.onConfigure;
     this.onConfigure = function(data) {
       origConfigureImg == null ? void 0 : origConfigureImg.apply(this, arguments);
-      requestAnimationFrame(_syncImagesOutput);
     };
     const origOnExecutedImg = this.onExecuted;
     this.onExecuted = function(data) {
@@ -2034,12 +2279,43 @@ function registerLoadImageNode(nodeType, nodeData) {
           flashNode(self, "#7a4a4a");
           return;
         }
+        let resolvedFilename = filename;
+        let subfolder = "";
+        if (filename.includes("/") || filename.includes("\\")) {
+          const sep = filename.includes("/") ? "/" : "\\";
+          const parts = filename.split(sep);
+          resolvedFilename = parts.pop();
+          subfolder = parts.join(sep);
+        }
         const params = new URLSearchParams({
-          filename,
-          type: "input"
+          filename: resolvedFilename,
+          type: "input",
+          ...subfolder ? { subfolder } : {}
         });
-        const src = api.apiURL("/view?" + params.toString());
-        openPointSelector(self, src);
+        const imgSrc = api.apiURL("/view?" + params.toString());
+        fetch("/ffmpega/resolve_image_path", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filename: resolvedFilename,
+            subfolder
+          })
+        }).then((r) => r.json()).then((data) => {
+          openPointSelector(self, imgSrc, void 0, data.image_path || "");
+        }).catch(() => {
+          openPointSelector(self, imgSrc);
+        });
+      }
+    }, {
+      content: "🧹 Clear Mask",
+      callback: () => {
+        var _a, _b;
+        const mpWidget = (_a = self.widgets) == null ? void 0 : _a.find((w) => w.name === "mask_points_data");
+        if (mpWidget) {
+          mpWidget.value = "";
+        }
+        (_b = self.setDirtyCanvas) == null ? void 0 : _b.call(self, true, true);
+        flashNode(self, "#4a7a4a");
       }
     }, null);
   };
@@ -2488,19 +2764,40 @@ function captureFirstFrameAndOpen(node, videoSrc, startTimeSec = 0.01) {
   tmpVideo.preload = "auto";
   tmpVideo.src = videoSrc;
   tmpVideo.currentTime = startTimeSec;
+  let videoFilePath = "";
+  try {
+    const u = new URL(videoSrc, window.location.origin);
+    videoFilePath = u.searchParams.get("filename") || u.searchParams.get("path") || "";
+  } catch {
+  }
   const seekTimeout = setTimeout(() => {
     flashNode(node, "#7a4a4a");
     tmpVideo.remove();
   }, 1e4);
   tmpVideo.addEventListener("seeked", () => {
+    var _a;
     clearTimeout(seekTimeout);
     const c = document.createElement("canvas");
     c.width = tmpVideo.videoWidth;
     c.height = tmpVideo.videoHeight;
     c.getContext("2d").drawImage(tmpVideo, 0, 0);
     const frameDataUrl = c.toDataURL("image/jpeg", 0.95);
-    openPointSelector(node, frameDataUrl);
     tmpVideo.remove();
+    if (videoFilePath) {
+      const skipWidget = (_a = node.widgets) == null ? void 0 : _a.find((w) => w.name === "skip_first_frames");
+      const skipFrames = Number(skipWidget == null ? void 0 : skipWidget.value) || 0;
+      fetch("/ffmpega/first_frame", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ video_path: videoFilePath, skip_frames: skipFrames })
+      }).then((r) => r.json()).then((data) => {
+        openPointSelector(node, frameDataUrl, videoSrc, data.frame_path || "");
+      }).catch(() => {
+        openPointSelector(node, frameDataUrl);
+      });
+    } else {
+      openPointSelector(node, frameDataUrl);
+    }
   }, { once: true });
   tmpVideo.addEventListener("error", () => {
     clearTimeout(seekTimeout);
@@ -4074,6 +4371,7 @@ app.registerExtension({
     registerAgentNode(nodeType, nodeData);
     registerFrameExtractNode(nodeType, nodeData);
     registerLoadVideoNode(nodeType, nodeData);
+    registerLoadMaskVideoNode(nodeType, nodeData);
     registerSaveVideoNode(nodeType, nodeData);
     registerLoadImageNode(nodeType, nodeData);
     registerTextInputNode(nodeType, nodeData);

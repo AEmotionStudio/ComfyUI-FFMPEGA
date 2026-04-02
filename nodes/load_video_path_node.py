@@ -239,8 +239,8 @@ class LoadVideoPathNode:
                         "and forwards this mask directly."
                     ),
                 }),
-                "mask_mode": (["none", "single_frame", "all_frames"], {
-                    "default": "none",
+                "mask_mode": (["single_frame", "none", "all_frames"], {
+                    "default": "single_frame",
                     "tooltip": (
                         "Controls mask output shape. 'none' disables mask "
                         "generation. 'single_frame' outputs a single mask "
@@ -249,8 +249,8 @@ class LoadVideoPathNode:
                         "masks (N,H,W)."
                     ),
                 }),
-                "mask_output_type": (["none", "black_white", "colored_overlay"], {
-                    "default": "none",
+                "mask_output_type": (["colored_overlay", "none", "black_white"], {
+                    "default": "colored_overlay",
                     "tooltip": (
                         "Mask preview output format for 'mask_overlay_path'. "
                         "'none' disables mask output. "
@@ -267,6 +267,20 @@ class LoadVideoPathNode:
                         "Visible on first frame when paused, hides during playback."
                     ),
                 }),
+                "custom_width": ("INT", {
+                    "default": 0, "min": 0, "max": 8192, "step": 8,
+                    "tooltip": (
+                        "Custom output width in pixels. 0 = use source video width. "
+                        "Useful for standardizing resolution across multiple inputs."
+                    ),
+                }),
+                "custom_height": ("INT", {
+                    "default": 0, "min": 0, "max": 8192, "step": 8,
+                    "tooltip": (
+                        "Custom output height in pixels. 0 = use source video height. "
+                        "Useful for standardizing resolution across multiple inputs."
+                    ),
+                }),
             },
             "hidden": {
                 "mask_points_data": "STRING",
@@ -274,8 +288,8 @@ class LoadVideoPathNode:
             },
         }
 
-    RETURN_TYPES = ("IMAGE", "AUDIO", "STRING", "STRING", "STRING", "STRING", "MASK")
-    RETURN_NAMES = ("images", "audio", "video_path", "mask_overlay_path", "mask_points", "crop_data", "mask")
+    RETURN_TYPES = ("IMAGE", "AUDIO", "STRING", "STRING", "STRING", "STRING", "MASK", "INT")
+    RETURN_NAMES = ("images", "audio", "video_path", "mask_overlay_path", "mask_points", "crop_data", "mask", "frame_count")
     OUTPUT_TOOLTIPS = (
         "Upstream IMAGE pass-through (or empty tensor if not connected).",
         "Upstream AUDIO pass-through (or silence if not connected).",
@@ -291,6 +305,8 @@ class LoadVideoPathNode:
         "SAM3 segmentation mask from Point Selector clicks. "
         "Connect to any node accepting MASK input (MatAnyone2, compositing, etc.). "
         "Empty mask when no points are set.",
+        "Effective frame count after applying trim parameters "
+        "(skip, cap, select every Nth).",
     )
     FUNCTION = "load_path"
     CATEGORY = "FFMPEGA"
@@ -345,9 +361,11 @@ class LoadVideoPathNode:
         video_path=None,
         mask_points=None,
         mask=None,
-        mask_mode: str = "none",
-        mask_output_type: str = "none",
+        mask_mode: str = "single_frame",
+        mask_output_type: str = "colored_overlay",
         show_mask_preview: bool = True,
+        custom_width: int = 0,
+        custom_height: int = 0,
     ) -> dict:
         """Resolve path, probe metadata, compute effective values.
 
@@ -357,6 +375,9 @@ class LoadVideoPathNode:
         the file-picker combo.  ``images`` and ``audio`` are passed
         through to the new output slots.
         """
+        # Defensive coercion: ComfyUI may send '' when fields are cleared
+        custom_width = int(custom_width) if custom_width not in (None, "") else 0
+        custom_height = int(custom_height) if custom_height not in (None, "") else 0
         # --- Determine the actual video path ---
         upstream = False
         if video_path and isinstance(video_path, str) and video_path.strip():
@@ -514,6 +535,8 @@ class LoadVideoPathNode:
             "effective_fps": effective_fps,
             "effective_frames": available_frames,
             "effective_duration": effective_duration,
+            "custom_width": custom_width if custom_width > 0 else meta["width"],
+            "custom_height": custom_height if custom_height > 0 else meta["height"],
         }
 
         # --- Pass-through upstream IMAGE / AUDIO, or extract from video ---
@@ -631,6 +654,22 @@ class LoadVideoPathNode:
                                             from core.sam3_masker import mask_video_subprocess, cleanup as _sam3_cleanup  # type: ignore
                                         # Free the SAM3 image model VRAM before subprocess
                                         _sam3_cleanup()
+                                        # Offload ALL ComfyUI-managed models (DWPose,
+                                        # checkpoints, etc.) so the subprocess has
+                                        # enough VRAM for SAM3 video tracking.
+                                        try:
+                                            import comfy.model_management as _mm
+                                            _mm.unload_all_models()
+                                            _mm.soft_empty_cache()
+                                            _free_gb = torch.cuda.memory_allocated() / (1024**3)
+                                            logger.info(
+                                                "LoadVideoPath: GPU freed for SAM3 subprocess "
+                                                "(%.2f GiB still allocated)", _free_gb,
+                                            )
+                                        except Exception as _vram_err:
+                                            logger.warning(
+                                                "LoadVideoPath: model offload failed: %s", _vram_err,
+                                            )
                                         logger.info(
                                             "LoadVideoPath: running SAM3 video tracking "
                                             "(%d points, all_frames subprocess mode)",
@@ -853,7 +892,8 @@ class LoadVideoPathNode:
             "result": (images_out, audio_out,
                        resolved_path, mask_overlay_path,
                        mask_points_data or "",
-                       crop_data or "", mask_out),
+                       crop_data or "", mask_out,
+                       available_frames),
             "ui": {
                 "video": ui_video,
                 "video_info": [video_info],

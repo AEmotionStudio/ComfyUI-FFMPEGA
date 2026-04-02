@@ -383,3 +383,71 @@ class TestFluxKleinNoLLMMode:
             # Verify reference_images was passed to _edit_frame
             _, call_kwargs = mock_edit.call_args
             assert call_kwargs.get("reference_images") == [ref]
+
+
+# --- Image Path Output Tests --------------------------------------------------
+
+class TestImagePathOutput:
+    """Test the image_path output slot on the agent node."""
+
+    def test_return_types_has_9_elements(self):
+        """RETURN_TYPES should have 9 elements after adding image_path."""
+        pytest.importorskip("torch")
+        from nodes.agent_node import FFMPEGAgentNode
+        assert len(FFMPEGAgentNode.RETURN_TYPES) == 9
+
+    def test_return_names_includes_image_path(self):
+        """'image_path' should be in RETURN_NAMES."""
+        pytest.importorskip("torch")
+        from nodes.agent_node import FFMPEGAgentNode
+        assert "image_path" in FFMPEGAgentNode.RETURN_NAMES
+
+    def test_image_path_position(self):
+        """image_path should be at index 7 (after mask_points, before mask)."""
+        pytest.importorskip("torch")
+        from nodes.agent_node import FFMPEGAgentNode
+        names = FFMPEGAgentNode.RETURN_NAMES
+        assert names.index("image_path") == 7
+        assert names.index("mask_points") == 6
+        assert names.index("mask") == 8
+
+    def test_image_path_type_is_string(self):
+        """image_path output should be STRING type."""
+        pytest.importorskip("torch")
+        from nodes.agent_node import FFMPEGAgentNode
+        idx = FFMPEGAgentNode.RETURN_NAMES.index("image_path")
+        assert FFMPEGAgentNode.RETURN_TYPES[idx] == "STRING"
+
+    def test_image_path_from_result6_with_png(self):
+        """Helper should return path for .png outputs."""
+        from nodes.agent_node import _image_path_from_result6
+        result6 = ("img", "audio", "/tmp/out.png", "log", "analysis", "")
+        assert _image_path_from_result6(result6) == "/tmp/out.png"
+
+    def test_image_path_from_result6_with_mp4(self):
+        """Helper should return empty string for .mp4 outputs."""
+        from nodes.agent_node import _image_path_from_result6
+        result6 = ("img", "audio", "/tmp/out.mp4", "log", "analysis", "")
+        assert _image_path_from_result6(result6) == ""
+
+    def test_image_path_from_result6_with_jpg(self):
+        """Helper should return path for .jpg outputs."""
+        from nodes.agent_node import _image_path_from_result6
+        result6 = ("img", "audio", "/tmp/edited.jpg", "log", "analysis", "")
+        assert _image_path_from_result6(result6) == "/tmp/edited.jpg"
+
+    def test_flux_image_source_widget_exists(self):
+        """flux_image_source should be in INPUT_TYPES."""
+        pytest.importorskip("torch")
+        from nodes.agent_node import FFMPEGAgentNode
+        input_types = FFMPEGAgentNode.INPUT_TYPES()
+        assert "flux_image_source" in input_types["optional"]
+
+    def test_flux_image_source_is_boolean(self):
+        """flux_image_source should be a BOOLEAN widget."""
+        pytest.importorskip("torch")
+        from nodes.agent_node import FFMPEGAgentNode
+        input_types = FFMPEGAgentNode.INPUT_TYPES()
+        widget = input_types["optional"]["flux_image_source"]
+        assert widget[0] == "BOOLEAN"
+

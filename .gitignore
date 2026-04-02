@@ -102,6 +102,7 @@ errors_2.md
 command.md
 VENV_NOTES.md
 VRAM_MANAGEMENT.md
+VENV_AUDIT_*.md
 DOLPHIN_THUMBNAILS.md
 DREAMID_OMNI_STATUS.md
 SCAIL_Memory_Report.md
@@ -169,6 +170,9 @@ uv.lock
 advert/
 index.html
 index.html.bak
+
+# Internal scripts (not shipped — local tooling only)
+scripts/upload_fp8_missing_components.py
 
 # Legacy JS source (superseded by TypeScript → web/)
 js/

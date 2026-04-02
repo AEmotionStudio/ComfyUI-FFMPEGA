@@ -47,7 +47,6 @@ log = logging.getLogger("ffmpega")
 _HF_REPO = "black-forest-labs/FLUX.2-klein-4B"
 _MIRROR_REPO = "AEmotionStudio/flux-klein"
 _MODEL_DIR_NAME = "flux_klein"
-_FP8_MODEL_DIR_NAME = "flux_klein_fp8"
 
 # Default prompt for object removal (narrative prose per BFL best practices)
 _REMOVAL_PROMPT = (
@@ -97,27 +96,6 @@ def _get_model_dir() -> Path:
     return fallback
 
 
-def _get_fp8_model_dir() -> Path | None:
-    """Get the FP8 model directory if it exists and contains a valid model.
-
-    Returns the Path if flux_klein_fp8/ exists with model_index.json,
-    otherwise None.
-    """
-    env_dir = os.environ.get("FFMPEGA_FLUX_KLEIN_FP8_MODEL_DIR")
-    if env_dir:
-        p = Path(env_dir)
-        if (p / "model_index.json").is_file():
-            return p
-        return None
-
-    for candidate in [
-        Path(__file__).resolve().parents[3] / "models" / _FP8_MODEL_DIR_NAME,
-        Path.home() / "ComfyUI" / "models" / _FP8_MODEL_DIR_NAME,
-    ]:
-        if (candidate / "model_index.json").is_file():
-            return candidate
-
-    return None
 
 
 def _download_model(model_dir: Path) -> None:
@@ -126,8 +104,11 @@ def _download_model(model_dir: Path) -> None:
     Tries the AEmotionStudio mirror first, then falls back to the
     official BFL repo.
     """
-    # Check if already downloaded (look for model_index.json — diffusers marker)
-    if (model_dir / "model_index.json").is_file():
+    # Check if already downloaded — require both the diffusers marker
+    # AND the transformer weights to avoid treating partial downloads
+    # as complete (e.g. from a previous selective download).
+    transformer_weights = model_dir / "transformer" / "diffusion_pytorch_model.safetensors"
+    if (model_dir / "model_index.json").is_file() and transformer_weights.is_file():
         return
 
     try:
@@ -192,38 +173,28 @@ def _free_vram() -> None:
     free_for_module(exclude="flux_klein_editor")
 
 
+
+
 # ---------------------------------------------------------------------------
 #  Pipeline loading
 # ---------------------------------------------------------------------------
 
-def load_pipeline(model_variant: str = "auto"):
-    """Load and cache the FLUX Klein pipeline.
+def load_pipeline():
+    """Load and cache the FLUX Klein BF16 pipeline.
 
-    Args:
-        model_variant: Which model weights to load.
-            - ``"auto"`` (default): prefer FP8 if ``flux_klein_fp8/`` exists,
-              else fall back to the original BF16 weights.
-            - ``"fp8"``: require the FP8 scaled weights (error if missing).
-            - ``"bf16"``: always load the original BF16 weights.
+    Downloads from the AEmotionStudio mirror if not already present.
 
     Returns:
         Flux2KleinPipeline instance ready for inference.
 
     Raises:
         ImportError: If diffusers is not installed or too old.
-        RuntimeError: If model download fails or requested variant is missing.
+        RuntimeError: If model download fails.
     """
     global _pipeline, _pipeline_variant
 
-    # Re-use cached pipeline if variant matches
-    if _pipeline is not None and _pipeline_variant == model_variant:
-        return _pipeline
-
-    # Variant changed — discard old pipeline
     if _pipeline is not None:
-        log.info("Model variant changed (%s → %s), reloading pipeline",
-                 _pipeline_variant, model_variant)
-        cleanup()
+        return _pipeline
 
     try:
         from diffusers import Flux2KleinPipeline  # type: ignore[attr-defined]
@@ -233,35 +204,12 @@ def load_pipeline(model_variant: str = "auto"):
             "Install with: pip install git+https://github.com/huggingface/diffusers.git"
         )
 
-    # Select model directory based on variant
-    fp8_dir = _get_fp8_model_dir()
-
-    if model_variant == "fp8":
-        if fp8_dir is None:
-            raise RuntimeError(
-                "FP8 model variant requested but flux_klein_fp8/ not found. "
-                "Run: python scripts/convert_flux_klein_fp8.py"
-            )
-        model_dir = fp8_dir
-        is_fp8 = True
-    elif model_variant == "bf16":
-        model_dir = _get_model_dir()
-        _download_model(model_dir)
-        is_fp8 = False
-    else:  # "auto"
-        if fp8_dir is not None:
-            model_dir = fp8_dir
-            is_fp8 = True
-            log.info("Auto-detected FP8 model at %s", fp8_dir)
-        else:
-            model_dir = _get_model_dir()
-            _download_model(model_dir)
-            is_fp8 = False
+    model_dir = _get_model_dir()
+    _download_model(model_dir)
 
     _free_vram()
 
-    log.info("Loading FLUX Klein pipeline from %s (fp8=%s, variant=%s)",
-             model_dir, is_fp8, model_variant)
+    log.info("Loading FLUX Klein pipeline from %s", model_dir)
 
     import torch
 
@@ -288,9 +236,8 @@ def load_pipeline(model_variant: str = "auto"):
     pipe.enable_sequential_cpu_offload()
 
     _pipeline = pipe
-    _pipeline_variant = model_variant
-    variant_label = "fp8-scaled" if is_fp8 else str(dtype)
-    log.info("FLUX Klein pipeline loaded successfully (variant=%s)", variant_label)
+    _pipeline_variant = "bf16"
+    log.info("FLUX Klein pipeline loaded successfully (variant=%s)", dtype)
     return _pipeline
 
 
@@ -556,6 +503,10 @@ def _edit_frame(
     prompt: str,
     seed: int = 42,
     reference_images: "list | None" = None,
+    num_steps: int = _NUM_STEPS,
+    guidance_scale: float = _GUIDANCE_SCALE,
+    width: int = _OUTPUT_SIZE,
+    height: int = _OUTPUT_SIZE,
 ):
     """Edit a single frame using FLUX Klein reference-image conditioning.
 
@@ -567,6 +518,10 @@ def _edit_frame(
         reference_images: Optional list of extra PIL.Image.Image references.
             When provided they are prepended to Klein's ``image`` list so
             they condition the generation alongside the source frame.
+        num_steps: Number of denoising steps
+        guidance_scale: CFG scale
+        width: Output width in pixels
+        height: Output height in pixels
 
     Returns:
         PIL.Image.Image — edited result at the original resolution
@@ -577,16 +532,16 @@ def _edit_frame(
     orig_w, orig_h = image.size
 
     # Resize to model's expected resolution
-    ref_image = image.resize((_OUTPUT_SIZE, _OUTPUT_SIZE), Image.LANCZOS)  # type: ignore[attr-defined]
+    ref_image = image.resize((width, height), Image.LANCZOS)  # type: ignore[attr-defined]
 
-    # Build the image list: extra references first, then the source frame
-    image_list: list = []
+    # Build the image list: source frame first (strongest influence),
+    # then extra references for style conditioning
+    image_list: list = [ref_image]
     if reference_images:
         for ri in reference_images:
             image_list.append(
-                ri.resize((_OUTPUT_SIZE, _OUTPUT_SIZE), Image.LANCZOS)  # type: ignore[attr-defined]
+                ri.resize((width, height), Image.LANCZOS)  # type: ignore[attr-defined]
             )
-    image_list.append(ref_image)
 
     device = pipe._execution_device if hasattr(pipe, '_execution_device') else "cuda"
     generator = torch.Generator(device=device).manual_seed(seed)
@@ -594,10 +549,10 @@ def _edit_frame(
     result = pipe(
         prompt=prompt,
         image=image_list,
-        height=_OUTPUT_SIZE,
-        width=_OUTPUT_SIZE,
-        guidance_scale=_GUIDANCE_SCALE,
-        num_inference_steps=_NUM_STEPS,
+        height=height,
+        width=width,
+        guidance_scale=guidance_scale,
+        num_inference_steps=num_steps,
         generator=generator,
     ).images[0]
 
@@ -613,6 +568,10 @@ def _remove_frame(
     image,
     mask,
     seed: int = 42,
+    num_steps: int = _NUM_STEPS,
+    guidance_scale: float = _GUIDANCE_SCALE,
+    width: int = _OUTPUT_SIZE,
+    height: int = _OUTPUT_SIZE,
 ):
     """Remove masked region from a single frame using FLUX Klein.
 
@@ -624,6 +583,10 @@ def _remove_frame(
         image: PIL.Image.Image (RGB)
         mask: PIL.Image.Image (L, 255 = region to remove)
         seed: Random seed
+        num_steps: Number of denoising steps
+        guidance_scale: CFG scale
+        width: Output width in pixels
+        height: Output height in pixels
 
     Returns:
         PIL.Image.Image — result with object removed
@@ -641,7 +604,7 @@ def _remove_frame(
     masked_image = Image.fromarray(img_arr)
 
     # Resize to model resolution
-    ref_image = masked_image.resize((_OUTPUT_SIZE, _OUTPUT_SIZE), Image.LANCZOS)  # type: ignore[attr-defined]
+    ref_image = masked_image.resize((width, height), Image.LANCZOS)  # type: ignore[attr-defined]
 
     device = pipe._execution_device if hasattr(pipe, '_execution_device') else "cuda"
     generator = torch.Generator(device=device).manual_seed(seed)
@@ -649,10 +612,10 @@ def _remove_frame(
     result = pipe(
         prompt=_REMOVAL_PROMPT,
         image=[ref_image],
-        height=_OUTPUT_SIZE,
-        width=_OUTPUT_SIZE,
-        guidance_scale=_GUIDANCE_SCALE,
-        num_inference_steps=_NUM_STEPS,
+        height=height,
+        width=width,
+        guidance_scale=guidance_scale,
+        num_inference_steps=num_steps,
         generator=generator,
     ).images[0]
 
@@ -738,7 +701,10 @@ def edit_single_image(
     output_path: Optional[str] = None,
     seed: int = 42,
     reference_images: "list | None" = None,
-    model_variant: str = "auto",
+    num_steps: int = _NUM_STEPS,
+    guidance_scale: float = _GUIDANCE_SCALE,
+    width: int = _OUTPUT_SIZE,
+    height: int = _OUTPUT_SIZE,
 ) -> str:
     """Edit a single image using FLUX Klein (no mask, full-frame).
 
@@ -752,6 +718,10 @@ def edit_single_image(
         output_path: output path (auto-generated if None)
         seed: random seed for reproducibility
         reference_images: optional list of extra PIL images to condition on
+        num_steps: number of denoising steps
+        guidance_scale: classifier-free guidance scale
+        width: output width in pixels
+        height: output height in pixels
 
     Returns:
         Path to the edited image.
@@ -769,11 +739,18 @@ def edit_single_image(
     image = Image.open(image_path).convert("RGB")
 
     try:
-        pipe = load_pipeline(model_variant=model_variant)
+        pipe = load_pipeline()
 
         import torch
         with torch.no_grad():
-            result = _edit_frame(pipe, image, prompt, seed=seed, reference_images=reference_images)
+            result = _edit_frame(
+                pipe, image, prompt, seed=seed,
+                reference_images=reference_images,
+                num_steps=num_steps,
+                guidance_scale=guidance_scale,
+                width=width,
+                height=height,
+            )
 
         result.save(output_path)
         log.info("FLUX Klein single-image edit complete: %s", output_path)
@@ -791,7 +768,11 @@ def edit_video(
     mode: str = "edit",
     smoothing: str = "none",
     reference_images: "list | None" = None,
-    model_variant: str = "auto",
+    seed: int = 42,
+    num_steps: int = _NUM_STEPS,
+    guidance_scale: float = _GUIDANCE_SCALE,
+    width: int = _OUTPUT_SIZE,
+    height: int = _OUTPUT_SIZE,
 ) -> str:
     """Edit a video using FLUX Klein per-frame image editing.
 
@@ -856,7 +837,7 @@ def edit_video(
             masks, masks_tmpdir = _load_mask_frames(mask_video_path, total_frames)
 
         # Load pipeline
-        pipe = load_pipeline(model_variant=model_variant)
+        pipe = load_pipeline()
 
         # Flush VRAM fragments left by pipeline + model load so the
         # subsequent VAE encode has enough contiguous memory.
@@ -866,7 +847,7 @@ def edit_video(
             torch.cuda.empty_cache()
 
         # Use a fixed seed for temporal consistency across frames
-        base_seed = 42
+        base_seed = seed
 
         # Per-frame processing — write composited frames to disk to
         # avoid accumulating ~135 MiB of numpy arrays in memory.
@@ -884,7 +865,7 @@ def edit_video(
             if maskless:
                 # Full-frame mode — edit entire frame, no compositing
                 with torch.no_grad():
-                    edited = _edit_frame(pipe, frame_i, prompt, seed=base_seed, reference_images=reference_images)
+                    edited = _edit_frame(pipe, frame_i, prompt, seed=base_seed, reference_images=reference_images, num_steps=num_steps, guidance_scale=guidance_scale, width=width, height=height)
                 edited.save(os.path.join(comp_tmpdir, f"{i:06d}.png"))
                 del edited
                 frames[i] = None  # type: ignore[assignment]
@@ -912,9 +893,9 @@ def edit_video(
                 # accumulating graph memory across frames)
                 with torch.no_grad():
                     if mode == "remove":
-                        edited = _remove_frame(pipe, frame_i, mask_i, seed=base_seed)
+                        edited = _remove_frame(pipe, frame_i, mask_i, seed=base_seed, num_steps=num_steps, guidance_scale=guidance_scale, width=width, height=height)
                     else:
-                        edited = _edit_frame(pipe, frame_i, prompt, seed=base_seed, reference_images=reference_images)
+                        edited = _edit_frame(pipe, frame_i, prompt, seed=base_seed, reference_images=reference_images, num_steps=num_steps, guidance_scale=guidance_scale, width=width, height=height)
 
                 # Composite and write to disk
                 result = _composite_frame(frame_i, edited, mask_i)

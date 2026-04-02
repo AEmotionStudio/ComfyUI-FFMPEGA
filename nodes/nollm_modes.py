@@ -3764,7 +3764,12 @@ async def process_flux_klein_only(
     """
     logger.info("FLUX Klein mode: prompt=%r", prompt)
 
-    flux_klein_model = kwargs.get("flux_klein_model", "auto")
+    flux_image_source = kwargs.get("flux_image_source", False)
+    flux_klein_steps = kwargs.get("flux_klein_steps", 4)
+    flux_klein_guidance = kwargs.get("flux_klein_guidance", 1.0)
+    flux_klein_seed = kwargs.get("flux_klein_seed", 42)
+    flux_klein_width = kwargs.get("flux_klein_width", 1024)
+    flux_klein_height = kwargs.get("flux_klein_height", 1024)
 
     if not prompt or not prompt.strip():
         raise RuntimeError(
@@ -3772,6 +3777,44 @@ async def process_flux_klein_only(
             "Enter your edit instruction in the prompt field (e.g. "
             "'a person wearing a chrome bodysuit')."
         )
+
+    # --- Image-source mode: use first image input as source ---
+    # When flux_image_source is on, the first connected image becomes
+    # effective_video_path and the rest become references.
+    _temp_source_image = None  # track for cleanup
+    if flux_image_source:
+        if image_a is not None:
+            # Convert image_a tensor → temp PNG for use as source
+            from PIL import Image as _PILImage
+            import numpy as _np
+
+            if hasattr(image_a, 'shape') and len(image_a.shape) == 4:
+                arr = (image_a[0].cpu().numpy() * 255).clip(0, 255).astype(_np.uint8)
+            elif hasattr(image_a, 'shape') and len(image_a.shape) == 3:
+                arr = (image_a.cpu().numpy() * 255).clip(0, 255).astype(_np.uint8)
+            else:
+                arr = None
+
+            if arr is not None:
+                _temp_source_image = os.path.join(
+                    tempfile.mkdtemp(prefix="fk_src_"), "source.png"
+                )
+                _PILImage.fromarray(arr).save(_temp_source_image)
+                effective_video_path = _temp_source_image
+                image_a = None  # consumed — don't also use as reference
+                logger.info("FLUX Klein image-source mode: using image_a tensor as source → %s", _temp_source_image)
+            else:
+                logger.warning("FLUX Klein image-source mode: image_a has unexpected shape, falling back to video_path")
+        elif _all_image_paths and os.path.isfile(_all_image_paths[0]):
+            # Use image_path_a as source, rest as references
+            effective_video_path = _all_image_paths[0]
+            _all_image_paths = _all_image_paths[1:]
+            logger.info("FLUX Klein image-source mode: using image_path_a as source → %s", effective_video_path)
+        else:
+            logger.warning(
+                "FLUX Klein image-source mode is on but no image inputs connected. "
+                "Falling back to video_path as source."
+            )
 
     # --- Import FLUX Klein editor ---
     try:
@@ -3852,8 +3895,12 @@ async def process_flux_klein_only(
                 image_path=effective_video_path,
                 prompt=prompt,
                 output_path=img_output,
+                seed=flux_klein_seed,
                 reference_images=reference_images,
-                model_variant=flux_klein_model,
+                num_steps=flux_klein_steps,
+                guidance_scale=flux_klein_guidance,
+                width=flux_klein_width,
+                height=flux_klein_height,
             )
             output_path = edited_path
             cmd_log = f"flux_klein edit_single_image → {output_path}"
@@ -3868,7 +3915,11 @@ async def process_flux_klein_only(
                 mode="edit",
                 smoothing=flux_smoothing,
                 reference_images=reference_images,
-                model_variant=flux_klein_model,
+                seed=flux_klein_seed,
+                num_steps=flux_klein_steps,
+                guidance_scale=flux_klein_guidance,
+                width=flux_klein_width,
+                height=flux_klein_height,
             )
             output_path = edited_path
 
@@ -3939,12 +3990,17 @@ async def process_flux_klein_only(
         return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
     finally:
         # --- Cleanup temp files (always runs, even on error) ---
-        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+        for tmp_path in [temp_video_from_images, temp_video_with_audio, _temp_source_image]:
             if tmp_path and os.path.exists(tmp_path):
                 try:
                     os.remove(tmp_path)
                 except OSError:
                     pass
+        # Clean up temp source image directory
+        if _temp_source_image:
+            _src_dir = os.path.dirname(_temp_source_image)
+            if _src_dir and os.path.isdir(_src_dir):
+                shutil.rmtree(_src_dir, ignore_errors=True)
         if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
             if not os.listdir(temp_render_dir):
                 shutil.rmtree(temp_render_dir, ignore_errors=True)
@@ -4008,8 +4064,7 @@ async def process_kiwi_edit_only(
     kiwi_flow_shift = kwargs.get("kiwi_flow_shift", 5.0)
     kiwi_task_type = kwargs.get("kiwi_task_type", "auto")
     kiwi_scheduler = kwargs.get("kiwi_scheduler", "unipc")
-    kiwi_lora_enabled = kwargs.get("kiwi_lora_enabled", False)
-    kiwi_lora_variant = kwargs.get("kiwi_lora_variant", "high_noise")
+
 
     # --- Import Kiwi-Edit synthesizer ---
     try:
@@ -4093,7 +4148,6 @@ async def process_kiwi_edit_only(
             flow_shift=float(kiwi_flow_shift),
             task_type=str(kiwi_task_type),
             scheduler=str(kiwi_scheduler),
-            lora_variant=str(kiwi_lora_variant) if kiwi_lora_enabled else None,
         )
         output_path = edited_path
 
@@ -4164,7 +4218,7 @@ async def process_kiwi_edit_only(
             f"Flow shift: {kiwi_flow_shift}\n"
             f"Task type: {kiwi_task_type}\n"
             f"Scheduler: {kiwi_scheduler}\n"
-            f"LoRA: {kiwi_lora_variant if kiwi_lora_enabled else 'disabled'}\n"
+
             f"Long video: {kiwi_long_video}\n"
             f"Prompt: {prompt or '(none)'}\n"
             f"Reference images: {'yes' if has_ref else 'no'}\n\n"
@@ -4608,12 +4662,17 @@ async def process_rembg_only(
     rembg_background: str = "transparent",
     temp_video_from_images: Optional[str] = None,
     temp_video_with_audio: Optional[str] = None,
+    _all_image_paths: Optional[list] = None,
     **kwargs,
 ) -> tuple[torch.Tensor, dict, str, str, str, str]:
     """Remove background from video/image using rembg without any LLM.
 
-    Uses the existing ``_f_remove_background`` skill handler to generate
-    per-frame alpha masks and composite via FFmpeg filter_complex.
+    For single images (detected by file extension or via ``_all_image_paths``),
+    processes the single frame directly — outputting a PNG with alpha
+    (transparent) or a composited PNG (solid background).
+
+    For videos, uses the existing ``_f_remove_background`` skill handler to
+    generate per-frame alpha masks and composite via FFmpeg filter_complex.
 
     Returns:
         Standard 6-tuple: (images_tensor, audio_dict, output_path,
@@ -4623,6 +4682,158 @@ async def process_rembg_only(
 
     logger.info("Rembg mode: model=%s, background=%s", rembg_model, rembg_background)
 
+    is_transparent = rembg_background == "transparent"
+
+    # --- Detect single-image input ---
+    # Priority: _all_image_paths (from LoadImagePath) > file extension check
+    _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tiff", ".tif", ".gif"}
+    source_image_paths: list[str] = []
+
+    if _all_image_paths:
+        source_image_paths = [p for p in _all_image_paths if os.path.isfile(p)]
+    else:
+        ext = os.path.splitext(effective_video_path)[1].lower()
+        if ext in _IMAGE_EXTS and os.path.isfile(effective_video_path):
+            source_image_paths = [effective_video_path]
+
+    # ================================================================== #
+    #  Image fast path — process N images directly, output PNGs           #
+    # ================================================================== #
+    if source_image_paths:
+        n_images = len(source_image_paths)
+        logger.info(
+            "Rembg: image mode — processing %d image(s) (model=%s)",
+            n_images, rembg_model,
+        )
+
+        # --- Build output path (based on first image) ---
+        output_path, temp_render_dir = build_output_path(
+            effective_video_path=source_image_paths[0],
+            save_output=save_output,
+            output_path=output_path,
+            preview_mode=preview_mode,
+        )
+        # Force PNG output for images
+        base, _ = os.path.splitext(output_path)
+        output_path = base + ".png"
+
+        try:
+            from rembg import remove as rembg_remove, new_session
+        except ImportError:
+            raise RuntimeError(
+                "rembg is not installed. Install with: "
+                "pip install 'comfyui-ffmpega[masking]'"
+            )
+
+        try:
+            from PIL import Image as PILImage
+            import numpy as np
+
+            # Create session once — reuse for all images
+            session = new_session(rembg_model)
+
+            bg_color_map = {
+                "white": (255, 255, 255),
+                "black": (0, 0, 0),
+                "green": (0, 177, 64),
+                "blue": (0, 0, 255),
+                "red": (255, 0, 0),
+                "gray": (128, 128, 128),
+                "grey": (128, 128, 128),
+            }
+
+            image_tensors = []
+            output_paths = []
+            for idx, src_path in enumerate(source_image_paths):
+                pil_img = PILImage.open(src_path).convert("RGB")
+
+                # Run rembg — returns RGBA PIL image
+                result_rgba = await asyncio.to_thread(
+                    rembg_remove, pil_img, session=session,
+                )
+
+                # Build per-image output path
+                if idx == 0:
+                    img_output = output_path
+                else:
+                    img_output = f"{base}_{idx}.png"
+
+                if is_transparent:
+                    result_rgba.save(img_output, "PNG")
+                else:
+                    bg_rgb = bg_color_map.get(rembg_background, (0, 0, 0))
+                    bg = PILImage.new("RGBA", result_rgba.size, bg_rgb + (255,))
+                    composited = PILImage.alpha_composite(bg, result_rgba)
+                    composited.convert("RGB").save(img_output, "PNG")
+
+                output_paths.append(img_output)
+                logger.info(
+                    "Rembg: image %d/%d complete: %s", idx + 1, n_images, img_output,
+                )
+
+                # Build per-image tensor — for transparent PNGs,
+                # composite onto white so the IMAGE preview looks correct.
+                # (ComfyUI IMAGE type is RGB-only, alpha is always lost.)
+                if is_transparent and result_rgba.mode == "RGBA":
+                    white_bg = PILImage.new("RGBA", result_rgba.size, (255, 255, 255, 255))
+                    preview = PILImage.alpha_composite(white_bg, result_rgba)
+                    result_np = np.array(preview.convert("RGB"))
+                else:
+                    result_np = np.array(PILImage.open(img_output).convert("RGB"))
+                image_tensors.append(
+                    torch.from_numpy(result_np.astype(np.float32) / 255.0)
+                )
+
+            # Stack into batched IMAGE tensor (N, H, W, 3)
+            if len(image_tensors) == 1:
+                images_tensor = image_tensors[0].unsqueeze(0)
+            else:
+                # Resize all images to match the first image's dimensions
+                target_h, target_w = image_tensors[0].shape[:2]
+                resized = [image_tensors[0]]
+                for t in image_tensors[1:]:
+                    if t.shape[0] != target_h or t.shape[1] != target_w:
+                        # Resize via PIL for quality (Lanczos)
+                        t_np = (t.numpy() * 255).astype(np.uint8)
+                        t_pil = PILImage.fromarray(t_np)
+                        t_pil = t_pil.resize((target_w, target_h), PILImage.LANCZOS)
+                        t_arr = np.array(t_pil).astype(np.float32) / 255.0
+                        resized.append(torch.from_numpy(t_arr))
+                    else:
+                        resized.append(t)
+                images_tensor = torch.stack(resized, dim=0)
+
+            cmd_log = f"rembg {rembg_model} → {', '.join(output_paths)}"
+            audio_out = {"waveform": torch.zeros(1, 1, 0), "sample_rate": 44100}
+
+            input_list = "\n".join(f"  {p}" for p in source_image_paths)
+            output_list = "\n".join(f"  {p}" for p in output_paths)
+            analysis = (
+                f"Rembg Background Removal ({n_images} Image{'s' if n_images > 1 else ''})\n"
+                f"Model: {rembg_model}\n"
+                f"Background: {rembg_background}\n"
+                f"Inputs:\n{input_list}\n"
+                f"Outputs:\n{output_list}"
+            )
+
+            return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
+
+        finally:
+            # Cleanup temp files
+            for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+                if tmp_path and os.path.exists(tmp_path):
+                    try:
+                        os.remove(tmp_path)
+                    except OSError:
+                        pass
+            if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+                if not os.listdir(temp_render_dir):
+                    shutil.rmtree(temp_render_dir, ignore_errors=True)
+
+    # ================================================================== #
+    #  Video path — per-frame mask + FFmpeg composite (existing logic)     #
+    # ================================================================== #
+
     # --- Build output path ---
     output_path, temp_render_dir = build_output_path(
         effective_video_path=effective_video_path,
@@ -4631,8 +4842,6 @@ async def process_rembg_only(
         preview_mode=preview_mode,
     )
 
-    # For transparent bg, output must be WebM (VP9 with alpha)
-    is_transparent = rembg_background == "transparent"
     if is_transparent:
         base, _ = os.path.splitext(output_path)
         output_path = base + ".webm"
@@ -5753,3 +5962,946 @@ async def process_scail_only(
         if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
             if not os.listdir(temp_render_dir):
                 shutil.rmtree(temp_render_dir, ignore_errors=True)
+
+
+# ================================================================== #
+#  SHARP — single-image 3D Gaussian view synthesis                     #
+# ================================================================== #
+
+async def process_sharp_only(
+    # dependencies
+    media_converter,
+    # parameters
+    effective_video_path: str,
+    video_metadata,
+    save_output: bool,
+    output_path: str,
+    preview_mode: bool,
+    quality_preset: str,
+    crf: int,
+    encoding_preset: str,
+    image_a=None,
+    temp_video_from_images: Optional[str] = None,
+    temp_video_with_audio: Optional[str] = None,
+    **kwargs,
+) -> tuple[torch.Tensor, dict, str, str, str, str]:
+    """Run Apple SHARP 3D Gaussian view synthesis without any LLM involvement.
+
+    Takes a single image from ``image_a`` (ComfyUI IMAGE tensor) and:
+    1. Predicts 3D Gaussian splat parameters (<1s)
+    2. Renders a camera trajectory video via gsplat (CUDA only)
+    3. Optionally exports the .ply file
+
+    ⚠️ Model weights are Apple ML Research License (non-commercial/research only).
+
+    Returns the standard 6-tuple:
+        (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
+    """
+    # --- Extract SHARP parameters from kwargs ---
+    sharp_trajectory = str(kwargs.pop("sharp_trajectory", "rotate_forward"))
+    sharp_num_frames = int(kwargs.pop("sharp_num_frames", 60))
+    sharp_max_disparity = float(kwargs.pop("sharp_max_disparity", 0.08))
+    sharp_max_zoom = float(kwargs.pop("sharp_max_zoom", 0.15))
+    sharp_save_ply = str(kwargs.pop("sharp_save_ply", "false")).lower() in ("true", "1", "yes")
+    sharp_device = str(kwargs.pop("sharp_device", "auto"))
+
+    logger.info(
+        "SHARP mode: trajectory=%s, frames=%d, disparity=%.3f, zoom=%.3f, ply=%s, device=%s",
+        sharp_trajectory, sharp_num_frames, sharp_max_disparity, sharp_max_zoom,
+        sharp_save_ply, sharp_device,
+    )
+
+    # --- Extract input image from image_a tensor or image_path_a ---
+    # Accept from tensor (image_a) or file path (image_path_a from LoadImagePath)
+    image_path_a = kwargs.pop("image_path_a", "")
+    if image_a is None or (hasattr(image_a, "shape") and image_a.shape[0] == 0):
+        if image_path_a and isinstance(image_path_a, str) and image_path_a.strip() and os.path.isfile(image_path_a.strip()):
+            from PIL import Image as _PILImage
+            import numpy as np
+            pil_img = _PILImage.open(image_path_a.strip()).convert("RGB")
+            image_a = np.array(pil_img)
+            logger.info("SHARP: loaded image from image_path_a → %s", image_path_a.strip())
+        else:
+            raise RuntimeError(
+                "SHARP mode requires an image connected to the image_a or image_path_a input. "
+                "Connect an image source (Load Image, LoadImagePath, etc.)."
+            )
+
+    # Convert ComfyUI IMAGE tensor (B, H, W, C) float32 [0,1] → numpy HWC uint8
+    if isinstance(image_a, torch.Tensor):
+        if image_a.dim() == 4:
+            image_np = (image_a[0].cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
+        elif image_a.dim() == 3:
+            image_np = (image_a.cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
+        else:
+            raise RuntimeError(f"Unexpected image_a tensor shape: {image_a.shape}")
+    elif isinstance(image_a, np.ndarray):
+        if image_a.max() <= 1.0:
+            image_np = (image_a * 255.0).clip(0, 255).astype(np.uint8)
+        else:
+            image_np = image_a.astype(np.uint8)
+    else:
+        raise RuntimeError(f"Unsupported image_a type: {type(image_a)}")
+
+    # Ensure RGB (3 channels)
+    if image_np.ndim == 2:
+        image_np = np.stack([image_np] * 3, axis=-1)
+    elif image_np.shape[-1] == 4:
+        image_np = image_np[..., :3]
+
+    logger.info("SHARP: input image shape: %s", image_np.shape)
+
+    # --- Import SHARP synthesizer ---
+    try:
+        try:
+            from ..core.sharp_synthesizer import run_sharp_pipeline, TRAJECTORY_TYPES
+        except ImportError:
+            from core.sharp_synthesizer import run_sharp_pipeline, TRAJECTORY_TYPES  # type: ignore
+    except ImportError:
+        raise RuntimeError(
+            "SHARP is not available. Install with:\n"
+            "  pip install --no-deps git+https://github.com/apple/ml-sharp.git\n"
+            "See requirements-optional.txt for details."
+        )
+
+    if sharp_trajectory not in TRAJECTORY_TYPES:
+        logger.warning(
+            "SHARP: unknown trajectory '%s', falling back to 'rotate_forward'",
+            sharp_trajectory,
+        )
+        sharp_trajectory = "rotate_forward"
+
+    # --- Build output path ---
+    output_path, temp_render_dir = build_output_path(
+        effective_video_path=effective_video_path,
+        save_output=save_output,
+        output_path=output_path,
+        preview_mode=preview_mode,
+    )
+
+    # --- Resolve PLY output path ---
+    ply_output_path = None
+    if sharp_save_ply:
+        try:
+            import folder_paths  # type: ignore[import-not-found]
+            out_dir = folder_paths.get_output_directory()
+        except ImportError:
+            out_dir = os.path.dirname(output_path)
+        ply_basename = os.path.splitext(os.path.basename(output_path))[0] + ".ply"
+        ply_output_path = os.path.join(out_dir, ply_basename)
+
+    # --- Run SHARP pipeline (in-process with GPU) ---
+    frames_dir = None
+    ply_path = None
+    try:
+        frames_dir, ply_path = run_sharp_pipeline(
+            image_np=image_np,
+            output_video_path=output_path,
+            trajectory_type=sharp_trajectory,
+            num_frames=sharp_num_frames,
+            max_disparity=sharp_max_disparity,
+            max_zoom=sharp_max_zoom,
+            device=sharp_device,
+            export_ply=sharp_save_ply,
+            ply_output_path=ply_output_path,
+        )
+    except Exception as e:
+        logger.error("SHARP mode: inference failed: %s", e)
+        raise RuntimeError(f"SHARP inference failed: {e}") from e
+
+    if not frames_dir:
+        # CPU/MPS mode — only PLY was exported, no video rendered
+        raise RuntimeError(
+            "SHARP video rendering requires a CUDA GPU (gsplat limitation). "
+            f"PLY file exported to: {ply_path}" if ply_path else
+            "SHARP requires CUDA for video rendering. Enable sharp_save_ply for PLY-only mode on CPU."
+        )
+
+    # --- Encode frames through FFmpeg with user quality settings ---
+    _ffmpeg = _get_ffmpeg_bin()
+    effective_crf = crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23)
+    effective_preset = encoding_preset if encoding_preset != "auto" else _PRESET_MAP.get(quality_preset, "medium")
+
+    # Detect FPS: use 30 fps for rendered trajectories
+    render_fps = 30
+
+    ffmpeg_cmd = [
+        _ffmpeg, "-y",
+        "-framerate", str(render_fps),
+        "-i", os.path.join(frames_dir, "frame_%05d.png"),
+        "-c:v", "libx264",
+        "-crf", str(effective_crf),
+        "-preset", effective_preset,
+        "-pix_fmt", "yuv420p",
+        "-color_range", "pc",
+        "-an",  # No audio for rendered trajectories
+    ]
+
+    if preview_mode:
+        ffmpeg_cmd.extend(["-vf", "scale=480:trunc(ow/a/2)*2", "-t", "10"])
+
+    ffmpeg_cmd.append(output_path)
+
+    logger.debug("SHARP ffmpeg command: %s", " ".join(ffmpeg_cmd))
+    proc = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"SHARP mode: ffmpeg encoding failed:\n{proc.stderr[-500:]}"
+        )
+    cmd_log = " ".join(ffmpeg_cmd)
+
+    try:
+        # --- Collect frame/audio output ---
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=True,
+        )
+
+        # --- Build analysis string ---
+        analysis = (
+            f"SHARP Mode (no LLM) — 3D Gaussian View Synthesis\n"
+            f"⚠️ Model weights: Apple ML Research License (research/non-commercial only)\n\n"
+            f"Trajectory: {sharp_trajectory}\n"
+            f"Frames: {sharp_num_frames}\n"
+            f"Max disparity: {sharp_max_disparity}\n"
+            f"Max zoom: {sharp_max_zoom}\n"
+            f"Device: {sharp_device}\n"
+            f"Image size: {image_np.shape[1]}×{image_np.shape[0]}\n\n"
+            f"Output: {output_path}"
+        )
+        if ply_path:
+            analysis += f"\nPLY export: {ply_path}"
+
+        return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
+    finally:
+        # --- Cleanup temp files ---
+        import shutil as _shutil
+        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        # Clean up rendered PNG frames (no longer needed after FFmpeg encode)
+        if frames_dir and os.path.isdir(frames_dir):
+            try:
+                _shutil.rmtree(frames_dir, ignore_errors=True)
+            except OSError:
+                pass
+        # NOTE: Do NOT delete temp_render_dir here — the output video
+        # lives inside it when save_output=False and downstream nodes
+        # (save/preview) still need to read it.
+
+
+# ================================================================== #
+#  SVI 2.0 Pro — infinite-length video generation                      #
+# ================================================================== #
+
+async def process_svi_only(
+    # parameters
+    prompt: str,
+    effective_video_path: str,
+    video_metadata,
+    save_output: bool,
+    output_path: str,
+    preview_mode: bool,
+    quality_preset: str,
+    crf: int,
+    encoding_preset: str,
+    image_a=None,
+    image_path_a: Optional[str] = None,
+    temp_video_from_images: Optional[str] = None,
+    temp_video_with_audio: Optional[str] = None,
+    **kwargs,
+) -> tuple[torch.Tensor, dict, str, str, str, str]:
+    """Run SVI 2.0 Pro infinite video generation without any LLM involvement.
+
+    The reference image comes from ``image_a`` (ComfyUI IMAGE tensor).
+    Per-clip prompts are newline-separated in the ``prompt`` field.
+
+    Returns the standard 6-tuple:
+        (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
+    """
+    logger.info("SVI mode: prompt=%r", prompt)
+
+    # --- Extract SVI parameters from kwargs ---
+    svi_num_clips = int(kwargs.pop("svi_num_clips", 10))
+    svi_height = int(kwargs.pop("svi_height", 480))
+    svi_width = int(kwargs.pop("svi_width", 832))
+    svi_fps = int(kwargs.pop("svi_fps", 15))
+    svi_cfg_scale = float(kwargs.pop("svi_cfg_scale", 4.0))
+    svi_overlap_frames = int(kwargs.pop("svi_overlap_frames", 5))
+    svi_seed_multiplier = int(kwargs.pop("svi_seed_multiplier", 42))
+    svi_steps = int(kwargs.pop("svi_steps", 30))
+    svi_high_model_ratio = float(kwargs.pop("svi_high_model_ratio", 0.875))
+    svi_frames_per_clip = int(kwargs.pop("svi_frames_per_clip", 81))
+    svi_variant = str(kwargs.pop("svi_variant", "pro"))
+    svi_model_high = str(kwargs.pop("svi_model_high", "auto"))
+    svi_model_low = str(kwargs.pop("svi_model_low", "auto"))
+    svi_lora_high = str(kwargs.pop("svi_lora_high", "SVI_Wan2.2-I2V-A14B_high_noise_lora_v2.0_pro.safetensors"))
+    svi_lora_low = str(kwargs.pop("svi_lora_low", "SVI_Wan2.2-I2V-A14B_low_noise_lora_v2.0_pro.safetensors"))
+    svi_extra_lora_high = str(kwargs.pop("svi_extra_lora_high", "none"))
+    svi_extra_lora_low = str(kwargs.pop("svi_extra_lora_low", "none"))
+    svi_vae = str(kwargs.pop("svi_vae", "auto"))
+    svi_text_encoder = str(kwargs.pop("svi_text_encoder", "auto"))
+    svi_sampler = str(kwargs.pop("svi_sampler", "euler"))
+    svi_scheduler = str(kwargs.pop("svi_scheduler", "normal"))
+
+    # Derive variant from the selected LoRA filenames
+    if "_pro" in svi_lora_high.lower():
+        svi_variant = "pro"
+    else:
+        svi_variant = "standard"
+
+    # --- Import SVI synthesizer ---
+    try:
+        try:
+            from ..core.svi_synthesizer import (
+                generate_infinite_video,
+                cleanup as _svi_cleanup,
+            )
+        except ImportError:
+            from core.svi_synthesizer import (  # type: ignore
+                generate_infinite_video,
+                cleanup as _svi_cleanup,
+            )
+    except ImportError:
+        raise RuntimeError(
+            "SVI synthesizer is not available. "
+            "Ensure core/svi_synthesizer.py exists."
+        )
+
+    # --- Convert image_a tensor → saved reference image ---
+    ref_image_path = None
+    if image_a is not None:
+        from PIL import Image as _PILImage
+        import numpy as _np
+        if hasattr(image_a, 'shape') and len(image_a.shape) >= 3:
+            if len(image_a.shape) == 4:
+                arr = (image_a[0].cpu().numpy() * 255).clip(0, 255).astype(_np.uint8)
+            else:
+                arr = (image_a.cpu().numpy() * 255).clip(0, 255).astype(_np.uint8)
+            import tempfile as _tmp
+            ref_dir = _tmp.mkdtemp(prefix="svi_ref_")
+            ref_image_path = os.path.join(ref_dir, "reference.png")
+            _PILImage.fromarray(arr).save(ref_image_path)
+            logger.info("SVI: saved reference image from image_a → %s", ref_image_path)
+
+    # Fall back to image_path_a (string path from LoadImagePath)
+    if ref_image_path is None and image_path_a:
+        path_a = str(image_path_a)
+        if os.path.isfile(path_a):
+            ext_a = os.path.splitext(path_a)[1].lower()
+            if ext_a in (".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp"):
+                ref_image_path = path_a
+                logger.info("SVI: using image_path_a as reference → %s", ref_image_path)
+
+    # Fall back to effective_video_path (or video_path from kwargs) if it's an image/video
+    if ref_image_path is None:
+        # Try multiple sources for a video/image path
+        candidate_paths = [
+            effective_video_path,
+            str(kwargs.get("video_path", "")),
+        ]
+        video_candidate = None
+        for cand in candidate_paths:
+            if cand and os.path.isfile(cand):
+                video_candidate = cand
+                break
+
+        if video_candidate:
+            ext = os.path.splitext(video_candidate)[1].lower()
+            if ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp"):
+                ref_image_path = video_candidate
+            elif ext in (".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv"):
+                # Extract last frame from previous video for continuation chaining
+                import subprocess, tempfile as _tmp
+                ref_dir = _tmp.mkdtemp(prefix="svi_ref_")
+                last_frame_path = os.path.join(ref_dir, "last_frame.png")
+                try:
+                    subprocess.run(
+                        [
+                            "ffmpeg", "-y", "-sseof", "-0.1",
+                            "-i", video_candidate,
+                            "-frames:v", "1", "-update", "1",
+                            last_frame_path,
+                        ],
+                        capture_output=True, timeout=30,
+                    )
+                    if os.path.isfile(last_frame_path):
+                        ref_image_path = last_frame_path
+                        logger.info(
+                            "SVI: extracted last frame from video for continuation → %s",
+                            ref_image_path,
+                        )
+                    else:
+                        raise RuntimeError("ffmpeg did not produce last frame")
+                except Exception as e:
+                    raise RuntimeError(
+                        f"SVI mode: could not extract last frame from video "
+                        f"'{video_candidate}': {e}. "
+                        "Connect an image to image_a instead."
+                    )
+
+        if ref_image_path is None:
+            raise RuntimeError(
+                "SVI mode requires a reference image. "
+                "Connect an image to image_a, provide an image_path_a, "
+                "or connect a previous SVI video output to auto-extract "
+                f"its last frame for continuation. "
+                f"(effective_video_path='{effective_video_path}')"
+            )
+
+    # --- Parse prompts (newline-separated) ---
+    prompts = [line.strip() for line in prompt.strip().split("\n") if line.strip()]
+    if not prompts:
+        prompts = ["A beautiful cinematic scene with natural motion"]
+
+    # --- Build output path ---
+    output_path, temp_render_dir = build_output_path(
+        effective_video_path=effective_video_path,
+        save_output=save_output,
+        output_path=output_path,
+        preview_mode=preview_mode,
+    )
+
+    cmd_log = ""
+    try:
+        result_path = generate_infinite_video(
+            ref_image_path=ref_image_path,
+            prompts=prompts,
+            output_path=output_path,
+            num_clips=svi_num_clips,
+            height=svi_height,
+            width=svi_width,
+            fps=svi_fps,
+            cfg_scale=svi_cfg_scale,
+            num_overlap_frame=svi_overlap_frames,
+            seed_multiplier=svi_seed_multiplier,
+            num_inference_steps=svi_steps,
+            switch_boundary=svi_high_model_ratio,
+            frames_per_clip=svi_frames_per_clip,
+            variant=svi_variant,
+            model_path_high=svi_model_high,
+            model_path_low=svi_model_low,
+            lora_high=svi_lora_high,
+            lora_low=svi_lora_low,
+            extra_lora_high=svi_extra_lora_high if svi_extra_lora_high != "none" else None,
+            extra_lora_low=svi_extra_lora_low if svi_extra_lora_low != "none" else None,
+            vae_path=svi_vae,
+            text_encoder_path=svi_text_encoder,
+            sampler_name=svi_sampler,
+            scheduler=svi_scheduler,
+        )
+        output_path = result_path
+        cmd_log = f"svi generate_infinite_video → {output_path}"
+
+    except Exception as e:
+        logger.error("SVI mode failed: %s", e)
+        try:
+            _svi_cleanup()
+        except Exception:
+            pass
+        raise RuntimeError(f"SVI generation failed: {e}") from e
+
+    try:
+        # --- Collect frame/audio output ---
+        try:
+            from ..ffmpega_media_converter import MediaConverter
+            media_converter = MediaConverter()
+        except ImportError:
+            try:
+                from ffmpega_media_converter import MediaConverter  # type: ignore
+                media_converter = MediaConverter()
+            except Exception:
+                media_converter = None
+
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=False,
+        )
+
+        # --- Build analysis string ---
+        analysis = (
+            f"🎬 SVI 2.0 Pro — Infinite Video Generation\n"
+            f"Clips: {svi_num_clips}\n"
+            f"Resolution: {svi_width}×{svi_height}\n"
+            f"FPS: {svi_fps}\n"
+            f"CFG Scale: {svi_cfg_scale}\n"
+            f"Overlap Frames: {svi_overlap_frames}\n"
+            f"Variant: {svi_variant}\n"
+            f"Prompts:\n" + "\n".join(f"  {i+1}. {p}" for i, p in enumerate(prompts[:svi_num_clips]))
+            + f"\n\nOutput: {output_path}"
+        )
+
+        return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
+
+    finally:
+        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+            if not os.listdir(temp_render_dir):
+                shutil.rmtree(temp_render_dir, ignore_errors=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Wan-Animate  — Video-driven character animation (no-LLM mode)
+# ═══════════════════════════════════════════════════════════════════════════
+
+async def process_wan_animate_only(
+    # dependencies
+    media_converter,
+    # parameters
+    effective_video_path: str,
+    video_metadata,
+    save_output: bool,
+    output_path: str,
+    preview_mode: bool,
+    quality_preset: str,
+    crf: int,
+    encoding_preset: str,
+    image_a=None,
+    image_path_a: str = "",
+    temp_video_from_images: Optional[str] = None,
+    temp_video_with_audio: Optional[str] = None,
+    **kwargs,
+) -> tuple:
+    """Run Wan-Animate video-driven character animation without any LLM involvement.
+
+    Workflow:
+    1. Extract driving frames from video_a (effective_video_path).
+    2. Load reference character image from image_a or image_path_a.
+    3. Run YOLO+ViTPose preprocessing to extract pose, face, bg, masks.
+    4. Generate debug overlay video (skeleton + face bbox).
+    5. Run WanAnimatePipeline inference.
+    6. Encode output video.
+
+    Returns:
+        Standard 6-tuple: (images_tensor, audio_out, output_path, cmd_log, analysis, mask_overlay_path)
+    """
+    import asyncio
+    import tempfile
+
+    cmd_log = "🎭 Wan-Animate Mode\n"
+
+    # ── Validate inputs ──────────────────────────────────────────────────
+    driving_video = effective_video_path
+    if not driving_video or not os.path.isfile(driving_video):
+        raise ValueError(
+            "Wan-Animate requires a driving video. Connect a video to video_a "
+            "or provide a valid video path."
+        )
+
+    # Resolve reference image
+    ref_image = None
+    if image_a is not None:
+        if isinstance(image_a, torch.Tensor):
+            if image_a.dim() == 4:
+                img_np = (image_a[0].cpu().numpy() * 255).astype(np.uint8)
+            else:
+                img_np = (image_a.cpu().numpy() * 255).astype(np.uint8)
+            ref_image = img_np
+        elif isinstance(image_a, np.ndarray):
+            ref_image = image_a if image_a.max() > 1 else (image_a * 255).astype(np.uint8)
+
+    if ref_image is None and image_path_a and os.path.isfile(image_path_a):
+        import cv2
+        ref_image = cv2.imread(image_path_a)
+        if ref_image is not None:
+            ref_image = cv2.cvtColor(ref_image, cv2.COLOR_BGR2RGB)
+
+    if ref_image is None:
+        raise ValueError(
+            "Wan-Animate requires a reference character image. "
+            "Connect an image to image_a or provide image_path_a."
+        )
+
+    cmd_log += f"Driving video: {driving_video}\n"
+    cmd_log += f"Reference image shape: {ref_image.shape}\n"
+
+    # ── Extract driving frames ───────────────────────────────────────────
+    import cv2
+    cap = cv2.VideoCapture(driving_video)
+    frames = []
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    cap.release()
+
+    if not frames:
+        raise ValueError("Could not read any frames from driving video.")
+
+    cmd_log += f"Driving frames: {len(frames)}, FPS: {fps:.1f}\n"
+
+    # ── Preprocessing ────────────────────────────────────────────────────
+    from ..core.wan_animate_preprocess import WanAnimatePreprocessor
+
+    preprocessor = WanAnimatePreprocessor(device="cuda")
+    mode = kwargs.get("wan_animate_mode", "animate")
+    cmd_log += f"Mode: {mode}\n"
+
+    try:
+        preprocess_result = preprocessor.preprocess(
+            frames=frames,
+            refer_image=ref_image,
+            mode=mode,
+        )
+    except FileNotFoundError as e:
+        raise RuntimeError(
+            f"Wan-Animate model files missing: {e}\n"
+            "Download the ONNX models to models/wan_animate/det/ and models/wan_animate/pose2d/"
+        ) from e
+
+    pose_frames = preprocess_result["pose_frames"]
+    face_frames = preprocess_result["face_frames"]
+    debug_frames = preprocess_result["debug_frames"]
+    ref_processed = preprocess_result["ref_image"]
+
+    cmd_log += f"Preprocessed: {len(pose_frames)} pose, {len(face_frames)} face frames\n"
+
+    # ── Debug overlay video ──────────────────────────────────────────────
+    debug_video_path = ""
+    if debug_frames:
+        debug_dir = tempfile.mkdtemp(prefix="wan_animate_debug_")
+        debug_video_path = os.path.join(debug_dir, "debug_overlay.mp4")
+        _encode_frames_to_video(debug_frames, debug_video_path, fps=fps)
+        cmd_log += f"Debug overlay: {debug_video_path}\n"
+
+    # ── Inference ────────────────────────────────────────────────────────
+    from ..core.wan_animate_synthesizer import animate as wan_animate_infer, cleanup as wan_cleanup
+
+    num_steps = int(kwargs.get("wan_animate_steps", 20))
+    guidance = float(kwargs.get("wan_animate_guidance", 1.0))
+    seed = int(kwargs.get("wan_animate_seed", 42))
+    num_frames = int(kwargs.get("wan_animate_num_frames", min(len(pose_frames), 81)))
+    target_h = int(kwargs.get("wan_animate_height", 480))
+    target_w = int(kwargs.get("wan_animate_width", 832))
+    pose_strength = float(kwargs.get("wan_animate_pose_strength", 1.0))
+    face_strength = float(kwargs.get("wan_animate_face_strength", 1.0))
+    prompt = str(kwargs.get("prompt", ""))
+
+    # Collect LoRA entries from dynamic slots (a → d)
+    lora_entries = []  # list of (path, strength) tuples
+    for slot in ("a", "b", "c", "d"):
+        lora_name = str(kwargs.get(f"wan_animate_lora_{slot}", "none"))
+        if not lora_name or lora_name == "none":
+            break  # stop at first empty slot
+        lora_strength = float(kwargs.get(f"wan_animate_lora_strength_{slot}", 1.0))
+        lora_path = None
+        try:
+            import folder_paths  # type: ignore
+            lora_path = folder_paths.get_full_path("loras", lora_name)
+        except Exception:
+            for search_dir in [
+                os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+                    os.path.dirname(os.path.abspath(__file__))))), "models", "loras"),
+            ]:
+                candidate = os.path.join(search_dir, lora_name)
+                if os.path.isfile(candidate):
+                    lora_path = candidate
+                    break
+        if lora_path:
+            lora_entries.append((lora_path, lora_strength))
+            cmd_log += f"LoRA {slot.upper()}: {lora_name} (strength={lora_strength})\n"
+        else:
+            cmd_log += f"⚠️ LoRA {slot.upper()} not found: {lora_name} — skipping\n"
+
+    h, w = target_h, target_w
+
+    cmd_log += f"Inference: {num_frames} frames, {w}x{h}, steps={num_steps}, cfg={guidance}\n"
+    if prompt:
+        cmd_log += f"Prompt: {prompt[:80]}{'...' if len(prompt) > 80 else ''}\n"
+
+    try:
+        output_frames = wan_animate_infer(
+            ref_image=ref_processed,
+            pose_frames=pose_frames,
+            face_frames=face_frames,
+            bg_frames=preprocess_result.get("bg_frames"),
+            mask_frames=preprocess_result.get("mask_frames"),
+            mode=mode,
+            prompt=prompt,
+            num_inference_steps=num_steps,
+            guidance_scale=guidance,
+            seed=seed,
+            width=w,
+            height=h,
+            num_frames=num_frames,
+            pose_strength=pose_strength,
+            face_strength=face_strength,
+            lora_entries=lora_entries,
+        )
+    finally:
+        preprocessor.cleanup()
+        wan_cleanup()
+
+    cmd_log += f"Generated {len(output_frames)} output frames\n"
+
+    # ── Encode output ────────────────────────────────────────────────────
+    # Build the output path if not provided (common in no-LLM modes)
+    if not output_path:
+        output_path, _temp_render_dir = build_output_path(
+            effective_video_path=effective_video_path,
+            video_metadata=video_metadata,
+            output_path=output_path,
+            save_output=save_output,
+        )
+    _encode_frames_to_video(output_frames, output_path, fps=fps)
+    cmd_log += f"Output: {output_path}\n"
+
+    # ── Collect output tensor/audio ──────────────────────────────────────
+    try:
+        from ..ffmpega_media_converter import MediaConverter
+        mc = MediaConverter()
+    except ImportError:
+        try:
+            from ffmpega_media_converter import MediaConverter  # type: ignore
+            mc = MediaConverter()
+        except Exception:
+            mc = None
+
+    unique_id = str(kwargs.get("unique_id", ""))
+    hidden_prompt = kwargs.get("hidden_prompt") or {}
+    images_tensor, audio_out = collect_frame_output(
+        media_converter=mc,
+        output_path=output_path,
+        unique_id=unique_id,
+        hidden_prompt=hidden_prompt,
+        removes_audio=False,
+    )
+
+    # ── Analysis string ──────────────────────────────────────────────────
+    analysis = (
+        f"🎭 Wan-Animate — Video-Driven Character Animation\n"
+        f"Mode: {mode}\n"
+        f"Driving frames: {len(frames)}\n"
+        f"Output frames: {len(output_frames)}\n"
+        f"Resolution: {w}×{h}\n"
+        f"Steps: {num_steps}, CFG: {guidance}\n"
+        f"Seed: {seed}\n"
+    )
+    if debug_video_path:
+        analysis += f"\nDebug overlay: {debug_video_path}"
+
+    return (images_tensor, audio_out, output_path, cmd_log, analysis, debug_video_path)
+
+
+def _encode_frames_to_video(frames, output_path, fps=30):
+    """Encode list of RGB numpy frames to MP4 using FFmpeg.
+
+    Mirrors the color-space and dimension-padding logic from
+    ``MediaConverter.images_to_video`` to ensure consistent output.
+    """
+    import subprocess
+    import numpy as np
+
+    if not frames:
+        return
+
+    # Ensure frames are RGB uint8
+    first = frames[0]
+    if first.ndim != 3 or first.shape[2] != 3:
+        raise ValueError(
+            f"_encode_frames_to_video: expected (H, W, 3) frames, got shape {first.shape}"
+        )
+
+    h, w = first.shape[:2]
+
+    # yuv420p requires even dimensions — pad with edge replication if needed
+    pad_w = (-w) % 2
+    pad_h = (-h) % 2
+    need_pad = pad_w > 0 or pad_h > 0
+    if need_pad:
+        w += pad_w
+        h += pad_h
+
+    try:
+        from ..core.bin_paths import get_ffmpeg_bin
+        ffmpeg_bin = get_ffmpeg_bin()
+    except (ImportError, Exception):
+        ffmpeg_bin = "ffmpeg"
+
+    cmd = [
+        ffmpeg_bin, "-y", "-f", "rawvideo",
+        "-vcodec", "rawvideo", "-s", f"{w}x{h}",
+        "-pix_fmt", "rgb24",
+        # Explicit full-range BT.709 color space to prevent
+        # color darkening during RGB → YUV conversion.
+        "-color_range", "pc",
+        "-colorspace", "rgb",
+        "-color_primaries", "bt709",
+        "-color_trc", "iec61966-2-1",  # sRGB transfer
+        "-r", str(fps),
+        "-i", "-",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        # Preserve full color range in output
+        "-color_range", "pc",
+        "-crf", "18", "-preset", "fast",
+        output_path,
+    ]
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        for frame in frames:
+            f_uint8 = frame if frame.dtype == np.uint8 else (np.clip(frame, 0, 255)).astype(np.uint8)
+            if need_pad:
+                f_uint8 = np.pad(
+                    f_uint8,
+                    ((0, pad_h), (0, pad_w), (0, 0)),
+                    mode="edge",
+                )
+            proc.stdin.write(np.ascontiguousarray(f_uint8).tobytes())
+        proc.stdin.close()
+    except BrokenPipeError:
+        pass  # FFmpeg died early — capture stderr below
+    proc.wait()
+    if proc.returncode != 0:
+        stderr = proc.stderr.read().decode(errors="replace")
+        raise RuntimeError(
+            f"FFmpeg encoding failed (rc={proc.returncode}), "
+            f"frame shape=({h},{w},3), {len(frames)} frames:\n{stderr[-800:]}"
+        )
+
+
+# ---------------------------------------------------------------------------
+#  PhyFPS (Visual Chronometer) — Physical Frame Rate Analysis
+# ---------------------------------------------------------------------------
+
+async def process_phyfps_only(
+    # dependencies
+    media_converter,
+    # parameters
+    effective_video_path: str,
+    video_metadata,
+    save_output: bool,
+    output_path: str,
+    preview_mode: bool,
+    quality_preset: str,
+    crf: int,
+    encoding_preset: str,
+    phyfps_action: str = "analyze_only",
+    temp_video_from_images: Optional[str] = None,
+    temp_video_with_audio: Optional[str] = None,
+    **kwargs,
+) -> tuple[torch.Tensor, dict, str, str, str, str]:
+    """Run Visual Chronometer PhyFPS analysis and optional re-timing correction.
+
+    Returns the standard 6-tuple:
+        (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
+    """
+    try:
+        from ..core import phyfps_synthesizer
+    except ImportError:
+        from core import phyfps_synthesizer  # type: ignore
+
+    try:
+        from ..core.bin_paths import get_ffprobe_bin
+    except ImportError:
+        from core.bin_paths import get_ffprobe_bin  # type: ignore
+
+    logger.info("PhyFPS mode: action=%s, video=%s", phyfps_action, effective_video_path)
+
+    # --- Build output path ---
+    output_path, temp_render_dir = build_output_path(
+        effective_video_path=effective_video_path,
+        save_output=save_output,
+        output_path=output_path,
+        preview_mode=preview_mode,
+    )
+
+    # --- Get container FPS ---
+    container_fps = 24.0
+    ffprobe = get_ffprobe_bin()
+    if ffprobe:
+        try:
+            probe_result = subprocess.run(
+                [ffprobe, "-v", "error", "-select_streams", "v:0",
+                 "-show_entries", "stream=r_frame_rate",
+                 "-of", "csv=p=0", effective_video_path],
+                capture_output=True, text=True, timeout=10,
+            )
+            fps_str = probe_result.stdout.strip().split("\n")[0].strip()
+            if "/" in fps_str:
+                num, den = fps_str.split("/")
+                container_fps = float(num) / float(den) if float(den) > 0 else 24.0
+            elif fps_str:
+                container_fps = float(fps_str)
+        except Exception as e:
+            logger.warning("Failed to probe container FPS: %s", e)
+
+    # --- Run PhyFPS prediction ---
+    results, avg_phyfps, total_frames = phyfps_synthesizer.predict_phyfps(
+        video_path=effective_video_path,
+        clip_length=30,
+        stride=4,
+        resolution=216,
+    )
+
+    corrected = False
+    cmd_log = ""
+
+    if phyfps_action == "correct" and abs(avg_phyfps / container_fps - 1.0) >= 0.05:
+        # Re-time the video
+        phyfps_synthesizer.correct_video(
+            video_path=effective_video_path,
+            container_fps=container_fps,
+            phyfps=avg_phyfps,
+            output_path=output_path,
+        )
+        corrected = True
+        cmd_log = f"PhyFPS correction: {container_fps:.1f} → {avg_phyfps:.1f} fps (factor={avg_phyfps/container_fps:.3f})"
+    else:
+        # Just copy the video through
+        _ffmpeg = _get_ffmpeg_bin()
+        copy_cmd = [_ffmpeg, "-y", "-i", effective_video_path, "-c", "copy", output_path]
+        subprocess.run(copy_cmd, capture_output=True, check=True)
+        cmd_log = " ".join(copy_cmd)
+
+    # Offload model after inference
+    phyfps_synthesizer.offload_to_cpu()
+
+    # --- Build analysis string ---
+    video_name = os.path.basename(effective_video_path)
+    analysis = phyfps_synthesizer.build_analysis_string(
+        video_name=video_name,
+        results=results,
+        avg_phyfps=avg_phyfps,
+        container_fps=container_fps,
+        total_frames=total_frames,
+        corrected=corrected,
+    )
+
+    # --- Collect frame/audio output ---
+    unique_id = str(kwargs.get("unique_id", ""))
+    hidden_prompt = kwargs.get("hidden_prompt") or {}
+    images_tensor, audio_out = collect_frame_output(
+        media_converter=media_converter,
+        output_path=output_path,
+        unique_id=unique_id,
+        hidden_prompt=hidden_prompt,
+        removes_audio=not bool(video_metadata.primary_audio),
+    )
+
+    # --- Cleanup temp files ---
+    for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+    if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+        if not os.listdir(temp_render_dir):
+            shutil.rmtree(temp_render_dir, ignore_errors=True)
+
+    return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
+
