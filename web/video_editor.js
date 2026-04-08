@@ -7675,8 +7675,9 @@ function _setupNode(node) {
       temperature: 6500
     },
     filterPreset: { preset: "none", intensity: 1 },
+    shaderPreset: { preset: "none", intensity: 1, enable_vda: false, enable_normals: false, depth_encoder: "vits", depth_strength: 1 },
     keyframes: null,
-    relight: { enabled: false, azimuth: 0, elevation: 45, intensity: 1, ambient: 0.3, color_r: 255, color_g: 255, color_b: 255 },
+    relight: { enabled: false, azimuth: 0, elevation: 45, intensity: 1, ambient: 0.3, color_r: 255, color_g: 255, color_b: 255, ai_normals: false },
     exportSettings: { resolution: "source", video_codec: "h264", crf: 18, preset: "fast", format: "mp4", audio_codec: "aac", audio_bitrate: "192k" },
     compose: { pip: { enabled: false }, watermark: { enabled: false }, chromakey: { enabled: false }, blend: { enabled: false }, splitScreen: { enabled: false }, vignette: { enabled: false }, mask: { enabled: false } },
     aiCompose: { bg_removal: { enabled: false }, depth_effect: { enabled: false } },
@@ -8013,6 +8014,7 @@ function _syncToWidgets(node, state) {
   _setW(node, "_audio_segments", JSON.stringify(state.audioSegments));
   _setW(node, "_color_grading", JSON.stringify(state.colorGrading));
   _setW(node, "_filter_preset", JSON.stringify(state.filterPreset));
+  _setW(node, "_shader_preset", JSON.stringify(state.shaderPreset));
   _setW(node, "_keyframes", JSON.stringify(state.keyframes ?? {}));
   _setW(node, "_relight_params", JSON.stringify(state.relight));
   _setW(node, "_export_settings", JSON.stringify(state.exportSettings));
@@ -8042,6 +8044,7 @@ const HIDDEN_WIDGETS = [
   ["_audio_segments", "[]"],
   ["_color_grading", "{}"],
   ["_filter_preset", "{}"],
+  ["_shader_preset", "{}"],
   ["_keyframes", "{}"],
   ["_relight_params", "{}"],
   ["_export_settings", "{}"],
@@ -8114,6 +8117,11 @@ function _loadStateFromWidgets(node, editState) {
   try {
     const f = JSON.parse(_getW(node, "_filter_preset", "{}"));
     if (typeof f === "object" && f !== null) editState.filterPreset = f;
+  } catch {
+  }
+  try {
+    const sp = JSON.parse(_getW(node, "_shader_preset", "{}"));
+    if (typeof sp === "object" && sp !== null) editState.shaderPreset = sp;
   } catch {
   }
   try {

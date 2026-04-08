@@ -104,8 +104,9 @@ function _setupNode(node: EditorNode): void {
             temperature: 6500,
         },
         filterPreset: { preset: 'none', intensity: 1.0 },
+        shaderPreset: { preset: 'none', intensity: 1.0, enable_vda: false, enable_normals: false, depth_encoder: 'vits', depth_strength: 1.0 },
         keyframes: null,
-        relight: { enabled: false, azimuth: 0, elevation: 45, intensity: 1.0, ambient: 0.3, color_r: 255, color_g: 255, color_b: 255 },
+        relight: { enabled: false, azimuth: 0, elevation: 45, intensity: 1.0, ambient: 0.3, color_r: 255, color_g: 255, color_b: 255, ai_normals: false },
         exportSettings: { resolution: 'source', video_codec: 'h264', crf: 18, preset: 'fast', format: 'mp4', audio_codec: 'aac', audio_bitrate: '192k' },
         compose: { pip: { enabled: false }, watermark: { enabled: false }, chromakey: { enabled: false }, blend: { enabled: false }, splitScreen: { enabled: false }, vignette: { enabled: false }, mask: { enabled: false } } as any,
         aiCompose: { bg_removal: { enabled: false }, depth_effect: { enabled: false } } as any,
@@ -477,6 +478,7 @@ function _syncToWidgets(node: ComfyNode, state: ModalEditState): void {
     _setW(node, '_audio_segments', JSON.stringify(state.audioSegments));
     _setW(node, '_color_grading', JSON.stringify(state.colorGrading));
     _setW(node, '_filter_preset', JSON.stringify(state.filterPreset));
+    _setW(node, '_shader_preset', JSON.stringify(state.shaderPreset));
     _setW(node, '_keyframes', JSON.stringify(state.keyframes ?? {}));
     _setW(node, '_relight_params', JSON.stringify(state.relight));
     _setW(node, '_export_settings', JSON.stringify(state.exportSettings));
@@ -510,6 +512,7 @@ const HIDDEN_WIDGETS: [string, string][] = [
     ['_audio_segments', '[]'],
     ['_color_grading', '{}'],
     ['_filter_preset', '{}'],
+    ['_shader_preset', '{}'],
     ['_keyframes', '{}'],
     ['_relight_params', '{}'],
     ['_export_settings', '{}'],
@@ -559,6 +562,7 @@ function _loadStateFromWidgets(node: ComfyNode, editState: ModalEditState): void
     try { const a = JSON.parse(_getW(node, '_audio_segments', '[]')); if (Array.isArray(a)) editState.audioSegments = a; } catch { }
     try { const c = JSON.parse(_getW(node, '_color_grading', '{}')); if (typeof c === 'object' && c !== null) editState.colorGrading = c; } catch { }
     try { const f = JSON.parse(_getW(node, '_filter_preset', '{}')); if (typeof f === 'object' && f !== null) editState.filterPreset = f; } catch { }
+    try { const sp = JSON.parse(_getW(node, '_shader_preset', '{}')); if (typeof sp === 'object' && sp !== null) editState.shaderPreset = sp; } catch { }
     try { const k = JSON.parse(_getW(node, '_keyframes', '{}')); if (typeof k === 'object' && k !== null && k.keyframes) editState.keyframes = k; } catch { }
     try { const r = JSON.parse(_getW(node, '_relight_params', '{}')); if (typeof r === 'object' && r !== null) editState.relight = r; } catch { }
     try { const e = JSON.parse(_getW(node, '_export_settings', '{}')); if (typeof e === 'object' && e !== null) editState.exportSettings = e; } catch { }
