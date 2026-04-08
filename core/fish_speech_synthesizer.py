@@ -449,7 +449,10 @@ def _extract_scale_weights(state_dict: dict) -> dict:
 
 def _supports_fp8_matmul() -> bool:
     """Check if the GPU supports native FP8 matmul (compute capability >= 8.9)."""
-    import torch
+    try:
+        import torch
+    except ImportError:
+        return False
     if not torch.cuda.is_available():
         return False
     cap = torch.cuda.get_device_capability()
