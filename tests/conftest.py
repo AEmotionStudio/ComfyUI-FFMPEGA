@@ -36,12 +36,28 @@ try:
     import torch  # noqa: F401
 except ImportError:
     collect_ignore_glob = [
+        # Tests that import from nodes/ — all node modules require torch
+        "test_ace_step.py",
+        "test_ai_upscale.py",
+        "test_audio_inpaint.py",
         "test_depth_shader.py",
-        "test_facecam.py",
-        "test_frame_picker.py",
-        "test_media_bridge.py",
-        "test_node_chaining.py",
-        "test_save_video_node.py",
         "test_dreamid_omni.py",
+        "test_effects_node.py",
+        "test_facecam.py",
+        "test_flux_klein.py",
+        "test_frame_picker.py",
+        "test_generate_audio.py",
+        "test_generate_music.py",
+        "test_kiwi_edit.py",
+        "test_lip_sync.py",
+        "test_matanyone2.py",
+        "test_media_bridge.py",
+        "test_minimax_remover.py",
+        "test_node_chaining.py",
+        "test_phase5_model_config.py",
+        "test_rembg.py",
+        "test_save_video_node.py",
+        "test_shader.py",
+        "test_svi.py",
     ]
 
