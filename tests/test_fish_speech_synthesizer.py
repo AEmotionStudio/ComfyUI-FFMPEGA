@@ -166,7 +166,7 @@ class TestFP8Dequantization:
 
     def test_passthrough_when_no_scales(self):
         """State dict without .scale keys should pass through unchanged."""
-        import torch
+        torch = pytest.importorskip("torch")
         from core.fish_speech_synthesizer import _dequantize_fp8_state_dict
 
         state_dict = {
@@ -179,7 +179,7 @@ class TestFP8Dequantization:
 
     def test_dequantize_with_scales(self):
         """FP8 weights should be dequantized when .scale keys present."""
-        import torch
+        torch = pytest.importorskip("torch")
         from core.fish_speech_synthesizer import _dequantize_fp8_state_dict
 
         # Simulate FP8 quantized weight + scale
@@ -205,7 +205,7 @@ class TestFP8Dequantization:
 
     def test_extract_scale_weights(self):
         """Scale keys should be extracted and reformatted for convert_fp8_linear."""
-        import torch
+        torch = pytest.importorskip("torch")
         from core.fish_speech_synthesizer import _extract_scale_weights
 
         state_dict = {
