@@ -27,3 +27,21 @@ if "folder_paths" not in sys.modules:
         output_dir, prefix, 1, "", ""
     )
     sys.modules["folder_paths"] = mock_fp
+
+# --------------------------------------------------------------------------
+# Skip torch-dependent test files when torch is not installed (CI).
+# These files import from nodes/ which requires torch at module level.
+# --------------------------------------------------------------------------
+try:
+    import torch  # noqa: F401
+except ImportError:
+    collect_ignore_glob = [
+        "test_depth_shader.py",
+        "test_facecam.py",
+        "test_frame_picker.py",
+        "test_media_bridge.py",
+        "test_node_chaining.py",
+        "test_save_video_node.py",
+        "test_dreamid_omni.py",
+    ]
+

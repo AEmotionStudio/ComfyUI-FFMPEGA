@@ -2,47 +2,59 @@
 
 import logging
 
-from .agent_node import FFMPEGAgentNode
-from .frame_extract_node import FrameExtractNode
-from .load_image_path_node import LoadImagePathNode
-from .load_video_path_node import LoadVideoPathNode
-from .load_mask_video_node import LoadMaskVideoNode
-from .text_input_node import TextInputNode
-from .save_video_node import SaveVideoNode
-from .save_image_node import SaveImageNode
-from .media_bridge_node import MediaBridgeNode
-from .effects_node import FFMPEGAEffectsNode
-from .shader_overlay_node import ShaderOverlayNode
+# All node modules require torch (provided by ComfyUI runtime).
+# Guard imports so tests can run in CI without torch installed.
+try:
+    from .agent_node import FFMPEGAgentNode
+    from .frame_extract_node import FrameExtractNode
+    from .load_image_path_node import LoadImagePathNode
+    from .load_video_path_node import LoadVideoPathNode
+    from .load_mask_video_node import LoadMaskVideoNode
+    from .text_input_node import TextInputNode
+    from .save_video_node import SaveVideoNode
+    from .save_image_node import SaveImageNode
+    from .media_bridge_node import MediaBridgeNode
+    from .effects_node import FFMPEGAEffectsNode
+    from .shader_overlay_node import ShaderOverlayNode
+    _CORE_NODES_AVAILABLE = True
+except ImportError as _e:
+    logging.getLogger("FFMPEGA").debug(
+        "[FFMPEGA] Core nodes unavailable (likely missing torch): %s", _e
+    )
+    _CORE_NODES_AVAILABLE = False
 
 # Node class mappings for ComfyUI
-NODE_CLASS_MAPPINGS = {
-    "FFMPEGAgent": FFMPEGAgentNode,
-    "FFMPEGAFrameExtract": FrameExtractNode,
-    "FFMPEGALoadImagePath": LoadImagePathNode,
-    "FFMPEGALoadVideoPath": LoadVideoPathNode,
-    "FFMPEGALoadMaskVideo": LoadMaskVideoNode,
-    "FFMPEGASaveVideo": SaveVideoNode,
-    "FFMPEGASaveImage": SaveImageNode,
-    "FFMPEGAMediaBridge": MediaBridgeNode,
-    "FFMPEGATextInput": TextInputNode,
-    "FFMPEGAEffects": FFMPEGAEffectsNode,
-    "FFMPEGAShaderOverlay": ShaderOverlayNode,
-}
+NODE_CLASS_MAPPINGS = {}
+NODE_DISPLAY_NAME_MAPPINGS = {}
 
-# Display names for nodes
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "FFMPEGAgent": "FFMPEG Agent",
-    "FFMPEGAFrameExtract": "Frame Extract (FFMPEGA)",
-    "FFMPEGALoadImagePath": "Load Image Path (FFMPEGA)",
-    "FFMPEGALoadVideoPath": "Load Video Path (FFMPEGA)",
-    "FFMPEGALoadMaskVideo": "Load Mask Video (FFMPEGA)",
-    "FFMPEGASaveVideo": "Save Video (FFMPEGA)",
-    "FFMPEGASaveImage": "Save Image (FFMPEGA)",
-    "FFMPEGAMediaBridge": "Media Bridge (FFMPEGA)",
-    "FFMPEGATextInput": "FFMPEGA Text",
-    "FFMPEGAEffects": "FFMPEGA Effects Builder",
-    "FFMPEGAShaderOverlay": "Shader Overlay (FFMPEGA)",
-}
+if _CORE_NODES_AVAILABLE:
+    NODE_CLASS_MAPPINGS.update({
+        "FFMPEGAgent": FFMPEGAgentNode,
+        "FFMPEGAFrameExtract": FrameExtractNode,
+        "FFMPEGALoadImagePath": LoadImagePathNode,
+        "FFMPEGALoadVideoPath": LoadVideoPathNode,
+        "FFMPEGALoadMaskVideo": LoadMaskVideoNode,
+        "FFMPEGASaveVideo": SaveVideoNode,
+        "FFMPEGASaveImage": SaveImageNode,
+        "FFMPEGAMediaBridge": MediaBridgeNode,
+        "FFMPEGATextInput": TextInputNode,
+        "FFMPEGAEffects": FFMPEGAEffectsNode,
+        "FFMPEGAShaderOverlay": ShaderOverlayNode,
+    })
+
+    NODE_DISPLAY_NAME_MAPPINGS.update({
+        "FFMPEGAgent": "FFMPEG Agent",
+        "FFMPEGAFrameExtract": "Frame Extract (FFMPEGA)",
+        "FFMPEGALoadImagePath": "Load Image Path (FFMPEGA)",
+        "FFMPEGALoadVideoPath": "Load Video Path (FFMPEGA)",
+        "FFMPEGALoadMaskVideo": "Load Mask Video (FFMPEGA)",
+        "FFMPEGASaveVideo": "Save Video (FFMPEGA)",
+        "FFMPEGASaveImage": "Save Image (FFMPEGA)",
+        "FFMPEGAMediaBridge": "Media Bridge (FFMPEGA)",
+        "FFMPEGATextInput": "FFMPEGA Text",
+        "FFMPEGAEffects": "FFMPEGA Effects Builder",
+        "FFMPEGAShaderOverlay": "Shader Overlay (FFMPEGA)",
+    })
 
 # --- LoadLast nodes (merged from ComfyUI-LoadLast) ---
 try:

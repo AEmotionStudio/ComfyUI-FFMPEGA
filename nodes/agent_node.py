@@ -12,7 +12,10 @@ from typing import Optional
 
 logger = logging.getLogger("ffmpega")
 
-import torch  # type: ignore[import-not-found]
+try:
+    import torch  # type: ignore[import-not-found]
+except ImportError:
+    torch = None  # type: ignore[assignment]
 
 import folder_paths  # type: ignore[import-not-found]
 
