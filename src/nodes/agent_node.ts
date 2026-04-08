@@ -678,6 +678,11 @@ export function registerAgentNode(
                 if (w) toggleWidget(w, showComparison);
             }
 
+            // PhyFPS (Visual Chronometer) widgets
+            const showPhyfps = showAdvanced && mode === "phyfps";
+            const phyfpsActionW = node.widgets?.find((w: ComfyWidget) => w.name === "phyfps_action");
+            if (phyfpsActionW) toggleWidget(phyfpsActionW, showPhyfps);
+
             // Video Matting widgets
             const showMatting = showAdvanced && mode === "video_matting";
             const mattingWidgetNames = [

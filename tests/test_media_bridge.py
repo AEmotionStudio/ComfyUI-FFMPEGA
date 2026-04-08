@@ -59,15 +59,13 @@ class TestMediaBridgeInputTypes:
         assert "STRING" in MediaBridgeNode.RETURN_TYPES
         assert "IMAGE" in MediaBridgeNode.RETURN_TYPES
         assert "AUDIO" in MediaBridgeNode.RETURN_TYPES
-        assert "FLOAT" in MediaBridgeNode.RETURN_TYPES
-        assert "INT" in MediaBridgeNode.RETURN_TYPES
+        assert "MASK" in MediaBridgeNode.RETURN_TYPES
 
     def test_return_names(self):
         assert "video_path" in MediaBridgeNode.RETURN_NAMES
         assert "images" in MediaBridgeNode.RETURN_NAMES
         assert "audio" in MediaBridgeNode.RETURN_NAMES
-        assert "fps" in MediaBridgeNode.RETURN_NAMES
-        assert "frame_count" in MediaBridgeNode.RETURN_NAMES
+        assert "mask" in MediaBridgeNode.RETURN_NAMES
 
 
 # ── images_to_path mode ─────────────────────────────────────────────
@@ -90,10 +88,8 @@ class TestImagesToPath:
         with patch("nodes.media_bridge_node.MediaConverter", return_value=mock_converter):
             result = self.node.convert(mode="images_to_path", images=images, fps=30)
 
-        video_path, out_images, out_audio, out_fps, out_count = result
+        video_path, out_images, out_audio, out_mask = result
         assert video_path == fake_path
-        assert out_fps == 30.0
-        assert out_count == 10
         # Unused outputs should be safe defaults
         assert out_images.shape == (1, 64, 64, 3)
         assert "waveform" in out_audio
@@ -143,11 +139,9 @@ class TestPathToImages:
              patch.object(MediaBridgeNode, "_probe_fps", return_value=29.97):
             result = self.node.convert(mode="path_to_images", video_path=str(dummy_vid))
 
-        video_path, images, audio, fps, frame_count = result
+        video_path, images, audio, mask = result
         assert video_path == ""
         assert images.shape == (15, 128, 128, 3)
-        assert fps == 29.97
-        assert frame_count == 15
         assert audio == fake_audio
 
     def test_error_without_video_path(self):

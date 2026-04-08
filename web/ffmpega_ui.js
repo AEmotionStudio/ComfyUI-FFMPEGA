@@ -289,7 +289,7 @@ function registerAgentNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGAgent") return;
   const onNodeCreated = nodeType.prototype.onNodeCreated;
   nodeType.prototype.onNodeCreated = function() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I;
     const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
     const node = this;
     this.color = "#2a3a5a";
@@ -397,7 +397,7 @@ function registerAgentNode(nodeType, nodeData) {
     (_B = this.widgets) == null ? void 0 : _B.find((w) => w.name === "video_depth_encoder");
     (_C = this.widgets) == null ? void 0 : _C.find((w) => w.name === "video_depth_colormap");
     function updateNoLlmModeVisibility() {
-      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o2, _p2, _q2, _r2, _s2, _t2, _u2, _v2, _w2, _x2, _y2, _z2, _A2, _B2, _C2, _D2, _E2, _F2, _G2, _H2, _I2, _J2, _K, _L, _M, _N, _O, _P, _Q, _R, _S, _T, _U, _V, _W;
+      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o2, _p2, _q2, _r2, _s2, _t2, _u2, _v2, _w2, _x2, _y2, _z2, _A2, _B2, _C2, _D2, _E2, _F2, _G2, _H2, _I2, _J, _K, _L, _M, _N, _O, _P, _Q, _R, _S, _T, _U, _V;
       const adv = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "advanced_options");
       const showAdvanced = Boolean(adv == null ? void 0 : adv.value);
       const llm = (_b2 = node.widgets) == null ? void 0 : _b2.find((w) => w.name === "llm_model");
@@ -480,8 +480,7 @@ function registerAgentNode(nodeType, nodeData) {
         "kiwi_seed",
         "kiwi_flow_shift",
         "kiwi_task_type",
-        "kiwi_scheduler",
-        "kiwi_lora_enabled"
+        "kiwi_scheduler"
       ];
       for (const name of kiwiWidgetNames) {
         const w = (_t2 = node.widgets) == null ? void 0 : _t2.find((ww) => ww.name === name);
@@ -493,10 +492,6 @@ function registerAgentNode(nodeType, nodeData) {
       const kh = (_w2 = node.widgets) == null ? void 0 : _w2.find((ww) => ww.name === "kiwi_height");
       if (kw) toggleWidget(kw, showKiwiCustom);
       if (kh) toggleWidget(kh, showKiwiCustom);
-      const kiwiLoraEnabled = (_x2 = node.widgets) == null ? void 0 : _x2.find((ww) => ww.name === "kiwi_lora_enabled");
-      const showKiwiLora = showKiwiEdit && Boolean(kiwiLoraEnabled == null ? void 0 : kiwiLoraEnabled.value);
-      const klv = (_y2 = node.widgets) == null ? void 0 : _y2.find((ww) => ww.name === "kiwi_lora_variant");
-      if (klv) toggleWidget(klv, showKiwiLora);
       const dreamidWidgetNames = [
         "dreamid_precision",
         "dreamid_resolution",
@@ -509,7 +504,7 @@ function registerAgentNode(nodeType, nodeData) {
         "dreamid_audio_ref_cfg"
       ];
       for (const name of dreamidWidgetNames) {
-        const w = (_z2 = node.widgets) == null ? void 0 : _z2.find((ww) => ww.name === name);
+        const w = (_x2 = node.widgets) == null ? void 0 : _x2.find((ww) => ww.name === name);
         if (w) toggleWidget(w, showDreamidOmni);
       }
       const scailWidgetNames = [
@@ -521,7 +516,7 @@ function registerAgentNode(nodeType, nodeData) {
         "scail_seed"
       ];
       for (const name of scailWidgetNames) {
-        const w = (_A2 = node.widgets) == null ? void 0 : _A2.find((ww) => ww.name === name);
+        const w = (_y2 = node.widgets) == null ? void 0 : _y2.find((ww) => ww.name === name);
         if (w) toggleWidget(w, showScail);
       }
       const showSvi = showAdvanced && mode === "svi";
@@ -549,7 +544,7 @@ function registerAgentNode(nodeType, nodeData) {
         "svi_scheduler"
       ];
       for (const name of sviWidgetNames) {
-        const w = (_B2 = node.widgets) == null ? void 0 : _B2.find((ww) => ww.name === name);
+        const w = (_z2 = node.widgets) == null ? void 0 : _z2.find((ww) => ww.name === name);
         if (w) toggleWidget(w, showSvi);
       }
       const sharpWidgetNames = [
@@ -561,7 +556,7 @@ function registerAgentNode(nodeType, nodeData) {
         "sharp_device"
       ];
       for (const name of sharpWidgetNames) {
-        const w = (_C2 = node.widgets) == null ? void 0 : _C2.find((ww) => ww.name === name);
+        const w = (_A2 = node.widgets) == null ? void 0 : _A2.find((ww) => ww.name === name);
         if (w) toggleWidget(w, showSharp);
       }
       const wanAnimateWidgetNames = [
@@ -576,14 +571,14 @@ function registerAgentNode(nodeType, nodeData) {
         "wan_animate_face_strength"
       ];
       for (const name of wanAnimateWidgetNames) {
-        const w = (_D2 = node.widgets) == null ? void 0 : _D2.find((ww) => ww.name === name);
+        const w = (_B2 = node.widgets) == null ? void 0 : _B2.find((ww) => ww.name === name);
         if (w) toggleWidget(w, showWanAnimate);
       }
       const wanLoraSlots = ["a", "b", "c", "d"];
       let showNextLora = showWanAnimate;
       for (const slot of wanLoraSlots) {
-        const loraW = (_E2 = node.widgets) == null ? void 0 : _E2.find((ww) => ww.name === `wan_animate_lora_${slot}`);
-        const strW = (_F2 = node.widgets) == null ? void 0 : _F2.find((ww) => ww.name === `wan_animate_lora_strength_${slot}`);
+        const loraW = (_C2 = node.widgets) == null ? void 0 : _C2.find((ww) => ww.name === `wan_animate_lora_${slot}`);
+        const strW = (_D2 = node.widgets) == null ? void 0 : _D2.find((ww) => ww.name === `wan_animate_lora_strength_${slot}`);
         if (loraW) toggleWidget(loraW, showNextLora);
         if (strW) toggleWidget(strW, showNextLora && String((loraW == null ? void 0 : loraW.value) ?? "none") !== "none");
         showNextLora = showNextLora && String((loraW == null ? void 0 : loraW.value) ?? "none") !== "none";
@@ -598,7 +593,7 @@ function registerAgentNode(nodeType, nodeData) {
         "ace_time_sig"
       ];
       for (const name of aceWidgetNames) {
-        const w = (_G2 = node.widgets) == null ? void 0 : _G2.find((ww) => ww.name === name);
+        const w = (_E2 = node.widgets) == null ? void 0 : _E2.find((ww) => ww.name === name);
         if (w) toggleWidget(w, showAceStep);
       }
       const f1WidgetNames = [
@@ -616,11 +611,11 @@ function registerAgentNode(nodeType, nodeData) {
         "f1_style_transfer"
       ];
       for (const name of f1WidgetNames) {
-        const w = (_H2 = node.widgets) == null ? void 0 : _H2.find((ww) => ww.name === name);
+        const w = (_F2 = node.widgets) == null ? void 0 : _F2.find((ww) => ww.name === name);
         if (w) toggleWidget(w, showFoundation1);
       }
-      const f1StyleWidget = (_I2 = node.widgets) == null ? void 0 : _I2.find((w) => w.name === "f1_style_transfer");
-      const f1NoiseWidget = (_J2 = node.widgets) == null ? void 0 : _J2.find((w) => w.name === "f1_noise_level");
+      const f1StyleWidget = (_G2 = node.widgets) == null ? void 0 : _G2.find((w) => w.name === "f1_style_transfer");
+      const f1NoiseWidget = (_H2 = node.widgets) == null ? void 0 : _H2.find((w) => w.name === "f1_noise_level");
       if (f1NoiseWidget) toggleWidget(f1NoiseWidget, showFoundation1 && Boolean(f1StyleWidget == null ? void 0 : f1StyleWidget.value));
       const fishWidgetNames = [
         "fish_model_variant",
@@ -631,12 +626,12 @@ function registerAgentNode(nodeType, nodeData) {
         "fish_repetition_penalty"
       ];
       for (const name of fishWidgetNames) {
-        const w = (_K = node.widgets) == null ? void 0 : _K.find((ww) => ww.name === name);
+        const w = (_I2 = node.widgets) == null ? void 0 : _I2.find((ww) => ww.name === name);
         if (w) toggleWidget(w, showFishSpeech);
       }
       const onionWidgetNames = ["onion_blend_mode", "onion_opacity", "onion_decay"];
       for (const name of onionWidgetNames) {
-        const w = (_L = node.widgets) == null ? void 0 : _L.find((ww) => ww.name === name);
+        const w = (_J = node.widgets) == null ? void 0 : _J.find((ww) => ww.name === name);
         if (w) toggleWidget(w, showOnionSkin);
       }
       const comparisonWidgetNames = [
@@ -646,9 +641,12 @@ function registerAgentNode(nodeType, nodeData) {
         "comparison_label_b"
       ];
       for (const name of comparisonWidgetNames) {
-        const w = (_M = node.widgets) == null ? void 0 : _M.find((ww) => ww.name === name);
+        const w = (_K = node.widgets) == null ? void 0 : _K.find((ww) => ww.name === name);
         if (w) toggleWidget(w, showComparison);
       }
+      const showPhyfps = showAdvanced && mode === "phyfps";
+      const phyfpsActionW = (_L = node.widgets) == null ? void 0 : _L.find((w) => w.name === "phyfps_action");
+      if (phyfpsActionW) toggleWidget(phyfpsActionW, showPhyfps);
       const showMatting = showAdvanced && mode === "video_matting";
       const mattingWidgetNames = [
         "matting_output",
@@ -656,7 +654,7 @@ function registerAgentNode(nodeType, nodeData) {
         "matting_max_size"
       ];
       for (const name of mattingWidgetNames) {
-        const w = (_N = node.widgets) == null ? void 0 : _N.find((ww) => ww.name === name);
+        const w = (_M = node.widgets) == null ? void 0 : _M.find((ww) => ww.name === name);
         if (w) toggleWidget(w, showMatting);
       }
       const showLivePortrait = showAdvanced && mode === "animate_portrait";
@@ -683,7 +681,7 @@ function registerAgentNode(nodeType, nodeData) {
         "lp_sample_parts"
       ];
       for (const name of lpWidgetNames) {
-        const w = (_O = node.widgets) == null ? void 0 : _O.find((ww) => ww.name === name);
+        const w = (_N = node.widgets) == null ? void 0 : _N.find((ww) => ww.name === name);
         if (w) toggleWidget(w, showLivePortrait);
       }
       const sam3EligibleModes = /* @__PURE__ */ new Set([
@@ -701,31 +699,31 @@ function registerAgentNode(nodeType, nodeData) {
         "comparison"
       ]);
       const showUseSam3 = showAdvanced && sam3EligibleModes.has(mode);
-      const useSam3Widget = (_P = node.widgets) == null ? void 0 : _P.find((w) => w.name === "use_sam3");
+      const useSam3Widget = (_O = node.widgets) == null ? void 0 : _O.find((w) => w.name === "use_sam3");
       if (useSam3Widget) toggleWidget(useSam3Widget, showUseSam3);
       const useSam3On = showUseSam3 && Boolean(useSam3Widget == null ? void 0 : useSam3Widget.value);
       const showSam3 = showAdvanced && (!isNone || mode === "sam3_masking" || useSam3On);
       for (const wName of ["sam3_max_objects", "sam3_det_threshold", "mask_output_type"]) {
-        const w = (_Q = node.widgets) == null ? void 0 : _Q.find((ww) => ww.name === wName);
+        const w = (_P = node.widgets) == null ? void 0 : _P.find((ww) => ww.name === wName);
         if (w) toggleWidget(w, showSam3);
       }
       const showLlmToggles = showAdvanced && !isNone;
       for (const wName of ["use_flux_klein", "use_kiwi_edit", "use_minimax_remover", "use_dreamid_omni"]) {
-        const w = (_R = node.widgets) == null ? void 0 : _R.find((ww) => ww.name === wName);
+        const w = (_Q = node.widgets) == null ? void 0 : _Q.find((ww) => ww.name === wName);
         if (w) toggleWidget(w, showLlmToggles);
       }
-      const fluxKleinWidget = (_S = node.widgets) == null ? void 0 : _S.find((w) => w.name === "use_flux_klein");
-      const fsw = (_T = node.widgets) == null ? void 0 : _T.find((w) => w.name === "flux_smoothing");
+      const fluxKleinWidget = (_R = node.widgets) == null ? void 0 : _R.find((w) => w.name === "use_flux_klein");
+      const fsw = (_S = node.widgets) == null ? void 0 : _S.find((w) => w.name === "flux_smoothing");
       if (fsw) toggleWidget(fsw, showLlmToggles && Boolean(fluxKleinWidget == null ? void 0 : fluxKleinWidget.value));
       const _AUDIO_MODES = /* @__PURE__ */ new Set(["generate_audio", "generate_music", "foundation1", "fish_speech", "audio_inpaint", "audio_separate", "ace_step"]);
       const showAudioMode = showAdvanced && (!isNone || _AUDIO_MODES.has(mode));
-      const mmw = (_U = node.widgets) == null ? void 0 : _U.find((w) => w.name === "audio_output_mode");
+      const mmw = (_T = node.widgets) == null ? void 0 : _T.find((w) => w.name === "audio_output_mode");
       if (mmw) toggleWidget(mmw, showAudioMode);
       const showResample = showAdvanced && mode === "manual";
-      const arw = (_V = node.widgets) == null ? void 0 : _V.find((w) => w.name === "audio_resample_rate");
+      const arw = (_U = node.widgets) == null ? void 0 : _U.find((w) => w.name === "audio_resample_rate");
       if (arw) toggleWidget(arw, showResample);
       const showSubtitle = showAdvanced && (!isNone || mode === "manual" || mode === "transcribe" || mode === "karaoke_subtitles");
-      const sw = (_W = node.widgets) == null ? void 0 : _W.find((w) => w.name === "subtitle_path");
+      const sw = (_V = node.widgets) == null ? void 0 : _V.find((w) => w.name === "subtitle_path");
       if (sw) toggleWidget(sw, showSubtitle);
     }
     function updateAdvancedVisibility() {
@@ -779,16 +777,8 @@ function registerAgentNode(nodeType, nodeData) {
         updateAdvancedVisibility();
       };
     }
-    const kiwiLoraToggle = (_H = this.widgets) == null ? void 0 : _H.find((w) => w.name === "kiwi_lora_enabled");
-    if (kiwiLoraToggle) {
-      const origKiwiLoraCb = kiwiLoraToggle.callback;
-      kiwiLoraToggle.callback = function(...args) {
-        origKiwiLoraCb == null ? void 0 : origKiwiLoraCb.apply(this, args);
-        updateAdvancedVisibility();
-      };
-    }
     for (const slot of ["a", "b", "c", "d"]) {
-      const wanLoraSlotW = (_I = this.widgets) == null ? void 0 : _I.find((w) => w.name === `wan_animate_lora_${slot}`);
+      const wanLoraSlotW = (_H = this.widgets) == null ? void 0 : _H.find((w) => w.name === `wan_animate_lora_${slot}`);
       if (wanLoraSlotW) {
         const origCb = wanLoraSlotW.callback;
         wanLoraSlotW.callback = function(...args) {
@@ -797,7 +787,7 @@ function registerAgentNode(nodeType, nodeData) {
         };
       }
     }
-    const marigoldTypeWidget = (_J = this.widgets) == null ? void 0 : _J.find((w) => w.name === "marigold_output_type");
+    const marigoldTypeWidget = (_I = this.widgets) == null ? void 0 : _I.find((w) => w.name === "marigold_output_type");
     if (marigoldTypeWidget) {
       const origMtCb = marigoldTypeWidget.callback;
       marigoldTypeWidget.callback = function(...args) {

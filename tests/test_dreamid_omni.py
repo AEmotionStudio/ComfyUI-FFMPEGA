@@ -14,10 +14,15 @@ import importlib
 import os
 import sys
 import types
+from typing import TYPE_CHECKING
 from unittest import mock
 
 import pytest
-import torch
+
+if TYPE_CHECKING:
+    import torch
+else:
+    torch = pytest.importorskip("torch")
 
 # ---------------------------------------------------------------------------
 # Ensure project root is importable (mirrors conftest.py setup)

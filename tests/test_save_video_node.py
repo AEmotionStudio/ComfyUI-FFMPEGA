@@ -14,16 +14,24 @@ torch = pytest.importorskip("torch")
 @pytest.fixture(autouse=True)
 def mock_folder_paths(tmp_path):
     """Provide a mock folder_paths module for all tests."""
-    mock_fp = types.ModuleType("folder_paths")
+    import importlib
+    # Patch the *existing* module (may have been set by conftest or other tests)
+    fp = sys.modules.get("folder_paths")
+    if fp is None:
+        fp = types.ModuleType("folder_paths")
+        sys.modules["folder_paths"] = fp
+
     output_dir = str(tmp_path / "output")
     os.makedirs(output_dir, exist_ok=True)
-    mock_fp.get_output_directory = lambda: output_dir
-    mock_fp.get_temp_directory = lambda: str(tmp_path / "temp")
-    mock_fp.get_save_image_path = lambda prefix, out_dir: (
+    fp.get_output_directory = lambda: output_dir
+    fp.get_temp_directory = lambda: str(tmp_path / "temp")
+    fp.get_save_image_path = lambda prefix, out_dir, *a, **kw: (
         out_dir, prefix, 1, "", ""
     )
-    sys.modules["folder_paths"] = mock_fp
-    yield mock_fp
+    # Reload so save_video_node picks up the patched module-level reference
+    if "nodes.save_video_node" in sys.modules:
+        importlib.reload(sys.modules["nodes.save_video_node"])
+    yield fp
 
 
 @pytest.fixture

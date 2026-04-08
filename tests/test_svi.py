@@ -85,23 +85,17 @@ class TestSVIModelDir:
             d = _get_model_dir()
             assert str(d).endswith("svi")
 
-    def test_get_lora_paths_pro(self):
-        """_get_lora_paths('pro') should return pro LoRA paths."""
-        from unittest.mock import patch
-        from core.svi_synthesizer import _get_lora_paths
-        with patch.object(os, "environ", {"FFMPEGA_SVI_MODEL_DIR": "/tmp/svi"}):
-            high, low = _get_lora_paths("pro")
-            assert "pro" in str(high)
-            assert "pro" in str(low)
+    def test_resolve_lora_path_pro(self):
+        """_resolve_lora_path with pro LoRA should return path containing the filename."""
+        from core.svi_synthesizer import _resolve_lora_path, _LORA_HIGH_PRO
+        path = _resolve_lora_path(_LORA_HIGH_PRO)
+        assert "pro" in str(path)
 
-    def test_get_lora_paths_standard(self):
-        """_get_lora_paths('standard') should return standard LoRA paths."""
-        from unittest.mock import patch
-        from core.svi_synthesizer import _get_lora_paths
-        with patch.object(os, "environ", {"FFMPEGA_SVI_MODEL_DIR": "/tmp/svi"}):
-            high, low = _get_lora_paths("standard")
-            assert "pro" not in str(high)
-            assert "pro" not in str(low)
+    def test_resolve_lora_path_standard(self):
+        """_resolve_lora_path with standard LoRA should return path without 'pro'."""
+        from core.svi_synthesizer import _resolve_lora_path, _LORA_HIGH_STD
+        path = _resolve_lora_path(_LORA_HIGH_STD)
+        assert "pro" not in str(path)
 
 
 # --- Cleanup Tests -------------------------------------------------------------

@@ -11,6 +11,9 @@
         "tests",
         "core/musetalk"
     ],
+    "extraPaths": [
+        "."
+    ],
     "typeCheckingMode": "basic",
     "reportMissingImports": "warning",
     "reportMissingModuleSource": "none",

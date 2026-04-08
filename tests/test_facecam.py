@@ -105,8 +105,8 @@ class TestResolveCameraParams:
         params = resolve_camera_params(preset="orbit_left")
         assert "start_azimuth" in params
         assert "end_azimuth" in params
-        assert params["start_azimuth"] == -40
-        assert params["end_azimuth"] == 40
+        assert params["start_azimuth"] == -45
+        assert params["end_azimuth"] == 45
 
     def test_preset_zoom_in(self):
         from core.facecam_synthesizer import resolve_camera_params
@@ -233,7 +233,7 @@ class TestNodeRegistration:
         inputs = FaceCamNode.INPUT_TYPES()
         assert "required" in inputs
         assert "model_high" in inputs["required"]
-        assert "facecam_file" in inputs["required"]
+        assert "prompt" in inputs["required"]
         assert "high_model_ratio" in inputs["required"]
         assert "camera_preset" in inputs["required"]
         assert "num_frames" in inputs["required"]
@@ -248,11 +248,8 @@ class TestNodeRegistration:
         assert "optional" in inputs
         opt = inputs["optional"]
         assert "model_low" in opt
-        assert "facecam_low" in opt
         assert "images" in opt
-        assert "vae" in opt
         assert "video_path" in opt
-        assert "clip" in opt
 
     def test_facecam_node_camera_controls(self):
         """FaceCamNode should have manual camera control widgets."""

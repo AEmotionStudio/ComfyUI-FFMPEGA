@@ -239,8 +239,8 @@ class LoadVideoPathNode:
                         "and forwards this mask directly."
                     ),
                 }),
-                "mask_mode": (["single_frame", "none", "all_frames"], {
-                    "default": "single_frame",
+                "mask_mode": (["none", "single_frame", "all_frames"], {
+                    "default": "none",
                     "tooltip": (
                         "Controls mask output shape. 'none' disables mask "
                         "generation. 'single_frame' outputs a single mask "
@@ -249,8 +249,8 @@ class LoadVideoPathNode:
                         "masks (N,H,W)."
                     ),
                 }),
-                "mask_output_type": (["colored_overlay", "none", "black_white"], {
-                    "default": "colored_overlay",
+                "mask_output_type": (["none", "colored_overlay", "black_white"], {
+                    "default": "none",
                     "tooltip": (
                         "Mask preview output format for 'mask_overlay_path'. "
                         "'none' disables mask output. "
@@ -260,7 +260,7 @@ class LoadVideoPathNode:
                     ),
                 }),
                 "show_mask_preview": ("BOOLEAN", {
-                    "default": True,
+                    "default": False,
                     "tooltip": (
                         "Show a visual mask overlay on the node's video preview. "
                         "Darkens unmasked areas so the masked region stands out. "
@@ -361,9 +361,9 @@ class LoadVideoPathNode:
         video_path=None,
         mask_points=None,
         mask=None,
-        mask_mode: str = "single_frame",
-        mask_output_type: str = "colored_overlay",
-        show_mask_preview: bool = True,
+        mask_mode: str = "none",
+        mask_output_type: str = "none",
+        show_mask_preview: bool = False,
         custom_width: int = 0,
         custom_height: int = 0,
     ) -> dict:

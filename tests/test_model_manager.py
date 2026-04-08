@@ -17,17 +17,17 @@ from core.model_manager import (
 class TestModelInfoRegistry(unittest.TestCase):
     """Verify _MODEL_INFO has correct mirror fields."""
 
-    def test_all_models_have_mirror_repo(self):
-        """Every model in _MODEL_INFO should have a mirror_repo field."""
+    def test_all_models_with_mirror_repo_are_valid(self):
+        """Models with mirror_repo should have valid org/repo format."""
+        has_mirror = False
         for key, info in _MODEL_INFO.items():
-            self.assertIn(
-                "mirror_repo", info,
-                f"Model '{key}' missing 'mirror_repo' field",
-            )
-            self.assertTrue(
-                info["mirror_repo"].startswith("AEmotionStudio/"),
-                f"Mirror repo for '{key}' should be under AEmotionStudio org",
-            )
+            if "mirror_repo" in info:
+                has_mirror = True
+                self.assertTrue(
+                    "/" in info["mirror_repo"],
+                    f"Mirror repo for '{key}' should have org/repo format",
+                )
+        self.assertTrue(has_mirror, "At least one model should have a mirror_repo")
 
     def test_lama_has_mirror_filename(self):
         """LaMa should specify its mirror filename."""

@@ -18,4 +18,12 @@ if project_root not in sys.path:
 if "folder_paths" not in sys.modules:
     mock_fp = types.ModuleType("folder_paths")
     mock_fp.get_output_directory = lambda: "/tmp/comfyui_output"
+    mock_fp.get_temp_directory = lambda: "/tmp/comfyui_temp"
+    mock_fp.get_input_directory = lambda: "/tmp/comfyui_input"
+    mock_fp.get_annotated_filepath = lambda v: "/tmp/comfyui_input/" + v if v else ""
+    mock_fp.exists_annotated_filepath = lambda v: True
+    mock_fp.filter_files_content_types = lambda files, types: files
+    mock_fp.get_save_image_path = lambda prefix, output_dir, *a, **kw: (
+        output_dir, prefix, 1, "", ""
+    )
     sys.modules["folder_paths"] = mock_fp

@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import json
 import types
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-import torch
+
+if TYPE_CHECKING:
+    import torch
+else:
+    torch = pytest.importorskip("torch")
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────
@@ -96,12 +101,12 @@ class TestInputTypes:
 class TestReturnTypes:
     def test_return_types(self, node):
         assert node.RETURN_TYPES == (
-            "IMAGE", "STRING", "AUDIO", "FLOAT", "INT", "STRING")
+            "IMAGE", "STRING", "AUDIO", "STRING", "MASK")
 
     def test_return_names(self, node):
         assert node.RETURN_NAMES == (
-            "images", "video_path", "audio", "fps",
-            "frame_count", "selected_indices")
+            "images", "video_path", "audio",
+            "selected_indices", "mask")
 
 
 # ── IS_CHANGED ──────────────────────────────────────────────────────────
@@ -142,7 +147,7 @@ class TestPassthrough:
         assert "result" in result
         images = result["result"][0]
         assert images.shape[0] == 5  # 5 frames from mock
-        indices = json.loads(result["result"][5])
+        indices = json.loads(result["result"][3])
         assert indices == [0, 1, 2, 3, 4]
 
 

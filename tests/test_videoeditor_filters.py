@@ -69,10 +69,11 @@ class TestBuildFilterPreset:
         assert "edgedetect" in fc
         assert "blend" in fc
 
-    def test_thermal_is_complex(self):
+    def test_thermal_is_vf(self):
         vf, fc = build_filter_preset(json.dumps({"preset": "thermal"}))
-        assert vf == []
-        assert "pseudocolor" in fc
+        assert len(vf) == 1
+        assert "pseudocolor" in vf[0]
+        assert fc == ""
 
     def test_comic_book_reduced_intensity(self):
         """Complex preset at reduced intensity wraps in split→blend."""

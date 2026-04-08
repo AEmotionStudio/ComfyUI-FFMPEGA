@@ -438,8 +438,8 @@ class TestGLSLPresets:
             "anime_pro", "watercolor", "pop_art", "woodcut",
             "chromatic_prism", "anime_glow", "comic_book",
             "watercolor_bleed", "neon_wireframe",
-            # Depth-Native
-            "toon_3d", "depth_fog", "focus_pull",
+            # Depth-Native (toon_3d and focus_pull excluded — static depth shaders, no frame uniform)
+            "depth_fog",
             "relief_sculpt", "depth_watercolor",
         ]
         shaders_dir = _get_shaders_dir()
@@ -553,8 +553,8 @@ class TestShaderOverlayNode:
     def test_return_types(self):
         """Node should return (IMAGE, STRING)."""
         from nodes.shader_overlay_node import ShaderOverlayNode
-        assert ShaderOverlayNode.RETURN_TYPES == ("IMAGE", "STRING")
-        assert ShaderOverlayNode.RETURN_NAMES == ("images", "video_path")
+        assert ShaderOverlayNode.RETURN_TYPES == ("IMAGE", "STRING", "MASK")
+        assert ShaderOverlayNode.RETURN_NAMES == ("images", "video_path", "mask")
 
     def test_category_is_ffmpega(self):
         """Node should be in the FFMPEGA category."""
@@ -574,7 +574,7 @@ class TestShaderOverlayNode:
         from nodes.shader_overlay_node import ShaderOverlayNode
         node = ShaderOverlayNode()
         result = node.process(preset="none", intensity=1.0)
-        frames, path = result
+        frames, path, mask = result
         assert isinstance(frames, torch.Tensor)
         assert path == ""  # No input provided → empty result
 

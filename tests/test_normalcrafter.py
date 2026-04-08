@@ -208,11 +208,11 @@ class TestNormalCrafterModelManager:
         assert "NormalCrafter" in info["name"]
         assert "Normal" in info["name"]
 
-    def test_model_license_is_mit(self):
+    def test_model_license_is_apache(self):
         from core.model_manager import _MODEL_INFO
 
         info = _MODEL_INFO["normalcrafter"]
-        assert info["license"] == "MIT"
+        assert info["license"] == "Apache-2.0"
 
     def test_model_has_mirror_repo(self):
         from core.model_manager import _MODEL_INFO
