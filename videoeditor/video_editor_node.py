@@ -361,11 +361,20 @@ class VideoEditorNode:
                     import json as _json
                     segs = _json.loads(_edit_segments) if _edit_segments and _edit_segments != "[]" else []
                     if segs:
-                        # Each segment has start_frame/end_frame — pick those ranges
+                        # Segments can be:
+                        # - [[start_sec, end_sec], ...] from EditManager.toJSON()
+                        # - [{"start_frame": N, "end_frame": N}, ...] (future)
+                        _fps = actual_fps if actual_fps > 0 else 24.0
                         mask_slices = []
                         for seg in segs:
-                            sf = int(seg.get("start_frame", seg.get("startFrame", 0)))
-                            ef = int(seg.get("end_frame", seg.get("endFrame", mask.shape[0])))
+                            if isinstance(seg, (list, tuple)) and len(seg) >= 2:
+                                # [[start_sec, end_sec], ...] format
+                                sf = int(seg[0] * _fps)
+                                ef = int(seg[1] * _fps)
+                            else:
+                                # dict format with frame indices
+                                sf = int(seg.get("start_frame", seg.get("startFrame", 0)))
+                                ef = int(seg.get("end_frame", seg.get("endFrame", mask.shape[0])))
                             ef = min(ef, mask.shape[0])
                             if sf < ef:
                                 mask_slices.append(mask[sf:ef])

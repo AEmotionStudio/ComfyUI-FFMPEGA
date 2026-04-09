@@ -2,59 +2,94 @@
 
 import logging
 
+_log = logging.getLogger("FFMPEGA")
+
 # All node modules require torch (provided by ComfyUI runtime).
-# Guard imports so tests can run in CI without torch installed.
-try:
-    from .agent_node import FFMPEGAgentNode
-    from .frame_extract_node import FrameExtractNode
-    from .load_image_path_node import LoadImagePathNode
-    from .load_video_path_node import LoadVideoPathNode
-    from .load_mask_video_node import LoadMaskVideoNode
-    from .text_input_node import TextInputNode
-    from .save_video_node import SaveVideoNode
-    from .save_image_node import SaveImageNode
-    from .media_bridge_node import MediaBridgeNode
-    from .effects_node import FFMPEGAEffectsNode
-    from .shader_overlay_node import ShaderOverlayNode
-    _CORE_NODES_AVAILABLE = True
-except ImportError as _e:
-    logging.getLogger("FFMPEGA").debug(
-        "[FFMPEGA] Core nodes unavailable (likely missing torch): %s", _e
-    )
-    _CORE_NODES_AVAILABLE = False
+# Each import is guarded individually so a broken module doesn't
+# hide all other nodes.  See bugbot_journal.md 2026-04-09.
 
 # Node class mappings for ComfyUI
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
 
-if _CORE_NODES_AVAILABLE:
-    NODE_CLASS_MAPPINGS.update({
-        "FFMPEGAgent": FFMPEGAgentNode,
-        "FFMPEGAFrameExtract": FrameExtractNode,
-        "FFMPEGALoadImagePath": LoadImagePathNode,
-        "FFMPEGALoadVideoPath": LoadVideoPathNode,
-        "FFMPEGALoadMaskVideo": LoadMaskVideoNode,
-        "FFMPEGASaveVideo": SaveVideoNode,
-        "FFMPEGASaveImage": SaveImageNode,
-        "FFMPEGAMediaBridge": MediaBridgeNode,
-        "FFMPEGATextInput": TextInputNode,
-        "FFMPEGAEffects": FFMPEGAEffectsNode,
-        "FFMPEGAShaderOverlay": ShaderOverlayNode,
-    })
+# --- Core nodes (each guarded independently) ---
 
-    NODE_DISPLAY_NAME_MAPPINGS.update({
-        "FFMPEGAgent": "FFMPEG Agent",
-        "FFMPEGAFrameExtract": "Frame Extract (FFMPEGA)",
-        "FFMPEGALoadImagePath": "Load Image Path (FFMPEGA)",
-        "FFMPEGALoadVideoPath": "Load Video Path (FFMPEGA)",
-        "FFMPEGALoadMaskVideo": "Load Mask Video (FFMPEGA)",
-        "FFMPEGASaveVideo": "Save Video (FFMPEGA)",
-        "FFMPEGASaveImage": "Save Image (FFMPEGA)",
-        "FFMPEGAMediaBridge": "Media Bridge (FFMPEGA)",
-        "FFMPEGATextInput": "FFMPEGA Text",
-        "FFMPEGAEffects": "FFMPEGA Effects Builder",
-        "FFMPEGAShaderOverlay": "Shader Overlay (FFMPEGA)",
-    })
+try:
+    from .agent_node import FFMPEGAgentNode
+    NODE_CLASS_MAPPINGS["FFMPEGAgent"] = FFMPEGAgentNode
+    NODE_DISPLAY_NAME_MAPPINGS["FFMPEGAgent"] = "FFMPEG Agent"
+except ImportError as e:
+    _log.warning("[FFMPEGA] Node FFMPEGAgent unavailable: %s", e)
+
+try:
+    from .frame_extract_node import FrameExtractNode
+    NODE_CLASS_MAPPINGS["FFMPEGAFrameExtract"] = FrameExtractNode
+    NODE_DISPLAY_NAME_MAPPINGS["FFMPEGAFrameExtract"] = "Frame Extract (FFMPEGA)"
+except ImportError as e:
+    _log.warning("[FFMPEGA] Node FFMPEGAFrameExtract unavailable: %s", e)
+
+try:
+    from .load_image_path_node import LoadImagePathNode
+    NODE_CLASS_MAPPINGS["FFMPEGALoadImagePath"] = LoadImagePathNode
+    NODE_DISPLAY_NAME_MAPPINGS["FFMPEGALoadImagePath"] = "Load Image Path (FFMPEGA)"
+except ImportError as e:
+    _log.warning("[FFMPEGA] Node FFMPEGALoadImagePath unavailable: %s", e)
+
+try:
+    from .load_video_path_node import LoadVideoPathNode
+    NODE_CLASS_MAPPINGS["FFMPEGALoadVideoPath"] = LoadVideoPathNode
+    NODE_DISPLAY_NAME_MAPPINGS["FFMPEGALoadVideoPath"] = "Load Video Path (FFMPEGA)"
+except ImportError as e:
+    _log.warning("[FFMPEGA] Node FFMPEGALoadVideoPath unavailable: %s", e)
+
+try:
+    from .load_mask_video_node import LoadMaskVideoNode
+    NODE_CLASS_MAPPINGS["FFMPEGALoadMaskVideo"] = LoadMaskVideoNode
+    NODE_DISPLAY_NAME_MAPPINGS["FFMPEGALoadMaskVideo"] = "Load Mask Video (FFMPEGA)"
+except ImportError as e:
+    _log.warning("[FFMPEGA] Node FFMPEGALoadMaskVideo unavailable: %s", e)
+
+try:
+    from .text_input_node import TextInputNode
+    NODE_CLASS_MAPPINGS["FFMPEGATextInput"] = TextInputNode
+    NODE_DISPLAY_NAME_MAPPINGS["FFMPEGATextInput"] = "FFMPEGA Text"
+except ImportError as e:
+    _log.warning("[FFMPEGA] Node FFMPEGATextInput unavailable: %s", e)
+
+try:
+    from .save_video_node import SaveVideoNode
+    NODE_CLASS_MAPPINGS["FFMPEGASaveVideo"] = SaveVideoNode
+    NODE_DISPLAY_NAME_MAPPINGS["FFMPEGASaveVideo"] = "Save Video (FFMPEGA)"
+except ImportError as e:
+    _log.warning("[FFMPEGA] Node FFMPEGASaveVideo unavailable: %s", e)
+
+try:
+    from .save_image_node import SaveImageNode
+    NODE_CLASS_MAPPINGS["FFMPEGASaveImage"] = SaveImageNode
+    NODE_DISPLAY_NAME_MAPPINGS["FFMPEGASaveImage"] = "Save Image (FFMPEGA)"
+except ImportError as e:
+    _log.warning("[FFMPEGA] Node FFMPEGASaveImage unavailable: %s", e)
+
+try:
+    from .media_bridge_node import MediaBridgeNode
+    NODE_CLASS_MAPPINGS["FFMPEGAMediaBridge"] = MediaBridgeNode
+    NODE_DISPLAY_NAME_MAPPINGS["FFMPEGAMediaBridge"] = "Media Bridge (FFMPEGA)"
+except ImportError as e:
+    _log.warning("[FFMPEGA] Node FFMPEGAMediaBridge unavailable: %s", e)
+
+try:
+    from .effects_node import FFMPEGAEffectsNode
+    NODE_CLASS_MAPPINGS["FFMPEGAEffects"] = FFMPEGAEffectsNode
+    NODE_DISPLAY_NAME_MAPPINGS["FFMPEGAEffects"] = "FFMPEGA Effects Builder"
+except ImportError as e:
+    _log.warning("[FFMPEGA] Node FFMPEGAEffects unavailable: %s", e)
+
+try:
+    from .shader_overlay_node import ShaderOverlayNode
+    NODE_CLASS_MAPPINGS["FFMPEGAShaderOverlay"] = ShaderOverlayNode
+    NODE_DISPLAY_NAME_MAPPINGS["FFMPEGAShaderOverlay"] = "Shader Overlay (FFMPEGA)"
+except ImportError as e:
+    _log.warning("[FFMPEGA] Node FFMPEGAShaderOverlay unavailable: %s", e)
 
 # --- LoadLast nodes (merged from ComfyUI-LoadLast) ---
 try:

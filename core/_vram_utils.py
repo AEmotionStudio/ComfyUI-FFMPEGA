@@ -56,6 +56,7 @@ ALL_SYNTHESIZER_MODULES: tuple[str, ...] = (
     "phyfps_synthesizer",
     "svi_synthesizer",
     "wan_animate_synthesizer",
+    "sharp_synthesizer",
 )
 
 _freeing_vram = False
@@ -211,7 +212,8 @@ def free_for_module(exclude: str = "", memory_needed: int = 0) -> None:
         gc.collect()
         soft_empty_cache()
 
-        free_mem = get_free_memory(device)
-        log.info("[VRAM] GPU free after cleanup: %.2f GiB", free_mem / (1024**3))
+        if log.isEnabledFor(logging.INFO):
+            free_mem = get_free_memory(device)
+            log.info("[VRAM] GPU free after cleanup: %.2f GiB", free_mem / (1024**3))
     finally:
         _freeing_vram = False

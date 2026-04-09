@@ -487,6 +487,15 @@ async def video_export(request):
     text_overlays_json = json.dumps(body.get("text_overlays", []))
     transitions_json = json.dumps(body.get("transitions", []))
     audio_segments_json = json.dumps(body.get("audio_segments", []))
+    color_grading_json = json.dumps(body.get("color_grading", {}))
+    filter_preset_json = json.dumps(body.get("filter_preset", {}))
+    shader_preset_json = json.dumps(body.get("shader_preset", {}))
+    keyframes_json = json.dumps(body.get("keyframes", {}))
+    relight_json = json.dumps(body.get("relight_params", {}))
+    export_settings_json = json.dumps(body.get("export_settings", {}))
+    compose_json = json.dumps(body.get("compose_layers", {}))
+    ai_compose_json = json.dumps(body.get("ai_compose", {}))
+    transform_json = json.dumps(body.get("transform", {}))
     try:
         volume = float(body.get("volume", 1.0))
     except (ValueError, TypeError):
@@ -513,6 +522,15 @@ async def video_export(request):
             text_overlays_json=text_overlays_json,
             transitions_json=transitions_json,
             audio_segments_json=audio_segments_json,
+            color_grading_json=color_grading_json,
+            filter_preset_json=filter_preset_json,
+            shader_preset_json=shader_preset_json,
+            keyframes_json=keyframes_json,
+            relight_json=relight_json,
+            export_settings_json=export_settings_json,
+            compose_json=compose_json,
+            ai_compose_json=ai_compose_json,
+            transform_json=transform_json,
             cancel_event=cancel_event,
         )
 
