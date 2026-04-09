@@ -65,7 +65,7 @@ Icon = ""
 
 [tool.pyright]
 extraPaths = ["."]
-venvPath = "/home/tealdisk/ComfyUI"
+venvPath = "../.."  
 venv = "venv"
 typeCheckingMode = "basic"
 reportMissingImports = "warning"
