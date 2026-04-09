@@ -65,9 +65,11 @@ Icon = ""
 
 [tool.pyright]
 extraPaths = ["."]
+venvPath = "/home/tealdisk/ComfyUI"
+venv = "venv"
 typeCheckingMode = "basic"
 reportMissingImports = "warning"
 reportMissingModuleSource = "none"
-pythonVersion = "3.10"
+pythonVersion = "3.13"
 include = ["core", "skills", "nodes", "mcp"]
 exclude = ["**/__pycache__", ".venv", "tests", "core/musetalk"]

@@ -50,6 +50,12 @@ ALL_SYNTHESIZER_MODULES: tuple[str, ...] = (
     "matanyone2_synthesizer",
     "flashvsr_synthesizer",
     "scail_synthesizer",
+    "audiox_synthesizer",
+    "rtx_vsr_synthesizer",
+    "foundation1_synthesizer",
+    "phyfps_synthesizer",
+    "svi_synthesizer",
+    "wan_animate_synthesizer",
 )
 
 _freeing_vram = False
