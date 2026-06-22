@@ -176,3 +176,9 @@ scripts/upload_fp8_missing_components.py
 
 # Legacy JS source (superseded by TypeScript → web/)
 js/
+
+# Internal handoff notes (working scratch docs — not shipped)
+*_HANDOFF.md
+SAM3.1_HANDOFF.md
+SAM31_VIDEO_OOM_HANDOFF.md
+SAPIENS2_HANDOFF.md
