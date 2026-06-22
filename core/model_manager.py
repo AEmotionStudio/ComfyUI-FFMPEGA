@@ -46,6 +46,18 @@ _MODEL_INFO: dict[str, dict] = {
         "mirror_repo": "AEmotionStudio/sam3",
         "manual": "Download sam3.safetensors and place it in ComfyUI/models/SAM3/",
     },
+    "sam3_1": {
+        "name": "SAM 3.1 (Multiplex Tracker)",
+        "size": "~3.5 GB (multiplex checkpoint + tokenizer)",
+        "url": "https://huggingface.co/AEmotionStudio/sam3.1",
+        "mirror_repo": "AEmotionStudio/sam3.1",
+        "license": "SAM License (Meta)",
+        "manual": "Download sam3.1_multiplex.pt (or .safetensors) plus "
+                  "tokenizer.json/vocab.json/merges.txt from "
+                  "https://huggingface.co/AEmotionStudio/sam3.1 "
+                  "and place them in ComfyUI/models/SAM3.1/. "
+                  "Falls back to facebook/sam3.1 on HF if mirror is unavailable.",
+    },
     "lama": {
         "name": "LaMa (Large Mask Inpainting)",
         "size": "~200 MB",
@@ -107,6 +119,29 @@ _MODEL_INFO: dict[str, dict] = {
         "manual": "Download model files from "
                   "https://huggingface.co/AEmotionStudio/flux-klein "
                   "and place them in ComfyUI/models/flux_klein/.",
+    },
+    "flux_klein_9b": {
+        "name": "FLUX Klein 9B (Image Editing)",
+        "size": "~35 GB (bf16)",
+        "url": "https://huggingface.co/AEmotionStudio/flux-klein-9b",
+        "mirror_repo": "AEmotionStudio/flux-klein-9b",
+        "license": "Apache 2.0",
+        "manual": "Download model files from "
+                  "https://huggingface.co/AEmotionStudio/flux-klein-9b "
+                  "(the upstream black-forest-labs/FLUX.2-klein-9B is gated) "
+                  "and place them in ComfyUI/models/flux_klein_9b/.",
+    },
+    "flux_klein_9b_fp8": {
+        "name": "FLUX Klein 9B FP8 (Image Editing)",
+        "size": "~9 GB (fp8 transformer, local file)",
+        "url": "https://huggingface.co/black-forest-labs/FLUX.2-klein-9B",
+        "license": "Apache 2.0",
+        "manual": "Place flux-2-klein-9b-fp8.safetensors in "
+                  "ComfyUI/models/diffusion_models/. "
+                  "Pipeline components (VAE, text encoders, scheduler) are "
+                  "shared with the 9b variant — download them from "
+                  "https://huggingface.co/AEmotionStudio/flux-klein-9b "
+                  "and place in ComfyUI/models/flux_klein_9b/ if not already present.",
     },
     "minimax_remover": {
         "name": "MiniMax-Remover (Video Object Removal)",
@@ -354,6 +389,80 @@ _MODEL_INFO: dict[str, dict] = {
         "manual": "Download the Wan22Animate folder from "
                   "https://huggingface.co/Kijai/WanVideo_comfy_fp8_scaled "
                   "and place it in models/wan_animate/Wan22Animate/.",
+    },
+    # Sapiens2 (Meta, ICLR 2026) — human-centric vision transformers.
+    # Six task families × four size variants (0.4B / 1B / 5B / 1B-4K).
+    # License: Meta Proprietary (no surveillance, biometric identification,
+    # deepfake generation, or weapons/critical-infrastructure use;
+    # attribution required on publications).
+    "sapiens2_pose": {
+        "name": "Sapiens2 Pose (308 keypoints)",
+        "size": "~1 GB (0.4B) – ~10 GB (5B fp16)",
+        "url": "https://huggingface.co/AEmotionStudio/sapiens2-pose",
+        "mirror_repo": "AEmotionStudio/sapiens2-pose",
+        "license": "Meta Proprietary (non-surveillance, attribution required)",
+        "manual": "Download sapiens2_{0.4b,1b,5b}_pose.safetensors from "
+                  "https://huggingface.co/AEmotionStudio/sapiens2-pose "
+                  "and place it in ComfyUI/models/sapiens2/pose/. "
+                  "Pose task additionally needs facebook/detr-resnet-101-dc5 "
+                  "(downloaded automatically). "
+                  "⚠️ Not for surveillance, biometric ID, or deepfake use.",
+    },
+    "sapiens2_seg": {
+        "name": "Sapiens2 Body-Part Segmentation (29 classes)",
+        "size": "~1 GB (0.4B) – ~10 GB (5B fp16)",
+        "url": "https://huggingface.co/AEmotionStudio/sapiens2-seg",
+        "mirror_repo": "AEmotionStudio/sapiens2-seg",
+        "license": "Meta Proprietary (non-surveillance, attribution required)",
+        "manual": "Download sapiens2_{0.4b,1b,5b}_seg.safetensors from "
+                  "https://huggingface.co/AEmotionStudio/sapiens2-seg "
+                  "and place it in ComfyUI/models/sapiens2/seg/. "
+                  "⚠️ Not for surveillance, biometric ID, or deepfake use.",
+    },
+    "sapiens2_normal": {
+        "name": "Sapiens2 Surface Normals",
+        "size": "~1 GB (0.4B) – ~10 GB (5B fp16)",
+        "url": "https://huggingface.co/AEmotionStudio/sapiens2-normal",
+        "mirror_repo": "AEmotionStudio/sapiens2-normal",
+        "license": "Meta Proprietary (non-surveillance, attribution required)",
+        "manual": "Download sapiens2_{0.4b,1b,5b}_normal.safetensors from "
+                  "https://huggingface.co/AEmotionStudio/sapiens2-normal "
+                  "and place it in ComfyUI/models/sapiens2/normal/. "
+                  "⚠️ Not for surveillance, biometric ID, or deepfake use.",
+    },
+    "sapiens2_pointmap": {
+        "name": "Sapiens2 Pointmap (3D)",
+        "size": "~1 GB (0.4B) – ~10 GB (5B fp16)",
+        "url": "https://huggingface.co/AEmotionStudio/sapiens2-pointmap",
+        "mirror_repo": "AEmotionStudio/sapiens2-pointmap",
+        "license": "Meta Proprietary (non-surveillance, attribution required)",
+        "manual": "Download sapiens2_{0.4b,1b,5b}_pointmap.safetensors from "
+                  "https://huggingface.co/AEmotionStudio/sapiens2-pointmap "
+                  "and place it in ComfyUI/models/sapiens2/pointmap/. "
+                  "⚠️ Not for surveillance, biometric ID, or deepfake use.",
+    },
+    "sapiens2_matting": {
+        "name": "Sapiens2 Human Matting (1B only)",
+        "size": "~3 GB (fp16)",
+        "url": "https://huggingface.co/AEmotionStudio/sapiens2-matting",
+        "mirror_repo": "AEmotionStudio/sapiens2-matting",
+        "license": "Meta Proprietary (non-surveillance, attribution required)",
+        "manual": "Download sapiens2_1b_matting.safetensors from "
+                  "https://huggingface.co/AEmotionStudio/sapiens2-matting "
+                  "and place it in ComfyUI/models/sapiens2/matting/. "
+                  "⚠️ Not for surveillance, biometric ID, or deepfake use.",
+    },
+    "sapiens2_pretrain": {
+        "name": "Sapiens2 Pretrain Backbone (features only)",
+        "size": "~0.5 GB (0.1B) – ~10 GB (5B fp16)",
+        "url": "https://huggingface.co/AEmotionStudio/sapiens2-pretrain",
+        "mirror_repo": "AEmotionStudio/sapiens2-pretrain",
+        "license": "Meta Proprietary (non-surveillance, attribution required)",
+        "manual": "Download sapiens2_{0.1b,0.4b,0.8b,1b,5b}_pretrain.safetensors "
+                  "or sapiens2_1b_4k_pretrain.safetensors from "
+                  "https://huggingface.co/AEmotionStudio/sapiens2-pretrain "
+                  "and place it in ComfyUI/models/sapiens2/pretrain/. "
+                  "⚠️ Not for surveillance, biometric ID, or deepfake use.",
     },
 }
 

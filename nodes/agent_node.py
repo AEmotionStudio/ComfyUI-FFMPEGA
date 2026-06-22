@@ -180,7 +180,7 @@ class FFMPEGAgentNode:
                                "Select 'custom' to type any model name manually. "
                                "Select 'none' to skip the LLM entirely and use no_llm_mode instead (manual pipeline, SAM3, Whisper, or MMAudio).",
                 }),
-                "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles", "generate_audio", "generate_music", "foundation1", "fish_speech", "audio_inpaint", "audio_separate", "ace_step", "lip_sync", "animate_portrait", "marigold", "normalcrafter", "video_depth", "flux_klein", "kiwi_edit", "minimax_remover", "dreamid_omni", "svi", "sharp", "wan_animate", "scail (WIP)", "ai_upscale", "rembg", "video_matting", "onion_skin", "comparison", "phyfps"], {
+                "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles", "generate_audio", "generate_music", "foundation1", "fish_speech", "audio_inpaint", "audio_separate", "ace_step", "lip_sync", "animate_portrait", "marigold", "normalcrafter", "video_depth", "sapiens2", "flux_klein", "kiwi_edit", "minimax_remover", "dreamid_omni", "svi", "sharp", "wan_animate", "scail (WIP)", "ai_upscale", "rembg", "video_matting", "onion_skin", "comparison", "phyfps"], {
                     "default": "manual",
                     "tooltip": "What to do when llm_model is 'none'. "
                                "'manual' runs the Effects Builder pipeline directly (no AI). "
@@ -198,6 +198,7 @@ class FFMPEGAgentNode:
                                "'marigold' runs Marigold dense vision analysis (depth/normals/intrinsics) — choose output via marigold_output_type. "
                                "'normalcrafter' runs NormalCrafter for temporally-consistent video surface normals — choose res via normalcrafter_max_res. "
                                "'video_depth' runs Video Depth Anything for temporally-consistent depth — choose encoder via video_depth_encoder. "
+                               "'sapiens2' runs Meta Sapiens2 human-centric vision — choose task via sapiens2_task (pose/seg/normal/pointmap/matting/pretrain) and model size via sapiens2_size (⚠️ Meta Proprietary license: no surveillance/biometric/deepfake use). "
                                "'flux_klein' runs FLUX Klein editing directly — prompt is the edit instruction, works on images and videos (full-frame, no mask needed). "
                                "'rembg' removes the video background using AI segmentation — choose model via rembg_model and background via rembg_background. "
                                "'video_matting' runs MatAnyone2 temporal video matting — uses SAM3 for auto-mask or connect mask to image_a. Choose output via matting_output (⚠️ non-commercial license). "
@@ -429,6 +430,18 @@ class FFMPEGAgentNode:
                     "default": 1024, "min": 256, "max": 2048, "step": 32,
                     "tooltip": "Output height in pixels (used in 'flux_klein' no_llm_mode). "
                                "Must be divisible by 32. Result is resized back to input dimensions after editing.",
+                }),
+                "flux_klein_model": (["4b", "9b", "9b_fp8"], {
+                    "default": "4b",
+                    "tooltip": "FLUX Klein model size (used in 'flux_klein' no_llm_mode and "
+                               "auto_mask remove/edit when FLUX is enabled). "
+                               "'4b' = ~15 GB, fast (default). "
+                               "'9b' = ~35 GB bf16, higher quality but slower. "
+                               "'9b_fp8' = 9B with FP8 transformer from "
+                               "ComfyUI/models/diffusion_models/flux-2-klein-9b-fp8.safetensors "
+                               "(must be present locally). "
+                               "Weights download on first use into ComfyUI/models/flux_klein/ (4b) "
+                               "or flux_klein_9b/ (9b/9b_fp8).",
                 }),
 
                 # ── Advanced: Kiwi-Edit ──────────────────────────────────
@@ -734,6 +747,60 @@ class FFMPEGAgentNode:
                                "Others are artistic colormaps for creative visualization.",
                 }),
 
+                # ── Advanced: Sapiens2 ─────────────────────────────────────
+                # Meta Sapiens2 (ICLR 2026) human-centric vision. Six task
+                # families × four sizes. License: Meta Proprietary —
+                # no surveillance/biometric/deepfake use; attribution required.
+                "sapiens2_task": (["pose", "seg", "normal", "pointmap", "matting", "pretrain"], {
+                    "default": "pose",
+                    "tooltip": "Sapiens2 task (used in 'sapiens2' no_llm_mode). "
+                               "'pose' = 308-keypoint top-down pose (body+face+hands+feet) — needs DETR detector (auto-downloaded). "
+                               "'seg' = 29-class human body-part segmentation overlay. "
+                               "'normal' = per-pixel surface normals. "
+                               "'pointmap' = 3D pointmap (z-channel visualized via turbo colormap). "
+                               "'matting' = human matting (alpha composited on green; 1B only). "
+                               "'pretrain' = raw backbone features (PCA-visualized RGB).",
+                }),
+                "sapiens2_size": (["0.4b", "0.8b", "1b", "5b"], {
+                    "default": "1b",
+                    "tooltip": "Sapiens2 model size (used in 'sapiens2' no_llm_mode). "
+                               "'0.4b' = ~1–2 GB VRAM, fast. "
+                               "'0.8b' = ~2–4 GB VRAM. "
+                               "'1b' = ~3–6 GB VRAM, balanced (recommended default). "
+                               "'5b' = ~5 GB VRAM fp8 / ~10 GB fp16 / ~20 GB fp32, best quality. "
+                               "Note: matting task only ships in 1B.",
+                }),
+                "sapiens2_precision": (["auto", "fp8", "bf16", "fp32"], {
+                    "default": "auto",
+                    "tooltip": "Sapiens2 weight precision (dense tasks: seg/normal/pointmap/matting). "
+                               "'auto' = fp8 for 5B on fp8-capable GPUs (compute cap >= 8.9, RTX 40-series+), else fp32 — recommended. "
+                               "'fp8' = ~5 GB VRAM, native scaled_mm matmul; requires the pre-converted *_fp8.safetensors "
+                               "(auto-downloaded from the mirror, or build it with `python -m core.sapiens2._convert_fp8`). "
+                               "'bf16' = ~half VRAM, CPU-staged cast (loads fp32 to RAM first). "
+                               "'fp32' = full precision (5B needs ~20 GB VRAM). "
+                               "Ignored by pose/pretrain tasks.",
+                }),
+                "sapiens2_seg_alpha": ("FLOAT", {
+                    "default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05,
+                    "tooltip": "Segmentation overlay opacity (0=invisible, 1=opaque). "
+                               "Only used when sapiens2_task = 'seg'.",
+                }),
+                "sapiens2_pose_kpt_thr": ("FLOAT", {
+                    "default": 0.3, "min": 0.0, "max": 1.0, "step": 0.05,
+                    "tooltip": "Pose keypoint visualization threshold (only keypoints with score >= threshold are drawn). "
+                               "Only used when sapiens2_task = 'pose'.",
+                }),
+                "sapiens2_pose_radius": ("INT", {
+                    "default": 6, "min": 1, "max": 32, "step": 1,
+                    "tooltip": "Keypoint marker radius in pixels. "
+                               "Only used when sapiens2_task = 'pose'.",
+                }),
+                "sapiens2_pose_thickness": ("INT", {
+                    "default": 4, "min": 1, "max": 32, "step": 1,
+                    "tooltip": "Skeleton line thickness in pixels. "
+                               "Only used when sapiens2_task = 'pose'.",
+                }),
+
                 # ── Advanced: AI Upscale ───────────────────────────────────
                 "upscale_model": (["realesrgan_x4plus", "realesrgan_x4_anime", "hat_x4", "dat_x4", "swinir_x4", "seedvr2_3b_fp8", "seedvr2_3b_gguf", "seedvr2_7b_fp8", "seedvr2_7b_gguf", "flashvsr_full", "flashvsr_tiny", "flashvsr_tiny_long", "rtx_vsr"], {
                     "default": "realesrgan_x4plus",
@@ -783,6 +850,38 @@ class FFMPEGAgentNode:
                                "DENOISE_* = same-resolution denoising. "
                                "DEBLUR_* = same-resolution deblurring. "
                                "Requires NVIDIA RTX GPU with Tensor Cores.",
+                }),
+                "vae_tiling": ("BOOLEAN", {
+                    "default": True,
+                    "label_on": "Tiling On",
+                    "label_off": "Tiling Off",
+                    "tooltip": "VAE tiling for diffusion upscalers (SeedVR2 / FlashVSR). "
+                               "On = lower VRAM, slight seams possible. "
+                               "Off = full-frame VAE (more VRAM, no seams). "
+                               "Only applies when a SeedVR2 or FlashVSR upscale model is selected.",
+                }),
+                "vae_tile_preset": (["auto", "256", "384", "512", "768", "1024", "custom"], {
+                    "default": "auto",
+                    "tooltip": "VAE tile size preset (used when vae_tiling is on). "
+                               "'auto' = pick by VRAM (SeedVR2) / model default (FlashVSR). "
+                               "A number = square tile of that pixel size. "
+                               "'custom' = use vae_tile_size / vae_tile_overlap below.",
+                }),
+                "vae_tile_size": ("INT", {
+                    "default": 512,
+                    "min": 64,
+                    "max": 2048,
+                    "step": 64,
+                    "tooltip": "Custom VAE tile size in pixels "
+                               "(used when vae_tile_preset = 'custom').",
+                }),
+                "vae_tile_overlap": ("INT", {
+                    "default": 64,
+                    "min": 0,
+                    "max": 512,
+                    "step": 16,
+                    "tooltip": "Custom VAE tile overlap in pixels for blending "
+                               "(used when vae_tile_preset = 'custom').",
                 }),
 
                 # ── Advanced: Rembg Background Removal ─────────────────────
@@ -2018,6 +2117,7 @@ class FFMPEGAgentNode:
         mask=None,
         crop_data: str = "",
         use_flux_klein: bool = False,
+        flux_klein_model: str = "4b",
         use_kiwi_edit: bool = False,
         use_minimax_remover: bool = False,
         use_dreamid_omni: bool = False,
@@ -2121,6 +2221,7 @@ class FFMPEGAgentNode:
                 sam3_det_threshold=sam3_det_threshold,
                 mask_points=mask_points,
                 use_flux_klein=use_flux_klein,
+                flux_klein_model=flux_klein_model,
                 use_kiwi_edit=use_kiwi_edit,
                 use_minimax_remover=use_minimax_remover,
                 flux_smoothing=flux_smoothing,
@@ -2279,6 +2380,7 @@ class FFMPEGAgentNode:
                     sam3_det_threshold=sam3_det_threshold,
                     mask_points=mask_points,
                     use_flux_klein=use_flux_klein,
+                    flux_klein_model=flux_klein_model,
                     use_kiwi_edit=use_kiwi_edit,
                     use_minimax_remover=use_minimax_remover,
                     use_dreamid_omni=use_dreamid_omni,
@@ -2576,6 +2678,31 @@ class FFMPEGAgentNode:
                 if _sam3_mask_path and result6[2]:
                     _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
                 return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
+            # Sapiens2 mode (Meta human-centric vision)
+            if no_llm_mode == "sapiens2":
+                result6 = await self._process_sapiens2_only(
+                    effective_video_path=effective_video_path,
+                    video_metadata=video_metadata,
+                    save_output=save_output,
+                    output_path=output_path,
+                    preview_mode=preview_mode,
+                    quality_preset=quality_preset,
+                    crf=crf,
+                    encoding_preset=encoding_preset,
+                    sapiens2_task=kwargs.pop("sapiens2_task", "pose"),
+                    sapiens2_size=kwargs.pop("sapiens2_size", "1b"),
+                    sapiens2_precision=kwargs.pop("sapiens2_precision", "auto"),
+                    sapiens2_seg_alpha=kwargs.pop("sapiens2_seg_alpha", 0.5),
+                    sapiens2_pose_kpt_thr=kwargs.pop("sapiens2_pose_kpt_thr", 0.3),
+                    sapiens2_pose_radius=kwargs.pop("sapiens2_pose_radius", 6),
+                    sapiens2_pose_thickness=kwargs.pop("sapiens2_pose_thickness", 4),
+                    temp_video_from_images=temp_video_from_images,
+                    temp_video_with_audio=temp_video_with_audio,
+                    **kwargs,
+                )
+                if _sam3_mask_path and result6[2]:
+                    _nollm.sam3_composite(effective_video_path, result6[2], _sam3_mask_path, result6[2])
+                return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
             # NormalCrafter mode (temporally consistent video normals)
             if no_llm_mode == "normalcrafter":
                 result6 = await self._process_normalcrafter_only(
@@ -2647,6 +2774,7 @@ class FFMPEGAgentNode:
                     crf=crf,
                     encoding_preset=encoding_preset,
                     flux_smoothing=flux_smoothing,
+                    flux_klein_model=flux_klein_model,
                     image_a=image_a,
                     _all_image_paths=_all_image_paths,
                     temp_video_from_images=temp_video_from_images,
@@ -2785,6 +2913,10 @@ class FFMPEGAgentNode:
                     blockswap_blocks=int(kwargs.pop("blockswap_blocks", 0)),
                     seedvr_resolution=int(kwargs.pop("seedvr_resolution", "1080")),
                     rtx_quality=kwargs.pop("rtx_quality", "ULTRA"),
+                    vae_tiling=bool(kwargs.pop("vae_tiling", True)),
+                    vae_tile_preset=kwargs.pop("vae_tile_preset", "auto"),
+                    vae_tile_size=int(kwargs.pop("vae_tile_size", 512)),
+                    vae_tile_overlap=int(kwargs.pop("vae_tile_overlap", 64)),
                     temp_video_from_images=temp_video_from_images,
                     temp_video_with_audio=temp_video_with_audio,
                     **kwargs,
@@ -2949,6 +3081,7 @@ class FFMPEGAgentNode:
                     sam3_det_threshold=sam3_det_threshold,
                     mask_points=mask_points,
                     use_flux_klein=use_flux_klein,
+                    flux_klein_model=flux_klein_model,
                     use_kiwi_edit=use_kiwi_edit,
                     use_minimax_remover=use_minimax_remover,
                     use_dreamid_omni=use_dreamid_omni,
@@ -3028,6 +3161,7 @@ class FFMPEGAgentNode:
             sam3_det_threshold=sam3_det_threshold,
             mask_points=mask_points,
             use_flux_klein=use_flux_klein,
+            flux_klein_model=flux_klein_model,
             use_kiwi_edit=use_kiwi_edit,
             use_minimax_remover=use_minimax_remover,
             flux_smoothing=flux_smoothing,
@@ -3194,7 +3328,7 @@ class FFMPEGAgentNode:
     #  Effects Builder support                                             #
     # ------------------------------------------------------------------ #
 
-    async def _process_effects_pipeline(self, pipeline_json, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, whisper_device="cpu", whisper_model="large-v3", sam3_device="gpu", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", use_flux_klein=False, use_kiwi_edit=False, use_minimax_remover=False, use_dreamid_omni=False, flux_smoothing="none", temp_video_from_images=None, temp_video_with_audio=None, image_a=None, audio_a=None, _all_video_paths=None, _all_image_paths=None, _all_text_inputs=None, **kwargs):
+    async def _process_effects_pipeline(self, pipeline_json, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, whisper_device="cpu", whisper_model="large-v3", sam3_device="gpu", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", use_flux_klein=False, flux_klein_model="4b", use_kiwi_edit=False, use_minimax_remover=False, use_dreamid_omni=False, flux_smoothing="none", temp_video_from_images=None, temp_video_with_audio=None, image_a=None, audio_a=None, _all_video_paths=None, _all_image_paths=None, _all_text_inputs=None, **kwargs):
         """Delegate to nollm_modes module."""
         return await _nollm.process_effects_pipeline(
             composer=self.composer, process_manager=self.process_manager,
@@ -3209,6 +3343,7 @@ class FFMPEGAgentNode:
             sam3_device=sam3_device, sam3_max_objects=sam3_max_objects,
             sam3_det_threshold=sam3_det_threshold, mask_points=mask_points,
             use_flux_klein=use_flux_klein,
+            flux_klein_model=flux_klein_model,
             use_kiwi_edit=use_kiwi_edit,
             use_minimax_remover=use_minimax_remover,
             use_dreamid_omni=use_dreamid_omni,
@@ -3458,6 +3593,31 @@ class FFMPEGAgentNode:
             encoding_preset=encoding_preset,
             marigold_output_type=marigold_output_type,
             marigold_colormap=marigold_colormap,
+            temp_video_from_images=temp_video_from_images,
+            temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
+        )
+
+    # ------------------------------------------------------------------ #
+    #  Sapiens2 mode (no LLM)                                             #
+    # ------------------------------------------------------------------ #
+
+    async def _process_sapiens2_only(self, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, sapiens2_task="pose", sapiens2_size="1b", sapiens2_precision="auto", sapiens2_seg_alpha=0.5, sapiens2_pose_kpt_thr=0.3, sapiens2_pose_radius=6, sapiens2_pose_thickness=4, temp_video_from_images=None, temp_video_with_audio=None, **kwargs):
+        """Delegate to nollm_modes module."""
+        return await _nollm.process_sapiens2_only(
+            media_converter=self.media_converter,
+            effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            sapiens2_task=sapiens2_task,
+            sapiens2_size=sapiens2_size,
+            sapiens2_precision=sapiens2_precision,
+            sapiens2_seg_alpha=sapiens2_seg_alpha,
+            sapiens2_pose_kpt_thr=sapiens2_pose_kpt_thr,
+            sapiens2_pose_radius=sapiens2_pose_radius,
+            sapiens2_pose_thickness=sapiens2_pose_thickness,
             temp_video_from_images=temp_video_from_images,
             temp_video_with_audio=temp_video_with_audio,
             **kwargs,
@@ -3747,7 +3907,7 @@ class FFMPEGAgentNode:
         """Delegate to output_handler module."""
         return _oh.strip_api_key_from_metadata(api_key, prompt, extra_pnginfo)
 
-    async def _process_batch(self, video_folder, file_pattern, prompt, llm_model, quality_preset, ollama_url, api_key, custom_model, crf, encoding_preset, max_concurrent, save_output, output_path, use_vision=False, verify_output=False, ptc_mode="off", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", pipeline_json="", use_flux_klein=False, use_minimax_remover=False, flux_smoothing="none"):
+    async def _process_batch(self, video_folder, file_pattern, prompt, llm_model, quality_preset, ollama_url, api_key, custom_model, crf, encoding_preset, max_concurrent, save_output, output_path, use_vision=False, verify_output=False, ptc_mode="off", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", pipeline_json="", use_flux_klein=False, flux_klein_model="4b", use_minimax_remover=False, flux_smoothing="none"):
         """Delegate to batch_processor module."""
         return await _bp.process_batch(
             analyzer=self.analyzer, composer=self.composer,
@@ -3766,6 +3926,7 @@ class FFMPEGAgentNode:
             sam3_det_threshold=sam3_det_threshold,
             mask_points=mask_points, pipeline_json=pipeline_json,
             use_flux_klein=use_flux_klein,
+            flux_klein_model=flux_klein_model,
             use_minimax_remover=use_minimax_remover,
             flux_smoothing=flux_smoothing,
         )

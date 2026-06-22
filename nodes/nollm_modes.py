@@ -111,10 +111,11 @@ def sam3_premask(
     sam3_device: str = "gpu",
     sam3_max_objects: int = 5,
     sam3_det_threshold: float = 0.7,
+    sam_version: str = "sam3.1",
 ) -> Optional[str]:
-    """Run SAM3 to generate a mask video from a text prompt.
+    """Run SAM3 / SAM 3.1 to generate a mask video from a text prompt.
 
-    Returns the path to the mask video, or None if SAM3 is unavailable
+    Returns the path to the mask video, or None if SAM is unavailable
     or the prompt is empty.
     """
     if not prompt or not prompt.strip():
@@ -130,13 +131,15 @@ def sam3_premask(
         return None
 
     try:
-        logger.info("SAM3 pre-mask: generating mask for '%s'", prompt.strip())
+        logger.info("SAM pre-mask: generating mask for '%s' (version=%s)",
+                    prompt.strip(), sam_version)
         mask_path = sam3_mask(
             video_path=video_path,
             prompt=prompt.strip(),
             device=sam3_device,
             max_objects=sam3_max_objects,
             det_threshold=sam3_det_threshold,
+            version=sam_version or "sam3.1",
         )
         if mask_path and os.path.isfile(mask_path):
             logger.info("SAM3 pre-mask: mask video ready: %s", mask_path)
@@ -398,6 +401,7 @@ async def process_effects_pipeline(
     if mask_points and mask_points.strip():
         pipeline.metadata["_mask_points"] = mask_points.strip()
     pipeline.metadata["_enable_flux_klein"] = use_flux_klein
+    pipeline.metadata["_flux_klein_model"] = kwargs.get("flux_klein_model", "4b")
     pipeline.metadata["_enable_kiwi_edit"] = kwargs.get("use_kiwi_edit", False)
     pipeline.metadata["_enable_minimax_remover"] = use_minimax_remover
     if flux_smoothing and flux_smoothing != "none":
@@ -3244,6 +3248,196 @@ async def process_marigold_only(
                 shutil.rmtree(temp_render_dir, ignore_errors=True)
 
 
+async def process_sapiens2_only(
+    # dependencies
+    media_converter,
+    # parameters
+    effective_video_path: str,
+    video_metadata,
+    save_output: bool,
+    output_path: str,
+    preview_mode: bool,
+    quality_preset: str,
+    crf: int,
+    encoding_preset: str,
+    sapiens2_task: str = "pose",
+    sapiens2_size: str = "1b",
+    sapiens2_precision: str = "auto",
+    sapiens2_seg_alpha: float = 0.5,
+    sapiens2_pose_kpt_thr: float = 0.3,
+    sapiens2_pose_radius: int = 6,
+    sapiens2_pose_thickness: int = 4,
+    temp_video_from_images: Optional[str] = None,
+    temp_video_with_audio: Optional[str] = None,
+    **kwargs,
+) -> tuple[torch.Tensor, dict, str, str, str, str]:
+    """Run Meta Sapiens2 human-centric vision without LLM involvement.
+
+    Produces per-frame visualizations for one of six tasks: 308-keypoint
+    pose, 29-class body-part segmentation, surface normals, 3D pointmap,
+    human matting, or raw backbone features.
+
+    Returns the standard 6-tuple:
+        (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
+
+    License:
+        Sapiens2 / Meta Proprietary.  Not for surveillance, biometric
+        identification, deepfake generation, or weapons / critical-
+        infrastructure use.  Attribution required on publications.
+    """
+    logger.info(
+        "Sapiens2 mode: task=%s size=%s",
+        sapiens2_task, sapiens2_size,
+    )
+
+    # --- Import synthesizer ---
+    try:
+        try:
+            from ..core.sapiens2_synthesizer import (
+                run_sapiens2,
+                cleanup as _sap_cleanup,
+            )
+        except ImportError:
+            from core.sapiens2_synthesizer import (  # type: ignore
+                run_sapiens2,
+                cleanup as _sap_cleanup,
+            )
+    except ImportError as exc:
+        raise RuntimeError(
+            "Sapiens2 is not available — "
+            f"{exc}. Run install.py inside the ComfyUI venv or "
+            "`pip install --no-deps git+https://github.com/facebookresearch/sapiens2.git`."
+        )
+
+    # --- Build output path ---
+    output_path, temp_render_dir = build_output_path(
+        effective_video_path=effective_video_path,
+        save_output=save_output,
+        output_path=output_path,
+        preview_mode=preview_mode,
+    )
+
+    # --- Validate-and-coerce numeric params (the UI sends strings/floats) ---
+    try:
+        seg_alpha = float(sapiens2_seg_alpha)
+        pose_kpt_thr = float(sapiens2_pose_kpt_thr)
+        pose_radius = max(1, int(sapiens2_pose_radius))
+        pose_thickness = max(1, int(sapiens2_pose_thickness))
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            f"Sapiens2 mode: invalid numeric parameter — {exc}"
+        ) from exc
+
+    effective_crf = crf if crf >= 0 else _CRF_MAP.get(quality_preset, 23)
+    effective_preset = (
+        encoding_preset if encoding_preset != "auto"
+        else _PRESET_MAP.get(quality_preset, "medium")
+    )
+
+    # --- Run inference ---
+    sapiens_output: Optional[str] = None
+    try:
+        sapiens_output = run_sapiens2(
+            effective_video_path,
+            task=sapiens2_task,
+            size=sapiens2_size,
+            precision=sapiens2_precision,
+            seg_alpha=seg_alpha,
+            pose_kpt_thr=pose_kpt_thr,
+            pose_radius=pose_radius,
+            pose_thickness=pose_thickness,
+            crf=effective_crf,
+            preset=effective_preset,
+        )
+    except Exception as exc:
+        logger.error("Sapiens2 mode: inference failed: %s", exc)
+        try:
+            _sap_cleanup()
+        except Exception:
+            pass
+        raise RuntimeError(f"Sapiens2 inference failed: {exc}") from exc
+
+    # --- Re-encode preview / move to output path ---
+    ext = os.path.splitext(sapiens_output)[1].lower()
+    is_image = ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp")
+    if is_image:
+        import shutil as _shutil
+        output_path = str(Path(output_path).with_suffix(ext))
+        _shutil.copy2(sapiens_output, output_path)
+        cmd_log = f"cp {sapiens_output} {output_path}"
+    else:
+        ffmpeg = _get_ffmpeg_bin()
+        ffmpeg_cmd = [
+            ffmpeg, "-y",
+            "-i", sapiens_output,
+            "-c:v", "libx264",
+            "-crf", str(effective_crf),
+            "-preset", effective_preset,
+            "-pix_fmt", "yuv420p",
+            "-an",
+        ]
+        if preview_mode:
+            ffmpeg_cmd.extend(["-vf", "scale=480:trunc(ow/a/2)*2", "-t", "10"])
+        ffmpeg_cmd.append(output_path)
+
+        logger.debug("Sapiens2 ffmpeg command: %s", " ".join(ffmpeg_cmd))
+        proc = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"Sapiens2 mode: ffmpeg encoding failed:\n{proc.stderr[-500:]}"
+            )
+        cmd_log = " ".join(ffmpeg_cmd)
+
+    try:
+        # --- Collect frame/audio output ---
+        unique_id = str(kwargs.get("unique_id", ""))
+        hidden_prompt = kwargs.get("hidden_prompt") or {}
+        images_tensor, audio_out = collect_frame_output(
+            media_converter=media_converter,
+            output_path=output_path,
+            unique_id=unique_id,
+            hidden_prompt=hidden_prompt,
+            removes_audio=True,
+        )
+
+        _task_desc = {
+            "pose": "308-keypoint top-down pose (body + face + hands + feet)",
+            "seg": "29-class human body-part segmentation overlay",
+            "normal": "per-pixel surface normals",
+            "pointmap": "3D pointmap (z-channel turbo colormap)",
+            "matting": "human matting (alpha composited on green)",
+            "pretrain": "raw backbone features (PCA-visualized RGB)",
+        }
+        analysis = (
+            f"Sapiens2 Mode (no LLM)\n"
+            f"Task: {sapiens2_task} — {_task_desc.get(sapiens2_task, sapiens2_task)}\n"
+            f"Size: {sapiens2_size} (precision: {sapiens2_precision})\n"
+            f"Source: {effective_video_path}\n"
+            f"Sapiens2 output: {sapiens_output}\n"
+            f"Output: {output_path}\n"
+            f"License: Sapiens2/Meta Proprietary — no surveillance, biometric "
+            f"identification, or deepfake use; attribution required."
+        )
+
+        return (images_tensor, audio_out, output_path, cmd_log, analysis, "")
+    finally:
+        # --- Cleanup temp files (always runs) ---
+        for tmp_path in [temp_video_from_images, temp_video_with_audio]:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        if sapiens_output and os.path.exists(sapiens_output):
+            try:
+                os.remove(sapiens_output)
+            except OSError:
+                pass
+        if not save_output and temp_render_dir and os.path.isdir(temp_render_dir):
+            if not os.listdir(temp_render_dir):
+                shutil.rmtree(temp_render_dir, ignore_errors=True)
+
+
 async def process_normalcrafter_only(
     # dependencies
     media_converter,
@@ -3770,6 +3964,7 @@ async def process_flux_klein_only(
     flux_klein_seed = kwargs.get("flux_klein_seed", 42)
     flux_klein_width = kwargs.get("flux_klein_width", 1024)
     flux_klein_height = kwargs.get("flux_klein_height", 1024)
+    flux_klein_model = kwargs.get("flux_klein_model", "4b")
 
     if not prompt or not prompt.strip():
         raise RuntimeError(
@@ -3901,6 +4096,7 @@ async def process_flux_klein_only(
                 guidance_scale=flux_klein_guidance,
                 width=flux_klein_width,
                 height=flux_klein_height,
+                model=flux_klein_model,
             )
             output_path = edited_path
             cmd_log = f"flux_klein edit_single_image → {output_path}"
@@ -3920,6 +4116,7 @@ async def process_flux_klein_only(
                 guidance_scale=flux_klein_guidance,
                 width=flux_klein_width,
                 height=flux_klein_height,
+                model=flux_klein_model,
             )
             output_path = edited_path
 
@@ -4462,6 +4659,10 @@ async def process_ai_upscale_only(
     blockswap_blocks: int = 0,
     seedvr_resolution: int = 1080,
     rtx_quality: str = "ULTRA",
+    vae_tiling: bool = True,
+    vae_tile_preset: str = "auto",
+    vae_tile_size: int = 512,
+    vae_tile_overlap: int = 64,
     temp_video_from_images: Optional[str] = None,
     temp_video_with_audio: Optional[str] = None,
     **kwargs,
@@ -4499,6 +4700,26 @@ async def process_ai_upscale_only(
         _video_exts = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv"}
         is_video = ext in _video_exts
 
+        # Image source -> image output: switch the output extension so the file
+        # is saved as an image and the Agent's image_path output (which only
+        # forwards image-extension paths) picks it up. (build_output_path always
+        # emits .mp4.)
+        if not is_video:
+            _img_out_ext = ext if ext in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif") else ".png"
+            output_path = os.path.splitext(output_path)[0] + _img_out_ext
+
+        # Normalize VAE tiling request for diffusion upscalers (SeedVR2 / FlashVSR).
+        # _tile_sz / _tile_ov are None for "auto" (let the model decide its own defaults).
+        if not vae_tiling:
+            _tile_on, _tile_sz, _tile_ov = False, None, None
+        elif vae_tile_preset == "auto":
+            _tile_on, _tile_sz, _tile_ov = True, None, None
+        elif vae_tile_preset == "custom":
+            _tile_on, _tile_sz, _tile_ov = True, int(vae_tile_size), int(vae_tile_overlap)
+        else:  # numeric preset, e.g. "512"
+            _tile_sz = int(vae_tile_preset)
+            _tile_on, _tile_ov = True, max(0, _tile_sz // 8)
+
         # Import the appropriate synthesizer
         if upscale_model in _FLASHVSR_MODELS:
             try:
@@ -4510,10 +4731,15 @@ async def process_ai_upscale_only(
                         upscale_model, is_video)
 
             if is_video:
+                _flashvsr_kwargs = {"tiled": _tile_on}
+                if _tile_sz is not None:
+                    _flashvsr_kwargs["tile_size"] = _tile_sz
+                    _flashvsr_kwargs["tile_overlap"] = _tile_ov
                 upscale_output = upscale_video(
                     input_path=effective_video_path,
                     model_name=upscale_model,
                     scale=upscale_scale,
+                    **_flashvsr_kwargs,
                 )
             else:
                 upscale_output = upscale_image(
@@ -4536,6 +4762,9 @@ async def process_ai_upscale_only(
                     model_name=upscale_model,
                     resolution=seedvr_resolution,
                     blockswap_blocks=blockswap_blocks,
+                    vae_tiling=_tile_on,
+                    vae_tile_size=_tile_sz,
+                    vae_tile_overlap=_tile_ov,
                 )
             else:
                 upscale_output = upscale_image(
@@ -4543,6 +4772,9 @@ async def process_ai_upscale_only(
                     model_name=upscale_model,
                     resolution=seedvr_resolution,
                     blockswap_blocks=blockswap_blocks,
+                    vae_tiling=_tile_on,
+                    vae_tile_size=_tile_sz,
+                    vae_tile_overlap=_tile_ov,
                 )
         elif upscale_model == "rtx_vsr":
             try:
@@ -4601,7 +4833,8 @@ async def process_ai_upscale_only(
             import folder_paths  # type: ignore[import-not-found]
             out_dir = folder_paths.get_output_directory()
             stem = os.path.splitext(os.path.basename(effective_video_path))[0]
-            output_path = os.path.join(out_dir, f"{stem}_upscaled.mp4")
+            _forced_ext = ".mp4" if is_video else (os.path.splitext(output_path)[1] or ".png")
+            output_path = os.path.join(out_dir, f"{stem}_upscaled{_forced_ext}")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         shutil.copy2(upscale_output, output_path)
         cmd_log = f"ai_upscale → {output_path}"
@@ -5288,9 +5521,13 @@ async def process_comparison_only(
     fc_parts = [prep_a, prep_b]
 
     if style == "swipe":
-        crop_w = f"floor((t/{dur})*{w}/2)*2"
-        fc_parts.append(f"[_cb]crop=w={crop_w}:h={h}:x=0:y=0[_cb_crop]")
-        fc_parts.append(f"[_ca][_cb_crop]overlay=x=0:y=0:shortest=1[_cmp]")
+        # Reveal B left→right over the clip duration. A time-animated crop width
+        # can't be used here: crop evaluates w once at init, where t=0 yields a
+        # zero-width frame and libx264 fails with "Could not open encoder before
+        # EOF" (-22). blend evaluates the expression per-pixel/per-frame instead.
+        fc_parts.append(
+            f"[_ca][_cb]blend=all_expr='if(lt(X,{w}*T/{dur}),B,A)':shortest=1[_cmp]"
+        )
 
     elif style == "split":
         half = (w // 2) // 2 * 2
@@ -5303,24 +5540,24 @@ async def process_comparison_only(
 
     elif style == "diagonal":
         fc_parts.append(
-            f"[_ca][_cb]blend=all_expr='if(lt(X/{w}+Y/{h},1),B,A)'[_cmp]"
+            f"[_ca][_cb]blend=all_expr='if(lt(X/{w}+Y/{h},1),B,A)':shortest=1[_cmp]"
         )
 
     elif style == "circular_reveal":
         max_r = max(w, h)
         cx, cy = w // 2, h // 2
         fc_parts.append(
-            f"[_ca][_cb]blend=all_expr='if(lte(hypot(X-{cx},Y-{cy}),{max_r}*T/{dur}),B,A)'[_cmp]"
+            f"[_ca][_cb]blend=all_expr='if(lte(hypot(X-{cx},Y-{cy}),{max_r}*T/{dur}),B,A)':shortest=1[_cmp]"
         )
 
     elif style == "difference":
-        fc_parts.append(f"[_ca][_cb]blend=all_mode=difference:all_opacity=1.0[_cmp]")
+        fc_parts.append(f"[_ca][_cb]blend=all_mode=difference:all_opacity=1.0:shortest=1[_cmp]")
 
     else:
-        # Default to swipe
-        crop_w = f"floor((t/{dur})*{w}/2)*2"
-        fc_parts.append(f"[_cb]crop=w={crop_w}:h={h}:x=0:y=0[_cb_crop]")
-        fc_parts.append(f"[_ca][_cb_crop]overlay=x=0:y=0:shortest=1[_cmp]")
+        # Default to swipe (see swipe branch for why blend, not crop+overlay)
+        fc_parts.append(
+            f"[_ca][_cb]blend=all_expr='if(lt(X,{w}*T/{dur}),B,A)':shortest=1[_cmp]"
+        )
 
     # --- Optional labels ---
     if comparison_labels:

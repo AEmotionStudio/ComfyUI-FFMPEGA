@@ -28,7 +28,10 @@ def is_installed(dist_name: str) -> bool:
 def main():
     print("[FFMPEGA] Installing optional dependencies...")
 
-    # --- SAM3 (object segmentation for auto_mask) ---
+    # --- SAM3 / SAM 3.1 (object segmentation for auto_mask) ---
+    # We always want the latest sam3 from GitHub main, because SAM 3.1
+    # ships the build_sam3_multiplex_video_model builder that older copies
+    # of the pip package don't have.
     if not is_installed("sam3"):
         print("[FFMPEGA] Installing SAM3 (--no-deps to avoid numpy conflicts)...")
         result = subprocess.run(
@@ -39,7 +42,38 @@ def main():
         else:
             print("[FFMPEGA] ✗ SAM3 installation failed — auto_mask will use fallback")
     else:
-        print("[FFMPEGA] ✓ SAM3 already installed")
+        # Capability check: an older sam3 install predates the SAM 3.1
+        # multiplex tracker. Force a reinstall from main so SAM 3.1 works.
+        needs_upgrade = False
+        try:
+            import importlib.util as _ilu
+            spec = _ilu.find_spec("sam3.model_builder")
+            if spec and spec.origin:
+                with open(spec.origin, "r") as _f:
+                    _src = _f.read()
+                if "build_sam3_multiplex_video_model" not in _src:
+                    needs_upgrade = True
+        except Exception as _check_err:
+            print(f"[FFMPEGA] sam3 capability check failed: {_check_err}")
+
+        if needs_upgrade:
+            print(
+                "[FFMPEGA] Installed sam3 predates SAM 3.1 — "
+                "upgrading from GitHub..."
+            )
+            result = subprocess.run([
+                *pip, "--no-deps", "--upgrade", "--force-reinstall",
+                "git+https://github.com/facebookresearch/sam3.git",
+            ])
+            if result.returncode == 0:
+                print("[FFMPEGA] ✓ SAM3 upgraded to SAM 3.1-capable revision")
+            else:
+                print(
+                    "[FFMPEGA] ✗ SAM3 upgrade failed — sam_version='sam3.1' "
+                    "will raise ImportError until upgraded manually"
+                )
+        else:
+            print("[FFMPEGA] ✓ SAM3 already installed (SAM 3.1 multiplex builders present)")
 
     # SAM3 companion deps (skipped by --no-deps but needed at import time)
     sam3_companion = ["iopath"]
@@ -241,6 +275,38 @@ def main():
             print("[FFMPEGA] ✗ NormalCrafter install failed — normalcrafter mode won't work")
     else:
         print("[FFMPEGA] ✓ NormalCrafter already installed")
+
+    # --- Sapiens2 (Meta, ICLR 2026) — human-centric vision transformers ---
+    # Provides pose (308 kpts), body-part seg (29 classes), surface normals,
+    # pointmap (3D), human matting, and pretrain backbones. Pure PyTorch
+    # (no mmcv/mmpose), so --no-deps is enough to avoid version-pin churn —
+    # all runtime deps (transformers, timm, safetensors, scipy, opencv,
+    # accelerate) are already in the ComfyUI venv.
+    # License: Meta Proprietary (non-surveillance, attribution required).
+    if not is_installed("sapiens"):
+        print("[FFMPEGA] Installing Sapiens2 (--no-deps)...")
+        result = subprocess.run(
+            [*pip, "--no-deps", "git+https://github.com/facebookresearch/sapiens2.git"],
+        )
+        if result.returncode == 0:
+            print("[FFMPEGA] ✓ Sapiens2 installed successfully")
+        else:
+            print("[FFMPEGA] ✗ Sapiens2 install failed — sapiens2 mode won't work")
+    else:
+        print("[FFMPEGA] ✓ Sapiens2 already installed")
+
+    # Sapiens2 companion deps (mostly already present from ComfyUI env)
+    sapiens2_companion = ["iopath", "prettytable", "termcolor"]
+    missing_sap = [pkg for pkg in sapiens2_companion if not is_installed(pkg)]
+    if missing_sap:
+        print(f"[FFMPEGA] Installing Sapiens2 companion deps: {', '.join(missing_sap)}...")
+        result = subprocess.run([*pip, *missing_sap])
+        if result.returncode == 0:
+            print("[FFMPEGA] ✓ Sapiens2 companion deps installed successfully")
+        else:
+            print("[FFMPEGA] ✗ Some Sapiens2 companion deps failed — sapiens2 may not work")
+    else:
+        print("[FFMPEGA] ✓ Sapiens2 companion deps already installed")
 
     # --- SHARP (3D Gaussian view synthesis from single image) ---
     # Install with --no-deps to avoid torch==2.8.0 pin.
