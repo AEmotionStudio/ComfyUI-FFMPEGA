@@ -705,6 +705,13 @@ def upscale_all_batches(
             conditions = [condition]
             
             # Detect DiT model dtype (handle CompatibleDiT wrapper)
+            if getattr(runner, 'dit', None) is None:
+                raise RuntimeError(
+                    "SeedVR2 DiT model is not loaded (it was likely freed by a "
+                    "prior out-of-memory error). The cached runner will be "
+                    "rebuilt on the next run — retry with a smaller model "
+                    "(seedvr2_3b_fp8), lower resolution, or more blockswap_blocks."
+                )
             dit_model = runner.dit.dit_model if hasattr(runner.dit, 'dit_model') else runner.dit
             try:
                 dit_dtype = next(dit_model.parameters()).dtype

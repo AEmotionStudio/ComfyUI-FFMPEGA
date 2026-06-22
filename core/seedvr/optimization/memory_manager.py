@@ -1018,9 +1018,10 @@ def cleanup_dit(runner: Any, debug: Optional['Debug'] = None, cache_model: bool 
         debug: Debug instance for logging
         cache_model: If True, move DiT to offload_device; if False, delete completely
     """
-    if not runner or not hasattr(runner, 'dit'):
+    if not runner or getattr(runner, 'dit', None) is None:
+        # DiT already freed (e.g. by a prior OOM or unload) — nothing to clean.
         return
-    
+
     if debug:
         debug.log("Cleaning up DiT components", category="cleanup")
     

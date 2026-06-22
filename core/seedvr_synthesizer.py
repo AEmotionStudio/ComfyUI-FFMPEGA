@@ -118,20 +118,42 @@ def _get_seedvr_dir() -> Path:
     return Path(__file__).resolve().parent / "seedvr"
 
 
-def _load_model(model_name: str = "seedvr2_3b_fp8", blockswap_blocks: int = 0):
+def _load_model(
+    model_name: str = "seedvr2_3b_fp8",
+    blockswap_blocks: int = 0,
+    vae_tiling: Optional[bool] = None,
+    vae_tile_size: Optional[int] = None,
+    vae_tile_overlap: Optional[int] = None,
+):
     """Load (or reuse cached) SeedVR2 runner.
 
     Args:
         model_name: Model variant key from SEEDVR_CONFIGS.
         blockswap_blocks: Number of DiT blocks to offload to CPU (0 = disabled).
+        vae_tiling: VAE tiling override. None = auto by VRAM (default), False =
+            force off, True = force on.
+        vae_tile_size: Custom square tile size in pixels (None = 512).
+        vae_tile_overlap: Custom tile overlap in pixels (None = 64).
 
     Returns the configured VideoDiffusionInfer runner and generation context.
     """
     global _runner, _runner_model, _ctx
 
     if _runner is not None and _runner_model == model_name:
-        log.info("[SeedVR2] Reusing cached %s runner", model_name)
-        return _runner, _ctx
+        # Only reuse if the cached runner is still intact. A prior OOM (or
+        # ComfyUI's "unloading all loaded models" handler) can free the DiT/VAE
+        # and leave runner.dit = None, which would otherwise crash Phase 2 with
+        # a cryptic "'NoneType' object has no attribute 'parameters'". Rebuild
+        # instead so lowering settings after an OOM works without a restart.
+        if getattr(_runner, "dit", None) is not None and getattr(_runner, "vae", None) is not None:
+            log.info("[SeedVR2] Reusing cached %s runner", model_name)
+            return _runner, _ctx
+        log.warning(
+            "[SeedVR2] Cached %s runner was invalidated (DiT/VAE freed, "
+            "likely after a prior OOM) — rebuilding from scratch.",
+            model_name,
+        )
+        cleanup()
 
     # Unload previous model if name changed
     if _runner is not None:
@@ -194,10 +216,23 @@ def _load_model(model_name: str = "seedvr2_3b_fp8", blockswap_blocks: int = 0):
         log.info("[SeedVR2] BlockSwap enabled: %d blocks (user setting)",
                  blockswap_blocks)
 
-    # Determine VAE tiling based on VRAM (automatic — separate concern)
+    # Determine VAE tiling.
+    #   vae_tiling None  → auto by VRAM (legacy default)
+    #   vae_tiling False → off
+    #   vae_tiling True, size None → auto by VRAM (explicit "auto" preset)
+    #   vae_tiling True, size given → force on with the requested tile size
+    tile_sz = vae_tile_size if vae_tile_size is not None else 512
+    tile_ov = vae_tile_overlap if vae_tile_overlap is not None else 64
     decode_tiled = False
     encode_tiled = False
-    if torch.cuda.is_available():
+    if vae_tiling is False:
+        log.info("[SeedVR2] VAE tiling disabled (user setting)")
+    elif vae_tiling is True and vae_tile_size is not None:
+        decode_tiled = True
+        encode_tiled = True
+        log.info("[SeedVR2] VAE tiling enabled (user setting, tile=%d overlap=%d)",
+                 tile_sz, tile_ov)
+    elif torch.cuda.is_available():
         try:
             total_vram = torch.cuda.get_device_properties(0).total_memory / (1024**3)
             if total_vram < 16:
@@ -235,11 +270,11 @@ def _load_model(model_name: str = "seedvr2_3b_fp8", blockswap_blocks: int = 0):
         vae_cache=False,
         block_swap_config=block_swap_config,
         encode_tiled=encode_tiled,
-        encode_tile_size=(512, 512) if encode_tiled else None,
-        encode_tile_overlap=(64, 64) if encode_tiled else None,
+        encode_tile_size=(tile_sz, tile_sz) if encode_tiled else None,
+        encode_tile_overlap=(tile_ov, tile_ov) if encode_tiled else None,
         decode_tiled=decode_tiled,
-        decode_tile_size=(512, 512) if decode_tiled else None,
-        decode_tile_overlap=(64, 64) if decode_tiled else None,
+        decode_tile_size=(tile_sz, tile_sz) if decode_tiled else None,
+        decode_tile_overlap=(tile_ov, tile_ov) if decode_tiled else None,
     )
 
     ctx['cache_context'] = cache_context
@@ -500,6 +535,9 @@ def upscale_image(
     seed: int = 42,
     color_correction: str = "lab",
     blockswap_blocks: int = 0,
+    vae_tiling: Optional[bool] = None,
+    vae_tile_size: Optional[int] = None,
+    vae_tile_overlap: Optional[int] = None,
     **kwargs,
 ) -> str:
     """Upscale a single image using SeedVR2 diffusion.
@@ -511,6 +549,9 @@ def upscale_image(
         seed: Random seed for reproducibility.
         color_correction: Color correction method.
         blockswap_blocks: DiT blocks to offload to CPU (0 = disabled).
+        vae_tiling: VAE tiling override (None = auto by VRAM, False = off, True = on).
+        vae_tile_size: Custom VAE tile size in pixels (None = default 512).
+        vae_tile_overlap: Custom VAE tile overlap in pixels (None = default 64).
 
     Returns:
         Path to the upscaled image.
@@ -521,7 +562,11 @@ def upscale_image(
     log.info("[SeedVR2] Upscaling image: %s (model=%s, resolution=%d)",
              input_path, model_name, resolution)
 
-    runner, ctx = _load_model(model_name, blockswap_blocks=blockswap_blocks)
+    runner, ctx = _load_model(
+        model_name, blockswap_blocks=blockswap_blocks,
+        vae_tiling=vae_tiling, vae_tile_size=vae_tile_size,
+        vae_tile_overlap=vae_tile_overlap,
+    )
 
     # Load single image as 1-frame tensor
     image_tensor = _frames_to_tensor([input_path])
@@ -564,6 +609,9 @@ def upscale_video(
     seed: int = 42,
     color_correction: str = "lab",
     blockswap_blocks: int = 0,
+    vae_tiling: Optional[bool] = None,
+    vae_tile_size: Optional[int] = None,
+    vae_tile_overlap: Optional[int] = None,
     **kwargs,
 ) -> str:
     """Upscale a video using SeedVR2 diffusion.
@@ -576,6 +624,9 @@ def upscale_video(
         seed: Random seed for reproducibility.
         color_correction: Color correction method.
         blockswap_blocks: DiT blocks to offload to CPU (0 = disabled).
+        vae_tiling: VAE tiling override (None = auto by VRAM, False = off, True = on).
+        vae_tile_size: Custom VAE tile size in pixels (None = default 512).
+        vae_tile_overlap: Custom VAE tile overlap in pixels (None = default 64).
 
     Returns:
         Path to the upscaled video.
@@ -586,7 +637,11 @@ def upscale_video(
     log.info("[SeedVR2] Upscaling video: %s (model=%s, batch=%d, resolution=%d)",
              input_path, model_name, batch_size, resolution)
 
-    runner, ctx = _load_model(model_name, blockswap_blocks=blockswap_blocks)
+    runner, ctx = _load_model(
+        model_name, blockswap_blocks=blockswap_blocks,
+        vae_tiling=vae_tiling, vae_tile_size=vae_tile_size,
+        vae_tile_overlap=vae_tile_overlap,
+    )
 
     ffmpeg = _get_ffmpeg_bin()
     fps = _get_video_fps(input_path)
