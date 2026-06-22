@@ -57,6 +57,7 @@ ALL_SYNTHESIZER_MODULES: tuple[str, ...] = (
     "svi_synthesizer",
     "wan_animate_synthesizer",
     "sharp_synthesizer",
+    "sapiens2_synthesizer",
 )
 
 _freeing_vram = False
@@ -127,7 +128,7 @@ def is_oom(exception) -> bool:
     """
     mm = _get_mm()
     if mm:
-        return mm.is_oom(exception)
+        return mm.is_oom(exception)  # type: ignore[attr-defined]
     return "out of memory" in str(exception).lower()
 
 
@@ -163,7 +164,7 @@ def free_for_module(exclude: str = "", memory_needed: int = 0) -> None:
         if mm:
             if memory_needed > 0:
                 # Budget-aware: only evict enough to free memory_needed
-                mm.free_memory(memory_needed, device)
+                mm.free_memory(memory_needed, device)  # type: ignore[attr-defined]
             else:
                 # Nuclear fallback: evict everything
                 mm.unload_all_models()
