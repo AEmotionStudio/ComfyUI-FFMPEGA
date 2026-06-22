@@ -47,6 +47,7 @@ async def process_batch(
     mask_points: str = "",
     pipeline_json: str = "",
     use_flux_klein: bool = False,
+    flux_klein_model: str = "4b",
     use_minimax_remover: bool = False,
     flux_smoothing: str = "none",
 ) -> tuple[torch.Tensor, dict, str, str, str, str]:
@@ -159,6 +160,7 @@ async def process_batch(
             if mask_points and mask_points.strip():
                 pipeline.metadata["_mask_points"] = mask_points.strip()
             pipeline.metadata["_enable_flux_klein"] = use_flux_klein
+            pipeline.metadata["_flux_klein_model"] = flux_klein_model
             pipeline.metadata["_enable_minimax_remover"] = use_minimax_remover
             if flux_smoothing and flux_smoothing != "none":
                 pipeline.metadata["_flux_smoothing"] = flux_smoothing

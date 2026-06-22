@@ -739,6 +739,8 @@ def _f_auto_mask(p):
     )
     # Whether FLUX Klein is enabled (off by default to save VRAM)
     _enable_flux_klein = bool(p.get("_enable_flux_klein", False))
+    # Which FLUX Klein variant to use ("4b" default / "9b")
+    _flux_klein_model = p.get("_flux_klein_model", "4b")
     # Whether MiniMax-Remover is enabled (off by default)
     _enable_minimax_remover = bool(p.get("_enable_minimax_remover", False))
     # Whether Kiwi-Edit is enabled (off by default)
@@ -904,6 +906,7 @@ def _f_auto_mask(p):
                     video_path=video_path,
                     mask_video_path=mask_path,
                     smoothing=smoothing,
+                    model=_flux_klein_model,
                 )
                 log.info("FLUX Klein removal complete: %s", inpainted_path)
                 if _metadata_ref is not None and isinstance(_metadata_ref, dict):
@@ -990,6 +993,7 @@ def _f_auto_mask(p):
                     mask_video_path=mask_path,
                     prompt=edit_prompt,
                     smoothing=smoothing,
+                    model=_flux_klein_model,
                 )
                 log.info("FLUX Klein edit complete: %s", edited_path)
                 if _metadata_ref is not None and isinstance(_metadata_ref, dict):

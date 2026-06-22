@@ -815,6 +815,8 @@ class SkillComposer:
                 step.params["_flux_smoothing"] = pipeline.metadata["_flux_smoothing"]
             if "_enable_flux_klein" in pipeline.metadata:
                 step.params["_enable_flux_klein"] = pipeline.metadata["_enable_flux_klein"]
+            if "_flux_klein_model" in pipeline.metadata:
+                step.params["_flux_klein_model"] = pipeline.metadata["_flux_klein_model"]
             if "_enable_minimax_remover" in pipeline.metadata:
                 step.params["_enable_minimax_remover"] = pipeline.metadata["_enable_minimax_remover"]
             if "_enable_kiwi_edit" in pipeline.metadata:
