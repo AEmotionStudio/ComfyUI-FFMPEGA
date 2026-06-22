@@ -476,6 +476,7 @@ export function registerAgentNode(
             const showFishSpeech = showAdvanced && mode === "fish_speech";
             const showSharp = showAdvanced && mode === "sharp";
             const showWanAnimate = showAdvanced && mode === "wan_animate";
+            const showSapiens2 = showAdvanced && mode === "sapiens2";
 
             // Marigold
             const mw = node.widgets?.find((w: ComfyWidget) => w.name === "marigold_output_type");
@@ -505,6 +506,18 @@ export function registerAgentNode(
             if (sr) toggleWidget(sr, isSeedvr);                 // resolution for SeedVR2
             if (bb) toggleWidget(bb, isSeedvr);                 // blockswap for SeedVR2
             if (rq) toggleWidget(rq, isRtxVsr);                 // quality for RTX VSR
+            // VAE tiling: only for diffusion upscalers (SeedVR2 / FlashVSR)
+            const isFlashvsr = showUpscale && modelVal.startsWith("flashvsr");
+            const isDiffusionUpscaler = isSeedvr || isFlashvsr;
+            const vt = node.widgets?.find((w: ComfyWidget) => w.name === "vae_tiling");
+            const vtp = node.widgets?.find((w: ComfyWidget) => w.name === "vae_tile_preset");
+            const vts = node.widgets?.find((w: ComfyWidget) => w.name === "vae_tile_size");
+            const vto = node.widgets?.find((w: ComfyWidget) => w.name === "vae_tile_overlap");
+            if (vt) toggleWidget(vt, isDiffusionUpscaler);
+            if (vtp) toggleWidget(vtp, isDiffusionUpscaler && Boolean(vt?.value));
+            const showCustomTile = isDiffusionUpscaler && Boolean(vt?.value) && String(vtp?.value) === "custom";
+            if (vts) toggleWidget(vts, showCustomTile);
+            if (vto) toggleWidget(vto, showCustomTile);
 
             // Rembg
             const rm = node.widgets?.find((w: ComfyWidget) => w.name === "rembg_model");
@@ -710,6 +723,26 @@ export function registerAgentNode(
                 if (w) toggleWidget(w, showLivePortrait);
             }
 
+            // Sapiens2 widgets
+            const sapiens2TaskWidget = node.widgets?.find((w: ComfyWidget) => w.name === "sapiens2_task");
+            const sapiens2SizeWidget = node.widgets?.find((w: ComfyWidget) => w.name === "sapiens2_size");
+            if (sapiens2TaskWidget) toggleWidget(sapiens2TaskWidget, showSapiens2);
+            if (sapiens2SizeWidget) toggleWidget(sapiens2SizeWidget, showSapiens2);
+            const sapiens2Task = String(sapiens2TaskWidget?.value ?? "pose");
+            // Precision applies to dense tasks only (pose/pretrain ignore it).
+            const showSapiensPrecision = showSapiens2 &&
+                ["seg", "normal", "pointmap", "matting"].includes(sapiens2Task);
+            const sapiens2PrecisionWidget = node.widgets?.find((w: ComfyWidget) => w.name === "sapiens2_precision");
+            if (sapiens2PrecisionWidget) toggleWidget(sapiens2PrecisionWidget, showSapiensPrecision);
+            const showSapiensSegAlpha = showSapiens2 && sapiens2Task === "seg";
+            const showSapiensPose = showSapiens2 && sapiens2Task === "pose";
+            const segAlpha = node.widgets?.find((w: ComfyWidget) => w.name === "sapiens2_seg_alpha");
+            if (segAlpha) toggleWidget(segAlpha, showSapiensSegAlpha);
+            for (const wName of ["sapiens2_pose_kpt_thr", "sapiens2_pose_radius", "sapiens2_pose_thickness"]) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === wName);
+                if (w) toggleWidget(w, showSapiensPose);
+            }
+
             // --- Widgets that are relevant to LLM mode or specific no-LLM modes ---
             // These should hide when a no-LLM mode doesn't use them.
 
@@ -741,6 +774,10 @@ export function registerAgentNode(
             const fluxKleinWidget = node.widgets?.find((w: ComfyWidget) => w.name === "use_flux_klein");
             const fsw = node.widgets?.find((w: ComfyWidget) => w.name === "flux_smoothing");
             if (fsw) toggleWidget(fsw, showLlmToggles && Boolean(fluxKleinWidget?.value));
+
+            // flux_klein_model: shown in flux_klein no-LLM mode, OR LLM mode when use_flux_klein is on
+            const fkm = node.widgets?.find((w: ComfyWidget) => w.name === "flux_klein_model");
+            if (fkm) toggleWidget(fkm, showFluxKleinMode || (showLlmToggles && Boolean(fluxKleinWidget?.value)));
 
             // audio_output_mode: for all audio-related modes + LLM mode
             const _AUDIO_MODES = new Set(["generate_audio", "generate_music", "foundation1", "fish_speech", "audio_inpaint", "audio_separate", "ace_step"]);
@@ -808,6 +845,18 @@ export function registerAgentNode(
                 origUpscaleCb?.apply(this, args);
                 updateAdvancedVisibility();
             };
+        }
+
+        // --- vae_tiling / vae_tile_preset → VAE tile sub-widget visibility ---
+        for (const wName of ["vae_tiling", "vae_tile_preset"]) {
+            const vaeTileW = this.widgets?.find((w: ComfyWidget) => w.name === wName);
+            if (vaeTileW) {
+                const origVaeCb = vaeTileW.callback;
+                vaeTileW.callback = function (...args: unknown[]) {
+                    origVaeCb?.apply(this, args);
+                    updateAdvancedVisibility();
+                };
+            }
         }
 
         // --- kiwi_resolution → kiwi_width / kiwi_height visibility ---

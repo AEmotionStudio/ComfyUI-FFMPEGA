@@ -19,6 +19,11 @@ import torch
 
 import folder_paths
 
+try:
+    from ..core.image_resize import resize_image_tensor, resize_input_types as _resize_input_types
+except ImportError:  # pragma: no cover - fallback for non-package import
+    from core.image_resize import resize_image_tensor, resize_input_types as _resize_input_types  # type: ignore
+
 logger = logging.getLogger("FFMPEGA")
 
 
@@ -105,6 +110,7 @@ class LoadImagePathNode:
                         "Forwarded as-is to the mask output."
                     ),
                 }),
+                **_resize_input_types(),
             },
             "hidden": {
                 "mask_points_data": "STRING",
@@ -144,6 +150,15 @@ class LoadImagePathNode:
         image_path=None,
         mask_points=None,
         mask=None,
+        enable_resize: bool = False,
+        resize_width: int = 512,
+        resize_height: int = 512,
+        upscale_method: str = "nearest-exact",
+        keep_proportion: str = "resize",
+        pad_color: str = "0, 0, 0",
+        crop_position: str = "center",
+        divisible_by: int = 2,
+        resize_device: str = "cpu",
     ) -> dict:
         """Resolve the image path and return it plus UI preview data.
 
@@ -461,6 +476,27 @@ class LoadImagePathNode:
                 "subfolder": subfolder,
                 "type": "input",
             }]
+
+        # --- Optional resize of the IMAGE tensor (and aligned MASK) ---
+        # image_path / mask_overlay_path outputs are left unchanged: the path
+        # keeps pointing at the original file on disk.
+        if enable_resize:
+            try:
+                images_out, mask_out, _rw, _rh = resize_image_tensor(
+                    images_out,
+                    width=resize_width,
+                    height=resize_height,
+                    keep_proportion=keep_proportion,
+                    upscale_method=upscale_method,
+                    divisible_by=divisible_by,
+                    pad_color=pad_color,
+                    crop_position=crop_position,
+                    device=resize_device,
+                    mask=mask_out,
+                )
+                logger.info("LoadImagePath: resized image to %dx%d", _rw, _rh)
+            except Exception as _re:
+                logger.warning("LoadImagePath: resize failed: %s", _re)
 
         return {
             "ui": {

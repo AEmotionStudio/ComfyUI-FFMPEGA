@@ -120,6 +120,12 @@ def resolve_inputs(
         effective_video_path = video_path
     elif _all_video_paths:
         effective_video_path = _all_video_paths.pop(0)
+    elif _all_image_paths:
+        # No video / images tensor connected — a still image is the primary
+        # source (e.g. image_path_a -> ai_upscale / rembg / image edit). Pop it
+        # so it is not also re-used as a reference/overlay downstream.
+        effective_video_path = _all_image_paths.pop(0)
+        logger.info("No video input — using image_path as primary source: %s", effective_video_path)
     elif has_extra_images:
         dummy = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
         dummy.close()

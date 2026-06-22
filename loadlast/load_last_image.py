@@ -33,6 +33,11 @@ except ImportError:
 from .discovery.filesystem import FilesystemScanner, SUPPORTED_EXTENSIONS
 from .discovery.execution_hook import ImageExecutionCache
 
+try:
+    from ..core.image_resize import resize_image_tensor, resize_input_types as _resize_input_types
+except ImportError:  # pragma: no cover - fallback for non-package import
+    from core.image_resize import resize_image_tensor, resize_input_types as _resize_input_types  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 # Maximum file size (bytes) to copy into temp for preview (200 MB)
@@ -398,6 +403,7 @@ class LoadLastImage:
                         "the auto-generated one."
                     ),
                 }),
+                **_resize_input_types(),
             },
             "hidden": {
                 "unique_id": "UNIQUE_ID",
@@ -461,6 +467,15 @@ class LoadLastImage:
         mask=None,
         unique_id: str = "",
         _edit_state: str = "{}",
+        enable_resize: bool = False,
+        resize_width: int = 512,
+        resize_height: int = 512,
+        upscale_method: str = "nearest-exact",
+        keep_proportion: str = "resize",
+        pad_color: str = "0, 0, 0",
+        crop_position: str = "center",
+        divisible_by: int = 2,
+        resize_device: str = "cpu",
     ):
         """Main execution function."""
         scanner = FilesystemScanner()
@@ -469,6 +484,28 @@ class LoadLastImage:
         empty_image = torch.zeros(1, 512, 512, 3)
         empty_mask = torch.ones(1, 512, 512)
         empty_result = (empty_image, empty_mask, "", 512, 512, 0)
+
+        def _maybe_resize(img, msk, w, h):
+            """Resize the output image/mask when enabled; returns (img, msk, w, h)."""
+            if not enable_resize:
+                return img, msk, w, h
+            try:
+                img, msk, w, h = resize_image_tensor(
+                    img,
+                    width=resize_width,
+                    height=resize_height,
+                    keep_proportion=keep_proportion,
+                    upscale_method=upscale_method,
+                    divisible_by=divisible_by,
+                    pad_color=pad_color,
+                    crop_position=crop_position,
+                    device=resize_device,
+                    mask=msk,
+                )
+                logger.info("[LoadLastImage] resized image to %dx%d", w, h)
+            except Exception as exc:
+                logger.warning("[LoadLastImage] resize failed: %s", exc)
+            return img, msk, w, h
 
         # --- Handle pinned image ---
         if pin_index > 0:
@@ -479,6 +516,7 @@ class LoadLastImage:
                     tensor = tensor.unsqueeze(0)
                 h, w = tensor.shape[1], tensor.shape[2]
                 mask = torch.ones(tensor.shape[0], h, w, dtype=torch.float32)
+                tensor, mask, w, h = _maybe_resize(tensor, mask, w, h)
                 return {
                     "ui": {"images": []},
                     "result": (tensor, mask, "", w, h, tensor.shape[0]),
@@ -606,6 +644,10 @@ class LoadLastImage:
             if info:
                 preview = [info]
 
+            batch_tensor, mask, target_w, target_h = _maybe_resize(
+                batch_tensor, mask, target_w, target_h
+            )
+
             return {
                 "ui": {"images": preview},
                 "result": (
@@ -645,6 +687,8 @@ class LoadLastImage:
                     h, w = tensor.shape[1], tensor.shape[2]
             except (json.JSONDecodeError, TypeError):
                 pass
+
+        tensor, mask, w, h = _maybe_resize(tensor, mask, w, h)
 
         return {
             "ui": {"images": []},  # Custom DOM preview — suppress default output preview

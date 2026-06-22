@@ -247,12 +247,52 @@ function loadImage(url) {
     img.src = url;
   });
 }
+const RESIZE_WIDGETS = [
+  "resize_width",
+  "resize_height",
+  "upscale_method",
+  "keep_proportion",
+  "pad_color",
+  "crop_position",
+  "divisible_by",
+  "resize_device"
+];
+function toggleWidget(widget, show) {
+  if (!widget) return;
+  if (!widget._origType) {
+    widget._origType = widget.type;
+    widget._origComputeSize = widget.computeSize;
+  }
+  if (show) {
+    widget.type = widget._origType;
+    widget.computeSize = widget._origComputeSize;
+    widget.hidden = false;
+    if (widget.element) widget.element.hidden = false;
+  } else {
+    widget.type = "hidden";
+    widget.computeSize = () => [0, -4];
+    widget.hidden = true;
+    if (widget.element) widget.element.hidden = true;
+  }
+}
+function applyResizeVisibility(node) {
+  var _a, _b, _c;
+  const enableResize = (_a = node.widgets) == null ? void 0 : _a.find((w) => w.name === "enable_resize");
+  const show = Boolean(enableResize == null ? void 0 : enableResize.value);
+  for (const name of RESIZE_WIDGETS) {
+    const w = (_b = node.widgets) == null ? void 0 : _b.find((ww) => ww.name === name);
+    if (w) toggleWidget(w, show);
+  }
+  node.setSize([node.size[0], node.computeSize([node.size[0], node.size[1]])[1]]);
+  (_c = node == null ? void 0 : node.graph) == null ? void 0 : _c.setDirtyCanvas(true);
+}
 app.registerExtension({
   name: "LoadLast.ImagePreview",
   beforeRegisterNodeDef(nodeType, nodeData, _app) {
     if ((nodeData == null ? void 0 : nodeData.name) !== "LoadLastImage") return;
     const origCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function() {
+      var _a;
       origCreated == null ? void 0 : origCreated.apply(this, arguments);
       const node = this;
       let currentMode = "single";
@@ -269,6 +309,20 @@ app.registerExtension({
       let editImg = null;
       node.color = "#3a5a3a";
       node.bgcolor = "#2a4a2a";
+      const enableResizeWidget = (_a = node.widgets) == null ? void 0 : _a.find((w) => w.name === "enable_resize");
+      if (enableResizeWidget) {
+        applyResizeVisibility(node);
+        const origResizeCb = enableResizeWidget.callback;
+        enableResizeWidget.callback = function(...args) {
+          origResizeCb == null ? void 0 : origResizeCb.apply(this, args);
+          applyResizeVisibility(node);
+        };
+        const origResizeConfigure = node.onConfigure;
+        node.onConfigure = function(...args) {
+          origResizeConfigure == null ? void 0 : origResizeConfigure.apply(this, args);
+          applyResizeVisibility(node);
+        };
+      }
       const container = document.createElement("div");
       container.className = "ll_container";
       const toolbar = document.createElement("div");
@@ -477,8 +531,8 @@ app.registerExtension({
       stripWrapper.appendChild(scrollTrack);
       container.appendChild(stripWrapper);
       function fitNode() {
-        var _a, _b, _c;
-        const sz = (_a = previewWidget.computeSize) == null ? void 0 : _a.call(previewWidget, node.size[0]);
+        var _a2, _b, _c;
+        const sz = (_a2 = previewWidget.computeSize) == null ? void 0 : _a2.call(previewWidget, node.size[0]);
         if (sz) {
           node.size[1] = sz[1] + 40;
           (_b = node.onResize) == null ? void 0 : _b.call(node, node.size);
@@ -758,8 +812,8 @@ app.registerExtension({
           btn.addEventListener("click", () => {
             editState.flip = editState.flip === dir ? "" : dir;
             flipRow.querySelectorAll(".ll_edit_tool_btn").forEach((b) => {
-              var _a;
-              b.classList.toggle("active", ((_a = b.textContent) == null ? void 0 : _a.toLowerCase().includes(editState.flip)) || false);
+              var _a2;
+              b.classList.toggle("active", ((_a2 = b.textContent) == null ? void 0 : _a2.toLowerCase().includes(editState.flip)) || false);
             });
             updateEditPreview();
           });
@@ -839,8 +893,8 @@ app.registerExtension({
         colorRow.append(colorLbl, colorInput);
         panel.appendChild(colorRow);
         function updatePadding() {
-          var _a;
-          const uni = (_a = document.getElementById("ll_pad_uniform")) == null ? void 0 : _a.checked;
+          var _a2;
+          const uni = (_a2 = document.getElementById("ll_pad_uniform")) == null ? void 0 : _a2.checked;
           if (uni) {
             const v = inputs.top.value;
             for (const s of ["right", "bottom", "left"]) {
@@ -1046,7 +1100,7 @@ app.registerExtension({
         fitNode();
       }
       async function renderSideBySide() {
-        var _a, _b;
+        var _a2, _b;
         const [idxA, idxB] = getComparisonIndices();
         if (allImages.length < 2) {
           infoEl.textContent = "Side-by-Side: need at least 2 images";
@@ -1091,11 +1145,11 @@ app.registerExtension({
         ctx.fillStyle = "#aaa";
         ctx.fillText("Previous", cellW + gap + 8, 17);
         previewWidget.aspectRatio = totalW / totalH;
-        infoEl.textContent = `Side-by-Side │ Selected: ${((_a = allImages[idxB]) == null ? void 0 : _a.filename) || "?"} │ Previous: ${((_b = allImages[idxA]) == null ? void 0 : _b.filename) || "?"}`;
+        infoEl.textContent = `Side-by-Side │ Selected: ${((_a2 = allImages[idxB]) == null ? void 0 : _a2.filename) || "?"} │ Previous: ${((_b = allImages[idxA]) == null ? void 0 : _b.filename) || "?"}`;
         fitNode();
       }
       async function renderDiffSlider() {
-        var _a, _b;
+        var _a2, _b;
         compContainer.style.display = "block";
         canvasEl.style.display = "none";
         const [idxA, idxB] = getComparisonIndices();
@@ -1136,7 +1190,7 @@ app.registerExtension({
           const dh = imgA.naturalHeight * s;
           ctxB.drawImage(imgA, (w - dw) / 2, (h - dh) / 2, dw, dh);
         }
-        compLabelA.textContent = `Selected: ${((_a = allImages[idxB]) == null ? void 0 : _a.filename) || ""}`;
+        compLabelA.textContent = `Selected: ${((_a2 = allImages[idxB]) == null ? void 0 : _a2.filename) || ""}`;
         compLabelB.textContent = `Previous: ${((_b = allImages[idxA]) == null ? void 0 : _b.filename) || ""}`;
         previewWidget.aspectRatio = w / h;
         updateCompSlider();
@@ -1233,13 +1287,13 @@ app.registerExtension({
         updateInfoBar();
       }
       function updateInfoBar() {
-        var _a;
+        var _a2;
         if (!currentEntry) {
           infoEl.textContent = "No image loaded";
           return;
         }
         const name = currentEntry.filename;
-        const ext = ((_a = name.split(".").pop()) == null ? void 0 : _a.toUpperCase()) || "";
+        const ext = ((_a2 = name.split(".").pop()) == null ? void 0 : _a2.toUpperCase()) || "";
         const dims = imgEl.naturalWidth && imgEl.naturalHeight ? `${imgEl.naturalWidth}×${imgEl.naturalHeight}` : "";
         const parts = [name];
         if (dims) parts.push(dims);
@@ -1247,7 +1301,7 @@ app.registerExtension({
         infoEl.textContent = parts.join(" │ ");
       }
       function populateBrowserStrip(images) {
-        var _a;
+        var _a2;
         browserStrip.innerHTML = "";
         allImages = images;
         for (let i = 0; i < images.length; i++) {
@@ -1268,7 +1322,7 @@ app.registerExtension({
           if (i === selectedIndex || selectedIndex < 0 && (currentEntry == null ? void 0 : currentEntry.filename) === entry.filename) {
             thumbEl.classList.add("active");
           }
-          const pinWidget = (_a = node.widgets) == null ? void 0 : _a.find((w) => w.name === "pin_index");
+          const pinWidget = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "pin_index");
           if (pinWidget && pinWidget.value > 0 && i === 0) {
             const badge = document.createElement("div");
             badge.className = "ll_pin_badge";
@@ -1313,17 +1367,17 @@ app.registerExtension({
       function highlightStrip() {
         const thumbs = browserStrip.querySelectorAll(".ll_thumb");
         thumbs.forEach((t, i) => {
-          var _a;
+          var _a2;
           t.classList.toggle(
             "active",
-            i === selectedIndex || selectedIndex < 0 && (currentEntry == null ? void 0 : currentEntry.filename) === ((_a = allImages[i]) == null ? void 0 : _a.filename)
+            i === selectedIndex || selectedIndex < 0 && (currentEntry == null ? void 0 : currentEntry.filename) === ((_a2 = allImages[i]) == null ? void 0 : _a2.filename)
           );
         });
       }
       async function pollLatest() {
-        var _a, _b, _c;
+        var _a2, _b, _c;
         try {
-          const srcWidget = (_a = node.widgets) == null ? void 0 : _a.find((w) => w.name === "source_folder");
+          const srcWidget = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "source_folder");
           const prefixWidget = (_b = node.widgets) == null ? void 0 : _b.find((w) => w.name === "filename_filter");
           const source = (srcWidget == null ? void 0 : srcWidget.value) || "";
           const prefix = (prefixWidget == null ? void 0 : prefixWidget.value) || "";

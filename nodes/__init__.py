@@ -152,7 +152,7 @@ if "LoadLastImage" in NODE_CLASS_MAPPINGS:
 
 # Add VideoEditor name only if successfully imported
 if "FFMPEGAVideoEditor" in NODE_CLASS_MAPPINGS:
-    __all__.append("FFMPEGAVideoEditor")
+    __all__.append("VideoEditorNode")
 
 # Add FacePoke name only if successfully imported
 if "FFMPEGAFacePoke" in NODE_CLASS_MAPPINGS:

@@ -313,6 +313,46 @@ function loadImage(url: string): Promise<HTMLImageElement> {
     });
 }
 
+// ─── Resize toggle ─────────────────────────────────────────────────────
+
+/** Resize sub-widgets gated behind the enable_resize toggle. */
+const RESIZE_WIDGETS = [
+    'resize_width', 'resize_height', 'upscale_method', 'keep_proportion',
+    'pad_color', 'crop_position', 'divisible_by', 'resize_device',
+];
+
+/** VHS-style widget show/hide. */
+function toggleWidget(widget: any, show: boolean): void {
+    if (!widget) return;
+    if (!widget._origType) {
+        widget._origType = widget.type;
+        widget._origComputeSize = widget.computeSize;
+    }
+    if (show) {
+        widget.type = widget._origType;
+        widget.computeSize = widget._origComputeSize;
+        widget.hidden = false;
+        if (widget.element) widget.element.hidden = false;
+    } else {
+        widget.type = 'hidden';
+        widget.computeSize = () => [0, -4];
+        widget.hidden = true;
+        if (widget.element) widget.element.hidden = true;
+    }
+}
+
+/** Show/hide the resize sub-widgets based on the enable_resize toggle. */
+function applyResizeVisibility(node: any): void {
+    const enableResize = node.widgets?.find((w: any) => w.name === 'enable_resize');
+    const show = Boolean(enableResize?.value);
+    for (const name of RESIZE_WIDGETS) {
+        const w = node.widgets?.find((ww: any) => ww.name === name);
+        if (w) toggleWidget(w, show);
+    }
+    node.setSize([node.size[0], node.computeSize([node.size[0], node.size[1]])[1]]);
+    node?.graph?.setDirtyCanvas(true);
+}
+
 // ─── Extension ─────────────────────────────────────────────────────────
 
 app.registerExtension({
@@ -348,6 +388,22 @@ app.registerExtension({
             // Style
             node.color = '#3a5a3a';
             node.bgcolor = '#2a4a2a';
+
+            // ─── enable_resize toggle → resize sub-widget visibility ──
+            const enableResizeWidget = node.widgets?.find((w: any) => w.name === 'enable_resize');
+            if (enableResizeWidget) {
+                applyResizeVisibility(node);
+                const origResizeCb = enableResizeWidget.callback;
+                enableResizeWidget.callback = function (this: any, ...args: any[]) {
+                    origResizeCb?.apply(this, args);
+                    applyResizeVisibility(node);
+                };
+                const origResizeConfigure = node.onConfigure;
+                node.onConfigure = function (this: any, ...args: any[]) {
+                    origResizeConfigure?.apply(this, args);
+                    applyResizeVisibility(node);
+                };
+            }
 
             // ─── Container ────────────────────────────────────────
             const container = document.createElement('div');

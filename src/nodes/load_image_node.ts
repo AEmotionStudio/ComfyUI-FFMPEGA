@@ -33,6 +33,32 @@ interface LoadImageExecutionData {
     images?: Array<{ filename: string; subfolder?: string; type?: string }>;
 }
 
+/** Resize sub-widgets gated behind the enable_resize toggle. */
+const RESIZE_WIDGETS = [
+    "resize_width", "resize_height", "upscale_method", "keep_proportion",
+    "pad_color", "crop_position", "divisible_by", "resize_device",
+] as const;
+
+/** VHS-style widget show/hide (mirrors the helper in agent_node.ts). */
+function toggleWidget(widget: ComfyWidget | undefined, show: boolean): void {
+    if (!widget) return;
+    if (!widget._origType) {
+        widget._origType = widget.type;
+        widget._origComputeSize = widget.computeSize;
+    }
+    if (show) {
+        widget.type = widget._origType;
+        widget.computeSize = widget._origComputeSize;
+        widget.hidden = false;
+        if (widget.element) widget.element.hidden = false;
+    } else {
+        widget.type = "hidden";
+        widget.computeSize = () => [0, -4] as [number, number];
+        widget.hidden = true;
+        if (widget.element) widget.element.hidden = true;
+    }
+}
+
 /**
  * Register FFMPEGALoadImagePath node UI.
  */
@@ -49,10 +75,41 @@ export function registerLoadImageNode(
         this.color = "#3a5a5a";
         this.bgcolor = "#2a4a4a";
 
+        // --- enable_resize toggle → resize sub-widget visibility ---
+        const fitHeight = (): void => {
+            node.setSize([
+                node.size[0],
+                node.computeSize([node.size[0], node.size[1]])[1],
+            ]);
+            node?.graph?.setDirtyCanvas(true);
+        };
+
+        const updateResizeVisibility = (): void => {
+            const enableResize = node.widgets?.find((w: ComfyWidget) => w.name === "enable_resize");
+            const show = Boolean(enableResize?.value);
+            for (const name of RESIZE_WIDGETS) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, show);
+            }
+            fitHeight();
+        };
+
+        const enableResizeWidget = this.widgets?.find((w: ComfyWidget) => w.name === "enable_resize");
+        if (enableResizeWidget) {
+            updateResizeVisibility();
+            const origResizeCb = enableResizeWidget.callback;
+            enableResizeWidget.callback = function (...args: unknown[]) {
+                origResizeCb?.apply(this, args);
+                updateResizeVisibility();
+            };
+        }
+
         // Restore on workflow load
         const origConfigureImg = this.onConfigure;
         this.onConfigure = function (data: unknown): void {
             origConfigureImg?.apply(this, arguments as unknown as [unknown]);
+            // Re-apply visibility after saved widget values are restored
+            updateResizeVisibility();
         };
 
         // Handle execution results — update preview from upstream
