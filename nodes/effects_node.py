@@ -293,6 +293,7 @@ class FFMPEGAEffectsNode:
     """
 
     SAM3_EFFECTS = ["none", "blur", "pixelate", "remove", "grayscale", "highlight"]
+    SAM_VERSIONS = ["sam3.1", "sam3"]
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -428,6 +429,17 @@ class FFMPEGAEffectsNode:
                         "'none' outputs the raw mask without any effect."
                     ),
                 }),
+                "sam_version": (cls.SAM_VERSIONS, {
+                    "default": "sam3.1",
+                    "tooltip": (
+                        "Which SAM tracker to use. sam3.1 is the newer "
+                        "multiplex tracker — ~7× faster on multi-object "
+                        "video and ~½ VRAM. Used for text-prompted image "
+                        "masking AND video tracking. Single-image point "
+                        "prompts still fall back to sam3 (interactive "
+                        "head not yet wired for sam3.1)."
+                    ),
+                }),
                 # Hidden data for JS — serialized preset/defaults info
                 "_presets_json": ("STRING", {
                     "default": _presets_json,
@@ -491,6 +503,7 @@ class FFMPEGAEffectsNode:
         raw_ffmpeg: str = "",
         sam3_target: str = "",
         sam3_effect: str = "blur",
+        sam_version: str = "sam3.1",
         _presets_json: str = "",
         _defaults_json: str = "",
         _param_help_json: str = "",
@@ -533,12 +546,13 @@ class FFMPEGAEffectsNode:
                 "params": params,
             })
 
-        # --- SAM3 integration ---
+        # --- SAM3 / SAM 3.1 integration ---
         sam3_config = None
         if sam3_target and sam3_target.strip():
             sam3_config = {
                 "target": sam3_target.strip(),
                 "effect": sam3_effect if sam3_effect != "none" else "blur",
+                "version": sam_version or "sam3.1",
             }
             # If SAM3 is set and no other effects, add the auto_mask as
             # a pipeline step so the agent knows to run SAM3
@@ -549,6 +563,7 @@ class FFMPEGAEffectsNode:
                     "params": {
                         "target": sam3_target.strip(),
                         "effect": sam3_effect,
+                        "sam_version": sam_version or "sam3.1",
                     },
                 })
 

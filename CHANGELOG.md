@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Native SAM 3.1 Video Backend**: SAM 3.1 video masking now runs **in-process** against ComfyUI's native SAM 3 model (`comfy_extras/nodes_sam3.py`, `comfy/ldm/sam3/`) instead of the upstream `sam3` pip package in a subprocess. The model loads as a standard `ModelPatcher`, so it participates in ComfyUI's VRAM lifecycle (`load_model_gpu`, offloading, fp16 casting) and has no CUDA-context leak — eliminating the need for a child process. Both text-prompted and point-prompted video tracking are supported, reusing ComfyUI's `forward_video`/`forward_segment`, `_extract_text_prompts`, and `unpack_masks`. The existing mirror checkpoints (`models/SAM3.1/sam3.1_multiplex.safetensors`) load natively as-is — no new download. *(`core/sam3_masker.py`)*
+  - **Flag-gated with automatic fallback**: Controlled by `FFMPEGA_SAM3_NATIVE` (default on). Any load/inference error logs a warning and transparently falls back to the legacy subprocess + upstream-`sam3` path. Set `FFMPEGA_SAM3_NATIVE=0` to force the legacy path.
+  - Public API of `mask_video` / `mask_video_subprocess` is unchanged — no node call sites required modification. Image masks and plain SAM 3 video are untouched.
+
+### Changed
+- **Load Video Path VRAM Handling**: When the native SAM 3.1 path is active, the node no longer force-evicts all ComfyUI models (`unload_all_models()`) before masking — ComfyUI's `load_model_gpu` offloads only what it needs to fit SAM 3.1 (~3 GB), keeping other models (DWPose, checkpoints) resident and avoiding needless reloads. The full eviction is retained for the legacy subprocess path. *(`nodes/load_video_path_node.py`)*
+
+### Fixed
+- **SAM 3.1 Video OOM / Hang**: Fixed the multiplex video point-tracking path appearing to hang for ~7.5 minutes before failing on 12 GB GPUs. The root cause of the high memory was the inference running without `torch.inference_mode()`, so autograd retained every 1008×1008 activation, pushing peak VRAM to ~10–11.5 GB (OOM on an RTX 4070). Running the native model under `inference_mode` drops peak to **~3 GB**, matching the model's advertised footprint. Point and text video tracking now complete in seconds on the same hardware that previously OOM'd.
+
 ## [2.19.0] - 2026-03-21
 
 ### Added

@@ -259,6 +259,17 @@ class LoadVideoPathNode:
                         "SAM3-style colored regions + contours onto the video."
                     ),
                 }),
+                "sam_version": (["sam3.1", "sam3"], {
+                    "default": "sam3.1",
+                    "tooltip": (
+                        "Which SAM tracker to use. sam3.1 is the newer "
+                        "multiplex tracker — ~7× faster on multi-object "
+                        "video and ~½ VRAM. Used for video tracking. "
+                        "Single-image point prompts still fall back to "
+                        "sam3 (image-model interactive head not yet "
+                        "wired for sam3.1)."
+                    ),
+                }),
                 "show_mask_preview": ("BOOLEAN", {
                     "default": False,
                     "tooltip": (
@@ -366,6 +377,7 @@ class LoadVideoPathNode:
         show_mask_preview: bool = False,
         custom_width: int = 0,
         custom_height: int = 0,
+        sam_version: str = "sam3.1",
     ) -> dict:
         """Resolve path, probe metadata, compute effective values.
 
@@ -643,33 +655,46 @@ class LoadVideoPathNode:
                             if pt_coords and pt_labels and mask_mode != "none":
 
                                 if mask_mode == "all_frames":
-                                    # ── Full video segmentation via SAM3 (subprocess) ──
+                                    # ── Full video segmentation via SAM3 ──
                                     # Track the selected object across ALL frames.
-                                    # Uses subprocess mode for proper VRAM isolation —
-                                    # same approach as the FFMPEG Agent.
+                                    # SAM 3.1 runs in-process under ComfyUI's VRAM
+                                    # management; older paths use a subprocess for
+                                    # VRAM isolation (same approach as the FFMPEG Agent).
                                     try:
                                         try:
-                                            from ..core.sam3_masker import mask_video_subprocess, cleanup as _sam3_cleanup
+                                            from ..core.sam3_masker import (
+                                                mask_video_subprocess,
+                                                cleanup as _sam3_cleanup,
+                                                _use_native_sam3_video,
+                                            )
                                         except ImportError:
-                                            from core.sam3_masker import mask_video_subprocess, cleanup as _sam3_cleanup  # type: ignore
-                                        # Free the SAM3 image model VRAM before subprocess
-                                        _sam3_cleanup()
-                                        # Offload ALL ComfyUI-managed models (DWPose,
-                                        # checkpoints, etc.) so the subprocess has
-                                        # enough VRAM for SAM3 video tracking.
-                                        try:
-                                            import comfy.model_management as _mm
-                                            _mm.unload_all_models()
-                                            _mm.soft_empty_cache()
-                                            _free_gb = torch.cuda.memory_allocated() / (1024**3)
-                                            logger.info(
-                                                "LoadVideoPath: GPU freed for SAM3 subprocess "
-                                                "(%.2f GiB still allocated)", _free_gb,
+                                            from core.sam3_masker import (  # type: ignore
+                                                mask_video_subprocess,
+                                                cleanup as _sam3_cleanup,
+                                                _use_native_sam3_video,
                                             )
-                                        except Exception as _vram_err:
-                                            logger.warning(
-                                                "LoadVideoPath: model offload failed: %s", _vram_err,
-                                            )
+                                        if not _use_native_sam3_video(sam_version or "sam3.1"):
+                                            # Legacy subprocess path: free our cached SAM3
+                                            # image model and offload ALL ComfyUI-managed
+                                            # models (DWPose, checkpoints, etc.) so the
+                                            # child process has enough VRAM for tracking.
+                                            _sam3_cleanup()
+                                            try:
+                                                import comfy.model_management as _mm
+                                                _mm.unload_all_models()
+                                                _mm.soft_empty_cache()
+                                                _free_gb = torch.cuda.memory_allocated() / (1024**3)
+                                                logger.info(
+                                                    "LoadVideoPath: GPU freed for SAM3 subprocess "
+                                                    "(%.2f GiB still allocated)", _free_gb,
+                                                )
+                                            except Exception as _vram_err:
+                                                logger.warning(
+                                                    "LoadVideoPath: model offload failed: %s", _vram_err,
+                                                )
+                                        # else: native in-process path — ComfyUI's
+                                        # load_model_gpu offloads only what it needs to fit
+                                        # SAM 3.1 (~3 GB), so no manual unload required.
                                         logger.info(
                                             "LoadVideoPath: running SAM3 video tracking "
                                             "(%d points, all_frames subprocess mode)",
@@ -684,6 +709,7 @@ class LoadVideoPathNode:
                                             point_src_width=pt_w,
                                             point_src_height=pt_h,
                                             det_threshold=mask_threshold,
+                                            version=sam_version or "sam3.1",
                                         )
                                         if mask_video_path and os.path.isfile(mask_video_path):
                                             # Decode the mask video into a multi-frame tensor
@@ -771,6 +797,7 @@ class LoadVideoPathNode:
                                                 min_score=mask_threshold,
                                                 multi_object=mask_multi_object,
                                                 box=mask_box,
+                                                version=sam_version or "sam3.1",
                                             )
                                             # Handle tuple return for multi-object
                                             per_obj_masks = None

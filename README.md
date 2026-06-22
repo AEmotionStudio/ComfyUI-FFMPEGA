@@ -502,6 +502,7 @@ All models are mirrored to first-party [AEmotionStudio](https://huggingface.co/A
 | Model | Size | Stored In | Triggered By | Manual Download |
 | :--- | :--- | :--- | :--- | :--- |
 | **SAM3** (Segment Anything 3) | ~300 MB | `ComfyUI/models/SAM3/` | `auto_mask` skill, `sam3_masking` no-LLM mode, Effects Builder SAM3 target | [AEmotionStudio/sam3](https://huggingface.co/AEmotionStudio/sam3) — download `sam3.safetensors` |
+| **SAM3.1** (Multiplex Tracker) | ~3.5 GB | `ComfyUI/models/SAM3.1/` | Same triggers with `sam_version = sam3.1` (default). Video masking runs **in-process** on ComfyUI's native SAM3 model (VRAM-managed, ~3 GB peak); set `FFMPEGA_SAM3_NATIVE=0` to force the legacy subprocess path | [AEmotionStudio/sam3.1](https://huggingface.co/AEmotionStudio/sam3.1) — download `sam3.1_multiplex.safetensors` |
 | **Whisper** large-v3 | ~3 GB | `ComfyUI/models/whisper/` | `auto_transcribe`, `karaoke_subtitles` skills, `transcribe` / `karaoke_subtitles` no-LLM modes | [AEmotionStudio/whisper-models](https://huggingface.co/AEmotionStudio/whisper-models) |
 | **Whisper** medium | ~1.5 GB | `ComfyUI/models/whisper/` | Same as above (set `whisper_model` to `medium`) | Same as above |
 | **Whisper** small | ~500 MB | `ComfyUI/models/whisper/` | Same as above (set `whisper_model` to `small`) | Same as above |
@@ -593,6 +594,7 @@ FFMPEGA provides **14 nodes** that work together:
 | :--- | :--- | :--- |
 | `whisper_device` | DROPDOWN | Device for Whisper model: `cpu` (default, avoids VRAM pressure) or `gpu` (faster, ~3 GB VRAM). |
 | `whisper_model` | DROPDOWN | Whisper model size: `large-v3` (default, most accurate), `medium`, `small`, `base`, `tiny`. |
+| `sam_version` | DROPDOWN | SAM model: `sam3.1` (default, multiplex tracker — video masking runs in-process on ComfyUI's native model) or `sam3`. |
 | `sam3_max_objects` | INT | Max objects SAM3 tracks per frame (1–20, default 5). Lower = less VRAM. |
 | `sam3_det_threshold` | FLOAT | Minimum detection confidence for SAM3 (0.0–1.0, default 0.70). Higher = fewer objects. |
 | `mask_output_type` | DROPDOWN | `black_white` (raw mask for compositing) or `colored_overlay` (SAM3-style preview). |
@@ -645,6 +647,7 @@ Select up to 5 skills with parameters, add raw FFmpeg filters, and use presets. 
 | `raw_ffmpeg` | STRING | Raw FFmpeg `-vf` filter string applied after skill effects. |
 | `sam3_target` | STRING | SAM3 text target — apply effects only to the masked region. Leave empty for full-frame. |
 | `sam3_effect` | DROPDOWN | Effect for SAM3-detected region: `blur`, `pixelate`, `remove`, `grayscale`, `highlight`. |
+| `sam_version` | DROPDOWN | SAM model for the target region: `sam3.1` (default) or `sam3`. |
 
 | Output | Description |
 | :--- | :--- |
