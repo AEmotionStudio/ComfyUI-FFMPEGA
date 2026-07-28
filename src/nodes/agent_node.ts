@@ -454,7 +454,10 @@ export function registerAgentNode(
             const llm = node.widgets?.find((w: ComfyWidget) => w.name === "llm_model");
             const isNone = llm?.value === "none";
             const noLlmMode = node.widgets?.find((w: ComfyWidget) => w.name === "no_llm_mode");
-            const mode = isNone ? String(noLlmMode?.value ?? "manual") : "";
+            // Strip the cosmetic " (Model)" suffix from the dropdown value so the
+            // bare-name comparisons below (and the _AUDIO_MODES set) keep matching.
+            const rawMode = isNone ? String(noLlmMode?.value ?? "manual") : "";
+            const mode = rawMode.replace(/\s*\([^)]*\)\s*$/, "");
 
             // --- Mode-specific sub-widgets (only show for matching mode) ---
 
@@ -471,7 +474,7 @@ export function registerAgentNode(
             const showFluxKleinMode = showAdvanced && mode === "flux_klein";
             const showKiwiEdit = showAdvanced && mode === "kiwi_edit";
             const showDreamidOmni = showAdvanced && mode === "dreamid_omni";
-            const showScail = showAdvanced && mode === "scail";
+            const showScail2 = showAdvanced && mode === "scail2";
             const showFoundation1 = showAdvanced && mode === "foundation1";
             const showFishSpeech = showAdvanced && mode === "fish_speech";
             const showSharp = showAdvanced && mode === "sharp";
@@ -495,19 +498,27 @@ export function registerAgentNode(
             const us = node.widgets?.find((w: ComfyWidget) => w.name === "upscale_scale");
             const sr = node.widgets?.find((w: ComfyWidget) => w.name === "seedvr_resolution");
             const bb = node.widgets?.find((w: ComfyWidget) => w.name === "blockswap_blocks");
+            const fp = node.widgets?.find((w: ComfyWidget) => w.name === "flashvsr_processing");
+            const fw = node.widgets?.find((w: ComfyWidget) => w.name === "flashvsr_frame_window");
+            const fcf = node.widgets?.find((w: ComfyWidget) => w.name === "flashvsr_color_fix");
+            const fdt = node.widgets?.find((w: ComfyWidget) => w.name === "flashvsr_decode_tile");
             const rq = node.widgets?.find((w: ComfyWidget) => w.name === "rtx_quality");
             if (um) toggleWidget(um, showUpscale);
             // Model-specific widget visibility
             const modelVal = String(um?.value ?? "");
             const isSeedvr = showUpscale && modelVal.startsWith("seedvr2");
             const isRtxVsr = showUpscale && modelVal === "rtx_vsr";
+            const isFlashvsr = showUpscale && modelVal.startsWith("flashvsr");
             const isGanModel = showUpscale && !isSeedvr && !isRtxVsr;
-            if (us) toggleWidget(us, isGanModel || isRtxVsr);  // scale for GAN + RTX
+            if (us) toggleWidget(us, isGanModel || isRtxVsr || isFlashvsr);  // scale for GAN + RTX + FlashVSR
             if (sr) toggleWidget(sr, isSeedvr);                 // resolution for SeedVR2
-            if (bb) toggleWidget(bb, isSeedvr);                 // blockswap for SeedVR2
+            if (bb) toggleWidget(bb, isSeedvr || isFlashvsr);   // blockswap for SeedVR2 + FlashVSR
+            if (fp) toggleWidget(fp, isFlashvsr);               // processing strategy for FlashVSR
+            if (fw) toggleWidget(fw, isFlashvsr && String(fp?.value) === "temporal");  // frame window when temporal
+            if (fcf) toggleWidget(fcf, isFlashvsr);             // color fix for FlashVSR
+            if (fdt) toggleWidget(fdt, isFlashvsr);             // decoder tile for FlashVSR
             if (rq) toggleWidget(rq, isRtxVsr);                 // quality for RTX VSR
             // VAE tiling: only for diffusion upscalers (SeedVR2 / FlashVSR)
-            const isFlashvsr = showUpscale && modelVal.startsWith("flashvsr");
             const isDiffusionUpscaler = isSeedvr || isFlashvsr;
             const vt = node.widgets?.find((w: ComfyWidget) => w.name === "vae_tiling");
             const vtp = node.widgets?.find((w: ComfyWidget) => w.name === "vae_tile_preset");
@@ -580,14 +591,31 @@ export function registerAgentNode(
                 if (w) toggleWidget(w, showDreamidOmni);
             }
 
-            // SCAIL pose-driven animation widgets
-            const scailWidgetNames = [
-                "scail_precision", "scail_steps", "scail_guidance",
-                "scail_shift", "scail_solver", "scail_seed",
+            // SCAIL-2 pose-driven animation widgets
+            const scail2WidgetNames = [
+                "scail2_width", "scail2_height", "scail2_length", "scail2_pose_extend",
+                "scail2_steps", "scail2_cfg", "scail2_shift", "scail2_seed",
+                "scail2_sampler", "scail2_scheduler", "scail2_denoise",
+                "scail2_replacement_mode", "scail2_sort_by", "scail2_object_indices",
+                "scail2_subject", "scail2_max_objects",
+                "scail2_detection_threshold", "scail2_detect_interval",
+                "scail2_point_src_width", "scail2_point_src_height",
+                "scail2_composite_direction", "scail2_main_reference",
+                "scail2_color_match",
+                "scail2_blockswap_blocks", "scail2_tiled_vae",
             ];
-            for (const name of scailWidgetNames) {
+            for (const name of scail2WidgetNames) {
                 const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
-                if (w) toggleWidget(w, showScail);
+                if (w) toggleWidget(w, showScail2);
+            }
+            // Dynamic LoRA slots: a always visible, b when a≠none, c when b≠none, d when c≠none
+            let showNextScail2Lora = showScail2;
+            for (const slot of ["a", "b", "c", "d"]) {
+                const loraW = node.widgets?.find((ww: ComfyWidget) => ww.name === `scail2_lora_${slot}`);
+                const strW = node.widgets?.find((ww: ComfyWidget) => ww.name === `scail2_lora_strength_${slot}`);
+                if (loraW) toggleWidget(loraW, showNextScail2Lora);
+                if (strW) toggleWidget(strW, showNextScail2Lora && String(loraW?.value ?? "none") !== "none");
+                showNextScail2Lora = showNextScail2Lora && String(loraW?.value ?? "none") !== "none";
             }
 
             // SVI 2.0 Pro (Stable Video Infinity) widgets
@@ -600,6 +628,7 @@ export function registerAgentNode(
                 "svi_lora_high", "svi_lora_low",
                 "svi_extra_lora_high", "svi_extra_lora_low",
                 "svi_vae", "svi_text_encoder", "svi_sampler", "svi_scheduler",
+                "svi_blockswap_blocks", "svi_tiled_vae",
             ];
             for (const name of sviWidgetNames) {
                 const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
@@ -729,11 +758,8 @@ export function registerAgentNode(
             if (sapiens2TaskWidget) toggleWidget(sapiens2TaskWidget, showSapiens2);
             if (sapiens2SizeWidget) toggleWidget(sapiens2SizeWidget, showSapiens2);
             const sapiens2Task = String(sapiens2TaskWidget?.value ?? "pose");
-            // Precision applies to dense tasks only (pose/pretrain ignore it).
-            const showSapiensPrecision = showSapiens2 &&
-                ["seg", "normal", "pointmap", "matting"].includes(sapiens2Task);
-            const sapiens2PrecisionWidget = node.widgets?.find((w: ComfyWidget) => w.name === "sapiens2_precision");
-            if (sapiens2PrecisionWidget) toggleWidget(sapiens2PrecisionWidget, showSapiensPrecision);
+            // Precision (incl. fp8) is folded into the size dropdown, so there
+            // is no separate precision widget to toggle.
             const showSapiensSegAlpha = showSapiens2 && sapiens2Task === "seg";
             const showSapiensPose = showSapiens2 && sapiens2Task === "pose";
             const segAlpha = node.widgets?.find((w: ComfyWidget) => w.name === "sapiens2_seg_alpha");
@@ -847,6 +873,16 @@ export function registerAgentNode(
             };
         }
 
+        // --- flashvsr_processing → flashvsr_frame_window visibility ---
+        const flashvsrProcToggle = this.widgets?.find((w: ComfyWidget) => w.name === "flashvsr_processing");
+        if (flashvsrProcToggle) {
+            const origFvCb = flashvsrProcToggle.callback;
+            flashvsrProcToggle.callback = function (...args: unknown[]) {
+                origFvCb?.apply(this, args);
+                updateAdvancedVisibility();
+            };
+        }
+
         // --- vae_tiling / vae_tile_preset → VAE tile sub-widget visibility ---
         for (const wName of ["vae_tiling", "vae_tile_preset"]) {
             const vaeTileW = this.widgets?.find((w: ComfyWidget) => w.name === wName);
@@ -877,6 +913,18 @@ export function registerAgentNode(
             if (wanLoraSlotW) {
                 const origCb = wanLoraSlotW.callback;
                 wanLoraSlotW.callback = function (...args: unknown[]) {
+                    origCb?.apply(this, args);
+                    updateAdvancedVisibility();
+                };
+            }
+        }
+
+        // --- scail2_lora_* → cascade next LoRA slot visibility ---
+        for (const slot of ["a", "b", "c", "d"]) {
+            const scail2LoraSlotW = this.widgets?.find((w: ComfyWidget) => w.name === `scail2_lora_${slot}`);
+            if (scail2LoraSlotW) {
+                const origCb = scail2LoraSlotW.callback;
+                scail2LoraSlotW.callback = function (...args: unknown[]) {
                     origCb?.apply(this, args);
                     updateAdvancedVisibility();
                 };

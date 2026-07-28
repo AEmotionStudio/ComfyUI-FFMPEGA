@@ -180,7 +180,7 @@ class FFMPEGAgentNode:
                                "Select 'custom' to type any model name manually. "
                                "Select 'none' to skip the LLM entirely and use no_llm_mode instead (manual pipeline, SAM3, Whisper, or MMAudio).",
                 }),
-                "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles", "generate_audio", "generate_music", "foundation1", "fish_speech", "audio_inpaint", "audio_separate", "ace_step", "lip_sync", "animate_portrait", "marigold", "normalcrafter", "video_depth", "sapiens2", "flux_klein", "kiwi_edit", "minimax_remover", "dreamid_omni", "svi", "sharp", "wan_animate", "scail (WIP)", "ai_upscale", "rembg", "video_matting", "onion_skin", "comparison", "phyfps"], {
+                "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles", "generate_audio (MMAudio)", "generate_music (AudioX)", "foundation1", "fish_speech", "audio_inpaint (AudioX)", "audio_separate (SAM-Audio)", "ace_step", "lip_sync", "animate_portrait", "marigold", "normalcrafter", "video_depth", "sapiens2", "flux_klein", "kiwi_edit", "minimax_remover", "dreamid_omni", "svi", "sharp", "wan_animate", "scail2", "ai_upscale", "rembg", "video_matting", "onion_skin", "comparison", "phyfps"], {
                     "default": "manual",
                     "tooltip": "What to do when llm_model is 'none'. "
                                "'manual' runs the Effects Builder pipeline directly (no AI). "
@@ -651,48 +651,218 @@ class FFMPEGAgentNode:
                     "tooltip": "Audio reference guidance scale. Higher = stronger voice identity preservation. Default 2.0.",
                 }),
 
-                # ── Advanced: SCAIL (WIP — memory optimization incomplete) ─
-                "scail_precision": (["auto", "fp8", "bf16"], {
-                    "default": "auto",
-                    "tooltip": "SCAIL model precision. "
-                               "'auto' = prefer FP8 if available (~12 GB), else BF16 (~23 GB). "
-                               "'fp8' = FP8 quantized (fastest, lowest VRAM). "
-                               "'bf16' = BFloat16 (best quality, higher VRAM).",
+                # ── Advanced: SCAIL-2 (native pose-driven character animation) ─
+                "scail2_width": ("INT", {
+                    "default": 512,
+                    "min": 32,
+                    "max": 2048,
+                    "step": 32,
+                    "tooltip": "Output width in px (used in 'scail2' no_llm_mode). "
+                               "Snapped to a multiple of 32.",
                 }),
-                "scail_steps": ("INT", {
-                    "default": 40,
+                "scail2_height": ("INT", {
+                    "default": 896,
+                    "min": 32,
+                    "max": 2048,
+                    "step": 32,
+                    "tooltip": "Output height in px (used in 'scail2' no_llm_mode). "
+                               "Snapped to a multiple of 32.",
+                }),
+                "scail2_length": ("INT", {
+                    "default": 81,
+                    "min": 5,
+                    "max": 100000,
+                    "step": 4,
+                    "tooltip": "Number of frames to generate (used in 'scail2' no_llm_mode). "
+                               "SCAIL-2 is trained on 81-frame chunks (4n+1); values above 81 are "
+                               "generated chunk-by-chunk (extend), each anchored on the previous "
+                               "chunk's tail for coherence. Limited by the driving video length.",
+                }),
+                "scail2_pose_extend": (["pingpong", "loop", "hold_last", "none"], {
+                    "default": "pingpong",
+                    "tooltip": "When length exceeds the driving video, how to keep guiding motion "
+                               "past where the pose runs out (used in 'scail2' no_llm_mode). "
+                               "'pingpong' bounces the motion forward/back (smoothest); 'loop' "
+                               "repeats from the start; 'hold_last' freezes on the final pose; "
+                               "'none' lets the model freely hallucinate the tail. No effect when "
+                               "length ≤ driving frames.",
+                }),
+                "scail2_steps": ("INT", {
+                    "default": 6,
                     "min": 1,
                     "max": 100,
                     "step": 1,
-                    "tooltip": "Number of diffusion sampling steps for SCAIL. Default 40. Lower = faster but less detailed.",
+                    "tooltip": "Diffusion sampling steps (used in 'scail2' no_llm_mode). "
+                               "6 suits the distill-LoRA fast path; raise for full-step quality.",
                 }),
-                "scail_guidance": ("FLOAT", {
-                    "default": 5.0,
+                "scail2_cfg": ("FLOAT", {
+                    "default": 1.0,
                     "min": 1.0,
                     "max": 15.0,
                     "step": 0.5,
-                    "tooltip": "Classifier-free guidance scale. Higher = stronger prompt adherence. Default 5.0.",
+                    "tooltip": "Classifier-free guidance scale (used in 'scail2' no_llm_mode). "
+                               "1.0 for the distill-LoRA fast path.",
                 }),
-                "scail_shift": ("FLOAT", {
-                    "default": 3.0,
-                    "min": 1.0,
-                    "max": 10.0,
+                "scail2_shift": ("FLOAT", {
+                    "default": 5.0,
+                    "min": 0.0,
+                    "max": 100.0,
                     "step": 0.5,
-                    "tooltip": "Flow matching shift parameter. Controls noise schedule. Default 3.0.",
+                    "tooltip": "ModelSamplingSD3 shift (used in 'scail2' no_llm_mode). Default 5.0.",
                 }),
-                "scail_solver": (["unipc", "dpm++"], {
-                    "default": "unipc",
-                    "tooltip": "Solver for SCAIL denoising. "
-                               "'unipc' = UniPC predictor-corrector (default, fast). "
-                               "'dpm++' = DPM++ Multistep (slightly different quality).",
-                }),
-                "scail_seed": ("INT", {
+                "scail2_seed": ("INT", {
                     "default": 0,
                     "min": 0,
                     "max": 2147483647,
                     "step": 1,
-                    "tooltip": "Random seed for SCAIL. Set a fixed value for reproducible results. 0 = random.",
+                    "tooltip": "Random seed (used in 'scail2' no_llm_mode). 0 = first seed.",
                 }),
+                "scail2_sampler": (_svi_samplers, {
+                    "default": "euler",
+                    "tooltip": "Sampler (used in 'scail2' no_llm_mode). "
+                               "'euler' matches the reference SCAIL-2 workflow.",
+                }),
+                "scail2_scheduler": (_svi_schedulers, {
+                    "default": "simple",
+                    "tooltip": "Scheduler (used in 'scail2' no_llm_mode). "
+                               "'simple' matches the reference SCAIL-2 workflow.",
+                }),
+                "scail2_denoise": ("FLOAT", {
+                    "default": 1.0,
+                    "min": 0.0,
+                    "max": 1.0,
+                    "step": 0.01,
+                    "tooltip": "Denoise strength (used in 'scail2' no_llm_mode). "
+                               "1.0 = full denoise.",
+                }),
+                "scail2_replacement_mode": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "Replacement vs Animation mode (used in 'scail2' no_llm_mode). "
+                               "False = Animation (drive the reference character with the video's pose). "
+                               "True = Replacement (swap the masked subject into the driving scene).",
+                }),
+                "scail2_sort_by": (["left_to_right", "area", "none"], {
+                    "default": "left_to_right",
+                    "tooltip": "Palette assignment order across the colored masks "
+                               "(used in 'scail2' no_llm_mode). Keeps each identity the same "
+                               "color in the reference and pose-video masks.",
+                }),
+                "scail2_object_indices": ("STRING", {
+                    "default": "",
+                    "tooltip": "Comma-separated subject indices to keep, e.g. '0,2' "
+                               "(used in 'scail2' no_llm_mode). Empty = all detected subjects.",
+                }),
+                "scail2_composite_direction": (["horizontal", "vertical"], {
+                    "default": "horizontal",
+                    "tooltip": "How multiple reference images (image_b, image_c, …) are "
+                               "composited into the single SCAIL-2 reference (used in 'scail2' "
+                               "no_llm_mode). Only matters with 2+ references.",
+                }),
+                "scail2_main_reference": (["last", "first"], {
+                    "default": "last",
+                    "tooltip": "Which connected reference is the 'main' one — it's CLIP-vision "
+                               "encoded, so it drives identity most strongly (used in 'scail2' "
+                               "no_llm_mode). 'last' matches the workflow convention that the "
+                               "last/closest reference is the strongest.",
+                }),
+                "scail2_color_match": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "On long extends (length > 81), color-match each chunk to the "
+                               "previous chunk's last frame (Reinhard) to stop slow exposure/hue "
+                               "drift (used in 'scail2' no_llm_mode). No effect on single-chunk "
+                               "(≤81-frame) runs.",
+                }),
+                "scail2_blockswap_blocks": ("INT", {
+                    "default": 0,
+                    "min": 0,
+                    "max": 40,
+                    "tooltip": "Wan 2.1 transformer blocks (of 40) worth of weights kept in "
+                               "CPU RAM during sampling (block swap). 0 = disabled. "
+                               "Higher = less VRAM, slower. Try 4-8 if you hit OOM. "
+                               "Only used when no_llm_mode = 'scail2'.",
+                }),
+                "scail2_tiled_vae": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "Decode video latents with tiled VAE to reduce VRAM spikes "
+                               "during decode. Use if VAE decode OOMs. "
+                               "Only used when no_llm_mode = 'scail2'.",
+                }),
+                "scail2_subject": ("STRING", {
+                    "default": "person",
+                    "tooltip": "What SAM 3.1 should segment for the mask (used in 'scail2' "
+                               "no_llm_mode) — a SHORT noun like 'person', 'bear', 'dog'. "
+                               "Keep this separate from the animation prompt: a full sentence "
+                               "makes SAM over-detect, giving splotchy multi-colored masks. "
+                               "For mixed subjects, separate with ';' (e.g. 'man; dog') — each "
+                               "is detected as its own identity/color. Ignored when mask_points "
+                               "are supplied.",
+                }),
+                "scail2_max_objects": ("INT", {
+                    "default": 1,
+                    "min": 1,
+                    "max": 6,
+                    "step": 1,
+                    "tooltip": "How many subjects (identities) SAM 3.1 tracks (used in 'scail2' "
+                               "no_llm_mode). 1 = single character (mask is solid blue, the most "
+                               "stable). Raise for multi-person; each identity gets its own color. "
+                               "Auto-raised to the number of reference images you connect.",
+                }),
+                "scail2_detection_threshold": ("FLOAT", {
+                    "default": 0.5,
+                    "min": 0.0,
+                    "max": 1.0,
+                    "step": 0.05,
+                    "tooltip": "SAM 3.1 new-object detection confidence (used in 'scail2' "
+                               "no_llm_mode). Higher = fewer/cleaner detections (less likely to "
+                               "pick up spurious extra subjects). Matches SAM3 Video Track.",
+                }),
+                "scail2_detect_interval": ("INT", {
+                    "default": 2,
+                    "min": 1,
+                    "max": 30,
+                    "step": 1,
+                    "tooltip": "How often (in frames) SAM 3.1 re-runs detection for NEW objects "
+                               "(used in 'scail2' no_llm_mode). Higher = more stable identities / "
+                               "less color flicker; lower = catches subjects that appear later. "
+                               "Matches SAM3 Video Track (default 2).",
+                }),
+                "scail2_point_src_width": ("INT", {
+                    "default": 0,
+                    "min": 0,
+                    "max": 8192,
+                    "step": 1,
+                    "tooltip": "Override the coordinate-space WIDTH of mask_points (used in "
+                               "'scail2' no_llm_mode). 0 = auto (taken from the point selector's "
+                               "image_width). Set only if your points come from a source that "
+                               "doesn't report its dimensions.",
+                }),
+                "scail2_point_src_height": ("INT", {
+                    "default": 0,
+                    "min": 0,
+                    "max": 8192,
+                    "step": 1,
+                    "tooltip": "Override the coordinate-space HEIGHT of mask_points (used in "
+                               "'scail2' no_llm_mode). 0 = auto (taken from the point selector's "
+                               "image_height).",
+                }),
+                # Dynamic LoRA slots (a → d): lightx2v distill, DPO, etc.
+                # Slot b appears when a ≠ "none", c when b ≠ "none", etc.
+                **{f"scail2_lora_{s}": (["none"] + ([
+                    f for f in folder_paths.get_filename_list("loras")
+                ] if hasattr(folder_paths, "get_filename_list") else []), {
+                    "default": "none",
+                    "tooltip": f"LoRA slot {s.upper()} for SCAIL-2 (used in 'scail2' no_llm_mode). "
+                               "Select a LoRA file (e.g. lightx2v distill, DPO). "
+                               "Selecting a value reveals the next slot.",
+                }) for s in ("a", "b", "c", "d")},
+                **{f"scail2_lora_strength_{s}": ("FLOAT", {
+                    "default": 1.0,
+                    "min": 0.0,
+                    "max": 2.0,
+                    "step": 0.05,
+                    "tooltip": f"Strength for SCAIL-2 LoRA slot {s.upper()} "
+                               "(used in 'scail2' no_llm_mode). 1.0 = full strength.",
+                }) for s in ("a", "b", "c", "d")},
 
                 # ── Advanced: SAM-Audio ──────────────────────────────────
                 "sam_audio_model": (["base", "base-fp8", "large-fp8", "large"], {
@@ -761,24 +931,17 @@ class FFMPEGAgentNode:
                                "'matting' = human matting (alpha composited on green; 1B only). "
                                "'pretrain' = raw backbone features (PCA-visualized RGB).",
                 }),
-                "sapiens2_size": (["0.4b", "0.8b", "1b", "5b"], {
+                "sapiens2_size": (["0.4b", "0.8b", "1b", "5b", "5b (fp8)"], {
                     "default": "1b",
                     "tooltip": "Sapiens2 model size (used in 'sapiens2' no_llm_mode). "
                                "'0.4b' = ~1–2 GB VRAM, fast. "
                                "'0.8b' = ~2–4 GB VRAM. "
                                "'1b' = ~3–6 GB VRAM, balanced (recommended default). "
-                               "'5b' = ~5 GB VRAM fp8 / ~10 GB fp16 / ~20 GB fp32, best quality. "
+                               "'5b' = ~10 GB fp16 / ~20 GB fp32 (auto-picks fp8 on RTX 40-series+), best quality. "
+                               "'5b (fp8)' = quantized 5B, ~5 GB VRAM, needs fp8-capable GPU (compute cap >= 8.9, "
+                               "RTX 40-series+); auto-downloads the pre-converted *_fp8.safetensors from the mirror "
+                               "(dense tasks only — pose/pretrain ignore it). "
                                "Note: matting task only ships in 1B.",
-                }),
-                "sapiens2_precision": (["auto", "fp8", "bf16", "fp32"], {
-                    "default": "auto",
-                    "tooltip": "Sapiens2 weight precision (dense tasks: seg/normal/pointmap/matting). "
-                               "'auto' = fp8 for 5B on fp8-capable GPUs (compute cap >= 8.9, RTX 40-series+), else fp32 — recommended. "
-                               "'fp8' = ~5 GB VRAM, native scaled_mm matmul; requires the pre-converted *_fp8.safetensors "
-                               "(auto-downloaded from the mirror, or build it with `python -m core.sapiens2._convert_fp8`). "
-                               "'bf16' = ~half VRAM, CPU-staged cast (loads fp32 to RAM first). "
-                               "'fp32' = full precision (5B needs ~20 GB VRAM). "
-                               "Ignored by pose/pretrain tasks.",
                 }),
                 "sapiens2_seg_alpha": ("FLOAT", {
                     "default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05,
@@ -802,7 +965,7 @@ class FFMPEGAgentNode:
                 }),
 
                 # ── Advanced: AI Upscale ───────────────────────────────────
-                "upscale_model": (["realesrgan_x4plus", "realesrgan_x4_anime", "hat_x4", "dat_x4", "swinir_x4", "seedvr2_3b_fp8", "seedvr2_3b_gguf", "seedvr2_7b_fp8", "seedvr2_7b_gguf", "flashvsr_full", "flashvsr_tiny", "flashvsr_tiny_long", "rtx_vsr"], {
+                "upscale_model": (["realesrgan_x4plus", "realesrgan_x4_anime", "hat_x4", "dat_x4", "swinir_x4", "seedvr2_3b_fp8", "seedvr2_3b_gguf", "seedvr2_7b_fp8", "seedvr2_7b_fp8_mixed", "seedvr2_7b_gguf", "flashvsr_full", "flashvsr_tiny", "flashvsr_tiny_long", "rtx_vsr"], {
                     "default": "realesrgan_x4plus",
                     "tooltip": "AI upscaler model (used in 'ai_upscale' no_llm_mode). "
                                "'realesrgan_x4plus' = fast general-purpose. "
@@ -813,6 +976,7 @@ class FFMPEGAgentNode:
                                "'seedvr2_3b_fp8' = diffusion upscaler, great quality (~8-12 GB VRAM). "
                                "'seedvr2_3b_gguf' = diffusion upscaler, lowest VRAM (~6-8 GB). "
                                "'seedvr2_7b_fp8' = highest quality diffusion upscaler (~16-24 GB VRAM). "
+                               "'seedvr2_7b_fp8_mixed' = 7B with fp16 last block, fixes 7B seam/grid artifacts (recommended 7B, ~16-24 GB VRAM). "
                                "'seedvr2_7b_gguf' = highest quality diffusion upscaler, quantized (~8-12 GB VRAM). "
                                "'flashvsr_full' = FlashVSR one-step diffusion, best quality (~12-16 GB VRAM). "
                                "'flashvsr_tiny' = FlashVSR fast mode with TCDecoder (~8-12 GB VRAM). "
@@ -835,13 +999,55 @@ class FFMPEGAgentNode:
                 }),
                 "blockswap_blocks": ("INT", {
                     "default": 0,
-                    "min": 0,
+                    "min": -1,
                     "max": 32,
                     "step": 1,
-                    "tooltip": "SeedVR2 BlockSwap: number of DiT blocks to offload to CPU during inference. "
-                               "0 = disabled (keep everything on GPU, recommended for ≥16 GB VRAM). "
-                               "4-8 = saves ~1-3 GB VRAM (for 8-12 GB cards). "
-                               "Only applies when a SeedVR2 upscale model is selected.",
+                    "tooltip": "BlockSwap: number of DiT blocks to offload to CPU during inference "
+                               "(applies to SeedVR2 and FlashVSR diffusion upscalers). Streams "
+                               "model WEIGHTS only — does not reduce activation/decode memory. "
+                               "0 = disabled (default, manual). -1 = auto (size from free VRAM; "
+                               "FlashVSR only). 4-30 = stream that many DiT blocks. "
+                               "For SeedVR2, -1 behaves the same as 0 (disabled).",
+                }),
+                "flashvsr_processing": (["whole", "temporal", "spatial"], {
+                    "default": "whole",
+                    "tooltip": "FlashVSR memory/quality strategy (bounds ACTIVATION/decode memory, "
+                               "the real OOM limiter). "
+                               "'whole' = one whole-frame pass, best quality (use the "
+                               "'flashvsr_tiny_long' model for long clips — it streams over time). "
+                               "'temporal' = slide over frames in windows of flashvsr_frame_window "
+                               "(no spatial tiling; keeps spatial quality). "
+                               "'spatial' = split each frame into tiles (lowest quality, seams; "
+                               "uses the VAE tile size). Only applies to FlashVSR models.",
+                }),
+                "flashvsr_frame_window": ("INT", {
+                    "default": 0,
+                    "min": 0,
+                    "max": 200,
+                    "step": 1,
+                    "tooltip": "FlashVSR temporal window: frames processed per pass when "
+                               "flashvsr_processing='temporal'. 0 = whole clip. Smaller = less "
+                               "VRAM, more passes. Minimum effective window is 21 frames. "
+                               "Ignored for 'flashvsr_tiny_long' (it streams internally).",
+                }),
+                "flashvsr_color_fix": ("BOOLEAN", {
+                    "default": True,
+                    "label_on": "Color Fix On",
+                    "label_off": "Color Fix Off",
+                    "tooltip": "FlashVSR AdaIN/wavelet color correction (matches output color to the "
+                               "low-res input). On = stable colors; can flatten enhancement. "
+                               "Off = raw model output (matches the reference workflow, often "
+                               "sharper/more contrasty). Only applies to FlashVSR models.",
+                }),
+                "flashvsr_decode_tile": ("INT", {
+                    "default": 512,
+                    "min": 0,
+                    "max": 2048,
+                    "step": 64,
+                    "tooltip": "FlashVSR decoder spatial tile size in pixels (tiny / tiny_long). "
+                               "The decode step is the usual OOM point at high resolution; tiling "
+                               "it is near-lossless (unlike tiling the DiT). 512 fits ~12 GB at "
+                               "1024². 0 = whole-frame decode (may OOM). Smaller = less VRAM.",
                 }),
                 "rtx_quality": (["ULTRA", "HIGH", "MEDIUM", "LOW", "DENOISE_ULTRA", "DENOISE_HIGH", "DENOISE_MEDIUM", "DENOISE_LOW", "DEBLUR_ULTRA", "DEBLUR_HIGH", "DEBLUR_MEDIUM", "DEBLUR_LOW"], {
                     "default": "ULTRA",
@@ -855,16 +1061,20 @@ class FFMPEGAgentNode:
                     "default": True,
                     "label_on": "Tiling On",
                     "label_off": "Tiling Off",
-                    "tooltip": "VAE tiling for diffusion upscalers (SeedVR2 / FlashVSR). "
-                               "On = lower VRAM, slight seams possible. "
-                               "Off = full-frame VAE (more VRAM, no seams). "
+                    "tooltip": "Tiling for diffusion upscalers (SeedVR2 / FlashVSR). "
+                               "On (default) = spatial tiling, lower VRAM, slight seams possible "
+                               "(needed at high scale even with block-swap — it bounds "
+                               "activation memory, which block-swap does not). "
+                               "Off = whole-frame, best quality/no seams, but may OOM at high "
+                               "scale (FlashVSR auto-falls-back to tiles if it does). "
                                "Only applies when a SeedVR2 or FlashVSR upscale model is selected.",
                 }),
                 "vae_tile_preset": (["auto", "256", "384", "512", "768", "1024", "custom"], {
                     "default": "auto",
-                    "tooltip": "VAE tile size preset (used when vae_tiling is on). "
-                               "'auto' = pick by VRAM (SeedVR2) / model default (FlashVSR). "
-                               "A number = square tile of that pixel size. "
+                    "tooltip": "Tile size preset (used when tiling is on). "
+                               "'auto' = pick by VRAM (SeedVR2) / model default 384px (FlashVSR). "
+                               "A number = square tile of that pixel size (larger = fewer seams, "
+                               "more VRAM). "
                                "'custom' = use vae_tile_size / vae_tile_overlap below.",
                 }),
                 "vae_tile_size": ("INT", {
@@ -1327,6 +1537,21 @@ class FFMPEGAgentNode:
                 "svi_scheduler": (_svi_schedulers, {
                     "default": "normal",
                     "tooltip": "Noise scheduler for SVI denoising. Default: normal. "
+                               "Only used when no_llm_mode = 'svi'.",
+                }),
+                "svi_blockswap_blocks": ("INT", {
+                    "default": 0,
+                    "min": 0,
+                    "max": 40,
+                    "tooltip": "Wan 2.2 transformer blocks (of 40) worth of weights kept in "
+                               "CPU RAM during sampling (block swap). 0 = disabled. "
+                               "Higher = less VRAM, slower. Try 4-8 if you hit OOM. "
+                               "Only used when no_llm_mode = 'svi'.",
+                }),
+                "svi_tiled_vae": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "Decode video latents with tiled VAE to reduce VRAM spikes "
+                               "during decode. Use if VAE decode OOMs. "
                                "Only used when no_llm_mode = 'svi'.",
                 }),
                 "ace_negative_prompt": ("STRING", {
@@ -2180,6 +2405,12 @@ class FFMPEGAgentNode:
         """
         from ..skills.composer import Pipeline  # type: ignore[import-not-found]
 
+        # --- Normalize no_llm_mode: dropdown labels carry a cosmetic model-name
+        # suffix, e.g. "generate_audio (MMAudio)". Strip the trailing " (...)" so
+        # dispatch comparisons below (and old workflows saving bare names) match.
+        import re
+        no_llm_mode = re.sub(r"\s*\([^)]*\)\s*$", "", str(no_llm_mode)).strip()
+
         # --- Apply model-download permission flag ---
         try:
             from ..core import model_manager  # type: ignore[import-not-found]
@@ -2338,7 +2569,7 @@ class FFMPEGAgentNode:
 
         if not prompt.strip():
             # manual + whisper + lip_sync modes don't need a prompt
-            if llm_model != "none" or no_llm_mode not in ("manual", "transcribe", "karaoke_subtitles", "generate_audio", "generate_music", "foundation1", "fish_speech", "audio_inpaint", "audio_separate", "ace_step", "lip_sync", "animate_portrait", "marigold", "normalcrafter", "video_depth", "kiwi_edit", "minimax_remover", "dreamid_omni", "svi", "sharp", "scail (WIP)", "ai_upscale", "rembg", "video_matting", "onion_skin"):
+            if llm_model != "none" or no_llm_mode not in ("manual", "transcribe", "karaoke_subtitles", "generate_audio", "generate_music", "foundation1", "fish_speech", "audio_inpaint", "audio_separate", "ace_step", "lip_sync", "animate_portrait", "marigold", "normalcrafter", "video_depth", "kiwi_edit", "minimax_remover", "dreamid_omni", "svi", "sharp", "scail2", "ai_upscale", "rembg", "video_matting", "onion_skin"):
                 raise ValueError("Prompt cannot be empty")
 
         # --- Analyze input video ---
@@ -2879,9 +3110,9 @@ class FFMPEGAgentNode:
                     **kwargs,
                 )
                 return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
-            # SCAIL mode (WIP — pose-driven character animation)
-            if no_llm_mode == "scail (WIP)":
-                result6 = await _nollm.process_scail_only(
+            # SCAIL-2 mode (native pose-driven character animation)
+            if no_llm_mode == "scail2":
+                result6 = await self._process_scail2_only(
                     prompt=prompt,
                     effective_video_path=effective_video_path,
                     video_metadata=video_metadata,
@@ -2893,6 +3124,7 @@ class FFMPEGAgentNode:
                     encoding_preset=encoding_preset,
                     image_a=image_a,
                     image_path_a=image_path_a,
+                    mask_points=mask_points,
                     **kwargs,
                 )
                 return result6 + (mask_points or "", _image_path_from_result6(result6), empty_mask)
@@ -3963,6 +4195,21 @@ class FFMPEGAgentNode:
             image_path_a=image_path_a,
             temp_video_from_images=temp_video_from_images,
             temp_video_with_audio=temp_video_with_audio,
+            **kwargs,
+        )
+
+    async def _process_scail2_only(self, prompt, effective_video_path, video_metadata, save_output, output_path, preview_mode, quality_preset, crf, encoding_preset, image_a=None, image_path_a=None, mask_points="", **kwargs):
+        """Delegate native SCAIL-2 animation to the nollm_modes module."""
+        return await _nollm.process_scail2_only(
+            prompt=prompt,
+            effective_video_path=effective_video_path,
+            video_metadata=video_metadata, save_output=save_output,
+            output_path=output_path, preview_mode=preview_mode,
+            quality_preset=quality_preset, crf=crf,
+            encoding_preset=encoding_preset,
+            image_a=image_a,
+            image_path_a=image_path_a,
+            mask_points=mask_points,
             **kwargs,
         )
 
