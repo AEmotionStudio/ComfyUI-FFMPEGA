@@ -54,13 +54,62 @@ class SaveVideoNode:
                 }),
             },
             "optional": {
-                "images": ("IMAGE", {
+                "images_a": ("IMAGE", {
                     "tooltip": (
                         "Image batch to encode as video. When connected "
                         "without a video_path, encodes the images into "
-                        "an MP4 video at the specified fps. When both "
-                        "images and video_path are provided, images are "
-                        "passed through to the output."
+                        "an MP4 video at the specified fps. More slots "
+                        "appear automatically (images_b, images_c, ...) so "
+                        "you can stack several sources for comparison."
+                    ),
+                }),
+                "video_path_a": ("STRING", {
+                    "forceInput": True,
+                    "tooltip": (
+                        "Path to a video file (typically from the "
+                        "FFMPEGA Agent's video_path output). The file "
+                        "already contains audio if the source had it. "
+                        "More slots appear automatically (video_path_b, "
+                        "video_path_c, ...) — connect several and set "
+                        "'layout' to combine them side-by-side."
+                    ),
+                }),
+                "layout": (
+                    ["auto", "horizontal", "vertical", "grid", "none"],
+                    {
+                        "default": "auto",
+                        "tooltip": (
+                            "How to combine multiple connected sources. "
+                            "auto = best-fit grid (2 side-by-side, 4 in a "
+                            "2x2, ...). horizontal/vertical/grid force a "
+                            "layout. none = save each source as its own "
+                            "file (no combining)."
+                        ),
+                    },
+                ),
+                "label_panels": ("BOOLEAN", {
+                    "default": False,
+                    "label_on": "Label panels",
+                    "label_off": "No labels",
+                    "tooltip": (
+                        "Draw a caption on each panel of a combined video "
+                        "using the comma-separated 'labels' field."
+                    ),
+                }),
+                "labels": ("STRING", {
+                    "default": "",
+                    "tooltip": (
+                        "Comma-separated panel captions, e.g. "
+                        "'Original, Upscaled'. Used only when 'label_panels' "
+                        "is on. Extra panels beyond the list stay unlabeled."
+                    ),
+                }),
+                "panel_gap": ("INT", {
+                    "default": 4,
+                    "min": 0,
+                    "max": 128,
+                    "tooltip": (
+                        "Pixel gap between panels in a combined video."
                     ),
                 }),
                 "fps": ("INT", {
@@ -79,16 +128,6 @@ class SaveVideoNode:
                         "When connected, forwarded directly to the "
                         "audio output instead of extracting audio "
                         "from the video."
-                    ),
-                }),
-                "video_path": ("STRING", {
-                    "forceInput": True,
-                    "tooltip": (
-                        "Path to a video file (typically from the "
-                        "FFMPEGA Agent's video_path output). The file "
-                        "already contains audio if the source had it. "
-                        "It will be copied as-is to ComfyUI's output "
-                        "directory."
                     ),
                 }),
                 "mask_points": ("STRING", {
@@ -147,19 +186,30 @@ class SaveVideoNode:
 
     def save_video(
         self,
-        video_path: str = "",
+        video_path_a: str = "",
         filename_prefix: str = "FFMPEGA",
         save_output: bool = True,
         overwrite: bool = False,
         mask_points: str = "",
         mask=None,
-        images=None,
+        images_a=None,
         audio=None,
         fps: int = 24,
+        layout: str = "auto",
+        label_panels: bool = False,
+        labels: str = "",
+        panel_gap: int = 4,
         prompt=None,
         extra_pnginfo=None,
+        **kwargs,
     ) -> dict:
-        """Copy video to output directory and return UI data for preview."""
+        """Copy video to output directory and return UI data for preview.
+
+        Accepts dynamic ``video_path_a..z`` / ``images_a..z`` slots (plus the
+        legacy bare ``video_path`` / ``images`` names for older workflows).
+        When more than one source is connected and ``layout`` != ``none``,
+        the sources are combined into one side-by-side / grid comparison clip.
+        """
         # Guard against empty / non-string prefix — ComfyUI may send ""
         # if the user clears the field, or occasionally serialize a
         # boolean widget value as the string "False"/"True".
@@ -170,6 +220,50 @@ class SaveVideoNode:
             or filename_prefix.strip().lower() in ("false", "true")
         ):
             filename_prefix = "FFMPEGA"
+
+        # --- Gather all connected sources (paths and/or image batches) ---
+        sources = self._collect_sources(video_path_a, images_a, kwargs)
+
+        # --- "none": save each source as its own file (no combining) ---
+        if len(sources) > 1 and str(layout).lower() == "none":
+            return self._save_each(
+                sources, filename_prefix, save_output, overwrite,
+                mask_points, mask, audio, fps, prompt, extra_pnginfo,
+            )
+
+        # --- Combine multiple sources into one comparison clip ---
+        combined_temp = None
+        video_path = ""
+        images = None
+        if len(sources) > 1:
+            label_list = self._parse_labels(labels) if label_panels else None
+            try:
+                try:
+                    from ..core.video_compare import combine_videos
+                except ImportError:
+                    from core.video_compare import combine_videos  # type: ignore
+                combined_temp = combine_videos(
+                    sources, layout=str(layout), labels=label_list,
+                    gap=int(panel_gap), fps=int(fps),
+                )
+            except Exception as e:
+                logger.error("SaveVideo: combine failed: %s", e)
+            if combined_temp and os.path.isfile(combined_temp):
+                video_path = combined_temp
+            else:
+                # Fall back to the first source so the run still produces output
+                logger.warning("SaveVideo: falling back to first source")
+                first = sources[0]
+                if isinstance(first, str):
+                    video_path = first
+                else:
+                    images = first
+        elif len(sources) == 1:
+            first = sources[0]
+            if isinstance(first, str):
+                video_path = first
+            else:
+                images = first
 
         # --- Encode IMAGE batch → video if no video_path provided ---
         temp_video_from_images = None
@@ -317,6 +411,13 @@ class SaveVideoNode:
             except OSError:
                 pass
 
+        # Clean up the combined comparison temp (and its temp dir)
+        if combined_temp and os.path.isfile(combined_temp):
+            try:
+                shutil.rmtree(os.path.dirname(combined_temp), ignore_errors=True)
+            except OSError:
+                pass
+
         return {
             "ui": {
                 "video": video_ui,
@@ -324,6 +425,160 @@ class SaveVideoNode:
             },
             "result": (images_tensor, audio_out, output_path, mask_points or "",
                        mask if mask is not None else torch.zeros(1, 64, 64, dtype=torch.float32)),
+        }
+
+    @staticmethod
+    def _parse_labels(labels: str) -> list[str]:
+        """Split a comma-separated labels string into a clean list."""
+        if not labels or not isinstance(labels, str):
+            return []
+        return [part.strip() for part in labels.split(",")]
+
+    @staticmethod
+    def _collect_sources(video_path_a, images_a, kwargs: dict) -> list:
+        """Collect connected sources in panel order (a, b, c, ...).
+
+        Each panel prefers its ``video_path_<letter>`` string over its
+        ``images_<letter>`` tensor.  Legacy bare ``video_path`` / ``images``
+        inputs from older workflows are honored as a leading panel.
+        """
+        from string import ascii_lowercase
+
+        sources: list = []
+
+        def _valid_path(v) -> bool:
+            return isinstance(v, str) and bool(v) and os.path.isfile(v)
+
+        def _valid_tensor(v) -> bool:
+            return v is not None and hasattr(v, "shape") and v.shape[0] > 0
+
+        # Backward-compat: legacy bare names become the first panel.
+        legacy_vp = kwargs.get("video_path")
+        legacy_img = kwargs.get("images")
+        if _valid_path(legacy_vp):
+            sources.append(legacy_vp)
+        elif _valid_tensor(legacy_img):
+            sources.append(legacy_img)
+
+        for letter in ascii_lowercase:
+            vp = video_path_a if letter == "a" else kwargs.get(f"video_path_{letter}")
+            img = images_a if letter == "a" else kwargs.get(f"images_{letter}")
+            if _valid_path(vp):
+                sources.append(vp)
+            elif _valid_tensor(img):
+                sources.append(img)
+        return sources
+
+    def _save_each(
+        self, sources, filename_prefix, save_output, overwrite,
+        mask_points, mask, audio, fps, prompt, extra_pnginfo,
+    ) -> dict:
+        """layout='none': save each source separately, preview them all."""
+        video_ui: list = []
+        first_path = ""
+        temps: list[str] = []
+        for src in sources:
+            path = src
+            if not isinstance(src, str):
+                try:
+                    try:
+                        from ..core.media_converter import MediaConverter
+                    except ImportError:
+                        from core.media_converter import MediaConverter  # type: ignore
+                    path = MediaConverter().images_to_video(src, fps=fps)
+                    temps.append(path)
+                except Exception as e:
+                    logger.error("SaveVideo: encode for none-layout failed: %s", e)
+                    continue
+            if not path or not os.path.isfile(path):
+                continue
+            entry = self._copy_to_output(
+                path, filename_prefix, save_output, overwrite,
+                prompt, extra_pnginfo,
+            )
+            if entry:
+                video_ui.append(entry["ui"])
+                if not first_path:
+                    first_path = entry["path"]
+
+        for t in temps:
+            try:
+                os.remove(t)
+            except OSError:
+                pass
+
+        if not first_path:
+            empty_tensor = torch.zeros(1, 64, 64, 3, dtype=torch.float32)
+            silent_audio = {"waveform": torch.zeros(1, 1, 1), "sample_rate": 44100}
+            return {
+                "ui": {"video": [], "file_size": ["0 B"]},
+                "result": (empty_tensor, silent_audio, "", mask_points or "",
+                           mask if mask is not None else torch.zeros(1, 64, 64, dtype=torch.float32)),
+            }
+
+        images_tensor = self._extract_frames(first_path)
+        audio_out = audio if audio is not None else self._extract_audio(first_path)
+        return {
+            "ui": {"video": video_ui, "file_size": [f"{len(video_ui)} videos"]},
+            "result": (
+                images_tensor, audio_out, first_path, mask_points or "",
+                mask if mask is not None else torch.zeros(1, 64, 64, dtype=torch.float32),
+            ),
+        }
+
+    def _copy_to_output(
+        self, video_path, filename_prefix, save_output, overwrite,
+        prompt, extra_pnginfo,
+    ) -> dict | None:
+        """Copy one video to the output (or temp) dir; return a UI entry."""
+        ext = os.path.splitext(video_path)[1] or ".mp4"
+        full_output_folder, filename, _counter, subfolder, _ = (
+            folder_paths.get_save_image_path(filename_prefix, self.output_dir)
+        )
+        os.makedirs(full_output_folder, exist_ok=True)
+
+        if save_output:
+            if overwrite:
+                output_filename = f"{filename}{ext}"
+            else:
+                import glob
+                existing = glob.glob(os.path.join(full_output_folder, f"{filename}_*"))
+                max_counter = 0
+                for path in existing:
+                    base = os.path.splitext(os.path.basename(path))[0]
+                    parts = base.rsplit("_", 1)
+                    if len(parts) == 2 and parts[1].isdigit():
+                        max_counter = max(max_counter, int(parts[1]))
+                output_filename = f"{filename}_{max_counter + 1:05}{ext}"
+            output_path = os.path.join(full_output_folder, output_filename)
+            try:
+                if os.path.abspath(video_path) != os.path.abspath(output_path):
+                    shutil.copy2(video_path, output_path)
+                self._save_workflow_png(
+                    output_path, full_output_folder, output_filename,
+                    prompt, extra_pnginfo,
+                )
+            except Exception as e:
+                logger.error("SaveVideo: copy failed: %s", e)
+                return None
+            return {
+                "ui": {"filename": output_filename, "subfolder": subfolder, "type": self.type},
+                "path": output_path,
+            }
+
+        # preview-only
+        temp_dir = folder_paths.get_temp_directory()
+        os.makedirs(temp_dir, exist_ok=True)
+        preview_name = f"ffmpega_preview_{os.getpid()}_{len(os.listdir(temp_dir))}{ext}"
+        preview_path = os.path.join(temp_dir, preview_name)
+        try:
+            shutil.copy2(video_path, preview_path)
+        except Exception as e:
+            logger.warning("SaveVideo: preview copy failed: %s", e)
+            return None
+        return {
+            "ui": {"filename": preview_name, "subfolder": "", "type": "temp"},
+            "path": preview_path,
         }
 
     def _extract_frames(self, video_path: str) -> torch.Tensor:

@@ -46,20 +46,58 @@ class SaveImageNode:
                 }),
             },
             "optional": {
-                "images": ("IMAGE", {
+                "images_a": ("IMAGE", {
                     "tooltip": (
                         "Image tensor input. When connected, saves the "
-                        "tensor directly as PNG. Takes priority over "
-                        "image_path when both are provided."
+                        "tensor directly as PNG. More slots appear "
+                        "automatically (images_b, images_c, ...) so you can "
+                        "stack several images for comparison."
                     ),
                 }),
-                "image_path": ("STRING", {
+                "image_path_a": ("STRING", {
                     "forceInput": True,
                     "tooltip": (
                         "Path to an image file (e.g. mask_overlay_path "
                         "from Load Video Path, or any PNG/JPG path). "
-                        "The file will be copied as-is to ComfyUI's "
-                        "output directory."
+                        "More slots appear automatically (image_path_b, ...) "
+                        "— connect several and set 'layout' to combine them."
+                    ),
+                }),
+                "layout": (
+                    ["auto", "horizontal", "vertical", "grid", "none"],
+                    {
+                        "default": "auto",
+                        "tooltip": (
+                            "How to combine multiple connected sources. "
+                            "auto = best-fit grid (2 side-by-side, 4 in a "
+                            "2x2, ...). horizontal/vertical/grid force a "
+                            "layout. none = save each source separately."
+                        ),
+                    },
+                ),
+                "label_panels": ("BOOLEAN", {
+                    "default": False,
+                    "label_on": "Label panels",
+                    "label_off": "No labels",
+                    "tooltip": (
+                        "Draw a caption on each panel of a combined image "
+                        "using the comma-separated 'labels' field."
+                    ),
+                }),
+                "labels": ("STRING", {
+                    "default": "",
+                    "tooltip": (
+                        "Comma-separated panel captions, e.g. "
+                        "'Original, Upscaled'. Used only when 'label_panels' "
+                        "is on."
+                    ),
+                }),
+                "panel_gap": ("INT", {
+                    "default": 4,
+                    "min": 0,
+                    "max": 128,
+                    "tooltip": (
+                        "Pixel gap between panels in a combined image."
                     ),
                 }),
                 "save_output": ("BOOLEAN", {
@@ -115,17 +153,28 @@ class SaveImageNode:
 
     def save_image(
         self,
-        image_path: str = "",
+        image_path_a: str = "",
         filename_prefix: str = "FFMPEGA",
         save_output: bool = True,
         overwrite: bool = False,
         mask_points: str = "",
         mask=None,
-        images=None,
+        images_a=None,
+        layout: str = "auto",
+        label_panels: bool = False,
+        labels: str = "",
+        panel_gap: int = 4,
         prompt=None,
         extra_pnginfo=None,
+        **kwargs,
     ) -> dict:
-        """Save image to output directory and return UI data for preview."""
+        """Save image to output directory and return UI data for preview.
+
+        Accepts dynamic ``images_a..z`` / ``image_path_a..z`` slots (plus the
+        legacy bare ``images`` / ``image_path`` names).  When more than one
+        source is connected and ``layout`` != ``none``, the sources are
+        combined into one side-by-side / grid comparison image.
+        """
         # Guard against empty / non-string prefix
         if (
             not filename_prefix
@@ -137,6 +186,48 @@ class SaveImageNode:
 
         empty_image = torch.zeros(1, 64, 64, 3, dtype=torch.float32)
         empty_mask = torch.zeros(1, 64, 64, dtype=torch.float32)
+
+        # --- Gather all connected sources in panel order ---
+        sources = self._collect_sources(images_a, image_path_a, kwargs)
+
+        # --- "none": save each source separately ---
+        if len(sources) > 1 and str(layout).lower() == "none":
+            return self._save_each(
+                sources, filename_prefix, save_output, overwrite,
+                mask_points, mask, prompt, extra_pnginfo,
+            )
+
+        # --- Combine multiple sources into one comparison image ---
+        images = None
+        image_path = ""
+        if len(sources) > 1:
+            label_list = self._parse_labels(labels) if label_panels else None
+            try:
+                try:
+                    from ..core.image_compare import combine_images
+                except ImportError:
+                    from core.image_compare import combine_images  # type: ignore
+                combined = combine_images(
+                    sources, layout=str(layout), labels=label_list,
+                    gap=int(panel_gap),
+                )
+            except Exception as e:
+                logger.error("SaveImage: combine failed: %s", e)
+                combined = None
+            if combined is not None:
+                images = combined
+            else:
+                first = sources[0]
+                if isinstance(first, str):
+                    image_path = first
+                else:
+                    images = first
+        elif len(sources) == 1:
+            first = sources[0]
+            if isinstance(first, str):
+                image_path = first
+            else:
+                images = first
 
         has_tensor = (
             images is not None
@@ -381,6 +472,169 @@ class SaveImageNode:
                 mask if mask is not None else empty_mask,
             ),
         }
+
+    @staticmethod
+    def _parse_labels(labels: str) -> list[str]:
+        """Split a comma-separated labels string into a clean list."""
+        if not labels or not isinstance(labels, str):
+            return []
+        return [part.strip() for part in labels.split(",")]
+
+    @staticmethod
+    def _collect_sources(images_a, image_path_a, kwargs: dict) -> list:
+        """Collect connected sources in panel order (a, b, c, ...).
+
+        Each panel prefers its ``images_<letter>`` tensor over its
+        ``image_path_<letter>`` string.  Legacy bare ``images`` /
+        ``image_path`` inputs from older workflows lead as the first panel.
+        """
+        from string import ascii_lowercase
+
+        sources: list = []
+
+        def _valid_path(v) -> bool:
+            return isinstance(v, str) and bool(v) and os.path.isfile(v)
+
+        def _valid_tensor(v) -> bool:
+            return v is not None and hasattr(v, "shape") and v.shape[0] > 0
+
+        legacy_img = kwargs.get("images")
+        legacy_path = kwargs.get("image_path")
+        if _valid_tensor(legacy_img):
+            sources.append(legacy_img)
+        elif _valid_path(legacy_path):
+            sources.append(legacy_path)
+
+        for letter in ascii_lowercase:
+            img = images_a if letter == "a" else kwargs.get(f"images_{letter}")
+            path = image_path_a if letter == "a" else kwargs.get(f"image_path_{letter}")
+            if _valid_tensor(img):
+                sources.append(img)
+            elif _valid_path(path):
+                sources.append(path)
+        return sources
+
+    def _save_each(
+        self, sources, filename_prefix, save_output, overwrite,
+        mask_points, mask, prompt, extra_pnginfo,
+    ) -> dict:
+        """layout='none': save each source separately, preview them all."""
+        empty_mask = torch.zeros(1, 64, 64, dtype=torch.float32)
+        image_ui: list = []
+        first_path = ""
+        first_tensor = None
+        total_size = 0
+        for idx, src in enumerate(sources):
+            ui, path, tensor = self._save_one(
+                src, idx, filename_prefix, save_output, overwrite,
+                prompt, extra_pnginfo,
+            )
+            if ui is None:
+                continue
+            image_ui.append(ui)
+            if path and os.path.isfile(path):
+                total_size += os.path.getsize(path)
+            if not first_path:
+                first_path = path or ""
+                first_tensor = tensor
+
+        if not image_ui:
+            return {
+                "ui": {"images": [], "file_size": ["0 B"]},
+                "result": (
+                    torch.zeros(1, 64, 64, 3, dtype=torch.float32), "",
+                    mask_points or "", mask if mask is not None else empty_mask,
+                ),
+            }
+
+        if total_size >= 1_048_576:
+            size_str = f"{total_size / 1_048_576:.1f} MB"
+        elif total_size >= 1024:
+            size_str = f"{total_size / 1024:.1f} KB"
+        else:
+            size_str = f"{total_size} B"
+        size_str = f"{size_str} ({len(image_ui)} images)"
+
+        return {
+            "ui": {"images": image_ui, "file_size": [size_str]},
+            "result": (
+                first_tensor if first_tensor is not None else torch.zeros(1, 64, 64, 3, dtype=torch.float32),
+                first_path, mask_points or "",
+                mask if mask is not None else empty_mask,
+            ),
+        }
+
+    def _save_one(
+        self, src, idx, filename_prefix, save_output, overwrite,
+        prompt, extra_pnginfo,
+    ):
+        """Save one source (tensor first frame or path). Returns (ui, path, tensor)."""
+        from PIL import Image
+
+        full_output_folder, filename, _c, subfolder, _ = (
+            folder_paths.get_save_image_path(filename_prefix, self.output_dir)
+        )
+        os.makedirs(full_output_folder, exist_ok=True)
+
+        pil = None
+        if isinstance(src, str):
+            if not os.path.isfile(src):
+                return None, None, None
+            ext = os.path.splitext(src)[1] or ".png"
+            tensor = self._load_image_tensor(src)
+        else:
+            ext = ".png"
+            frame = src[0] if src.dim() == 4 else src
+            tensor = frame.unsqueeze(0)
+            img_np = np.clip(frame.cpu().numpy() * 255.0, 0, 255).astype(np.uint8)
+            pil = Image.fromarray(img_np, mode="RGB")
+
+        if overwrite:
+            output_filename = f"{filename}_{idx:02}{ext}"
+        else:
+            pattern = os.path.join(full_output_folder, f"{filename}_*")
+            existing = glob.glob(pattern)
+            max_counter = 0
+            for path in existing:
+                base = os.path.splitext(os.path.basename(path))[0]
+                parts = base.rsplit("_", 1)
+                if len(parts) == 2 and parts[1].isdigit():
+                    max_counter = max(max_counter, int(parts[1]))
+            output_filename = f"{filename}_{max_counter + 1:05}{ext}"
+
+        if save_output:
+            output_path = os.path.join(full_output_folder, output_filename)
+            try:
+                if pil is not None:
+                    pil.save(output_path, compress_level=4)
+                elif os.path.abspath(src) != os.path.abspath(output_path):
+                    shutil.copy2(src, output_path)
+                self._embed_workflow_png(output_path, prompt, extra_pnginfo)
+            except Exception as e:
+                logger.error("SaveImage: save failed: %s", e)
+                return None, None, None
+            return (
+                {"filename": output_filename, "subfolder": subfolder, "type": self.type},
+                output_path, tensor,
+            )
+
+        # preview-only
+        temp_dir = folder_paths.get_temp_directory()
+        os.makedirs(temp_dir, exist_ok=True)
+        preview_name = f"ffmpega_img_preview_{os.getpid()}_{idx}{ext}"
+        preview_path = os.path.join(temp_dir, preview_name)
+        try:
+            if pil is not None:
+                pil.save(preview_path, compress_level=4)
+            else:
+                shutil.copy2(src, preview_path)
+        except Exception as e:
+            logger.warning("SaveImage: preview save failed: %s", e)
+            return None, None, None
+        return (
+            {"filename": preview_name, "subfolder": "", "type": "temp"},
+            preview_path, tensor,
+        )
 
     def _load_image_tensor(self, image_path: str) -> torch.Tensor:
         """Load image file as ComfyUI IMAGE tensor (B, H, W, 3)."""

@@ -9,7 +9,7 @@
  */
 
 import { api } from "comfyui/api";
-import { addDownloadOverlay, addVideoPreviewMenu } from "@ffmpega/shared/ui_helpers";
+import { addDownloadOverlay, addVideoPreviewMenu, wireDynamicInputs } from "@ffmpega/shared/ui_helpers";
 import type { ComfyNodeType, ComfyNodeData, ComfyNode, ComfyWidget } from "@ffmpega/types/comfyui";
 
 /** Extended node type for SaveVideo with internal state */
@@ -163,6 +163,19 @@ export function registerSaveVideoNode(
 
         const getVideoUrlSave = (): string | null => videoEl.src || null;
         addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, getVideoUrlSave, infoEl);
+
+        // --- Dynamic comparison inputs (video_path_a/b/..., images_a/b/...) ---
+        wireDynamicInputs(
+            node,
+            [
+                { prefix: "video_path_", type: "STRING", excludes: [] },
+                { prefix: "images_", type: "IMAGE", excludes: [] },
+            ],
+            [
+                { name: "video_path", type: "STRING" },
+                { name: "images", type: "IMAGE" },
+            ],
+        );
 
         return result;
     };
