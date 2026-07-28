@@ -53,6 +53,65 @@ function createUploadButton(acceptTypes) {
   };
   return { fileInput, uploadBtn, updateBtnStyle };
 }
+function attachFileDropZone(el, opts) {
+  let depth = 0;
+  const hasFiles = (e) => {
+    var _a, _b, _c;
+    return !!((_c = (_b = (_a = e.dataTransfer) == null ? void 0 : _a.types) == null ? void 0 : _b.includes) == null ? void 0 : _c.call(_b, "Files"));
+  };
+  const setActive = (active) => {
+    var _a;
+    (_a = opts.onDragStateChange) == null ? void 0 : _a.call(opts, active);
+  };
+  const claim = (e) => {
+    var _a;
+    e.preventDefault();
+    e.stopPropagation();
+    const refusing = ((_a = opts.disabled) == null ? void 0 : _a.call(opts)) ?? false;
+    if (e.dataTransfer) e.dataTransfer.dropEffect = refusing ? "none" : "copy";
+    return !refusing;
+  };
+  const onDragEnter = (e) => {
+    if (!hasFiles(e) || !claim(e)) return;
+    depth++;
+    if (depth === 1) setActive(true);
+  };
+  const onDragOver = (e) => {
+    if (!hasFiles(e) || !claim(e)) return;
+    if (depth === 0) depth = 1;
+    setActive(true);
+  };
+  const onDragLeave = (e) => {
+    if (!hasFiles(e)) return;
+    depth = Math.max(0, depth - 1);
+    if (depth === 0) setActive(false);
+  };
+  const onDrop = (e) => {
+    var _a, _b, _c;
+    if (!hasFiles(e)) return;
+    const accepting = claim(e);
+    depth = 0;
+    setActive(false);
+    if (!accepting) return;
+    const file = (_b = (_a = e.dataTransfer) == null ? void 0 : _a.files) == null ? void 0 : _b[0];
+    if (!file) return;
+    if (opts.accept && !opts.accept(file)) {
+      (_c = opts.onReject) == null ? void 0 : _c.call(opts, file);
+      return;
+    }
+    void opts.onDrop(file);
+  };
+  el.addEventListener("dragenter", onDragEnter);
+  el.addEventListener("dragover", onDragOver);
+  el.addEventListener("dragleave", onDragLeave);
+  el.addEventListener("drop", onDrop);
+  return () => {
+    el.removeEventListener("dragenter", onDragEnter);
+    el.removeEventListener("dragover", onDragOver);
+    el.removeEventListener("dragleave", onDragLeave);
+    el.removeEventListener("drop", onDrop);
+  };
+}
 const SLOT_LABELS = "abcdefghijklmnopqrstuvwxyz";
 const RANDOM_PROMPTS = [
   "Make it cinematic with a fade in and vignette",
@@ -86,6 +145,32 @@ const RANDOM_PROMPTS = [
   "Add a lower third with name 'John Smith' and title 'Director'",
   "Apply golden hour warm glow with a slow Ken Burns zoom"
 ];
+function toggleWidget(widget, show) {
+  if (!widget) return;
+  if (!widget._origType) {
+    widget._origType = widget.type;
+    widget._origComputeSize = widget.computeSize;
+  }
+  if (show) {
+    widget.type = widget._origType;
+    widget.computeSize = widget._origComputeSize;
+    widget.hidden = false;
+    if (widget.element) widget.element.hidden = false;
+  } else {
+    widget.type = "hidden";
+    widget.computeSize = () => [0, -4];
+    widget.hidden = true;
+    if (widget.element) widget.element.hidden = true;
+  }
+}
+function fitHeight(node) {
+  var _a;
+  node.setSize([
+    node.size[0],
+    node.computeSize([node.size[0], node.size[1]])[1]
+  ]);
+  (_a = node == null ? void 0 : node.graph) == null ? void 0 : _a.setDirtyCanvas(true);
+}
 function updateDynamicSlots(node, prefix, slotType, excludePrefix = []) {
   const excludes = Array.isArray(excludePrefix) ? excludePrefix : [excludePrefix];
   const matchingIndices = [];
@@ -120,6 +205,57 @@ function updateDynamicSlots(node, prefix, slotType, excludePrefix = []) {
     node.removeInput(slotIdx);
     matchingIndices.pop();
   }
+}
+function wireDynamicInputs(node, prefixes, legacyNames = []) {
+  const origOnConnectionsChange = node.onConnectionsChange;
+  node.onConnectionsChange = function(type, slotIndex, isConnected, link, ioSlot) {
+    origOnConnectionsChange == null ? void 0 : origOnConnectionsChange.apply(this, arguments);
+    if (type === LiteGraph.INPUT) {
+      for (const p of prefixes) {
+        updateDynamicSlots(this, p.prefix, p.type, p.excludes ?? []);
+      }
+      fitHeight(this);
+    }
+  };
+  const origOnConfigure = node.onConfigure;
+  node.onConfigure = function(info) {
+    origOnConfigure == null ? void 0 : origOnConfigure.apply(this, arguments);
+    if (info == null ? void 0 : info.inputs) {
+      const existing = new Set(this.inputs.map((i) => i.name));
+      for (const saved of info.inputs) {
+        if (existing.has(saved.name)) continue;
+        const isLegacy = legacyNames.some((l) => l.name === saved.name);
+        const isDynamic = prefixes.some((p) => saved.name.startsWith(p.prefix) && !(p.excludes ?? []).some((e) => saved.name.startsWith(e)));
+        if (isLegacy || isDynamic) {
+          this.addInput(saved.name, saved.type);
+          existing.add(saved.name);
+        }
+      }
+      for (const p of prefixes) {
+        let maxLinkedIdx = -1;
+        for (const saved of info.inputs) {
+          if (!saved.name.startsWith(p.prefix)) continue;
+          if ((p.excludes ?? []).some((e) => saved.name.startsWith(e))) continue;
+          if (saved.link != null) {
+            const letter = saved.name.slice(p.prefix.length);
+            const idx = SLOT_LABELS.indexOf(letter);
+            if (idx > maxLinkedIdx) maxLinkedIdx = idx;
+          }
+        }
+        if (maxLinkedIdx >= 0) {
+          const nextLetter = SLOT_LABELS[maxLinkedIdx + 1];
+          if (nextLetter) {
+            const nextName = `${p.prefix}${nextLetter}`;
+            if (!existing.has(nextName)) {
+              this.addInput(nextName, p.type);
+              existing.add(nextName);
+            }
+          }
+        }
+      }
+    }
+    fitHeight(this);
+  };
 }
 function handlePaste(node, replace) {
   if (navigator.clipboard && navigator.clipboard.readText) {
@@ -442,8 +578,12 @@ export {
   addDownloadOverlay as a,
   addVideoPreviewMenu as b,
   createUploadButton as c,
+  attachFileDropZone as d,
+  fitHeight as e,
   flashNode as f,
   handlePaste as h,
   setPrompt as s,
-  updateDynamicSlots as u
+  toggleWidget as t,
+  updateDynamicSlots as u,
+  wireDynamicInputs as w
 };
