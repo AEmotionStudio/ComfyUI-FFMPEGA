@@ -310,7 +310,7 @@ class TestAIUpscaleNoLLMMode:
         spec = optional["blockswap_blocks"]
         assert spec[0] == "INT"
         assert spec[1]["default"] == 0
-        assert spec[1]["min"] == 0
+        assert spec[1]["min"] == -1  # -1 = auto budget (DiffSynth num_persistent_param_in_dit)
         assert spec[1]["max"] == 32
 
     def test_process_ai_upscale_only_exists(self):

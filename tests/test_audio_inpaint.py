@@ -207,4 +207,4 @@ class TestAudioInpaintNoLLMMode:
         from nodes.agent_node import FFMPEGAgentNode
         inputs = FFMPEGAgentNode.INPUT_TYPES()
         no_llm_choices = inputs["required"]["no_llm_mode"][0]
-        assert "audio_inpaint" in no_llm_choices
+        assert "audio_inpaint (AudioX)" in no_llm_choices

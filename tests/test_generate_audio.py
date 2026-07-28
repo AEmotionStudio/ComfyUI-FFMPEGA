@@ -263,7 +263,7 @@ class TestMMAudioNoLLMMode:
         from nodes.agent_node import FFMPEGAgentNode
         inputs = FFMPEGAgentNode.INPUT_TYPES()
         no_llm_choices = inputs["required"]["no_llm_mode"][0]
-        assert "generate_audio" in no_llm_choices
+        assert "generate_audio (MMAudio)" in no_llm_choices
 
     def test_audio_output_mode_input_exists(self):
         """audio_output_mode input should be present with auto/replace/mix/save_only choices."""
