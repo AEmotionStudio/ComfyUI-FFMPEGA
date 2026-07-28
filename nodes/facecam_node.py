@@ -104,18 +104,21 @@ class FaceCamNode:
                 "camera_preset": (preset_list, {
                     "default": "orbit_left",
                     "tooltip": (
-                        "Camera motion preset. Each animates from start→end over the video: "
-                        "'orbit_left' = camera sweeps left→right, subject appears to turn left (az -45→+45°). "
-                        "'orbit_right' = opposite direction (+45→-45°). "
+                        "Camera motion preset. Every preset starts at the input pose (frontal) "
+                        "and moves outward, matching what FaceCam was trained on: "
+                        "'orbit_left' = camera swings left (az 0→-45°). "
+                        "'orbit_right' = swings right (az 0→+45°). "
                         "'zoom_in' = pushes in tight (FOV 50→25°). "
                         "'zoom_out' = pulls back wide (FOV 25→50°). "
-                        "'look_up' = camera high→low, subject looks up (elev 25→-25°). "
-                        "'look_down' = camera low→high, subject looks down (-25→25°). "
-                        "'dramatic_pan' = orbit + tilt + zoom tightening. "
-                        "'subtle_drift' = gentle orbit ±15° + tilt ±8° (most natural). "
-                        "'dolly_zoom' = orbit ±25° while zooming in (Hitchcock effect). "
-                        "'random' = randomized camera path. "
-                        "'custom' = use the manual azimuth/elevation/FOV sliders below."
+                        "'look_up' = subject looks up (elev 0→-30°). "
+                        "'look_down' = subject looks down (elev 0→+30°). "
+                        "'dramatic_pan' = orbit 0→45° + tilt + zoom tightening. "
+                        "'subtle_drift' = gentle orbit 0→15° + tilt 0→-8° (most natural). "
+                        "'dolly_zoom' = orbit 0→25° while zooming in (Hitchcock effect). "
+                        "'random' = randomized direction, up to 45° from frontal. "
+                        "'custom' = use the manual azimuth/elevation/FOV sliders below. "
+                        "Note: sweeps beyond ~45° push the face into profile, where the "
+                        "landmark tracker loses the mesh and camera control weakens."
                     ),
                 }),
                 # --- Dimensions ---
@@ -123,10 +126,15 @@ class FaceCamNode:
                     "default": 81, "min": 5, "max": 321, "step": 4,
                 }),
                 "width": ("INT", {
-                    "default": 832, "min": 128, "max": 1920, "step": 8,
+                    "default": 480, "min": 128, "max": 1920, "step": 8,
+                    "tooltip": "FaceCam is trained on portrait video — upstream "
+                               "defaults to 480×704 (w×h). Landscape is "
+                               "off-distribution and weakens camera control.",
                 }),
                 "height": ("INT", {
-                    "default": 480, "min": 128, "max": 1920, "step": 8,
+                    "default": 704, "min": 128, "max": 1920, "step": 8,
+                    "tooltip": "FaceCam is trained on portrait video — upstream "
+                               "defaults to 480×704 (w×h).",
                 }),
             },
             "optional": {
@@ -172,6 +180,34 @@ class FaceCamNode:
                     "default": 40, "min": 10, "max": 60, "step": 1,
                     "tooltip": "Field of view end.",
                 }),
+                "mesh_source": (
+                    ["auto", "analytic", "detected"],
+                    {
+                        "default": "auto",
+                        "tooltip": "How camera conditioning is built. "
+                                   "'auto' (recommended) poses MediaPipe's canonical face "
+                                   "model with the camera matrices directly — total coverage, "
+                                   "perfectly smooth motion, and left/right orbits are exact "
+                                   "mirrors. Falls back to detection if calibration fails. "
+                                   "'analytic' forces projection and errors if it can't calibrate. "
+                                   "'detected' uses the old path: render a 3D proxy head and "
+                                   "run a face detector over it, which loses the mesh past ~45° "
+                                   "and has to interpolate the gaps.",
+                    },
+                ),
+                "blockswap_blocks": ("INT", {
+                    "default": 0,
+                    "min": 0,
+                    "max": 40,
+                    "step": 1,
+                    "tooltip": "BlockSwap: number of Wan2.2 DiT blocks (of 40) to keep off-GPU "
+                               "during sampling, cast back per-layer on forward. "
+                               "0 = disabled (keep everything on GPU, recommended for ≥24 GB VRAM). "
+                               "8-16 = for 12-16 GB cards. 20+ = for 8-12 GB cards. "
+                               "FaceCam doubles the temporal dimension, so it needs noticeably "
+                               "more VRAM than a plain Wan2.2 run at the same resolution. "
+                               "Higher values trade speed for headroom.",
+                }),
                 "allow_model_downloads": ("BOOLEAN", {
                     "default": True,
                     "label_on": "Downloads On",
@@ -212,6 +248,8 @@ class FaceCamNode:
         seed: int = 0,
         sampler_name: str = "euler",
         scheduler: str = "simple",
+        mesh_source: str = "auto",
+        blockswap_blocks: int = 0,
         allow_model_downloads: bool = True,
     ):
         import torch
@@ -287,6 +325,8 @@ class FaceCamNode:
             prompt=prompt,
             negative_prompt=negative_prompt,
             high_model_ratio=high_model_ratio,
+            blockswap_blocks=blockswap_blocks,
+            mesh_source=mesh_source,
         )
 
         # Load output as images for ComfyUI
@@ -318,9 +358,18 @@ class FaceCamNode:
         """
         try:
             import folder_paths  # type: ignore[import-not-found]
-            model_dirs = folder_paths.get_folder_paths("diffusion_models")
+            model_dirs = list(folder_paths.get_folder_paths("diffusion_models"))
         except ImportError:
             model_dirs = [str(Path.home() / "ComfyUI" / "models" / "diffusion_models")]
+
+        # Also accept checkpoints sitting next to gaussians.ply in models/facecam/,
+        # which is where users naturally put them. Searched last so downloads still
+        # land in diffusion_models (model_dirs[0]).
+        try:
+            from ..core.facecam_synthesizer import _get_facecam_dir  # type: ignore
+        except ImportError:
+            from core.facecam_synthesizer import _get_facecam_dir  # type: ignore
+        model_dirs.append(str(_get_facecam_dir()))
 
         # Resolve existing files
         high_name = _FACECAM_FILES["high"]
