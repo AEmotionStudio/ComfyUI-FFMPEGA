@@ -239,6 +239,15 @@ class LoadVideoPathNode:
                         "and forwards this mask directly."
                     ),
                 }),
+                "enable_mask": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": (
+                        "Enable SAM3 masking. When off, the mask options "
+                        "are hidden and no mask is generated from mask "
+                        "points. An upstream MASK connection still passes "
+                        "through."
+                    ),
+                }),
                 "mask_mode": (["none", "single_frame", "all_frames"], {
                     "default": "none",
                     "tooltip": (
@@ -299,8 +308,8 @@ class LoadVideoPathNode:
             },
         }
 
-    RETURN_TYPES = ("IMAGE", "AUDIO", "STRING", "STRING", "STRING", "STRING", "MASK", "INT")
-    RETURN_NAMES = ("images", "audio", "video_path", "mask_overlay_path", "mask_points", "crop_data", "mask", "frame_count")
+    RETURN_TYPES = ("IMAGE", "AUDIO", "STRING", "STRING", "STRING", "STRING", "MASK", "INT", "FLOAT")
+    RETURN_NAMES = ("images", "audio", "video_path", "mask_overlay_path", "mask_points", "crop_data", "mask", "frame_count", "fps")
     OUTPUT_TOOLTIPS = (
         "Upstream IMAGE pass-through (or empty tensor if not connected).",
         "Upstream AUDIO pass-through (or silence if not connected).",
@@ -318,6 +327,8 @@ class LoadVideoPathNode:
         "Empty mask when no points are set.",
         "Effective frame count after applying trim parameters "
         "(skip, cap, select every Nth).",
+        "Effective frame rate (fps) of the video, honoring the force_rate "
+        "override. Connect to nodes accepting a FLOAT fps input (e.g. Frame Picker).",
     )
     FUNCTION = "load_path"
     CATEGORY = "FFMPEGA"
@@ -372,6 +383,7 @@ class LoadVideoPathNode:
         video_path=None,
         mask_points=None,
         mask=None,
+        enable_mask: bool = False,
         mask_mode: str = "none",
         mask_output_type: str = "none",
         show_mask_preview: bool = False,
@@ -390,6 +402,11 @@ class LoadVideoPathNode:
         # Defensive coercion: ComfyUI may send '' when fields are cleared
         custom_width = int(custom_width) if custom_width not in (None, "") else 0
         custom_height = int(custom_height) if custom_height not in (None, "") else 0
+        # The enable_mask toggle gates every SAM3 path, all of which already
+        # branch on mask_mode != "none".  An upstream MASK connection is a
+        # separate passthrough and is intentionally left alone.
+        if not enable_mask:
+            mask_mode = "none"
         # --- Determine the actual video path ---
         upstream = False
         if video_path and isinstance(video_path, str) and video_path.strip():
@@ -920,7 +937,7 @@ class LoadVideoPathNode:
                        resolved_path, mask_overlay_path,
                        mask_points_data or "",
                        crop_data or "", mask_out,
-                       available_frames),
+                       available_frames, effective_fps),
             "ui": {
                 "video": ui_video,
                 "video_info": [video_info],

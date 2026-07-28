@@ -159,6 +159,8 @@ export interface ComfyWidget {
     name: string;
     type: string;
     value: unknown;
+    /** Overrides `name` when drawn; rendered in the theme's dimmed label color. */
+    label?: string;
     options?: Record<string, unknown>;
     min?: number;
     max?: number;

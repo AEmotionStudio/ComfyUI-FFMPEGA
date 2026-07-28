@@ -93,6 +93,113 @@ export function createUploadButton(acceptTypes: string): {
     return { fileInput, uploadBtn, updateBtnStyle };
 }
 
+// --- File drop zones ---
+
+/** Callbacks for a DOM element that accepts dropped files. */
+export interface FileDropZoneOptions {
+    /** Return false to reject the file (routes to onReject instead of onDrop). */
+    accept?: (file: File) => boolean;
+    /** Called with the first accepted file. Any return value is ignored. */
+    onDrop: (file: File) => unknown;
+    /** Called with the first file when `accept` rejects it. */
+    onReject?: (file: File) => void;
+    /** Called as a file drag enters (true) or leaves (false) the element. */
+    onDragStateChange?: (active: boolean) => void;
+    /**
+     * Return true to refuse new files — e.g. while an upload is in flight.
+     * Events are still consumed so nothing else claims the drop.
+     */
+    disabled?: () => boolean;
+}
+
+/**
+ * Make a DOM element accept dropped files.
+ *
+ * ComfyUI routes graph file drops through a `document`-level listener that
+ * dispatches to `app.dragOverNode`, which is only ever set by a `dragover`
+ * listener on the *canvas* element. DOM widgets are layered above the canvas,
+ * so the canvas never sees the drag and that region of the node goes dead —
+ * this restores it. Our `preventDefault()` on drop is what suppresses ComfyUI's
+ * fallback handling, which bails on `e.defaultPrevented`.
+ *
+ * @returns a detach function that removes every listener it added.
+ */
+export function attachFileDropZone(
+    el: HTMLElement,
+    opts: FileDropZoneOptions,
+): () => void {
+    // Entering a child fires dragleave on the parent, so a plain enter/leave
+    // pair flickers across the preview's video, info bar and overlay button.
+    let depth = 0;
+
+    const hasFiles = (e: DragEvent): boolean =>
+        !!e.dataTransfer?.types?.includes?.("Files");
+
+    const setActive = (active: boolean): void => {
+        opts.onDragStateChange?.(active);
+    };
+
+    /**
+     * Claim the event so neither the browser nor ComfyUI's document-level
+     * handler acts on it. Returns false when the zone is refusing files.
+     */
+    const claim = (e: DragEvent): boolean => {
+        // Required on dragenter/dragover — without it the element is not a
+        // valid drop target and no drop event ever fires.
+        e.preventDefault();
+        e.stopPropagation();
+        const refusing = opts.disabled?.() ?? false;
+        if (e.dataTransfer) e.dataTransfer.dropEffect = refusing ? "none" : "copy";
+        return !refusing;
+    };
+
+    const onDragEnter = (e: DragEvent): void => {
+        if (!hasFiles(e) || !claim(e)) return;
+        depth++;
+        if (depth === 1) setActive(true);
+    };
+
+    const onDragOver = (e: DragEvent): void => {
+        if (!hasFiles(e) || !claim(e)) return;
+        if (depth === 0) depth = 1;
+        setActive(true);
+    };
+
+    const onDragLeave = (e: DragEvent): void => {
+        if (!hasFiles(e)) return;
+        depth = Math.max(0, depth - 1);
+        if (depth === 0) setActive(false);
+    };
+
+    const onDrop = (e: DragEvent): void => {
+        if (!hasFiles(e)) return;
+        const accepting = claim(e);
+        depth = 0;
+        setActive(false);
+        if (!accepting) return;
+
+        const file = e.dataTransfer?.files?.[0];
+        if (!file) return;
+        if (opts.accept && !opts.accept(file)) {
+            opts.onReject?.(file);
+            return;
+        }
+        void opts.onDrop(file);
+    };
+
+    el.addEventListener("dragenter", onDragEnter);
+    el.addEventListener("dragover", onDragOver);
+    el.addEventListener("dragleave", onDragLeave);
+    el.addEventListener("drop", onDrop);
+
+    return (): void => {
+        el.removeEventListener("dragenter", onDragEnter);
+        el.removeEventListener("dragover", onDragOver);
+        el.removeEventListener("dragleave", onDragLeave);
+        el.removeEventListener("drop", onDrop);
+    };
+}
+
 // --- Constants ---
 
 /** Alphabet for dynamic slot naming (image_a, image_b, etc.) */
@@ -218,6 +325,96 @@ export function updateDynamicSlots(
         node.removeInput(slotIdx);
         matchingIndices.pop();
     }
+}
+
+/** Config for one auto-growing input family. */
+export interface DynamicPrefixConfig {
+    prefix: string;
+    type: string;
+    excludes?: string[];
+}
+
+/** Serialized info shape used by onConfigure for slot restoration. */
+interface SerializedInfo {
+    inputs?: Array<{ name: string; type: string; link?: number | null }>;
+    [key: string]: unknown;
+}
+
+/**
+ * Wire auto-growing dynamic input slots (a → b → c, ...) onto a node.
+ *
+ * Wraps `onConnectionsChange` (to grow/shrink slots on connect) and
+ * `onConfigure` (to restore saved dynamic + legacy slots on workflow load).
+ * Mirrors the FFMPEGA Agent's behavior so Save Video / Save Image grow the
+ * same way. `legacyNames` recreates renamed bare inputs (e.g. `video_path`,
+ * `images`) so older workflows keep their links.
+ */
+export function wireDynamicInputs(
+    node: ComfyNode,
+    prefixes: DynamicPrefixConfig[],
+    legacyNames: Array<{ name: string; type: string }> = [],
+): void {
+    const origOnConnectionsChange = node.onConnectionsChange;
+    node.onConnectionsChange = function (
+        this: ComfyNode,
+        type: number, slotIndex: number,
+        isConnected: boolean, link: unknown, ioSlot: unknown,
+    ): void {
+        origOnConnectionsChange?.apply(this, arguments as unknown as [number, number, boolean, unknown, unknown]);
+        if (type === LiteGraph.INPUT) {
+            for (const p of prefixes) {
+                updateDynamicSlots(this, p.prefix, p.type, p.excludes ?? []);
+            }
+            fitHeight(this);
+        }
+    };
+
+    const origOnConfigure = node.onConfigure;
+    node.onConfigure = function (this: ComfyNode, info: SerializedInfo): void {
+        origOnConfigure?.apply(this, arguments as unknown as [SerializedInfo]);
+
+        if (info?.inputs) {
+            const existing = new Set(this.inputs.map(i => i.name));
+
+            // Step 1: re-create saved dynamic + legacy slots
+            for (const saved of info.inputs) {
+                if (existing.has(saved.name)) continue;
+                const isLegacy = legacyNames.some(l => l.name === saved.name);
+                const isDynamic = prefixes.some(p =>
+                    saved.name.startsWith(p.prefix) &&
+                    !(p.excludes ?? []).some(e => saved.name.startsWith(e)));
+                if (isLegacy || isDynamic) {
+                    this.addInput(saved.name, saved.type);
+                    existing.add(saved.name);
+                }
+            }
+
+            // Step 2: recreate the one trailing spare slot per family
+            for (const p of prefixes) {
+                let maxLinkedIdx = -1;
+                for (const saved of info.inputs) {
+                    if (!saved.name.startsWith(p.prefix)) continue;
+                    if ((p.excludes ?? []).some(e => saved.name.startsWith(e))) continue;
+                    if (saved.link != null) {
+                        const letter = saved.name.slice(p.prefix.length);
+                        const idx = SLOT_LABELS.indexOf(letter);
+                        if (idx > maxLinkedIdx) maxLinkedIdx = idx;
+                    }
+                }
+                if (maxLinkedIdx >= 0) {
+                    const nextLetter = SLOT_LABELS[maxLinkedIdx + 1];
+                    if (nextLetter) {
+                        const nextName = `${p.prefix}${nextLetter}`;
+                        if (!existing.has(nextName)) {
+                            this.addInput(nextName, p.type);
+                            existing.add(nextName);
+                        }
+                    }
+                }
+            }
+        }
+        fitHeight(this);
+    };
 }
 
 // --- Prompt helpers ---

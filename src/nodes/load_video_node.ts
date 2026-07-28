@@ -9,7 +9,10 @@
  */
 
 import { api } from "comfyui/api";
-import { addDownloadOverlay, addVideoPreviewMenu, createUploadButton, flashNode } from "@ffmpega/shared/ui_helpers";
+import {
+    addDownloadOverlay, addVideoPreviewMenu, attachFileDropZone,
+    createUploadButton, fitHeight, flashNode, toggleWidget,
+} from "@ffmpega/shared/ui_helpers";
 import type { UploadButtonElement } from "@ffmpega/shared/ui_helpers";
 import type { ComfyNodeType, ComfyNodeData, ComfyNode, ComfyWidget } from "@ffmpega/types/comfyui";
 
@@ -78,6 +81,25 @@ const VIDEO_EXTENSIONS = [
 
 const TRIM_WIDGETS = ["force_rate", "skip_first_frames", "frame_load_cap", "select_every_nth"];
 
+/** Mask sub-widgets gated behind the enable_mask toggle. */
+const MASK_WIDGETS = [
+    "mask_mode", "mask_output_type", "sam_version", "show_mask_preview",
+] as const;
+
+/**
+ * Widget order as of the enable_mask release, and the order before it.
+ * Used to un-shift widget values loaded from pre-enable_mask workflows —
+ * ComfyUI restores widgets_values positionally, so inserting enable_mask
+ * mid-list slides every later value onto the wrong widget.
+ */
+const LEGACY_SHIFTED_WIDGETS = [
+    "enable_mask", "mask_mode", "mask_output_type", "sam_version",
+    "show_mask_preview", "custom_width", "custom_height",
+];
+
+/** Fixed row height (px) for the upload button DOM widget. */
+const UPLOAD_BTN_HEIGHT = 26;
+
 const PASSTHROUGH_EVENTS = [
     "contextmenu", "pointerdown", "mousewheel",
     "pointermove", "pointerup",
@@ -110,10 +132,64 @@ export function registerLoadVideoNode(
         this.color = "#5a4a2a";
         this.bgcolor = "#4a3a1a";
 
+        // --- enable_mask toggle → mask sub-widget visibility ---
+        const updateMaskVisibility = (): void => {
+            const enableMask = node.widgets?.find((w: ComfyWidget) => w.name === "enable_mask");
+            const show = Boolean(enableMask?.value);
+            for (const name of MASK_WIDGETS) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, show);
+            }
+            fitHeight(node);
+        };
+
+        const enableMaskWidget = this.widgets?.find(
+            (w: ComfyWidget) => w.name === "enable_mask",
+        );
+        if (enableMaskWidget) {
+            updateMaskVisibility();
+            const origMaskCb = enableMaskWidget.callback;
+            enableMaskWidget.callback = function (...args: unknown[]) {
+                origMaskCb?.apply(this, args);
+                updateMaskVisibility();
+            };
+        }
+
+        /**
+         * Un-shift widget values from workflows saved before `enable_mask`
+         * existed. ComfyUI restores widgets_values positionally, so a widget
+         * inserted mid-list slides every later value one slot earlier —
+         * enable_mask lands on the old mask_mode string, mask_mode on the old
+         * mask_output_type, and so on. A string in the BOOLEAN enable_mask is
+         * the tell — workflows predating mask_mode entirely fall short of this
+         * index and keep their defaults, so they correctly skip the repair.
+         */
+        const repairLegacyWidgetShift = (): void => {
+            const widgets = node.widgets;
+            if (!widgets) return;
+
+            const shifted = LEGACY_SHIFTED_WIDGETS.map(
+                name => widgets.find((w: ComfyWidget) => w.name === name),
+            );
+            const enableMask = shifted[0];
+            if (!enableMask || typeof enableMask.value !== "string") return;
+
+            // Slide each loaded value one widget later, then derive the toggle
+            // from the mask_mode value that landed on enable_mask.
+            const loaded = shifted.map(w => w?.value);
+            for (let i = shifted.length - 1; i > 0; i--) {
+                const w = shifted[i];
+                if (w) w.value = loaded[i - 1];
+            }
+            enableMask.value = String(loaded[0]) !== "none";
+        };
+
         // Restore on workflow load — repair invalid combo values from old workflows
         const origConfigure = this.onConfigure;
         this.onConfigure = function (data: unknown): void {
             origConfigure?.apply(this, arguments as unknown as [unknown]);
+
+            repairLegacyWidgetShift();
 
             // Old workflows may have empty strings at indices where newer
             // widgets now live. Repair invalid values so ComfyUI validation
@@ -125,7 +201,11 @@ export function registerLoadVideoNode(
                 const intWidgets = ["custom_width", "custom_height"];
 
                 for (const w of this.widgets) {
-                    if (w.type === "combo" && staticCombos.includes(w.name) && w.options?.values) {
+                    // _origType, not type — toggleWidget rewrites `type` to
+                    // "hidden" while collapsed, but the value is still sent
+                    // to the backend and still has to validate.
+                    const wType = w._origType ?? w.type;
+                    if (wType === "combo" && staticCombos.includes(w.name) && w.options?.values) {
                         const validValues = w.options.values as string[];
                         if (validValues.length > 0 && !validValues.includes(String(w.value))) {
                             w.value = validValues[0];
@@ -139,15 +219,25 @@ export function registerLoadVideoNode(
                     }
                 }
             }
+
+            // Re-apply after saved widget values are restored
+            updateMaskVisibility();
         };
 
         // Upload button (created early to appear above preview)
         const { fileInput, uploadBtn, updateBtnStyle: updateBtn } = createUploadButton(VIDEO_ACCEPT);
         document.body.append(fileInput);
 
-        this.addDOMWidget("upload_button", "btn", uploadBtn, {
+        // Pin to a fixed row. ComfyUI's arrangeWidgets gives widgets with a
+        // computeSize a fixed height and splits the node's leftover height
+        // among the rest — without this the button is the only flexible
+        // widget left and stretches to fill the node.
+        uploadBtn.style.height = `${UPLOAD_BTN_HEIGHT}px`;
+        uploadBtn.style.boxSizing = "border-box";
+        const uploadWidget = this.addDOMWidget("upload_button", "btn", uploadBtn, {
             serialize: false,
         });
+        uploadWidget.computeSize = (): [number, number] => [0, UPLOAD_BTN_HEIGHT];
         const previewContainer = document.createElement("div") as PreviewContainerElement;
         previewContainer.className = "ffmpega_preview";
         previewContainer.style.cssText =
@@ -178,10 +268,32 @@ export function registerLoadVideoNode(
         infoEl.setAttribute("role", "status");
         infoEl.setAttribute("aria-live", "polite");
 
+        // --- Trim widget annotations ---
+        // Dim "N left" suffixes on the trim spinners. Written to `label`
+        // (drawn as displayName in the theme's secondary colour) rather than
+        // a custom draw override — a widget-level `draw` replaces ComfyUI's
+        // built-in rendering wholesale instead of layering on top of it.
+        const setTrimLabel = (name: string, suffix: string | null): void => {
+            const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+            if (!w) return;
+            if (suffix) {
+                w.label = `${w.name} · ${suffix}`;
+            } else {
+                delete w.label;
+            }
+        };
+
+        const clearTrimLabels = (): void => {
+            setTrimLabel("skip_first_frames", null);
+            setTrimLabel("frame_load_cap", null);
+            node.setDirtyCanvas(true, true);
+        };
+
         // --- Dynamic info bar calculation ---
         const updateDynamicInfo = (): void => {
             if (!_srcMeta) {
                 infoEl.textContent = "No video selected";
+                clearTrimLabels();
                 return;
             }
 
@@ -196,17 +308,26 @@ export function registerLoadVideoNode(
 
             const effFps = forceRate > 0 ? forceRate : srcFps;
 
-            let availFrames = forceRate > 0
+            // Frame budget, stage by stage: source → after skip → after nth
+            // → after cap. The intermediates feed the trim widget labels.
+            const baseFrames = forceRate > 0
                 ? Math.ceil(srcDuration * forceRate)
                 : srcFrames;
 
-            availFrames = Math.max(0, availFrames - skipFirst);
-            if (everyNth > 1) {
-                availFrames = Math.max(0, Math.floor(availFrames / everyNth));
-            }
-            if (frameCap > 0) {
-                availFrames = Math.min(availFrames, frameCap);
-            }
+            const afterSkip = Math.max(0, baseFrames - skipFirst);
+            const afterNth = everyNth > 1
+                ? Math.max(0, Math.floor(afterSkip / everyNth))
+                : afterSkip;
+            const availFrames = frameCap > 0
+                ? Math.min(afterNth, frameCap)
+                : afterNth;
+
+            setTrimLabel("skip_first_frames", `${afterSkip} left`);
+            setTrimLabel(
+                "frame_load_cap",
+                frameCap > 0 ? `${afterNth - availFrames} left` : `all ${afterNth}`,
+            );
+            node.setDirtyCanvas(true, true);
 
             const effDuration = effFps > 0 && availFrames > 0
                 ? availFrames / effFps
@@ -389,6 +510,22 @@ export function registerLoadVideoNode(
             "pointer-events:none;z-index:2;display:none;";
         videoWrapper.appendChild(maskOverlayCanvas);
 
+        // ── File drop overlay ──
+        // Shown while a file drag is over the node. Sits above the mask
+        // overlay (z 2) and the download button (z 10); pointer-events:none
+        // keeps previewContainer itself as the drop target.
+        const dropOverlay = document.createElement("div");
+        dropOverlay.style.cssText =
+            "position:absolute;inset:0;display:none;z-index:20;" +
+            "flex-direction:column;align-items:center;justify-content:center;gap:6px;" +
+            "background:rgba(74,106,138,0.18);border:2px dashed #4a6a8a;" +
+            "border-radius:6px;color:#cfe3f5;font-family:monospace;font-size:12px;" +
+            "pointer-events:none;";
+        dropOverlay.innerHTML =
+            `<span style="font-size:22px" aria-hidden="true">🎞</span>` +
+            `<span>Drop video to load</span>`;
+        previewContainer.appendChild(dropOverlay);
+
         let _maskOverlayVisible = false;
         let _maskOverlayDataHash = ""; // track changes to avoid redundant redraws
 
@@ -442,10 +579,15 @@ export function registerLoadVideoNode(
 
         // Refresh the mask overlay from current widget data
         const refreshMaskOverlay = (): void => {
+            const enableWidget = node.widgets?.find(
+                (w: ComfyWidget) => w.name === "enable_mask",
+            );
             const showWidget = node.widgets?.find(
                 (w: ComfyWidget) => w.name === "show_mask_preview",
             );
-            const showMask = showWidget?.value !== false;
+            // enable_mask off means no mask is generated, so don't leave a
+            // stale overlay on the preview from a previous session.
+            const showMask = Boolean(enableWidget?.value) && showWidget?.value !== false;
 
             const mpWidget = node.widgets?.find(
                 (w: ComfyWidget) => w.name === "mask_points_data",
@@ -537,13 +679,16 @@ export function registerLoadVideoNode(
                 clearInterval(maskPollInterval);
                 return;
             }
+            const enableW = node.widgets?.find(
+                (w: ComfyWidget) => w.name === "enable_mask",
+            );
             const showW = node.widgets?.find(
                 (w: ComfyWidget) => w.name === "show_mask_preview",
             );
             const mpW = node.widgets?.find(
                 (w: ComfyWidget) => w.name === "mask_points_data",
             );
-            const pollHash = `${showW?.value}|${mpW?.value ? String(mpW.value).length : 0}`;
+            const pollHash = `${enableW?.value}|${showW?.value}|${mpW?.value ? String(mpW.value).length : 0}`;
             if (pollHash !== _maskPollHash) {
                 _maskPollHash = pollHash;
                 refreshMaskOverlay();
@@ -582,6 +727,7 @@ export function registerLoadVideoNode(
                 previewContainer.style.display = "none";
                 infoEl.textContent = "No video selected";
                 _srcMeta = null;
+                clearTrimLabels();
                 return;
             }
             previewContainer.style.display = "";
@@ -615,6 +761,9 @@ export function registerLoadVideoNode(
         this.onRemoved = function (): void {
             clearInterval(lvPollInterval);
             clearInterval(maskPollInterval);
+            if (_dragTimer) clearTimeout(_dragTimer);
+            detachPreviewDrop();
+            detachButtonDrop();
             fileInput?.remove();
             origOnRemoved?.apply(this, arguments as unknown as []);
         };
@@ -648,12 +797,20 @@ export function registerLoadVideoNode(
             body.append("image", file);
 
             try {
-                const resp = await fetch("/upload/image", {
+                // api.fetchApi, not a bare fetch — it resolves the route
+                // through api_base + "/api" and attaches the Comfy-User and
+                // auth headers. A bare "/upload/image" misses all three.
+                const resp = await api.fetchApi("/upload/image", {
                     method: "POST",
                     body: body,
                 });
                 if (resp.status !== 200) {
-                    showError("Upload failed: " + resp.statusText);
+                    const detail = await resp.text().catch(() => "");
+                    console.error(
+                        "FFMPEGA: video upload failed",
+                        resp.status, resp.statusText, detail,
+                    );
+                    showError(`Upload failed (${resp.status}): ${resp.statusText}`);
                     return false;
                 }
                 const data = await resp.json();
@@ -669,7 +826,7 @@ export function registerLoadVideoNode(
                 updatePreview(filename);
                 return true;
             } catch (err) {
-                console.warn("FFMPEGA: Video upload failed", err);
+                console.error("FFMPEGA: video upload threw", err);
                 showError("Upload error: " + err);
                 return false;
             } finally {
@@ -683,70 +840,104 @@ export function registerLoadVideoNode(
             }
         };
 
-        // Drag-and-drop
-        this.onDragOver = (e: DragEvent): boolean => {
-            if (e?.dataTransfer?.types?.includes?.("Files")) {
-                if (!uploadBtn.disabled) {
-                    if (!Object.prototype.hasOwnProperty.call(uploadBtn, "_originalInnerHTML")) {
-                        uploadBtn._originalInnerHTML = uploadBtn.innerHTML;
-                    }
-                    if (!Object.prototype.hasOwnProperty.call(uploadBtn, "_originalBorder")) {
-                        uploadBtn._originalBorder = uploadBtn.style.border;
-                    }
-                    if (!Object.prototype.hasOwnProperty.call(uploadBtn, "_originalAriaLabel")) {
-                        uploadBtn._originalAriaLabel = uploadBtn.getAttribute("aria-label");
-                    }
+        // --- Drag-and-drop ---
+        // Three regions can receive a drop: the canvas-drawn widget rows (via
+        // LiteGraph's onDragOver/onDragDrop) and the two DOM widgets, which
+        // sit above the canvas and would otherwise swallow the event. All
+        // three funnel through the same accept/upload pair.
+        const acceptVideoFile = (file: File): boolean => {
+            const ext = file.name.split(".").pop()?.toLowerCase();
+            return !!ext && VIDEO_EXTENSIONS.includes(ext);
+        };
 
-                    uploadBtn.innerHTML = `<span aria-hidden="true">📂</span> Drop to Upload`;
-                    uploadBtn.setAttribute("aria-label", "Drop to Upload");
-                    uploadBtn.style.border = "1px dashed #4a6a8a";
-                    uploadBtn.style.backgroundColor = "#333";
+        const rejectVideoFile = (file: File): void => {
+            showError("Invalid file type: " + (file.name.split(".").pop() ?? ""));
+        };
 
-                    if (uploadBtn._dragTimeout) clearTimeout(uploadBtn._dragTimeout);
-                    uploadBtn._dragTimeout = setTimeout(() => {
-                        if (!uploadBtn.disabled) {
-                            if (Object.prototype.hasOwnProperty.call(uploadBtn, "_originalInnerHTML")) {
-                                uploadBtn.innerHTML = uploadBtn._originalInnerHTML!;
-                                delete uploadBtn._originalInnerHTML;
-                            }
-                            if (Object.prototype.hasOwnProperty.call(uploadBtn, "_originalBorder")) {
-                                uploadBtn.style.border = uploadBtn._originalBorder!;
-                                delete uploadBtn._originalBorder;
-                            }
-                            if (Object.prototype.hasOwnProperty.call(uploadBtn, "_originalAriaLabel")) {
-                                if (uploadBtn._originalAriaLabel) {
-                                    uploadBtn.setAttribute("aria-label", uploadBtn._originalAriaLabel);
-                                } else {
-                                    uploadBtn.removeAttribute("aria-label");
-                                }
-                                delete uploadBtn._originalAriaLabel;
-                            }
-                            updateBtn();
-                        }
-                    }, 500);
-                }
-                return true;
+        const dropVideoFile = async (file: File): Promise<boolean> => {
+            if (!acceptVideoFile(file)) {
+                rejectVideoFile(file);
+                return false;
             }
-            return false;
+            return await handleUpload(file);
+        };
+
+        // Drag cue, shown on the preview overlay and the upload button at once.
+        let _dragActive = false;
+        let _dragBtnHTML = "";
+        let _dragBtnBorder = "";
+        let _dragBtnAria: string | null = null;
+        let _dragTimer: ReturnType<typeof setTimeout> | null = null;
+
+        const setDragActive = (active: boolean): void => {
+            if (_dragTimer) {
+                clearTimeout(_dragTimer);
+                _dragTimer = null;
+            }
+            if (active) {
+                // The canvas region gives us no drag-leave callback — ComfyUI's
+                // canvas dragleave only clears its own dragOverNode — so the cue
+                // self-expires unless a dragover keeps refreshing it.
+                _dragTimer = setTimeout(() => setDragActive(false), 400);
+            }
+            if (active === _dragActive) return;
+            // Don't fight an in-flight upload for the button, but always let
+            // the overlay clear — otherwise a drop that starts an upload would
+            // strand it on screen.
+            if (active && uploadBtn.disabled) return;
+            _dragActive = active;
+
+            if (active) {
+                _dragBtnHTML = uploadBtn.innerHTML;
+                _dragBtnBorder = uploadBtn.style.border;
+                _dragBtnAria = uploadBtn.getAttribute("aria-label");
+                uploadBtn.innerHTML = `<span aria-hidden="true">📂</span> Drop to Upload`;
+                uploadBtn.setAttribute("aria-label", "Drop to Upload");
+                uploadBtn.style.border = "1px dashed #4a6a8a";
+                uploadBtn.style.backgroundColor = "#333";
+                dropOverlay.style.display = "flex";
+            } else {
+                if (!uploadBtn.disabled) {
+                    uploadBtn.innerHTML = _dragBtnHTML;
+                    uploadBtn.style.border = _dragBtnBorder;
+                    if (_dragBtnAria) {
+                        uploadBtn.setAttribute("aria-label", _dragBtnAria);
+                    } else {
+                        uploadBtn.removeAttribute("aria-label");
+                    }
+                    updateBtn();
+                }
+                dropOverlay.style.display = "none";
+            }
+        };
+
+        const dropZoneOpts = {
+            accept: acceptVideoFile,
+            onDrop: dropVideoFile,
+            onReject: rejectVideoFile,
+            onDragStateChange: setDragActive,
+            disabled: (): boolean => uploadBtn.disabled,
+        };
+        const detachPreviewDrop = attachFileDropZone(previewContainer, dropZoneOpts);
+        const detachButtonDrop = attachFileDropZone(uploadBtn, dropZoneOpts);
+
+        // Canvas-drawn region of the node — LiteGraph hit-tests the node under
+        // the cursor and routes the document-level drop back here.
+        this.onDragOver = (e: DragEvent): boolean => {
+            if (!e?.dataTransfer?.types?.includes?.("Files")) return false;
+            setDragActive(true);
+            return true;
         };
 
         this.onDragDrop = async (e: DragEvent): Promise<boolean> => {
-            // Cancel drop visual revert — upload state handler takes over
-            if (uploadBtn._dragTimeout) {
-                clearTimeout(uploadBtn._dragTimeout);
-                delete uploadBtn._dragTimeout;
-            }
+            setDragActive(false);
             if (!e?.dataTransfer?.types?.includes?.("Files")) return false;
+            // Claim the drop but ignore it — returning true keeps ComfyUI from
+            // spawning a node for a file we're refusing.
+            if (uploadBtn.disabled) return true;
             const file = e.dataTransfer?.files?.[0];
             if (!file) return false;
-
-            const ext = file.name.split(".").pop()?.toLowerCase();
-            if (!ext || !VIDEO_EXTENSIONS.includes(ext)) {
-                showError("Invalid file type: " + ext);
-                return false;
-            }
-
-            return await handleUpload(file);
+            return await dropVideoFile(file);
         };
 
         // Watch dropdown for selection changes
