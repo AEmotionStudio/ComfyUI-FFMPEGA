@@ -24,7 +24,23 @@
 
 ---
 
-## 🚀 What's New in v2.19.0
+## 🚧 In Development (Unreleased)
+
+*Landed on the development branch since v2.19.0 — not yet in a tagged release. See [CHANGELOG.md](CHANGELOG.md#unreleased) for the full detail.*
+
+*   🕺 **SCAIL-2** — pose-driven character animation, rebuilt ComfyUI-native and in-process (no subprocess). Native SAM 3.1 identity tracking, colored per-identity pose masks, 25 advanced widgets. Replaces the vendored SCAIL v1 pipeline
+*   ⚡ **FlashVSR** — one-step video super-resolution with `full` / `tiny` / `tiny_long` pipelines, DiT block swap, and near-lossless spatial decode tiling
+*   ♾️ **SVI 2.0 Pro** — infinite-length video generation (ICLR 2026 Oral) via iterative 81-frame Wan 2.2 I2V-A14B clips, with block swap and tiled VAE
+*   🎭 **Wan-Animate** & **MatAnyone2** — ComfyUI-native Wan 2.2 Animate character animation, plus CVPR 2026 video matting with temporal coherence
+*   🧍 **Meta Sapiens2** — human-centric vision: 308-keypoint pose, 29-class body-part segmentation, normals, pointmap and matting, with an fp8 5B option
+*   🧊 **SHARP** & **PhyFPS** — single-image 3D Gaussian view synthesis, and physical frame-rate detection/re-timing via the Visual Chronometer
+*   🖼️ **Multi-Source Comparison** — Save Video and Save Image now combine multiple inputs into one side-by-side or grid clip/image, with layout, per-panel labels and gap controls
+*   📹 **FaceCam Analytic Face Mesh** — camera pose is projected from MediaPipe's canonical model instead of being detected back off a rendered proxy head, so conditioning survives past 40–50° of yaw and `orbit_left`/`orbit_right` are exact mirrors
+*   🎨 **Correct Video Levels** — encoding now emits standard limited-range BT.709 instead of deprecated `yuvj420p`, fixing crushed blacks and blown highlights in players that re-expand it
+
+<details>
+<summary><b>🚀 What's New in v2.19.0</b></summary>
+
 
 *   🗣️ **DreamID-Omni (WIP)** — identity-preserving talking-head video generation. Face image + audio + text prompt → video with preserved identity and voice. FP8 native matmul, sequential layer offloading, streaming VAE decode for 12 GB GPUs
 *   📹 **FaceCam Node** — portrait video camera control via [FaceCam](https://github.com/weijielyu/FaceCam) (CVPR 2026). Camera orbit, zoom, tilt presets with KSampler Advanced chaining support
@@ -32,6 +48,8 @@
 *   🎵 **Foundation-1 Music Samples** — production-ready musical loop generation with tempo-sync, key awareness, and style transfer
 *   🖼️ **Frame Picker Node** — interactive frame selection and reordering with contact-sheet grid, drag-and-drop, and bulk tools
 *   🎨 **15 New GLSL Shaders** — anime_glow, comic_book, depth_fog, focus_pull, pop_art, toon_3d, watercolor, and more. **70 shaders** total
+
+</details>
 
 <details>
 <summary><b>📋 Previous Releases</b></summary>
@@ -527,6 +545,15 @@ All models are mirrored to first-party [AEmotionStudio](https://huggingface.co/A
 | **FaceCam** (Camera Control) | ~16.8 GB (high+low bf16) | `ComfyUI/models/diffusion_models/` | FaceCam node | [AEmotionStudio/facecam-wan2.2-14b-bf16](https://huggingface.co/AEmotionStudio/facecam-wan2.2-14b-bf16) |
 | **Fish Speech S2 Pro** (TTS) | ~6.5 GB (FP8) / ~10.4 GB (BF16) | `ComfyUI/models/fish_speech/` | `fish_speech` no-LLM mode | [AEmotionStudio/fish-speech-s2-pro](https://huggingface.co/AEmotionStudio/fish-speech-s2-pro) |
 | **Foundation-1** (Music Samples) | ~2 GB | `ComfyUI/models/foundation1/` | `foundation1` no-LLM mode | [AEmotionStudio/foundation1-models](https://huggingface.co/AEmotionStudio/foundation1-models) |
+| **SeedVR2** (Diffusion Upscaler) | ~3–4 GB (DiT) + ~300 MB (VAE) | `ComfyUI/models/SEEDVR2/` | `ai_upscale` with `upscale_model = seedvr2_*`. Use `seedvr2_7b_fp8_mixed` for the seam-free 7B (block 35 kept in FP16) | [AEmotionStudio/SeedVR2-models](https://huggingface.co/AEmotionStudio/SeedVR2-models) |
+| **FlashVSR v1.1** (One-Step VSR) | ~5 GB (DiT + VAE + LQ_proj + TCDecoder) | `ComfyUI/models/FlashVSR/` | `ai_upscale` with `upscale_model = flashvsr_full` / `flashvsr_tiny` / `flashvsr_tiny_long` | [AEmotionStudio/flashvsr-models](https://huggingface.co/AEmotionStudio/flashvsr-models) — GPL-3.0 |
+| **SCAIL-2** (Pose-Driven Animation) | ~16 GB (fp8) | `ComfyUI/models/diffusion_models/` | `scail2` no-LLM mode. Also needs the Wan 2.1 VAE, UMT5-XXL text encoder and `clip_vision_h` | [Comfy-Org/SCAIL-2](https://huggingface.co/Comfy-Org/SCAIL-2) — `wan2.1_14B_SCAIL_2_fp8_scaled.safetensors` |
+| **SVI 2.0 Pro** (Infinite-Length Video) | ~500 MB (high + low LoRAs) | `ComfyUI/models/svi/version-2.0/` | `svi` no-LLM mode. ⚠️ Also requires the Wan 2.2 I2V-A14B base model (~28 GB) | [AEmotionStudio/svi-loras](https://huggingface.co/AEmotionStudio/svi-loras) |
+| **Wan-Animate** (Character Animation) | ~18 GB (DiT) + ~2.5 GB (pose) + ~62 MB (detector) | `ComfyUI/models/wan_animate/` | `wan_animate` no-LLM mode | [Kijai/WanVideo_comfy_fp8_scaled](https://huggingface.co/Kijai/WanVideo_comfy_fp8_scaled), [Kijai/vitpose_comfy](https://huggingface.co/Kijai/vitpose_comfy) |
+| **MatAnyone2** (Video Matting) | ~135 MB | `ComfyUI/models/matanyone2/` | `video_matting` no-LLM mode | [AEmotionStudio/matanyone2](https://huggingface.co/AEmotionStudio/matanyone2) — ⚠️ NTU S-Lab 1.0, non-commercial |
+| **Sapiens2** (Human-Centric Vision) | ~1 GB (0.4B) – ~10 GB (5B fp16) | `ComfyUI/models/sapiens2/<task>/` | `sapiens2` no-LLM mode — pose (308 keypoints), segmentation (29 classes), normals, pointmap, matting | [AEmotionStudio/sapiens2-normal](https://huggingface.co/AEmotionStudio/sapiens2-normal) and sibling `sapiens2-*` repos |
+| **SHARP** (3D Gaussian View Synthesis) | ~400 MB | `ComfyUI/models/sharp/` | `sharp` no-LLM mode | [AEmotionStudio/sharp](https://huggingface.co/AEmotionStudio/sharp) — ⚠️ Apple ML Research License, non-commercial |
+| **Visual Chronometer** (PhyFPS) | ~1 GB | `ComfyUI/models/visual_chronometer/` | `phyfps` no-LLM mode | [AEmotionStudio/Visual_Chronometer](https://huggingface.co/AEmotionStudio/Visual_Chronometer) |
 
 > [!NOTE]
 > Models are only downloaded when you use the corresponding skill for the first time. Core FFmpeg editing skills (200+ of them) require **zero model downloads**.
@@ -554,7 +581,7 @@ FFMPEGA provides **14 nodes** that work together:
 | `video_path` | STRING | Absolute path to source video. Used as ffmpeg input unless `images_a` is connected. |
 | `prompt` | STRING | Natural language editing instruction (e.g. *"Add cinematic letterbox"*, *"Speed up 2x"*). Not required in `manual` mode. |
 | `llm_model` | DROPDOWN | AI model selection — local Ollama models, CLI tools, or cloud APIs. Select `none` for no-LLM mode. |
-| `no_llm_mode` | DROPDOWN | Mode when `llm_model` is `none`: `manual` (Effects Builder, default), `sam3_masking`, `transcribe`, `karaoke_subtitles`, `generate_audio`, `generate_music`, `foundation1`, `fish_speech`, `audio_inpaint`, `audio_separate`, `ace_step`, `lip_sync`, `animate_portrait`, `marigold`, `normalcrafter`, `video_depth`, `flux_klein`, `kiwi_edit`, `minimax_remover`, `dreamid_omni`, `ai_upscale`, `rembg`, `onion_skin`, `comparison`. |
+| `no_llm_mode` | DROPDOWN | Mode when `llm_model` is `none` — **31 modes**: `manual` (Effects Builder, default), `sam3_masking`, `transcribe`, `karaoke_subtitles`, `generate_audio`, `generate_music`, `foundation1`, `fish_speech`, `audio_inpaint`, `audio_separate`, `ace_step`, `lip_sync`, `animate_portrait`, `marigold`, `normalcrafter`, `video_depth`, `sapiens2`, `flux_klein`, `kiwi_edit`, `minimax_remover`, `dreamid_omni`, `svi`, `sharp`, `wan_animate`, `scail2`, `ai_upscale`, `rembg`, `video_matting`, `onion_skin`, `comparison`, `phyfps`. |
 | `quality_preset` | DROPDOWN | Output quality: `draft`, `standard`, `high`, `lossless`. |
 | `seed` | INT | Change to force re-execution with the same prompt. Supports randomize control. |
 
