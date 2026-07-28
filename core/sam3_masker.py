@@ -1765,20 +1765,27 @@ def _use_native_sam3_video(version: str = DEFAULT_SAM_VERSION) -> bool:
     return True
 
 
-def _load_native_sam31(version: str = DEFAULT_SAM_VERSION):
-    """Load + cache the native SAM 3.1 ModelPatcher and CLIP (per version)."""
+def _load_native_sam31(version: str = DEFAULT_SAM_VERSION, checkpoint_path: Optional[str] = None):
+    """Load + cache the native SAM 3.1 ModelPatcher and CLIP.
+
+    When ``checkpoint_path`` is given, that exact checkpoint is loaded and cached
+    under its path (used by SCAIL-2, which needs the multiplex_fp16 checkpoint the
+    model producers recommend); otherwise the version's default checkpoint is
+    resolved via :func:`_find_checkpoint`.
+    """
     v = _normalize_version(version)
-    cached = _native_models.get(v)
+    cache_key = checkpoint_path or v
+    cached = _native_models.get(cache_key)
     if cached is not None:
         return cached
     with _native_model_lock:
-        cached = _native_models.get(v)
+        cached = _native_models.get(cache_key)
         if cached is not None:
             return cached
         import comfy.sd
         import comfy.utils
 
-        ckpt = _find_checkpoint(v)
+        ckpt = checkpoint_path if (checkpoint_path and os.path.isfile(checkpoint_path)) else _find_checkpoint(v)
         log.info("Loading native ComfyUI SAM 3.1 model: %s", ckpt)
         sd = comfy.utils.load_torch_file(ckpt)
         sd.pop(_NATIVE_UNUSED_CLIP_KEY, None)
@@ -1788,7 +1795,7 @@ def _load_native_sam31(version: str = DEFAULT_SAM_VERSION):
             raise RuntimeError(
                 f"ComfyUI did not recognize {ckpt} as a SAM 3 checkpoint")
         model, clip = out[0], out[1]
-        _native_models[v] = (model, clip)
+        _native_models[cache_key] = (model, clip)
         return model, clip
 
 
@@ -1930,6 +1937,107 @@ def _mask_video_native_sam31(
                 shutil.rmtree(d)
             except OSError:
                 pass
+
+
+def track_images_native_sam31(
+    images,
+    prompt="",  # str OR list[str] — each string is a separate SAM text prompt
+    points: Optional[list] = None,
+    labels: Optional[list] = None,
+    point_src_width: int = 0,
+    point_src_height: int = 0,
+    max_objects: int = 6,
+    det_threshold: float = 0.5,
+    detect_interval: int = 1,
+    version: str = "sam3.1",
+    checkpoint_path: Optional[str] = None,
+) -> dict:
+    """Track objects in an IMAGE batch and return the raw SAM 3.1 track-data dict.
+
+    Unlike :func:`_mask_video_native_sam31` (which collapses all objects into a
+    single grayscale union video), this returns the per-object packed masks
+    exactly as ``comfy_extras.nodes_scail.SCAIL2ColoredMask`` expects:
+    ``{"packed_masks", "n_frames", "scores", "orig_size": (H, W)}``.
+
+    Used by the SCAIL-2 synthesizer to colorize per-identity masks for both the
+    driving pose video and the reference image. Runs fully in-process under
+    ComfyUI VRAM management (``inference_mode`` keeps peak VRAM low — see
+    :func:`_mask_video_native_sam31`).
+
+    Args:
+        images: ComfyUI IMAGE tensor ``[N, H, W, 3]`` float 0-1 (N≥1).
+        prompt: Text prompt for SAM 3 detection (defaults to "object" if empty
+            and no points given).
+        points/labels: Optional point prompts (segment frame 0, then track).
+            ``point_src_width``/``height`` give the coordinate space of points.
+        max_objects: Cap on tracked identities.
+        det_threshold: New-object detection threshold.
+        version: SAM version (only "sam3.1" supported natively).
+
+    Returns:
+        The track-data dict (with ``orig_size``). ``packed_masks`` is ``None``
+        when nothing is detected.
+    """
+    import torch
+    import torch.nn.functional as F
+    import comfy.model_management
+
+    model, clip = _load_native_sam31(version, checkpoint_path=checkpoint_path)
+
+    if images.ndim == 3:
+        images = images.unsqueeze(0)
+    N, H, W, _ = images.shape
+
+    comfy.model_management.load_model_gpu(model)
+    dev = comfy.model_management.get_torch_device()
+    dtype = model.model.get_dtype()
+    sam3 = model.model.diffusion_model
+    frames_in = images[..., :3].movedim(-1, 1)  # [N,3,H,W]
+
+    with torch.inference_mode():
+        init_masks = None
+        text_prompts = None
+        if points:
+            sw = point_src_width or W
+            sh = point_src_height or H
+            lbls = labels or [1] * len(points)
+            coords = [[p[0] / sw * 1008, p[1] / sh * 1008] for p in points]
+            point_inputs = {
+                "point_coords": torch.tensor([coords], dtype=dtype, device=dev),
+                "point_labels": torch.tensor([lbls], dtype=torch.int32, device=dev),
+            }
+            frame0 = F.interpolate(frames_in[0:1].to(dev, dtype), size=(1008, 1008),
+                                   mode="bilinear", align_corners=False)
+            mask_logit = sam3.forward_segment(frame0, point_inputs=point_inputs)
+            m = F.interpolate(mask_logit, size=(H, W), mode="bilinear", align_corners=False)
+            init_masks = (m[0] > 0).to(device=dev, dtype=dtype).unsqueeze(1)  # [1,1,H,W]
+        else:
+            from comfy_extras.nodes_sam3 import _extract_text_prompts
+            # `prompt` may be a single string or a list of subject strings — each
+            # becomes its own SAM 3 text prompt (e.g. ["man", "dog"]), so
+            # heterogeneous subjects are each detected as separate identities.
+            if isinstance(prompt, (list, tuple)):
+                prompt_list = [str(p).strip() for p in prompt if str(p).strip()]
+            else:
+                prompt_list = [str(prompt).strip()] if str(prompt or "").strip() else []
+            if not prompt_list:
+                prompt_list = ["object"]
+            text_prompts = []
+            for p in prompt_list:
+                tokens = clip.tokenize(p)
+                cond = clip.encode_from_tokens_scheduled(tokens)
+                text_prompts.extend(
+                    (emb, msk) for emb, msk, _ in _extract_text_prompts(cond, dev, dtype))
+
+        result = sam3.forward_video(
+            frames_in, init_masks, pbar=None, text_prompts=text_prompts,
+            new_det_thresh=det_threshold, max_objects=max(0, int(max_objects)),
+            detect_interval=max(1, int(detect_interval)),
+            target_device=dev, target_dtype=dtype)
+
+    # SCAIL2ColoredMask needs the original (H, W); the tracker dict omits it.
+    result["orig_size"] = (H, W)
+    return result
 
 
 def mask_video(
