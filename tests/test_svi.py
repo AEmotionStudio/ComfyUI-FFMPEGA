@@ -227,3 +227,149 @@ class TestSVIPromptParsing:
                 ["test prompt"],
                 num_clips=1,
             )
+
+
+# --- Block Swap / VRAM Option Tests ---------------------------------------------
+
+class TestSVIBlockSwap:
+    """Test the svi_blockswap_blocks / svi_tiled_vae VRAM options."""
+
+    _MODULE_SIZE = 1000  # fake bytes per transformer block
+
+    def _install_fake_comfy(self, monkeypatch):
+        """Inject minimal comfy.model_management / comfy.patcher_extension mocks."""
+        import sys
+        import types
+
+        mm = types.ModuleType("comfy.model_management")
+        mm.EXTRA_RESERVED_VRAM = 400
+        mm.module_size = lambda module: self._MODULE_SIZE
+
+        pe = types.ModuleType("comfy.patcher_extension")
+
+        class WrappersMP:
+            PREPARE_SAMPLING = "prepare_sampling"
+
+        pe.WrappersMP = WrappersMP
+
+        comfy_pkg = sys.modules.get("comfy")
+        if comfy_pkg is None:
+            comfy_pkg = types.ModuleType("comfy")
+            monkeypatch.setitem(sys.modules, "comfy", comfy_pkg)
+        monkeypatch.setattr(comfy_pkg, "model_management", mm, raising=False)
+        monkeypatch.setattr(comfy_pkg, "patcher_extension", pe, raising=False)
+        monkeypatch.setitem(sys.modules, "comfy.model_management", mm)
+        monkeypatch.setitem(sys.modules, "comfy.patcher_extension", pe)
+        return mm
+
+    def _fake_patcher(self, num_blocks=40):
+        import types
+
+        class FakePatcher:
+            def __init__(self):
+                self.model = types.SimpleNamespace(
+                    diffusion_model=types.SimpleNamespace(
+                        blocks=[object()] * num_blocks
+                    )
+                )
+                self.wrappers = {}
+
+            def add_wrapper_with_key(self, wrapper_type, key, wrapper):
+                self.wrappers[(wrapper_type, key)] = wrapper
+
+            def model_size(self):
+                return num_blocks * TestSVIBlockSwap._MODULE_SIZE
+
+        return FakePatcher()
+
+    def test_zero_blocks_registers_nothing(self):
+        """blocks_to_swap=0 must be a no-op (no wrapper, no comfy import needed)."""
+        from core.svi_synthesizer import _register_blockswap
+        patcher = self._fake_patcher()
+        _register_blockswap(patcher, 0)
+        assert patcher.wrappers == {}
+
+    def test_wrapper_registered_under_prepare_sampling(self, monkeypatch):
+        """A wrapper should be registered under WrappersMP.PREPARE_SAMPLING."""
+        self._install_fake_comfy(monkeypatch)
+        from core.svi_synthesizer import _register_blockswap
+        patcher = self._fake_patcher()
+        _register_blockswap(patcher, 4)
+        assert ("prepare_sampling", "svi_blockswap") in patcher.wrappers
+
+    def test_wrapper_bumps_and_restores_reserve(self, monkeypatch):
+        """The wrapper must raise EXTRA_RESERVED_VRAM by blocks*block_size
+        during the executor call and restore it afterwards."""
+        mm = self._install_fake_comfy(monkeypatch)
+        from core.svi_synthesizer import _register_blockswap
+        patcher = self._fake_patcher()
+        _register_blockswap(patcher, 4)
+        wrapper = patcher.wrappers[("prepare_sampling", "svi_blockswap")]
+
+        baseline = mm.EXTRA_RESERVED_VRAM
+        seen = {}
+
+        def executor(*args, **kwargs):
+            seen["reserve"] = mm.EXTRA_RESERVED_VRAM
+            return "ok"
+
+        assert wrapper(executor) == "ok"
+        assert seen["reserve"] == baseline + 4 * self._MODULE_SIZE
+        assert mm.EXTRA_RESERVED_VRAM == baseline
+
+    def test_wrapper_restores_reserve_on_exception(self, monkeypatch):
+        """EXTRA_RESERVED_VRAM must be restored even if the executor raises."""
+        mm = self._install_fake_comfy(monkeypatch)
+        from core.svi_synthesizer import _register_blockswap
+        patcher = self._fake_patcher()
+        _register_blockswap(patcher, 8)
+        wrapper = patcher.wrappers[("prepare_sampling", "svi_blockswap")]
+
+        baseline = mm.EXTRA_RESERVED_VRAM
+
+        def executor(*args, **kwargs):
+            raise RuntimeError("boom")
+
+        with pytest.raises(RuntimeError):
+            wrapper(executor)
+        assert mm.EXTRA_RESERVED_VRAM == baseline
+
+    def test_blocks_capped_at_model_block_count(self, monkeypatch):
+        """Requesting more blocks than the model has must cap at len(blocks)."""
+        mm = self._install_fake_comfy(monkeypatch)
+        from core.svi_synthesizer import _register_blockswap
+        patcher = self._fake_patcher(num_blocks=40)
+        _register_blockswap(patcher, 99)
+        wrapper = patcher.wrappers[("prepare_sampling", "svi_blockswap")]
+
+        baseline = mm.EXTRA_RESERVED_VRAM
+        seen = {}
+
+        def executor(*args, **kwargs):
+            seen["reserve"] = mm.EXTRA_RESERVED_VRAM
+
+        wrapper(executor)
+        assert seen["reserve"] == baseline + 40 * self._MODULE_SIZE
+
+    def test_new_params_in_generate_signature(self):
+        """generate_infinite_video should accept blockswap_blocks and tiled_vae."""
+        import inspect
+        from core.svi_synthesizer import generate_infinite_video
+        params = inspect.signature(generate_infinite_video).parameters
+        assert "blockswap_blocks" in params
+        assert params["blockswap_blocks"].default == 0
+        assert "tiled_vae" in params
+        assert params["tiled_vae"].default is False
+
+    def test_new_widgets_in_input_types(self):
+        """svi_blockswap_blocks / svi_tiled_vae should be in INPUT_TYPES."""
+        pytest.importorskip("torch")
+        from nodes.agent_node import FFMPEGAgentNode
+        optional = FFMPEGAgentNode.INPUT_TYPES().get("optional", {})
+        assert "svi_blockswap_blocks" in optional
+        cfg = optional["svi_blockswap_blocks"][1]
+        assert cfg["default"] == 0
+        assert cfg["min"] == 0
+        assert cfg["max"] == 40
+        assert "svi_tiled_vae" in optional
+        assert optional["svi_tiled_vae"][1]["default"] is False

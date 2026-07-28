@@ -49,7 +49,7 @@ ALL_SYNTHESIZER_MODULES: tuple[str, ...] = (
     "fish_speech_synthesizer",
     "matanyone2_synthesizer",
     "flashvsr_synthesizer",
-    "scail_synthesizer",
+    "scail2_synthesizer",
     "audiox_synthesizer",
     "rtx_vsr_synthesizer",
     "foundation1_synthesizer",

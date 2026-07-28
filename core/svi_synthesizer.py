@@ -354,6 +354,18 @@ def _encode_video_from_frames(
 #  Core SVI 2.0 Pro Generation
 # ---------------------------------------------------------------------------
 
+def _register_blockswap(model_patcher, blocks_to_swap: int) -> None:
+    """Keep ~blocks_to_swap transformer blocks' worth of DiT weights off-GPU."""
+    try:
+        from .vram_utils import register_blockswap
+    except ImportError:
+        from core.vram_utils import register_blockswap  # type: ignore
+
+    register_blockswap(
+        model_patcher, blocks_to_swap, key="svi_blockswap", label="SVI",
+    )
+
+
 def generate_infinite_video(
     ref_image_path: str,
     prompts: list[str],
@@ -381,6 +393,8 @@ def generate_infinite_video(
     text_encoder_path: str = "auto",
     sampler_name: str = "euler",
     scheduler: str = "normal",
+    blockswap_blocks: int = 0,
+    tiled_vae: bool = False,
     # Progress callback
     progress_callback=None,
 ) -> str:
@@ -408,6 +422,9 @@ def generate_infinite_video(
         num_inference_steps: Denoising steps per clip (default 50).
         frames_per_clip: Frames per clip (default 81).
         variant: "pro" or "standard" (default "pro").
+        blockswap_blocks: Wan 2.2 transformer blocks (of 40) worth of DiT
+            weights kept off-GPU during sampling (default 0 = disabled).
+        tiled_vae: Decode video latents with tiled VAE (default False).
         progress_callback: Optional callback(clip_idx, total_clips, message).
 
     Returns:
@@ -471,6 +488,8 @@ def generate_infinite_video(
             text_encoder_path=text_encoder_path,
             sampler_name=sampler_name,
             scheduler=scheduler,
+            blockswap_blocks=blockswap_blocks,
+            tiled_vae=tiled_vae,
             progress_callback=progress_callback,
         )
     finally:
@@ -503,6 +522,8 @@ def _run_svi_inference(
     text_encoder_path: str = "auto",
     sampler_name: str = "euler",
     scheduler: str = "normal",
+    blockswap_blocks: int = 0,
+    tiled_vae: bool = False,
     progress_callback=None,
 ) -> str:
     """Internal: Run the SVI 2.0 Pro inference loop.
@@ -623,6 +644,7 @@ def _run_svi_inference(
         if extra_high_path:
             log.info("Applying extra high-noise LoRA: %s", extra_high_path)
             high_model = _apply_lora_to_model(high_model, extra_high_path)
+    _register_blockswap(high_model, blockswap_blocks)
 
     # Load a separate copy with low-noise LoRA
     base_model_low = _load_unet(wan_model_low)
@@ -633,6 +655,7 @@ def _run_svi_inference(
         if extra_low_path:
             log.info("Applying extra low-noise LoRA: %s", extra_low_path)
             low_model = _apply_lora_to_model(low_model, extra_low_path)
+    _register_blockswap(low_model, blockswap_blocks)
 
     # Load VAE separately
     vae_model = comfy.sd.VAE(sd=comfy.utils.load_torch_file(vae_path))
@@ -768,6 +791,14 @@ def _run_svi_inference(
 
     neg_tokens = clip_model.tokenize(_NEGATIVE_PROMPT)
     neg_cond = clip_model.encode_from_tokens_scheduled(neg_tokens)
+
+    # All prompts are encoded up-front; evict the text encoder weights now so
+    # they don't compete with the UNets + VAE for VRAM during sampling.
+    try:
+        mm.unload_model_and_clones(clip_model.patcher)  # type: ignore[attr-defined]
+        log.info("SVI: Unloaded text encoder after prompt encoding")
+    except Exception as e:
+        log.warning("SVI: Could not unload text encoder: %s", e)
 
 
     # --- Apply sigma_shift for SVI LoRAs ---
@@ -1019,7 +1050,12 @@ def _run_svi_inference(
         comfy.model_management.soft_empty_cache()
 
         # Decode latent to frames via VAE
-        decoded = vae_model.decode(prev_last_latent.to(comfy.model_management.get_torch_device()))
+        latent_gpu = prev_last_latent.to(comfy.model_management.get_torch_device())
+        if tiled_vae:
+            decoded = vae_model.decode_tiled(latent_gpu)
+        else:
+            decoded = vae_model.decode(latent_gpu)
+        del latent_gpu
         clip_frames = _tensor_to_pil_frames(decoded)
         del decoded
 

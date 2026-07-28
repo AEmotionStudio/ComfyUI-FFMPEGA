@@ -224,6 +224,89 @@ def _flush_vram() -> None:
 
 
 # ---------------------------------------------------------------------------
+#  Block swap (CPU offload of DiT transformer blocks)
+# ---------------------------------------------------------------------------
+
+# Approx. VRAM saved per swapped DiT block (matches KiwiEdit's estimate).
+_BLOCK_SWAP_VRAM_SAVINGS_MB = 200
+
+
+def _auto_block_swap_count(num_blocks: int) -> int:
+    """Pick a sensible number of DiT blocks to offload from free VRAM.
+
+    Mirrors the free-VRAM tiering used elsewhere in the repo (KiwiEdit /
+    SeedVR2). Returns 0 when there is plenty of headroom.
+    """
+    try:
+        from ._vram_utils import get_free_memory
+    except ImportError:
+        from core._vram_utils import get_free_memory  # type: ignore
+
+    free_gib = 0.0
+    try:
+        free_gib = get_free_memory() / (1024 ** 3)
+    except Exception:
+        free_gib = 0.0
+
+    if free_gib <= 0:
+        # Unknown (e.g. CPU-only) — don't swap.
+        return 0
+    if free_gib >= 16:
+        n = 0
+    elif free_gib >= 12:
+        n = 8
+    elif free_gib >= 8:
+        n = 16
+    else:
+        n = 24
+
+    n = min(n, num_blocks)
+    log.info(
+        "FlashVSR: auto block-swap → %d/%d blocks (%.1f GiB free)",
+        n, num_blocks, free_gib,
+    )
+    return n
+
+
+def _resolve_persistent_budget(dit, block_swap_blocks: int):
+    """Translate a ``block_swap_blocks`` count into a DiffSynth persistent-param
+    budget for ``enable_vram_management(num_persistent_param_in_dit=...)``.
+
+    Semantics:
+        -1 → auto (size from free VRAM)
+         0 → None (keep the whole DiT resident on GPU — original behaviour)
+       1..N → stream the last N of the DiT's transformer blocks from CPU
+
+    Because the DiffSynth walker assigns the budget in ``named_children`` order
+    (embeddings → blocks[0..] → head), capping at ``total − Σ(last N blocks)``
+    keeps the embeddings and the first ``num_blocks − N`` blocks resident while
+    the tail N are streamed from CPU per forward.
+    """
+    blocks = getattr(dit, "blocks", None)
+    if blocks is None or len(blocks) == 0:
+        return None
+    num_blocks = len(blocks)
+
+    if block_swap_blocks < 0:
+        block_swap_blocks = _auto_block_swap_count(num_blocks)
+
+    if block_swap_blocks <= 0:
+        return None
+
+    n = min(block_swap_blocks, num_blocks)
+    per_block = [sum(p.numel() for p in blk.parameters()) for blk in blocks]
+    total = sum(p.numel() for p in dit.parameters())
+    tail = sum(per_block[-n:])
+    budget = max(total - tail, 0)
+    log.info(
+        "FlashVSR: block-swap %d/%d blocks → %d persistent params on GPU "
+        "(~%.2f GB DiT streamed from CPU)",
+        n, num_blocks, budget, tail * 2 / (1024 ** 3),
+    )
+    return budget
+
+
+# ---------------------------------------------------------------------------
 #  Dtype patching
 # ---------------------------------------------------------------------------
 
@@ -281,11 +364,14 @@ def _patch_dit_dtypes():
 #  Pipeline loading
 # ---------------------------------------------------------------------------
 
-def _load_pipeline(mode: str = "full"):
+def _load_pipeline(mode: str = "full", block_swap_blocks: int = 0, decode_tile: int = 0):
     """Load and cache the FlashVSR pipeline.
 
     Args:
         mode: Pipeline variant — "full", "tiny", or "tiny-long".
+        block_swap_blocks: DiT transformer blocks to offload to CPU.
+            -1 = auto (size from free VRAM), 0 = disabled (all resident),
+            1..N = stream the last N blocks from CPU per forward.
 
     Returns:
         Initialized FlashVSR pipeline ready for inference.
@@ -355,6 +441,18 @@ def _load_pipeline(mode: str = "full"):
         pipe.TCDecoder.load_state_dict(load_file(tcd, device=device), strict=False)
         pipe.TCDecoder.clean_mem()
 
+        # Spatial decode tiling (near-lossless) to bound TCDecoder activation memory.
+        # decode_tile is in pixels → convert to latent units (decoder upscales 8×).
+        if decode_tile and decode_tile > 0:
+            lat_tile = max(8, int(decode_tile) // 8)
+            pipe.TCDecoder.decode_tile_size = lat_tile
+            pipe.TCDecoder.decode_tile_overlap = max(2, lat_tile // 8)
+            log.info("FlashVSR: TCDecoder spatial decode tiling — %dpx tiles (latent %d)",
+                     int(decode_tile), lat_tile)
+        else:
+            pipe.TCDecoder.decode_tile_size = 0
+            pipe.TCDecoder.decode_tile_overlap = 0
+
     # Load LQ projection
     pipe.denoising_model().LQ_proj_in = Buffer_LQ4x_Proj(3, 1536, 1).to(device, dtype)
     if os.path.exists(lq):
@@ -367,7 +465,8 @@ def _load_pipeline(mode: str = "full"):
 
     pipe.denoising_model().LQ_proj_in.to(device)
     pipe.to(device, dtype)
-    pipe.enable_vram_management(num_persistent_param_in_dit=None)
+    budget = _resolve_persistent_budget(pipe.denoising_model(), block_swap_blocks)
+    pipe.enable_vram_management(num_persistent_param_in_dit=budget)
     pipe.init_cross_kv(prompt_path=prompt)
     pipe.load_models_to_device(["dit", "vae"])
 
@@ -435,9 +534,14 @@ def _prepare_video(frames, device: str, scale: int, dtype):
     """Prepare video frames for FlashVSR input.
 
     Converts [N,H,W,C] float32 [0,1] → [1,C,F,H,W] dtype [-1,1].
+
+    The LQ frames are upscaled to the target size with Lanczos (sharper than
+    bicubic), matching the reference workflow's ImageResizeKJv2 pre-upscale.
     """
     import torch
     import torch.nn.functional as F
+    import numpy as np
+    from PIL import Image
 
     N, H, W, C = frames.shape
     sw, sh, tw, th = _compute_dims(W, H, scale)
@@ -447,6 +551,7 @@ def _prepare_video(frames, device: str, scale: int, dtype):
     if aligned == 0:
         raise ValueError(f"Need at least {_MIN_FRAMES} frames, got {N}")
 
+    pad_h, pad_w = th - sh, tw - sw
     processed = []
     for i in range(aligned):
         if i < 2:
@@ -456,10 +561,13 @@ def _prepare_video(frames, device: str, scale: int, dtype):
         else:
             idx = i - 2
 
-        frame = frames[idx].permute(2, 0, 1).unsqueeze(0)
-        upscaled = F.interpolate(frame, size=(sh, sw), mode='bicubic', align_corners=False)
+        # Lanczos upscale of the LQ frame to (sh, sw) — sharper input to the DiT.
+        np_frame = (frames[idx].clamp(0, 1).cpu().numpy() * 255.0).astype(np.uint8)
+        img = Image.fromarray(np_frame, mode="RGB").resize((sw, sh), Image.LANCZOS)
+        upscaled = torch.from_numpy(
+            np.asarray(img, dtype=np.float32) / 255.0
+        ).permute(2, 0, 1).unsqueeze(0)
 
-        pad_h, pad_w = th - sh, tw - sw
         if pad_h > 0 or pad_w > 0:
             upscaled = F.pad(upscaled, (0, pad_w, 0, pad_h), mode='replicate')
 
@@ -598,6 +706,62 @@ def _run_tiled(frames, pipe, scale: int, tile_size: int, tile_overlap: int,
     return canvas / weights
 
 
+def _run_temporal(frames, pipe, scale: int, window: int, overlap: int,
+                  sparse_ratio: float, kv_ratio: float, local_range: int,
+                  color_fix: bool, seed: int, device: str, dtype):
+    """Process the clip in temporal windows (whole-frame spatially).
+
+    Bounds DiT + decode activation memory by running only ``window`` frames per
+    pass, blending the temporal ``overlap`` between windows. No spatial tiling,
+    so spatial quality is preserved. For seamless continuous streaming prefer
+    flashvsr_tiny_long (it streams internally with a carried KV/mem cache).
+    """
+    import torch
+
+    N = frames.shape[0]
+    window = max(int(window), _MIN_FRAMES)
+    if window >= N:
+        return _run_full(frames, pipe, scale, sparse_ratio, kv_ratio, local_range,
+                         color_fix, False, True, seed, device, dtype)
+
+    overlap = max(0, min(int(overlap), window - 1))
+    stride = max(1, window - overlap)
+
+    out_canvas = None
+    weight = None
+    starts = list(range(0, max(1, N - overlap), stride))
+    log.info("FlashVSR: temporal streaming — %d window(s) of %d frames (overlap %d)",
+             len(starts), window, overlap)
+
+    for wi, s in enumerate(starts):
+        e = min(s + window, N)
+        s = max(0, e - window)  # keep a full window at the tail
+        res = _run_full(frames[s:e], pipe, scale, sparse_ratio, kv_ratio, local_range,
+                        color_fix, False, True, seed, device, dtype)  # [w,oh,ow,C]
+        w = res.shape[0]
+
+        if out_canvas is None:
+            oh, ow, C = res.shape[1], res.shape[2], res.shape[3]
+            out_canvas = torch.zeros((N, oh, ow, C), dtype=torch.float32)
+            weight = torch.zeros((N, 1, 1, 1), dtype=torch.float32)
+
+        ramp = torch.ones(w, 1, 1, 1)
+        o = min(overlap, w)
+        if o > 0:
+            if wi > 0:
+                ramp[:o] = torch.linspace(0, 1, o).view(-1, 1, 1, 1)
+            if e < N:
+                ramp[-o:] = torch.linspace(1, 0, o).view(-1, 1, 1, 1)
+
+        out_canvas[s:e] += res.float() * ramp
+        weight[s:e] += ramp
+        del res
+        _flush_vram()
+
+    weight[weight == 0] = 1.0
+    return out_canvas / weight
+
+
 # ---------------------------------------------------------------------------
 #  Frame I/O (FFmpeg-based, our pattern)
 # ---------------------------------------------------------------------------
@@ -677,10 +841,14 @@ def upscale_video(
     output_path: Optional[str] = None,
     scale: int = 4,
     color_fix: bool = True,
-    tiled: bool = True,
+    processing: str = "whole",
+    frame_window: int = 0,
+    frame_overlap: int = 8,
     tile_size: int = 384,
     tile_overlap: int = 24,
     seed: int = 1,
+    block_swap_blocks: int = 0,
+    decode_tile: int = 0,
 ) -> str:
     """Upscale a video using FlashVSR.
 
@@ -690,15 +858,34 @@ def upscale_video(
         output_path: output path (auto-generated if None)
         scale: upscale factor (2 or 4, 4 recommended)
         color_fix: enable wavelet color correction
-        tiled: use tiled processing (lower VRAM)
-        tile_size: tile size in pixels (before upscale)
-        tile_overlap: tile overlap for blending
+        processing: how to bound activation/decode memory (the real OOM limiter):
+            'whole'    — one whole-frame pass (best quality). For long clips use
+                         flashvsr_tiny_long, which streams temporally internally.
+            'temporal' — slide over frames in windows of ``frame_window`` (no
+                         spatial tiling), blending ``frame_overlap``. Bounds memory
+                         for full/tiny while keeping spatial quality.
+            'spatial'  — split each frame into ``tile_size`` tiles (lowest quality;
+                         seams + lost global context). Opt-in only.
+        frame_window: frames per temporal window (0 = whole clip). 'temporal' only.
+        frame_overlap: blended frame overlap between temporal windows.
+        tile_size: spatial tile size in pixels (before upscale). 'spatial' only.
+        tile_overlap: spatial tile overlap for blending. 'spatial' only.
         seed: random seed
+        block_swap_blocks: DiT blocks to offload to CPU. 0 = off (default, manual),
+            -1 = auto (size from free VRAM), 1..30 = stream that many blocks.
+        decode_tile: spatial decoder tile size in pixels (tiny/tiny_long only).
+            0 = off (whole-frame decode). >0 = tile the TCDecoder decode
+            (near-lossless) to bound decode memory — this is the usual OOM point.
 
     Returns:
         Path to the upscaled video.
     """
     import torch
+
+    try:
+        from ._vram_utils import is_oom
+    except ImportError:
+        from core._vram_utils import is_oom  # type: ignore
 
     input_path = validate_video_path(input_path)
     if output_path is not None:
@@ -709,6 +896,15 @@ def upscale_video(
 
     cfg = FLASHVSR_CONFIGS.get(model_name, FLASHVSR_CONFIGS["flashvsr_full"])
     mode = cfg["mode"]
+
+    processing = str(processing).lower()
+    if processing not in ("whole", "temporal", "spatial"):
+        processing = "whole"
+    # tiny_long streams temporally inside the pipeline → always whole-frame.
+    if mode == "tiny-long" and processing != "whole":
+        log.info("FlashVSR: %s streams temporally on its own; using whole-frame",
+                 model_name)
+        processing = "whole"
 
     # Extract frames
     log.info("FlashVSR: extracting frames from %s", input_path)
@@ -727,8 +923,16 @@ def upscale_video(
         log.info("FlashVSR: padded %d → %d frames for alignment",
                  original_count, frames.shape[0])
 
+    _ih, _iw = int(frames.shape[1]), int(frames.shape[2])
+    _, _, _tw, _th = _compute_dims(_iw, _ih, scale)
+    log.info(
+        "FlashVSR: scale=%d×  input=%dx%d  target=%dx%d  frames=%d  mode=%s  "
+        "processing=%s  block_swap=%s",
+        scale, _iw, _ih, _tw, _th, frames.shape[0], mode, processing, block_swap_blocks,
+    )
+
     try:
-        pipe = _load_pipeline(mode)
+        pipe = _load_pipeline(mode, block_swap_blocks=block_swap_blocks, decode_tile=decode_tile)
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.bfloat16
@@ -737,19 +941,37 @@ def upscale_video(
             if cap[0] < 8:
                 dtype = torch.float16
 
-        with torch.no_grad():
-            if tiled:
-                result = _run_tiled(
-                    frames, pipe, scale, tile_size, tile_overlap,
-                    cfg["sparse_ratio"], cfg["kv_ratio"], cfg["local_range"],
-                    color_fix, False, True, seed, device, dtype,
-                )
-            else:
-                result = _run_full(
-                    frames, pipe, scale,
-                    cfg["sparse_ratio"], cfg["kv_ratio"], cfg["local_range"],
-                    color_fix, False, True, seed, device, dtype,
-                )
+        try:
+            with torch.no_grad():
+                if processing == "spatial":
+                    result = _run_tiled(
+                        frames, pipe, scale, tile_size, tile_overlap,
+                        cfg["sparse_ratio"], cfg["kv_ratio"], cfg["local_range"],
+                        color_fix, False, True, seed, device, dtype,
+                    )
+                elif processing == "temporal":
+                    result = _run_temporal(
+                        frames, pipe, scale, frame_window, frame_overlap,
+                        cfg["sparse_ratio"], cfg["kv_ratio"], cfg["local_range"],
+                        color_fix, seed, device, dtype,
+                    )
+                else:  # whole
+                    result = _run_full(
+                        frames, pipe, scale,
+                        cfg["sparse_ratio"], cfg["kv_ratio"], cfg["local_range"],
+                        color_fix, False, True, seed, device, dtype,
+                    )
+        except Exception as exc:  # noqa: BLE001
+            if is_oom(exc):
+                raise RuntimeError(
+                    f"FlashVSR ran out of VRAM at {_tw}x{_th} ({frames.shape[0]} frames, "
+                    f"mode={mode}, processing={processing}). The OOM is the DECODE step "
+                    f"(activations), not weights — to fit (tiny/tiny_long), set decode_tile "
+                    f"(e.g. 512 or 384) to spatially tile the decoder (near-lossless). Other "
+                    f"options: lower scale (e.g. 2×), or processing='temporal' with a smaller "
+                    f"frame_window. block_swap only frees weights, not this."
+                ) from exc
+            raise
 
         # Restore original frame count
         result = _restore_video_sequence(result, added_frames, original_count)
@@ -778,6 +1000,9 @@ def upscale_image(
     output_path: Optional[str] = None,
     scale: int = 4,
     seed: int = 1,
+    block_swap_blocks: int = 0,
+    color_fix: bool = True,
+    decode_tile: int = 0,
 ) -> str:
     """Upscale a single image using FlashVSR.
 
@@ -791,6 +1016,7 @@ def upscale_image(
         output_path: output path (auto-generated if None)
         scale: upscale factor (2 or 4)
         seed: random seed
+        block_swap_blocks: DiT blocks to offload to CPU (-1 = auto, 0 = off)
 
     Returns:
         Path to the upscaled image.
@@ -820,7 +1046,7 @@ def upscale_image(
     frames, added_frames = _pad_video_sequence(frames)
 
     try:
-        pipe = _load_pipeline(mode)
+        pipe = _load_pipeline(mode, block_swap_blocks=block_swap_blocks, decode_tile=decode_tile)
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.bfloat16
@@ -833,7 +1059,7 @@ def upscale_image(
             result = _run_full(
                 frames, pipe, scale,
                 cfg["sparse_ratio"], cfg["kv_ratio"], cfg["local_range"],
-                True, False, True, seed, device, dtype,
+                color_fix, False, True, seed, device, dtype,
             )
 
         # Take first frame
