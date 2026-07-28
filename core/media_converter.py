@@ -199,18 +199,24 @@ class MediaConverter:
                 "-vcodec", "rawvideo",
                 "-s", f"{w}x{h}",
                 "-pix_fmt", "rgb24",
-                # Explicit full-range BT.709 color space to prevent
-                # color darkening during RGB → YUV conversion.
+                # Input really is full-range RGB; tagging it lets swscale do a
+                # correct full → limited conversion below rather than guessing.
                 "-color_range", "pc",
-                "-colorspace", "rgb",
-                "-color_primaries", "bt709",
-                "-color_trc", "iec61966-2-1",  # sRGB transfer
                 "-r", str(fps),
                 "-i", "-",
                 "-c:v", "libx264",
+                # Emit standard limited-range BT.709, matching ComfyUI's own
+                # SaveVideo. Previously this wrote full-range (yuvj420p +
+                # color_range=pc) to avoid darkening, but yuvj420p is deprecated
+                # and players that normalise it to yuv420p re-expand the levels,
+                # crushing blacks and blowing highlights — the range conversion
+                # is explicit here instead, so no darkening occurs.
+                "-vf", "scale=in_range=pc:out_range=tv",
                 "-pix_fmt", "yuv420p",
-                # Preserve full color range in output
-                "-color_range", "pc",
+                "-color_range", "tv",
+                "-colorspace", "bt709",
+                "-color_primaries", "bt709",
+                "-color_trc", "bt709",
                 # Optimization: ultrafast provides ~6.5x speedup for temp files
                 "-preset", "ultrafast",
                 "-crf", "18",
