@@ -67,6 +67,14 @@ SEEDVR_CONFIGS = {
         "download_size": "~8 GB",
         "vram": "~16-24 GB",
     },
+    "seedvr2_7b_fp8_mixed": {
+        "description": "SeedVR2 7B FP8 (fp16 last block) — fixes 7B seam/grid artifacts",
+        "dit_model": "seedvr2_ema_7b_fp8_e4m3fn_mixed_block35_fp16.safetensors",
+        "vae_model": "ema_vae_fp16.safetensors",
+        "size": "7B",
+        "download_size": "~8 GB",
+        "vram": "~16-24 GB",
+    },
     "seedvr2_7b_gguf": {
         "description": "SeedVR2 7B GGUF Q4 — highest quality, quantized for lower VRAM",
         "dit_model": "seedvr2_ema_7b-Q4_K_M.gguf",
