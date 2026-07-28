@@ -58,6 +58,18 @@ _MODEL_INFO: dict[str, dict] = {
                   "and place them in ComfyUI/models/SAM3.1/. "
                   "Falls back to facebook/sam3.1 on HF if mirror is unavailable.",
     },
+    "scail2": {
+        "name": "SCAIL-2 (Wan 2.1 pose-driven character animation)",
+        "size": "~16 GB (fp8 diffusion model)",
+        "url": "https://huggingface.co/Comfy-Org/SCAIL-2",
+        "mirror_repo": "Comfy-Org/SCAIL-2",
+        "mirror_filename": "diffusion_models/wan2.1_14B_SCAIL_2_fp8_scaled.safetensors",
+        "manual": "Download wan2.1_14B_SCAIL_2_fp8_scaled.safetensors from "
+                  "https://huggingface.co/Comfy-Org/SCAIL-2/tree/main/diffusion_models "
+                  "and place it in ComfyUI/models/diffusion_models/. Also requires the "
+                  "Wan 2.1 VAE (models/vae/), the UMT5-XXL text encoder "
+                  "(models/text_encoders/) and clip_vision_h (models/clip_vision/).",
+    },
     "lama": {
         "name": "LaMa (Large Mask Inpainting)",
         "size": "~200 MB",
@@ -135,6 +147,7 @@ _MODEL_INFO: dict[str, dict] = {
         "name": "FLUX Klein 9B FP8 (Image Editing)",
         "size": "~9 GB (fp8 transformer, local file)",
         "url": "https://huggingface.co/black-forest-labs/FLUX.2-klein-9B",
+        "mirror_repo": "AEmotionStudio/flux-klein-9b",
         "license": "Apache 2.0",
         "manual": "Place flux-2-klein-9b-fp8.safetensors in "
                   "ComfyUI/models/diffusion_models/. "
@@ -217,7 +230,8 @@ _MODEL_INFO: dict[str, dict] = {
         "url": "https://huggingface.co/AEmotionStudio/SeedVR2-models",
         "mirror_repo": "AEmotionStudio/SeedVR2-models",
         "license": "Apache-2.0",
-        "manual": "Download DiT model (e.g. seedvr2_ema_3b_fp8_e4m3fn.safetensors) "
+        "manual": "Download DiT model (e.g. seedvr2_ema_3b_fp8_e4m3fn.safetensors, or "
+                  "seedvr2_ema_7b_fp8_e4m3fn_mixed_block35_fp16.safetensors for the seam-free 7B) "
                   "and ema_vae_fp16.safetensors from "
                   "https://huggingface.co/AEmotionStudio/SeedVR2-models "
                   "and place them in the SeedVR2 cache directory.",
@@ -425,7 +439,9 @@ _MODEL_INFO: dict[str, dict] = {
         "url": "https://huggingface.co/AEmotionStudio/sapiens2-normal",
         "mirror_repo": "AEmotionStudio/sapiens2-normal",
         "license": "Meta Proprietary (non-surveillance, attribution required)",
-        "manual": "Download sapiens2_{0.4b,1b,5b}_normal.safetensors from "
+        "manual": "Download sapiens2_{0.4b,1b,5b}_normal.safetensors "
+                  "(or the quantized sapiens2_5b_normal_fp8.safetensors for the "
+                  "'5b (fp8)' size option) from "
                   "https://huggingface.co/AEmotionStudio/sapiens2-normal "
                   "and place it in ComfyUI/models/sapiens2/normal/. "
                   "⚠️ Not for surveillance, biometric ID, or deepfake use.",
