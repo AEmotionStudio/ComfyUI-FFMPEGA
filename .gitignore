@@ -182,3 +182,11 @@ js/
 SAM3.1_HANDOFF.md
 SAM31_VIDEO_OOM_HANDOFF.md
 SAPIENS2_HANDOFF.md
+
+# Session transcripts / debugging scratch (local only)
+2026-*.txt
+Console.md
+image.png
+
+# Local HuggingFace mirror cache
+.hf_mirror/
