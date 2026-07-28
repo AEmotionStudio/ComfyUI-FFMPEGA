@@ -233,6 +233,24 @@ def fp8_checkpoint_filename(task: str, size: str) -> str:
     )
 
 
+def parse_size_selector(value: str) -> tuple[str, Optional[str]]:
+    """Split a UI size string like ``'5b (fp8)'`` into ``(size, precision)``.
+
+    The node's ``sapiens2_size`` dropdown folds the fp8 model choice into the
+    size value via a ``' (fp8)'`` suffix, so the precision selection rides
+    along with the size.  Bare sizes return ``precision_override=None`` and the
+    caller falls back to ``'auto'``.
+
+    Examples:
+        ``"5b (fp8)" -> ("5b", "fp8")``
+        ``"1b"       -> ("1b", None)``
+    """
+    v = (value or "").strip()
+    if v.endswith("(fp8)"):
+        return v[: -len("(fp8)")].strip(), "fp8"
+    return v, None
+
+
 def config_relpath(task: str, size: str) -> Optional[str]:
     """Return the config path *relative to the* ``sapiens`` package.
 
