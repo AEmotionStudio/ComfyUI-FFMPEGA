@@ -100,6 +100,64 @@ def test_resolve_first_last():
     print("  ✓ first_last passed")
 
 
+def test_resolve_last():
+    """last generates exactly 1 timestamp, inside the final frame."""
+    print("Testing resolve_timestamps — last...")
+    node = _make_node()
+    ts = node._resolve_timestamps('[]', "last", "", 5.0, 24.0)
+    assert len(ts) == 1, f"Expected 1 timestamp, got {len(ts)}"
+    # Half a frame period back from the end: 5.0 - 0.5/24 ≈ 4.9792
+    assert abs(ts[0] - (5.0 - 0.5 / 24.0)) < 0.0001, f"Got {ts[0]}"
+    assert ts[0] < 5.0, "Must land inside the clip, not on its boundary"
+    print("  ✓ last passed")
+
+
+def test_resolve_last_high_fps():
+    """The back-off is frame-relative, so high fps doesn't skip a frame."""
+    print("Testing resolve_timestamps — last at high fps...")
+    node = _make_node()
+    ts = node._resolve_timestamps('[]', "last", "", 1.0, 120.0)
+    # A fixed 0.01s back-off would land 1.2 frames early at 120fps and
+    # select the second-to-last frame. 0.5/120 stays inside the last one.
+    assert len(ts) == 1
+    assert ts[0] > 1.0 - (1.0 / 120.0), (
+        f"Back-off left the final frame: {ts[0]}"
+    )
+    print("  ✓ last at high fps passed")
+
+
+def test_resolve_last_zero_fps():
+    """Unknown fps falls back to the fixed back-off rather than dividing by 0."""
+    print("Testing resolve_timestamps — last with unknown fps...")
+    node = _make_node()
+    ts = node._resolve_timestamps('[]', "last", "", 5.0, 0.0)
+    assert len(ts) == 1
+    assert abs(ts[0] - 4.99) < 0.0001, f"Got {ts[0]}"
+    print("  ✓ last with unknown fps passed")
+
+
+def test_resolve_last_zero_duration():
+    """Zero duration yields nothing, matching every other mode."""
+    print("Testing resolve_timestamps — last with zero duration...")
+    node = _make_node()
+    ts = node._resolve_timestamps('[]', "last", "", 0.0, 24.0)
+    assert ts == [], f"Expected no timestamps, got {ts}"
+    print("  ✓ last with zero duration passed")
+
+
+def test_last_mode_is_registered():
+    """The mode must appear in the combo or the widget can't select it."""
+    print("Testing FRAME_SELECT_MODES contains 'last'...")
+    from loadlast.load_last_video import FRAME_SELECT_MODES
+    assert "last" in FRAME_SELECT_MODES
+    # Existing values must keep working — ComfyUI serialises combos by value,
+    # but a removed entry would break saved workflows.
+    for legacy in ("manual", "uniform_5", "uniform_10", "first_last",
+                   "every_2nd", "every_5th", "timestamps"):
+        assert legacy in FRAME_SELECT_MODES, f"Lost legacy mode {legacy}"
+    print("  ✓ FRAME_SELECT_MODES passed")
+
+
 def test_resolve_every_2nd():
     """every_2nd generates timestamps at every 2nd frame."""
     print("Testing resolve_timestamps — every_2nd...")
@@ -223,6 +281,11 @@ if __name__ == "__main__":
     test_resolve_uniform_5()
     test_resolve_uniform_10()
     test_resolve_first_last()
+    test_resolve_last()
+    test_resolve_last_high_fps()
+    test_resolve_last_zero_fps()
+    test_resolve_last_zero_duration()
+    test_last_mode_is_registered()
     test_resolve_every_2nd()
     test_resolve_every_5th()
     test_resolve_timestamps_mode()

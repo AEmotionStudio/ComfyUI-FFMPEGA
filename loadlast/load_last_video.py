@@ -42,7 +42,7 @@ _MAX_COPY_SIZE = 500 * 1024 * 1024
 
 # Auto-select mode options
 FRAME_SELECT_MODES = [
-    "manual", "uniform_5", "uniform_10", "first_last",
+    "manual", "uniform_5", "uniform_10", "first_last", "last",
     "every_2nd", "every_5th", "timestamps",
 ]
 
@@ -520,7 +520,9 @@ class LoadLastVideo:
                     "default": "manual",
                     "tooltip": (
                         "How to select frames. 'manual' = user clicks in preview. "
-                        "Other modes auto-select frames based on the chosen strategy."
+                        "'last' = the final frame only, for continuing a scene. "
+                        "Other modes auto-select frames based on the chosen strategy. "
+                        "Auto-selected frames are merged with any manual clicks."
                     ),
                 }),
                 "auto_timestamps": ("STRING", {
@@ -1014,6 +1016,13 @@ class LoadLastVideo:
             auto = [min(duration * i / 9, duration - 0.01) for i in range(10)]
         elif mode == "first_last" and duration > 0:
             auto = [0.0, max(0.0, duration - 0.01)]
+        elif mode == "last" and duration > 0:
+            # Land inside the final frame rather than on its boundary. The
+            # fixed 0.01s back-off used by first_last is a third of a frame
+            # at 24fps but a full frame period at 100fps, where it would
+            # select the second-to-last frame instead.
+            back_off = (0.5 / fps) if fps > 0 else 0.01
+            auto = [max(0.0, duration - back_off)]
         elif mode == "every_2nd" and fps > 0 and duration > 0:
             step = 2.0 / fps
             cap = min(int(duration / step) + 1, _MAX_AUTO_TIMESTAMPS + 1)
