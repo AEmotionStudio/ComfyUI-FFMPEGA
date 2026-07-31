@@ -200,6 +200,135 @@ export function attachFileDropZone(
     };
 }
 
+// --- Playback position ---
+
+/**
+ * Why the playhead moved.
+ *
+ * `"frame"` is playback advancing on its own; `"seek"` is the user (or code)
+ * jumping. Callers that snap the playhead around must act only on `"frame"` —
+ * undoing a seek fights whoever asked for it.
+ */
+export type PlayheadCause = "frame" | "seek" | "pause" | "load";
+
+/**
+ * Report playhead movement on a `<video>`.
+ *
+ * `requestVideoFrameCallback` fires once per *rendered* frame, so a readout
+ * built on it matches the picture on screen rather than trailing it; the
+ * `timeupdate` fallback runs at ~4 Hz and will lag by a few frames. Seeks,
+ * pauses and metadata loads are reported too, so a readout stays live while
+ * the video is parked.
+ *
+ * The callback receives the position, whether playback is running, and the
+ * cause — it decides what any of that means.
+ *
+ * @returns a detach function that removes every listener it added.
+ */
+export function attachPlayheadTracker(
+    videoEl: HTMLVideoElement,
+    onUpdate: (time: number, playing: boolean, cause: PlayheadCause) => void,
+): () => void {
+    const rvfc = videoEl as HTMLVideoElement & {
+        requestVideoFrameCallback?: (cb: () => void) => number;
+        cancelVideoFrameCallback?: (handle: number) => void;
+    };
+    const supportsRVFC = typeof rvfc.requestVideoFrameCallback === "function";
+    let handle: number | null = null;
+
+    const report = (cause: PlayheadCause): void => {
+        onUpdate(videoEl.currentTime, !videoEl.paused && !videoEl.ended, cause);
+    };
+
+    const scheduleFrame = (): void => {
+        handle = rvfc.requestVideoFrameCallback!(() => {
+            report("frame");
+            if (videoEl.paused || videoEl.ended) {
+                handle = null;
+            } else {
+                scheduleFrame();
+            }
+        });
+    };
+
+    const cancelFrame = (): void => {
+        if (handle !== null) {
+            rvfc.cancelVideoFrameCallback!(handle);
+            handle = null;
+        }
+    };
+
+    const onPlay = (): void => {
+        if (supportsRVFC && handle === null) scheduleFrame();
+    };
+    const onStop = (): void => {
+        cancelFrame();
+        report("pause");
+    };
+    const onSeeked = (): void => report("seek");
+    const onLoaded = (): void => report("load");
+    // Only needed where rVFC is missing — otherwise the frame callback already
+    // covers playback, and timeupdate would just report the same position late.
+    const onTimeUpdate = (): void => {
+        if (!videoEl.paused) report("frame");
+    };
+
+    videoEl.addEventListener("play", onPlay);
+    videoEl.addEventListener("pause", onStop);
+    videoEl.addEventListener("ended", onStop);
+    videoEl.addEventListener("seeked", onSeeked);
+    videoEl.addEventListener("loadedmetadata", onLoaded);
+    if (!supportsRVFC) videoEl.addEventListener("timeupdate", onTimeUpdate);
+
+    return (): void => {
+        cancelFrame();
+        videoEl.removeEventListener("play", onPlay);
+        videoEl.removeEventListener("pause", onStop);
+        videoEl.removeEventListener("ended", onStop);
+        videoEl.removeEventListener("seeked", onSeeked);
+        videoEl.removeEventListener("loadedmetadata", onLoaded);
+        if (!supportsRVFC) videoEl.removeEventListener("timeupdate", onTimeUpdate);
+    };
+}
+
+/**
+ * 1-based index within a selected frame set for a range-relative time.
+ *
+ * `elapsed` is measured from the range's in-point. Time advances over *source*
+ * frames, so an `everyNth` of 2 means two source frames pass per selected one.
+ * Returns 0 when the inputs cannot place a frame.
+ */
+export function frameAtTime(
+    elapsed: number,
+    effFps: number,
+    everyNth: number,
+    availFrames: number,
+): number {
+    if (effFps <= 0 || availFrames <= 0) return 0;
+    const nth = everyNth > 1 ? everyNth : 1;
+    const rawFrame = Math.floor(Math.max(0, elapsed) * effFps);
+    return Math.min(Math.floor(rawFrame / nth) + 1, availFrames);
+}
+
+/**
+ * Out-point, in source seconds, of a range holding `availFrames` selected
+ * frames taken every `everyNth`.
+ *
+ * Those frames are spread across `availFrames * everyNth` source frames — using
+ * the selected count alone would cut the range short by a factor of `everyNth`.
+ * Returns Infinity when there is no range to enforce.
+ */
+export function rangeEndSeconds(
+    playStart: number,
+    availFrames: number,
+    everyNth: number,
+    effFps: number,
+): number {
+    if (effFps <= 0 || availFrames <= 0) return Infinity;
+    const nth = everyNth > 1 ? everyNth : 1;
+    return playStart + (availFrames * nth) / effFps;
+}
+
 // --- Constants ---
 
 /** Alphabet for dynamic slot naming (image_a, image_b, etc.) */
