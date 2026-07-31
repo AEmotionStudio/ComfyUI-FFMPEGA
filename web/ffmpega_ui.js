@@ -1,7 +1,7 @@
 import { app } from "../../scripts/app.js";
-import { u as updateDynamicSlots, S as SLOT_LABELS, s as setPrompt, R as RANDOM_PROMPTS, f as flashNode, h as handlePaste, c as createUploadButton, a as addDownloadOverlay, b as addVideoPreviewMenu, d as attachFileDropZone, t as toggleWidget$2, e as fitHeight, w as wireDynamicInputs } from "./_chunks/ui_helpers-DUsdyHvD.js";
+import { u as updateDynamicSlots, S as SLOT_LABELS, s as setPrompt, R as RANDOM_PROMPTS, f as flashNode, h as handlePaste, c as createUploadButton, a as addDownloadOverlay, b as addVideoPreviewMenu, d as attachPlayheadTracker, e as attachFileDropZone, t as toggleWidget$2, g as fitHeight, i as frameAtTime, r as rangeEndSeconds, w as wireDynamicInputs } from "./_chunks/ui_helpers-Cs5gHV_9.js";
 import { api } from "../../scripts/api.js";
-import { o as openPointSelector } from "./_chunks/point_selector-D-OvNVQE.js";
+import { o as openPointSelector } from "./_chunks/point_selector-NqapftUC.js";
 import { C as CropOverlay } from "./_chunks/CropOverlay-H6yQHaMz.js";
 const NODE_COLORS = {
   "FFMPEGAPreview": ["#3a5a3a", "#2a4a2a"],
@@ -9,6 +9,9 @@ const NODE_COLORS = {
   "FFMPEGABatchProcessor": ["#5a3a3a", "#4a2a2a"],
   "FFMPEGAVideoInfo": ["#4a4a3a", "#3a3a2a"],
   "LoadLastImage": ["#5a4a3a", "#4a3a2a"]
+  // FFMPEGASaveLastFrame / FFMPEGALoadLastFrame are deliberately absent:
+  // registerNodeStyling short-circuits the handler chain, and those two
+  // need a real handler (slot preview). They set their own colors.
 };
 function registerNodeStyling(nodeType, nodeData) {
   const colors = NODE_COLORS[nodeData.name];
@@ -1444,7 +1447,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGALoadVideoPath") return;
   const onNodeCreated = nodeType.prototype.onNodeCreated;
   nodeType.prototype.onNodeCreated = function() {
-    var _a, _b;
+    var _a, _b, _c;
     const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
     const node = this;
     this.color = "#5a4a2a";
@@ -1532,7 +1535,9 @@ function registerLoadVideoNode(nodeType, nodeData) {
     let _effAvailFrames = 0;
     let _effFps = 0;
     let _effEveryNth = 1;
-    let _effInfoText = "";
+    let _infoHead = [];
+    let _infoTail = [];
+    let _infoOfSrc = "";
     const infoEl = document.createElement("div");
     infoEl.style.cssText = "padding:4px 8px;font-size:11px;color:#aaa;font-family:monospace;background:#111;";
     infoEl.textContent = "No video selected";
@@ -1554,14 +1559,14 @@ function registerLoadVideoNode(nodeType, nodeData) {
       node.setDirtyCanvas(true, true);
     };
     const updateDynamicInfo = () => {
-      var _a2, _b2, _c, _d, _e, _f, _g, _h;
+      var _a2, _b2, _c2, _d, _e, _f, _g, _h;
       if (!_srcMeta) {
         infoEl.textContent = "No video selected";
         clearTrimLabels();
         return;
       }
       const forceRate = ((_b2 = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "force_rate")) == null ? void 0 : _b2.value) ?? 0;
-      const skipFirst = ((_d = (_c = node.widgets) == null ? void 0 : _c.find((w) => w.name === "skip_first_frames")) == null ? void 0 : _d.value) ?? 0;
+      const skipFirst = ((_d = (_c2 = node.widgets) == null ? void 0 : _c2.find((w) => w.name === "skip_first_frames")) == null ? void 0 : _d.value) ?? 0;
       const frameCap = ((_f = (_e = node.widgets) == null ? void 0 : _e.find((w) => w.name === "frame_load_cap")) == null ? void 0 : _f.value) ?? 0;
       const everyNth = ((_h = (_g = node.widgets) == null ? void 0 : _g.find((w) => w.name === "select_every_nth")) == null ? void 0 : _h.value) ?? 1;
       const srcFps = _srcMeta.fps || 24;
@@ -1580,33 +1585,50 @@ function registerLoadVideoNode(nodeType, nodeData) {
       node.setDirtyCanvas(true, true);
       const effDuration = effFps > 0 && availFrames > 0 ? availFrames / effFps : srcDuration;
       const startTime = effFps > 0 ? skipFirst / effFps : 0;
-      const parts = [];
+      const head = [];
       if (_srcMeta.width && _srcMeta.height) {
-        parts.push(`${_srcMeta.width}×${_srcMeta.height}`);
+        head.push(`${_srcMeta.width}×${_srcMeta.height}`);
       }
       if (forceRate > 0 && forceRate !== srcFps) {
-        parts.push(`${srcFps}fps → ${forceRate}fps`);
+        head.push(`${srcFps}fps → ${forceRate}fps`);
       } else {
-        parts.push(`${srcFps}fps`);
+        head.push(`${srcFps}fps`);
       }
-      if (availFrames !== srcFrames) {
-        parts.push(`${availFrames} frames (of ${srcFrames})`);
-      } else {
-        parts.push(`${availFrames} frames`);
-      }
+      const tail = [];
       if (Math.abs(effDuration - srcDuration) > 0.1) {
-        parts.push(`${formatTimeLV(effDuration)} (of ${formatTimeLV(srcDuration)})`);
+        tail.push(`${formatTimeLV(effDuration)} (of ${formatTimeLV(srcDuration)})`);
       } else {
-        parts.push(formatTimeLV(srcDuration));
+        tail.push(formatTimeLV(srcDuration));
       }
       if (startTime > 0.05) {
-        parts.push(`from ${formatTimeLV(startTime)}`);
+        tail.push(`from ${formatTimeLV(startTime)}`);
       }
-      infoEl.textContent = parts.join(" • ");
-      _effInfoText = infoEl.textContent;
+      _infoHead = head;
+      _infoTail = tail;
+      _infoOfSrc = availFrames !== srcFrames ? ` (of ${srcFrames})` : "";
       _effAvailFrames = availFrames;
       _effFps = effFps;
       _effEveryNth = everyNth;
+      paintInfo();
+    };
+    const buildInfoText = (currentFrame, playing = false) => {
+      if (!_srcMeta) return "No video selected";
+      if (currentFrame === void 0) {
+        return [
+          ..._infoHead,
+          `${_effAvailFrames} frames${_infoOfSrc}`,
+          ..._infoTail
+        ].join(" • ");
+      }
+      const marker = playing ? "▶ " : "";
+      return [
+        `${marker}${currentFrame}/${_effAvailFrames}f${_infoOfSrc}`,
+        ..._infoHead,
+        ..._infoTail
+      ].join(" • ");
+    };
+    const paintInfo = (currentFrame, playing = false) => {
+      infoEl.textContent = buildInfoText(currentFrame, playing);
     };
     videoEl.addEventListener("loadedmetadata", () => {
       var _a2, _b2;
@@ -1653,46 +1675,53 @@ function registerLoadVideoNode(nodeType, nodeData) {
     const lvWidgetValues = {};
     let _playStart = 0;
     let _playEnd = Infinity;
-    videoEl.addEventListener("timeupdate", () => {
-      if (_playEnd < Infinity && videoEl.currentTime >= _playEnd) {
-        videoEl.currentTime = _playStart;
-      }
-      if (_srcMeta && _srcMeta.fps > 0 && _effAvailFrames > 0 && _effInfoText) {
-        const elapsed = Math.max(0, videoEl.currentTime - _playStart);
-        const rawFrame = Math.floor(elapsed * _effFps);
-        const curFrame = Math.min(
-          Math.floor(rawFrame / _effEveryNth) + 1,
+    let _lastTime = 0;
+    const detachPlayhead = attachPlayheadTracker(
+      videoEl,
+      (time, playing, cause) => {
+        if (cause === "frame" && playing && _playEnd < Infinity && time >= _playEnd && _lastTime < _playEnd) {
+          videoEl.currentTime = _playStart;
+          _lastTime = _playStart;
+          return;
+        }
+        _lastTime = time;
+        if (!_srcMeta || _effAvailFrames <= 0) return;
+        const frame = frameAtTime(
+          time - _playStart,
+          _effFps,
+          _effEveryNth,
           _effAvailFrames
         );
-        infoEl.textContent = `▶ ${curFrame}/${_effAvailFrames} • ${_effInfoText}`;
+        paintInfo(frame > 0 ? frame : void 0, playing);
       }
-    });
+    );
     const updatePlaybackRange = () => {
-      var _a2, _b2, _c, _d, _e, _f, _g, _h;
-      if (!_srcMeta || !_srcMeta.fps) return;
+      var _a2, _b2, _c2, _d, _e, _f, _g, _h;
+      if (!_srcMeta) return;
       const forceRate = ((_b2 = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "force_rate")) == null ? void 0 : _b2.value) ?? 0;
-      const skipFirst = ((_d = (_c = node.widgets) == null ? void 0 : _c.find((w) => w.name === "skip_first_frames")) == null ? void 0 : _d.value) ?? 0;
+      const skipFirst = ((_d = (_c2 = node.widgets) == null ? void 0 : _c2.find((w) => w.name === "skip_first_frames")) == null ? void 0 : _d.value) ?? 0;
       const frameCap = ((_f = (_e = node.widgets) == null ? void 0 : _e.find((w) => w.name === "frame_load_cap")) == null ? void 0 : _f.value) ?? 0;
       const everyNth = ((_h = (_g = node.widgets) == null ? void 0 : _g.find((w) => w.name === "select_every_nth")) == null ? void 0 : _h.value) ?? 1;
-      const srcFps = _srcMeta.fps;
+      const srcFps = _srcMeta.fps || 24;
       const effFps = forceRate > 0 ? forceRate : srcFps;
+      const prevStart = _playStart;
       _playStart = effFps > 0 ? skipFirst / effFps : 0;
       let availFrames = forceRate > 0 ? Math.ceil(_srcMeta.duration * forceRate) : _srcMeta.frames || Math.round(_srcMeta.duration * srcFps);
       availFrames = Math.max(0, availFrames - skipFirst);
       if (everyNth > 1) availFrames = Math.floor(availFrames / everyNth);
       if (frameCap > 0) availFrames = Math.min(availFrames, frameCap);
-      if (effFps > 0 && availFrames > 0) {
-        _playEnd = _playStart + availFrames / effFps;
-      } else {
-        _playEnd = Infinity;
-      }
+      _playEnd = rangeEndSeconds(_playStart, availFrames, everyNth, effFps);
       if (isFinite(_playEnd) && _playEnd > _srcMeta.duration) {
         _playEnd = _srcMeta.duration;
       }
-      if (isFinite(_playStart) && _playStart < videoEl.duration) {
+      if (_playStart !== prevStart && isFinite(_playStart) && _playStart < videoEl.duration) {
         videoEl.currentTime = _playStart;
       }
     };
+    for (const name of TRIM_WIDGETS) {
+      const w = (_b = node.widgets) == null ? void 0 : _b.find((ww) => ww.name === name);
+      if (w) lvWidgetValues[name] = w.value;
+    }
     const lvPollInterval = setInterval(() => {
       var _a2;
       if (!node.graph) {
@@ -1767,7 +1796,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
       showMaskOverlay();
     };
     const refreshMaskOverlay = () => {
-      var _a2, _b2, _c, _d, _e;
+      var _a2, _b2, _c2, _d, _e;
       const enableWidget = (_a2 = node.widgets) == null ? void 0 : _a2.find(
         (w) => w.name === "enable_mask"
       );
@@ -1775,7 +1804,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
         (w) => w.name === "show_mask_preview"
       );
       const showMask = Boolean(enableWidget == null ? void 0 : enableWidget.value) && (showWidget == null ? void 0 : showWidget.value) !== false;
-      const mpWidget = (_c = node.widgets) == null ? void 0 : _c.find(
+      const mpWidget = (_c2 = node.widgets) == null ? void 0 : _c2.find(
         (w) => w.name === "mask_points_data"
       );
       const maskData = (mpWidget == null ? void 0 : mpWidget.value) ? String(mpWidget.value) : "";
@@ -1841,7 +1870,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
     });
     let _maskPollHash = "";
     const maskPollInterval = setInterval(() => {
-      var _a2, _b2, _c;
+      var _a2, _b2, _c2;
       if (!node.graph) {
         clearInterval(maskPollInterval);
         return;
@@ -1852,7 +1881,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
       const showW = (_b2 = node.widgets) == null ? void 0 : _b2.find(
         (w) => w.name === "show_mask_preview"
       );
-      const mpW = (_c = node.widgets) == null ? void 0 : _c.find(
+      const mpW = (_c2 = node.widgets) == null ? void 0 : _c2.find(
         (w) => w.name === "mask_points_data"
       );
       const pollHash = `${enableW == null ? void 0 : enableW.value}|${showW == null ? void 0 : showW.value}|${(mpW == null ? void 0 : mpW.value) ? String(mpW.value).length : 0}`;
@@ -1891,6 +1920,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
       return [width, 34];
     };
     const updatePreview = (filename) => {
+      _effAvailFrames = 0;
       if (!filename) {
         previewContainer.style.display = "none";
         infoEl.textContent = "No video selected";
@@ -1918,7 +1948,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
       ]);
       (_a2 = node == null ? void 0 : node.graph) == null ? void 0 : _a2.setDirtyCanvas(true);
     };
-    const videoWidget = (_b = this.widgets) == null ? void 0 : _b.find(
+    const videoWidget = (_c = this.widgets) == null ? void 0 : _c.find(
       (w) => w.name === "video"
     );
     const origOnRemoved = this.onRemoved;
@@ -1926,6 +1956,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
       clearInterval(lvPollInterval);
       clearInterval(maskPollInterval);
       if (_dragTimer) clearTimeout(_dragTimer);
+      detachPlayhead();
       detachPreviewDrop();
       detachButtonDrop();
       fileInput == null ? void 0 : fileInput.remove();
@@ -2063,15 +2094,15 @@ function registerLoadVideoNode(nodeType, nodeData) {
     const detachPreviewDrop = attachFileDropZone(previewContainer, dropZoneOpts);
     const detachButtonDrop = attachFileDropZone(uploadBtn, dropZoneOpts);
     this.onDragOver = (e) => {
-      var _a2, _b2, _c;
-      if (!((_c = (_b2 = (_a2 = e == null ? void 0 : e.dataTransfer) == null ? void 0 : _a2.types) == null ? void 0 : _b2.includes) == null ? void 0 : _c.call(_b2, "Files"))) return false;
+      var _a2, _b2, _c2;
+      if (!((_c2 = (_b2 = (_a2 = e == null ? void 0 : e.dataTransfer) == null ? void 0 : _a2.types) == null ? void 0 : _b2.includes) == null ? void 0 : _c2.call(_b2, "Files"))) return false;
       setDragActive(true);
       return true;
     };
     this.onDragDrop = async (e) => {
-      var _a2, _b2, _c, _d, _e;
+      var _a2, _b2, _c2, _d, _e;
       setDragActive(false);
-      if (!((_c = (_b2 = (_a2 = e == null ? void 0 : e.dataTransfer) == null ? void 0 : _a2.types) == null ? void 0 : _b2.includes) == null ? void 0 : _c.call(_b2, "Files"))) return false;
+      if (!((_c2 = (_b2 = (_a2 = e == null ? void 0 : e.dataTransfer) == null ? void 0 : _a2.types) == null ? void 0 : _b2.includes) == null ? void 0 : _c2.call(_b2, "Files"))) return false;
       if (uploadBtn.disabled) return true;
       const file = (_e = (_d = e.dataTransfer) == null ? void 0 : _d.files) == null ? void 0 : _e[0];
       if (!file) return false;
@@ -2300,10 +2331,76 @@ function registerLoadMaskVideoNode(nodeType, nodeData) {
     return result;
   };
 }
+const SOURCE_FORMAT = "source (no re-encode)";
+const ADVANCED_WIDGETS = [
+  "output_format",
+  "color_policy",
+  "crf",
+  "encode_preset",
+  "bit_depth",
+  "audio_codec",
+  "audio_bitrate",
+  "faststart",
+  "loop_count",
+  "pingpong",
+  "trim_to_audio",
+  "embed_workflow",
+  "frame_output"
+];
+const HIDDEN_BY_FORMAT = {
+  [SOURCE_FORMAT]: [
+    "crf",
+    "encode_preset",
+    "bit_depth",
+    "audio_codec",
+    "audio_bitrate",
+    "faststart",
+    "pingpong"
+  ],
+  "h264-mp4": [],
+  "h265-mp4": [],
+  "vp9-webm": ["encode_preset", "faststart"],
+  "av1-webm": ["encode_preset", "faststart"],
+  "prores-mov": ["crf", "encode_preset", "bit_depth", "faststart"],
+  "ffv1-mkv": ["crf", "encode_preset", "faststart"],
+  "gif": [
+    "crf",
+    "encode_preset",
+    "bit_depth",
+    "audio_codec",
+    "audio_bitrate",
+    "faststart",
+    "trim_to_audio"
+  ],
+  "webp": [
+    "encode_preset",
+    "bit_depth",
+    "audio_codec",
+    "audio_bitrate",
+    "faststart",
+    "trim_to_audio"
+  ]
+};
+function applyWidgetVisibility(node) {
+  var _a, _b;
+  const findWidget = (name) => {
+    var _a2;
+    return (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === name);
+  };
+  const advancedOpen = Boolean((_a = findWidget("show_advanced")) == null ? void 0 : _a.value);
+  const format = String(((_b = findWidget("output_format")) == null ? void 0 : _b.value) ?? SOURCE_FORMAT);
+  const hiddenForFormat = HIDDEN_BY_FORMAT[format] ?? [];
+  for (const name of ADVANCED_WIDGETS) {
+    const show = advancedOpen && !hiddenForFormat.includes(name);
+    toggleWidget$2(findWidget(name), show);
+  }
+  fitHeight(node);
+}
 function registerSaveVideoNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGASaveVideo") return;
   const onNodeCreated = nodeType.prototype.onNodeCreated;
   nodeType.prototype.onNodeCreated = function() {
+    var _a;
     const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
     const node = this;
     this.color = "#2a5a3a";
@@ -2318,13 +2415,42 @@ function registerSaveVideoNode(nodeType, nodeData) {
     videoEl.setAttribute("aria-label", "Output video preview");
     videoEl.style.cssText = "width:100%;display:block;";
     videoEl.addEventListener("loadedmetadata", () => {
-      var _a;
+      var _a2;
       previewWidget.aspectRatio = videoEl.videoWidth / videoEl.videoHeight;
+      paintInfo();
+      node.setSize([
+        node.size[0],
+        node.computeSize([node.size[0], node.size[1]])[1]
+      ]);
+      (_a2 = node == null ? void 0 : node.graph) == null ? void 0 : _a2.setDirtyCanvas(true);
+    });
+    videoEl.addEventListener("error", () => {
+      var _a2;
+      previewContainer.style.display = "none";
+      node.setSize([
+        node.size[0],
+        node.computeSize([node.size[0], node.size[1]])[1]
+      ]);
+      (_a2 = node == null ? void 0 : node.graph) == null ? void 0 : _a2.setDirtyCanvas(true);
+    });
+    const infoEl = document.createElement("div");
+    infoEl.style.cssText = "padding:4px 8px;font-size:11px;color:#aaa;font-family:monospace;background:#111;";
+    infoEl.textContent = "Waiting for execution...";
+    infoEl.setAttribute("role", "status");
+    infoEl.setAttribute("aria-live", "polite");
+    function buildInfoText(currentFrame2) {
+      const parts = [];
       const w = videoEl.videoWidth;
       const h = videoEl.videoHeight;
-      const d = videoEl.duration;
-      const parts = [];
       if (w && h) parts.push(`${w}×${h}`);
+      const total = node._savedFrameCount ?? 0;
+      if (total > 0) {
+        const fps = node._savedFps ? ` @ ${node._savedFps}fps` : "";
+        parts.push(
+          currentFrame2 === void 0 ? `${total}f${fps}` : `▶ ${currentFrame2}/${total}f${fps}`
+        );
+      }
+      const d = videoEl.duration;
       if (d && isFinite(d)) {
         const m = Math.floor(d / 60);
         const s = (d % 60).toFixed(1);
@@ -2333,29 +2459,30 @@ function registerSaveVideoNode(nodeType, nodeData) {
       if (node._savedFileSize) {
         parts.push(node._savedFileSize);
       }
-      if (parts.length) {
-        infoEl.textContent = parts.join(" | ");
+      return parts.join(" | ");
+    }
+    function paintInfo(currentFrame2) {
+      const text = buildInfoText(currentFrame2);
+      if (text) infoEl.textContent = text;
+    }
+    function currentFrame() {
+      const fps = node._savedFps ?? 0;
+      const total = node._savedFrameCount ?? 0;
+      if (fps <= 0 || total <= 0) return void 0;
+      return Math.min(Math.floor(videoEl.currentTime * fps) + 1, total);
+    }
+    const detachPlayhead = attachPlayheadTracker(
+      videoEl,
+      (_time, playing, cause) => {
+        const scrubbed = cause === "seek" && !playing;
+        paintInfo(playing || scrubbed ? currentFrame() : void 0);
       }
-      node.setSize([
-        node.size[0],
-        node.computeSize([node.size[0], node.size[1]])[1]
-      ]);
-      (_a = node == null ? void 0 : node.graph) == null ? void 0 : _a.setDirtyCanvas(true);
-    });
-    videoEl.addEventListener("error", () => {
-      var _a;
-      previewContainer.style.display = "none";
-      node.setSize([
-        node.size[0],
-        node.computeSize([node.size[0], node.size[1]])[1]
-      ]);
-      (_a = node == null ? void 0 : node.graph) == null ? void 0 : _a.setDirtyCanvas(true);
-    });
-    const infoEl = document.createElement("div");
-    infoEl.style.cssText = "padding:4px 8px;font-size:11px;color:#aaa;font-family:monospace;background:#111;";
-    infoEl.textContent = "Waiting for execution...";
-    infoEl.setAttribute("role", "status");
-    infoEl.setAttribute("aria-live", "polite");
+    );
+    const origOnRemovedSave = this.onRemoved;
+    this.onRemoved = function() {
+      detachPlayhead();
+      origOnRemovedSave == null ? void 0 : origOnRemovedSave.apply(this, arguments);
+    };
     previewContainer.appendChild(videoEl);
     previewContainer.appendChild(infoEl);
     addDownloadOverlay(previewContainer, videoEl);
@@ -2396,9 +2523,9 @@ function registerSaveVideoNode(nodeType, nodeData) {
     };
     const origOnExecuted = this.onExecuted;
     this.onExecuted = function(data) {
-      var _a, _b;
+      var _a2, _b, _c, _d;
       origOnExecuted == null ? void 0 : origOnExecuted.apply(this, arguments);
-      if ((_a = data == null ? void 0 : data.video) == null ? void 0 : _a[0]) {
+      if ((_a2 = data == null ? void 0 : data.video) == null ? void 0 : _a2[0]) {
         const v = data.video[0];
         const params = new URLSearchParams({
           filename: v.filename,
@@ -2411,6 +2538,8 @@ function registerSaveVideoNode(nodeType, nodeData) {
         if ((_b = data == null ? void 0 : data.file_size) == null ? void 0 : _b[0]) {
           node._savedFileSize = data.file_size[0];
         }
+        node._savedFrameCount = ((_c = data == null ? void 0 : data.frame_count) == null ? void 0 : _c[0]) ?? 0;
+        node._savedFps = ((_d = data == null ? void 0 : data.fps) == null ? void 0 : _d[0]) ?? 0;
         infoEl.textContent = `Saved: ${v.filename}`;
         if (node._savedFileSize) {
           infoEl.textContent += ` (${node._savedFileSize})`;
@@ -2430,6 +2559,17 @@ function registerSaveVideoNode(nodeType, nodeData) {
         { name: "images", type: "IMAGE" }
       ]
     );
+    for (const name of ["show_advanced", "output_format"]) {
+      const widget = (_a = node.widgets) == null ? void 0 : _a.find((w) => w.name === name);
+      if (!widget) continue;
+      const origCallback = widget.callback;
+      widget.callback = function(...args) {
+        const r = origCallback == null ? void 0 : origCallback.apply(this, args);
+        applyWidgetVisibility(node);
+        return r;
+      };
+    }
+    requestAnimationFrame(() => applyWidgetVisibility(node));
     return result;
   };
 }
@@ -2455,7 +2595,7 @@ function registerSaveImageNode(nodeType, nodeData) {
     return result;
   };
 }
-const RESIZE_WIDGETS = [
+const RESIZE_WIDGETS$1 = [
   "resize_width",
   "resize_height",
   "upscale_method",
@@ -2504,7 +2644,7 @@ function registerLoadImageNode(nodeType, nodeData) {
       var _a2, _b;
       const enableResize = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "enable_resize");
       const show = Boolean(enableResize == null ? void 0 : enableResize.value);
-      for (const name of RESIZE_WIDGETS) {
+      for (const name of RESIZE_WIDGETS$1) {
         const w = (_b = node.widgets) == null ? void 0 : _b.find((ww) => ww.name === name);
         if (w) toggleWidget(w, show);
       }
@@ -2607,6 +2747,170 @@ function registerLoadImageNode(nodeType, nodeData) {
         flashNode(self, "#4a7a4a");
       }
     }, null);
+  };
+}
+const SAVE_NODE = "FFMPEGASaveLastFrame";
+const LOAD_NODE = "FFMPEGALoadLastFrame";
+const POLL_INTERVAL = 3e3;
+const RESIZE_WIDGETS = [
+  "resize_width",
+  "resize_height",
+  "upscale_method",
+  "keep_proportion",
+  "pad_color",
+  "crop_position",
+  "divisible_by",
+  "resize_device"
+];
+function frameUrl(frame) {
+  const params = new URLSearchParams({
+    filename: frame.filename,
+    subfolder: frame.subfolder || "",
+    type: frame.type || "output",
+    t: String(frame.mtime ?? Date.now())
+  });
+  return api.apiURL("/view?" + params.toString());
+}
+function applyResizeVisibility(node) {
+  var _a, _b, _c;
+  const enabled = Boolean(
+    (_b = (_a = node.widgets) == null ? void 0 : _a.find((w) => w.name === "enable_resize")) == null ? void 0 : _b.value
+  );
+  for (const name of RESIZE_WIDGETS) {
+    toggleWidget$2((_c = node.widgets) == null ? void 0 : _c.find((w) => w.name === name), enabled);
+  }
+  fitHeight(node);
+}
+function attachSlotPreview(node, emptyHint) {
+  var _a;
+  const container = document.createElement("div");
+  container.style.cssText = "width:100%;background:#1a1a1a;border-radius:6px;overflow:hidden;";
+  const strip = document.createElement("div");
+  strip.style.cssText = "display:flex;gap:4px;padding:4px;overflow-x:auto;align-items:flex-start;";
+  const info = document.createElement("div");
+  info.style.cssText = "padding:4px 8px;font-size:11px;color:#aaa;font-family:monospace;background:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+  info.setAttribute("role", "status");
+  info.setAttribute("aria-live", "polite");
+  info.textContent = emptyHint;
+  container.appendChild(strip);
+  container.appendChild(info);
+  for (const evt of ["contextmenu", "pointerdown", "mousewheel", "pointermove", "pointerup"]) {
+    container.addEventListener(evt, (e) => e.stopPropagation(), true);
+  }
+  const widget = node.addDOMWidget(
+    "slotpreview",
+    "preview",
+    container,
+    { serialize: false, hideOnZoom: false }
+  );
+  let aspectRatio = null;
+  widget.computeSize = function(width) {
+    if (aspectRatio === null) return [width, 44];
+    const thumb = Math.min((node.size[0] - 24) / aspectRatio, 220);
+    return [width, Math.max(thumb, 40) + 38];
+  };
+  let signature = "";
+  const render = (frames, slot) => {
+    strip.replaceChildren();
+    if (!frames.length) {
+      aspectRatio = null;
+      info.textContent = emptyHint;
+      fitHeight(node);
+      return;
+    }
+    for (const frame of frames) {
+      const img = document.createElement("img");
+      img.src = frameUrl(frame);
+      img.alt = frame.filename;
+      img.title = frame.filename;
+      img.style.cssText = "height:100%;max-height:220px;flex:0 0 auto;border-radius:3px;object-fit:contain;background:#000;";
+      img.addEventListener("load", () => {
+        if (aspectRatio === null && img.naturalHeight) {
+          aspectRatio = img.naturalWidth / img.naturalHeight;
+          fitHeight(node);
+        }
+      });
+      strip.appendChild(img);
+    }
+    const last = frames[frames.length - 1];
+    info.textContent = frames.length === 1 ? `${slot}: ${last.filename}` : `${slot}: ${frames.length} frames — newest ${last.filename}`;
+    fitHeight(node);
+  };
+  const refresh = async (force = false) => {
+    var _a2, _b;
+    const slot = String(
+      ((_b = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "slot_name")) == null ? void 0 : _b.value) ?? "default"
+    );
+    try {
+      const resp = await fetch(
+        api.apiURL(`/ffmpega/last_frame/slot?slot=${encodeURIComponent(slot)}`)
+      );
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const sig = `${data.slot ?? slot}#${data.signature ?? ""}`;
+      if (!force && sig === signature) return;
+      signature = sig;
+      aspectRatio = null;
+      render(data.frames ?? [], data.slot ?? slot);
+    } catch {
+    }
+  };
+  void refresh(true);
+  const timer = setInterval(() => void refresh(), POLL_INTERVAL);
+  const origOnRemoved = node.onRemoved;
+  node.onRemoved = function() {
+    clearInterval(timer);
+    return origOnRemoved == null ? void 0 : origOnRemoved.apply(this, arguments);
+  };
+  const slotWidget = (_a = node.widgets) == null ? void 0 : _a.find((w) => w.name === "slot_name");
+  if (slotWidget) {
+    const origCallback = slotWidget.callback;
+    slotWidget.callback = function(...args) {
+      const r = origCallback == null ? void 0 : origCallback.apply(this, args);
+      void refresh(true);
+      return r;
+    };
+  }
+  const origOnExecuted = node.onExecuted;
+  node.onExecuted = function(data) {
+    const r = origOnExecuted == null ? void 0 : origOnExecuted.apply(this, arguments);
+    void refresh(true);
+    return r;
+  };
+}
+function registerLastFrameNodes(nodeType, nodeData) {
+  const isSave = nodeData.name === SAVE_NODE;
+  const isLoad = nodeData.name === LOAD_NODE;
+  if (!isSave && !isLoad) return;
+  const onNodeCreated = nodeType.prototype.onNodeCreated;
+  nodeType.prototype.onNodeCreated = function() {
+    var _a;
+    const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
+    if (isSave) {
+      this.color = "#5a3a4a";
+      this.bgcolor = "#4a2a3a";
+    } else {
+      this.color = "#5a4a3a";
+      this.bgcolor = "#4a3a2a";
+    }
+    attachSlotPreview(
+      this,
+      isSave ? "Slot is empty — run to save a frame" : "Slot is empty — connect fallback_image to start a chain"
+    );
+    if (isLoad) {
+      const node = this;
+      const enableResize = (_a = node.widgets) == null ? void 0 : _a.find((w) => w.name === "enable_resize");
+      if (enableResize) {
+        const origCallback = enableResize.callback;
+        enableResize.callback = function(...args) {
+          const r = origCallback == null ? void 0 : origCallback.apply(this, args);
+          applyResizeVisibility(node);
+          return r;
+        };
+      }
+      setTimeout(() => applyResizeVisibility(node), 0);
+    }
+    return result;
   };
 }
 const BUILTIN_PRESETS = [
@@ -4664,6 +4968,7 @@ app.registerExtension({
     registerSaveVideoNode(nodeType, nodeData);
     registerSaveImageNode(nodeType, nodeData);
     registerLoadImageNode(nodeType, nodeData);
+    registerLastFrameNodes(nodeType, nodeData);
     registerTextInputNode(nodeType, nodeData);
     registerPointSelectorHooks(nodeType, nodeData);
     registerCropSelectorHooks(nodeType, nodeData);

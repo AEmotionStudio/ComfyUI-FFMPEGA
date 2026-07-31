@@ -3,7 +3,7 @@ var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { en
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
-import { a as addDownloadOverlay } from "./_chunks/ui_helpers-DUsdyHvD.js";
+import { a as addDownloadOverlay } from "./_chunks/ui_helpers-Cs5gHV_9.js";
 import { d as collectEdges, s as snapToEdges, E as EditManager, T as TransportBar, S as SpeedControl, a as EditToolbar, U as UndoManager, N as NLETimeline } from "./_chunks/UndoManager-BnlgiwE5.js";
 import { C as CropOverlay } from "./_chunks/CropOverlay-H6yQHaMz.js";
 import { u as iconVolume, v as iconMuted, w as iconMusic, x as iconPlus, y as iconClose, z as iconBold, A as iconItalic, B as iconAlignLeft, C as iconAlignCenter, D as iconAlignRight, m as iconPalette, E as iconZoomOut, F as iconZoomIn, G as iconMaximize, H as iconShuffle, I as iconClapperboard, J as iconUndo, K as iconRedo, p as iconCheck, h as iconCrop, L as iconGauge, M as iconText, d as iconWand, f as iconSun, N as iconSettings, g as iconLayers, O as iconBrain, P as iconMove } from "./_chunks/icons-BOh8YpxI.js";

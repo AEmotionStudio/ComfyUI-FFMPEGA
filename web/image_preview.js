@@ -2,8 +2,8 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { c as cssText } from "./_chunks/loadlast-dy_0sOyd.js";
 import { C as CropOverlay } from "./_chunks/CropOverlay-H6yQHaMz.js";
-import { o as openPointSelector } from "./_chunks/point_selector-D-OvNVQE.js";
-import { f as flashNode } from "./_chunks/ui_helpers-DUsdyHvD.js";
+import { o as openPointSelector } from "./_chunks/point_selector-NqapftUC.js";
+import { f as flashNode } from "./_chunks/ui_helpers-Cs5gHV_9.js";
 import { i as iconImage, a as iconGrid, b as iconColumns, c as iconInvert, d as iconWand, e as iconArrowLeftRight, f as iconSun, g as iconLayers, h as iconCrop, j as iconScaling, k as iconRotateCW, l as iconExpand, m as iconPalette, n as iconReset, o as iconCircleCheck, p as iconCheck, q as iconLock, r as iconFlip, s as iconFlipVertical, t as iconPin } from "./_chunks/icons-BOh8YpxI.js";
 if (!document.getElementById("loadlast-styles")) {
   const style = document.createElement("style");

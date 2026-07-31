@@ -1,4 +1,4 @@
-import { f as flashNode } from "./ui_helpers-DUsdyHvD.js";
+import { f as flashNode } from "./ui_helpers-Cs5gHV_9.js";
 const HIT_RADIUS = 20;
 function openPointSelector(node, imgSrc, _videoSrc, framePath) {
   var _a, _b;

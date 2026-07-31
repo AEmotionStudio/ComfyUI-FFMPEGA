@@ -112,6 +112,68 @@ function attachFileDropZone(el, opts) {
     el.removeEventListener("drop", onDrop);
   };
 }
+function attachPlayheadTracker(videoEl, onUpdate) {
+  const rvfc = videoEl;
+  const supportsRVFC = typeof rvfc.requestVideoFrameCallback === "function";
+  let handle = null;
+  const report = (cause) => {
+    onUpdate(videoEl.currentTime, !videoEl.paused && !videoEl.ended, cause);
+  };
+  const scheduleFrame = () => {
+    handle = rvfc.requestVideoFrameCallback(() => {
+      report("frame");
+      if (videoEl.paused || videoEl.ended) {
+        handle = null;
+      } else {
+        scheduleFrame();
+      }
+    });
+  };
+  const cancelFrame = () => {
+    if (handle !== null) {
+      rvfc.cancelVideoFrameCallback(handle);
+      handle = null;
+    }
+  };
+  const onPlay = () => {
+    if (supportsRVFC && handle === null) scheduleFrame();
+  };
+  const onStop = () => {
+    cancelFrame();
+    report("pause");
+  };
+  const onSeeked = () => report("seek");
+  const onLoaded = () => report("load");
+  const onTimeUpdate = () => {
+    if (!videoEl.paused) report("frame");
+  };
+  videoEl.addEventListener("play", onPlay);
+  videoEl.addEventListener("pause", onStop);
+  videoEl.addEventListener("ended", onStop);
+  videoEl.addEventListener("seeked", onSeeked);
+  videoEl.addEventListener("loadedmetadata", onLoaded);
+  if (!supportsRVFC) videoEl.addEventListener("timeupdate", onTimeUpdate);
+  return () => {
+    cancelFrame();
+    videoEl.removeEventListener("play", onPlay);
+    videoEl.removeEventListener("pause", onStop);
+    videoEl.removeEventListener("ended", onStop);
+    videoEl.removeEventListener("seeked", onSeeked);
+    videoEl.removeEventListener("loadedmetadata", onLoaded);
+    if (!supportsRVFC) videoEl.removeEventListener("timeupdate", onTimeUpdate);
+  };
+}
+function frameAtTime(elapsed, effFps, everyNth, availFrames) {
+  if (effFps <= 0 || availFrames <= 0) return 0;
+  const nth = everyNth > 1 ? everyNth : 1;
+  const rawFrame = Math.floor(Math.max(0, elapsed) * effFps);
+  return Math.min(Math.floor(rawFrame / nth) + 1, availFrames);
+}
+function rangeEndSeconds(playStart, availFrames, everyNth, effFps) {
+  if (effFps <= 0 || availFrames <= 0) return Infinity;
+  const nth = everyNth > 1 ? everyNth : 1;
+  return playStart + availFrames * nth / effFps;
+}
 const SLOT_LABELS = "abcdefghijklmnopqrstuvwxyz";
 const RANDOM_PROMPTS = [
   "Make it cinematic with a fade in and vignette",
@@ -578,10 +640,13 @@ export {
   addDownloadOverlay as a,
   addVideoPreviewMenu as b,
   createUploadButton as c,
-  attachFileDropZone as d,
-  fitHeight as e,
+  attachPlayheadTracker as d,
+  attachFileDropZone as e,
   flashNode as f,
+  fitHeight as g,
   handlePaste as h,
+  frameAtTime as i,
+  rangeEndSeconds as r,
   setPrompt as s,
   toggleWidget as t,
   updateDynamicSlots as u,
