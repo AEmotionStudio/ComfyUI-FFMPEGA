@@ -71,6 +71,13 @@ except ImportError as e:
     _log.warning("[FFMPEGA] Node FFMPEGASaveImage unavailable: %s", e)
 
 try:
+    from .save_last_frame_node import SaveLastFrameNode
+    NODE_CLASS_MAPPINGS["FFMPEGASaveLastFrame"] = SaveLastFrameNode
+    NODE_DISPLAY_NAME_MAPPINGS["FFMPEGASaveLastFrame"] = "Save Last Frame (FFMPEGA)"
+except ImportError as e:
+    _log.warning("[FFMPEGA] Node FFMPEGASaveLastFrame unavailable: %s", e)
+
+try:
     from .media_bridge_node import MediaBridgeNode
     NODE_CLASS_MAPPINGS["FFMPEGAMediaBridge"] = MediaBridgeNode
     NODE_DISPLAY_NAME_MAPPINGS["FFMPEGAMediaBridge"] = "Media Bridge (FFMPEGA)"
@@ -102,6 +109,18 @@ try:
 except ImportError:
     logging.getLogger("FFMPEGA").debug(
         "[FFMPEGA] LoadLast nodes not available (import error)", exc_info=True
+    )
+
+# Guarded separately from the two above: folding it into that import would
+# mean a bug in this module silently unregisters LoadLastImage/LoadLastVideo.
+try:
+    from ..loadlast import LoadLastFrame
+
+    NODE_CLASS_MAPPINGS["FFMPEGALoadLastFrame"] = LoadLastFrame
+    NODE_DISPLAY_NAME_MAPPINGS["FFMPEGALoadLastFrame"] = "Load Last Frame (FFMPEGA)"
+except ImportError:
+    logging.getLogger("FFMPEGA").debug(
+        "[FFMPEGA] LoadLastFrame node not available (import error)", exc_info=True
     )
 
 # --- Video Editor node ---
@@ -138,6 +157,7 @@ __all__ = [
     "LoadMaskVideoNode",
     "SaveVideoNode",
     "SaveImageNode",
+    "SaveLastFrameNode",
     "MediaBridgeNode",
     "TextInputNode",
     "FFMPEGAEffectsNode",
@@ -149,6 +169,9 @@ __all__ = [
 # Add LoadLast names only if they were successfully imported
 if "LoadLastImage" in NODE_CLASS_MAPPINGS:
     __all__.extend(["LoadLastImage", "LoadLastVideo"])
+
+if "FFMPEGALoadLastFrame" in NODE_CLASS_MAPPINGS:
+    __all__.append("LoadLastFrame")
 
 # Add VideoEditor name only if successfully imported
 if "FFMPEGAVideoEditor" in NODE_CLASS_MAPPINGS:

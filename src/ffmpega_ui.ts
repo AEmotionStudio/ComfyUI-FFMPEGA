@@ -17,6 +17,7 @@ import { registerLoadMaskVideoNode } from "@ffmpega/nodes/load_mask_video_node";
 import { registerSaveVideoNode } from "@ffmpega/nodes/save_video_node";
 import { registerSaveImageNode } from "@ffmpega/nodes/save_image_node";
 import { registerLoadImageNode } from "@ffmpega/nodes/load_image_node";
+import { registerLastFrameNodes } from "@ffmpega/nodes/last_frame_ui";
 import { registerTextInputNode } from "@ffmpega/nodes/text_input_node";
 import { registerPointSelectorHooks } from "@ffmpega/nodes/point_selector_hooks";
 import { registerCropSelectorHooks } from "@ffmpega/nodes/crop_selector_hooks";
@@ -44,6 +45,7 @@ app.registerExtension({
         registerSaveVideoNode(nodeType, nodeData);
         registerSaveImageNode(nodeType, nodeData);
         registerLoadImageNode(nodeType, nodeData);
+        registerLastFrameNodes(nodeType, nodeData);
         registerTextInputNode(nodeType, nodeData);
 
         // Point selector context menu hooks (LoadVideoPath, FrameExtract)
