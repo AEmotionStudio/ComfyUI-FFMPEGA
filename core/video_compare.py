@@ -24,9 +24,18 @@ import tempfile
 try:
     from .bin_paths import get_ffmpeg_bin, get_ffprobe_bin
     from .grid_layout import cell_positions, compute_grid
+    from .video import encode_opts as eo
 except ImportError:  # pragma: no cover - script/standalone import
     from core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin  # type: ignore
     from core.grid_layout import cell_positions, compute_grid  # type: ignore
+    from core.video import encode_opts as eo  # type: ignore
+
+#: Panels can arrive with different (or missing) colour tags, and xstack does
+#: not reconcile them — mixing a BT.601 clip with a BT.709 one shows as a
+#: visible colour step between panels.  Each panel's scale filter converts to
+#: BT.709, and the stacked result is tagged to match.  The transfer is left
+#: unset because the sources' transfer is genuinely unknown here.
+_OUT_PARAMS = "setparams=colorspace=bt709:color_primaries=bt709:range=tv"
 
 logger = logging.getLogger("FFMPEGA")
 
@@ -161,7 +170,7 @@ def combine_videos(
             tw = _even(w * common_h / h) if h else common_h
             chain = (
                 f"[{i}:v]setpts=PTS-STARTPTS,"
-                f"scale={tw}:{common_h}:flags=bilinear,setsar=1"
+                f"scale={tw}:{common_h}:flags=bilinear:out_color_matrix=bt709,setsar=1"
             )
             chain += _tpad(dur, max_dur)
             chain += _drawtext(labels, i, common_h)
@@ -174,7 +183,7 @@ def combine_videos(
             th = _even(h * common_w / w) if w else common_w
             chain = (
                 f"[{i}:v]setpts=PTS-STARTPTS,"
-                f"scale={common_w}:{th}:flags=bilinear,setsar=1"
+                f"scale={common_w}:{th}:flags=bilinear:out_color_matrix=bt709,setsar=1"
             )
             chain += _tpad(dur, max_dur)
             chain += _drawtext(labels, i, th)
@@ -188,7 +197,7 @@ def combine_videos(
             chain = (
                 f"[{i}:v]setpts=PTS-STARTPTS,"
                 f"scale={cell_w}:{cell_h}:force_original_aspect_ratio=decrease:"
-                f"flags=bilinear,"
+                f"flags=bilinear:out_color_matrix=bt709,"
                 f"pad={cell_w}:{cell_h}:(ow-iw)/2:(oh-ih)/2:color={bg_color},"
                 f"setsar=1"
             )
@@ -205,7 +214,8 @@ def combine_videos(
     fc = (
         ";".join(panels) + ";"
         + inputs_lbl
-        + f"xstack=inputs={n}:layout={layout_str}:fill={bg_color}[out]"
+        + f"xstack=inputs={n}:layout={layout_str}:fill={bg_color},"
+        + f"{_OUT_PARAMS}[out]"
     )
 
     # --- Audio: take the first source that actually has audio ---
@@ -223,10 +233,13 @@ def combine_videos(
         cmd += ["-filter_complex", graph, "-map", "[out]"]
         if audio_idx is not None:
             cmd += ["-map", f"{audio_idx}:a", "-c:a", "aac", "-b:a", "192k"]
-        cmd += [
-            "-c:v", "libx264", "-crf", "18", "-preset", "fast",
-            "-pix_fmt", "yuv420p", out_path,
-        ]
+        spec = eo.EncodeSpec(format="h264-mp4", crf=18, preset="fast",
+                             faststart=False)
+        # Panels are already YUV and may disagree about their tags; xstack
+        # does not normalise them, so state the result explicitly rather
+        # than leaving the stacked output untagged.
+        cmd += eo.video_output_args(spec, apply_color=False)
+        cmd.append(out_path)
         return cmd
 
     ok = _run(_build(bool(labels)))

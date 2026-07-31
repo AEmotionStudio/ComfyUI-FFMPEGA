@@ -326,14 +326,21 @@ def _encode_video_from_frames(
             frame.save(os.path.join(tmpdir, f"{i:06d}.png"))
 
         ffmpeg = _get_ffmpeg_bin()
+        try:
+            from .video import encode_opts as _eo
+        except ImportError:  # pragma: no cover - direct-import fallback
+            from core.video import encode_opts as _eo  # type: ignore
+
         cmd = [
             ffmpeg, "-y",
             "-framerate", str(fps),
             "-start_number", "0",
             "-i", os.path.join(tmpdir, "%06d.png"),
+            # Shared colour policy.  The old `-color_range pc` tag claimed
+            # full range while swscale wrote limited-range samples.
+            "-vf", _eo.color_filter(_eo.DEFAULT_COLOR_POLICY),
             "-c:v", "libx264",
             "-pix_fmt", "yuv420p",
-            "-color_range", "pc",
             "-crf", str(crf),
             output_path,
         ]

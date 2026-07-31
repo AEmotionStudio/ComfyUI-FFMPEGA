@@ -160,68 +160,68 @@ class MediaConverter:
             return self._silence()
 
     def images_to_video(
-        self, images: torch.Tensor, fps: int = 24
+        self,
+        images: torch.Tensor,
+        fps: int = 24,
+        spec=None,
+        output_path: str | None = None,
+        pingpong: bool = False,
+        prompt=None,
+        extra_pnginfo: dict | None = None,
     ) -> str:
-        """Convert an IMAGE tensor (B, H, W, 3) to a temporary video file.
+        """Convert an IMAGE tensor (B, H, W, 3) to a video file.
+
+        Colour handling, the format table and the tensor→bytes conversion all
+        live in :mod:`core.video.encode_opts` so every FFMPEGA encoder agrees.
 
         Args:
             images: Batched image tensor with float32 values in [0, 1].
             fps: Frame rate for the output video.
+            spec: Optional :class:`~core.video.encode_opts.EncodeSpec`.  The
+                default is a fast temp-file encode (h264, ultrafast, crf 18).
+            output_path: Destination file.  A temp file is created when omitted.
+            pingpong: Append the reversed clip so playback boomerangs.
+            prompt: PROMPT dict to embed in the container.
+            extra_pnginfo: EXTRA_PNGINFO dict to embed in the container.
 
         Returns:
-            Path to the created temporary video file.
+            Path to the created video file.
         """
+        from .video import encode_opts as eo
+
         ffmpeg_bin = get_ffmpeg_bin()
         if not ffmpeg_bin:
             raise RuntimeError("ffmpeg not found in PATH")
 
+        if spec is None:
+            # Temp-file default: ultrafast is ~6.5x quicker and these files are
+            # usually copied, not delivered.
+            spec = eo.EncodeSpec(
+                format="h264-mp4", crf=18, preset="ultrafast", faststart=False,
+            )
+
+        if pingpong:
+            images = eo.apply_pingpong(images)
+
+        # yuv420p needs even dimensions; replicate edges rather than pad black.
+        images = eo.pad_to_alignment(images, spec.dim_alignment)
         h, w = images.shape[1], images.shape[2]
+        n_frames = images.shape[0]
 
-        # Dimension alignment: yuv420p requires even width and height.
-        # Pad odd dimensions using edge replication (matching VHS approach).
-        pad_w = (-w) % 2
-        pad_h = (-h) % 2
-        if pad_w or pad_h:
-            # ReplicationPad2d expects (left, right, top, bottom) on CHW
-            padding = (0, pad_w, 0, pad_h)
-            padfunc = torch.nn.ReplicationPad2d(padding)
-            # Permute (B,H,W,C) → (B,C,H,W), pad, then back to (B,H,W,C)
-            images = padfunc(images.permute(0, 3, 1, 2)).permute(0, 2, 3, 1).contiguous()
-            h, w = images.shape[1], images.shape[2]
+        if output_path is None:
+            tmp = tempfile.NamedTemporaryFile(suffix=spec.ext, delete=False)
+            tmp.close()
+            output_path = tmp.name
 
-        tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
-        tmp.close()
+        cmd = eo.build_raw_encode_command(
+            spec, w, h, fps, output_path,
+            n_frames=n_frames,
+            prompt=prompt,
+            extra_pnginfo=extra_pnginfo,
+        )
 
         proc = subprocess.Popen(
-            [
-                ffmpeg_bin, "-y",
-                "-f", "rawvideo",
-                "-vcodec", "rawvideo",
-                "-s", f"{w}x{h}",
-                "-pix_fmt", "rgb24",
-                # Input really is full-range RGB; tagging it lets swscale do a
-                # correct full → limited conversion below rather than guessing.
-                "-color_range", "pc",
-                "-r", str(fps),
-                "-i", "-",
-                "-c:v", "libx264",
-                # Emit standard limited-range BT.709, matching ComfyUI's own
-                # SaveVideo. Previously this wrote full-range (yuvj420p +
-                # color_range=pc) to avoid darkening, but yuvj420p is deprecated
-                # and players that normalise it to yuv420p re-expand the levels,
-                # crushing blacks and blowing highlights — the range conversion
-                # is explicit here instead, so no darkening occurs.
-                "-vf", "scale=in_range=pc:out_range=tv",
-                "-pix_fmt", "yuv420p",
-                "-color_range", "tv",
-                "-colorspace", "bt709",
-                "-color_primaries", "bt709",
-                "-color_trc", "bt709",
-                # Optimization: ultrafast provides ~6.5x speedup for temp files
-                "-preset", "ultrafast",
-                "-crf", "18",
-                tmp.name,
-            ],
+            cmd,
             stdin=subprocess.PIPE,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
@@ -231,25 +231,32 @@ class MediaConverter:
         # Write frames in chunks to avoid materializing the entire tensor
         # as a single numpy array (~1.2GB for 192 frames at 1080p).
         CHUNK = 32
-        n_frames = images.shape[0]
-        for start in range(0, n_frames, CHUNK):
-            end = min(start + CHUNK, n_frames)
-            # Optimization: Use in-place operations (mul, clamp_) to avoid intermediate
-            # float tensor allocation for the chunk scaling step.
-            chunk = images[start:end].mul(255.0).clamp_(0, 255).to(torch.uint8).cpu().contiguous().numpy()
-            assert proc.stdin is not None
-            proc.stdin.write(chunk)  # type: ignore[arg-type]  # numpy buffer protocol
-            del chunk
+        try:
+            for start in range(0, n_frames, CHUNK):
+                end = min(start + CHUNK, n_frames)
+                chunk = eo.frames_to_bytes(images[start:end], spec.bit_depth)
+                assert proc.stdin is not None
+                proc.stdin.write(chunk)  # type: ignore[arg-type]  # numpy buffer protocol
+                del chunk
+        except BrokenPipeError:
+            # ffmpeg died early; its stderr below explains why.
+            pass
         if proc.stdin is not None:
-            proc.stdin.close()
+            try:
+                proc.stdin.close()
+            except BrokenPipeError:
+                pass
         proc.wait()
 
         if proc.returncode != 0:
             stderr = (proc.stderr.read() if proc.stderr else b"").decode("utf-8", "backslashreplace")
-            os.remove(tmp.name)
-            raise RuntimeError(f"Failed to create temp video from images: {stderr}")
+            try:
+                os.remove(output_path)
+            except OSError:
+                pass
+            raise RuntimeError(f"Failed to create video from images: {stderr}")
 
-        return tmp.name
+        return output_path
 
     def save_frames_as_images(
         self, images: torch.Tensor, max_frames: int = 50
@@ -316,7 +323,11 @@ class MediaConverter:
             return 0.0
 
     def mux_audio(
-        self, video_path: str, audio: dict, audio_mode: str = "loop",
+        self,
+        video_path: str,
+        audio: dict,
+        audio_mode: str = "loop",
+        audio_codec: str = "aac",
     ) -> None:
         """Mux a ComfyUI AUDIO dict into an existing video file.
 
@@ -331,9 +342,15 @@ class MediaConverter:
                   video length. If audio is longer, trim to video.
                 - "pad": Pad audio with silence to match video length.
                   If audio is longer, the full audio plays.
-                - "trim": Use -shortest — output ends at the shorter
-                  stream (original behavior).
+                - "trim" (aliases "replace", "trim_to_audio"): Use -shortest —
+                  output ends at the shorter stream.
+            audio_codec: Encoder for the muxed track.  Must suit the
+                container: aac for mp4/mov, libopus/libvorbis for webm,
+                flac for mkv.
         """
+        import logging
+        logger = logging.getLogger("ffmpega")
+
         ffmpeg_bin = get_ffmpeg_bin()
         if not ffmpeg_bin:
             return
@@ -342,8 +359,7 @@ class MediaConverter:
             waveform = audio["waveform"]       # (1, channels, samples)
             sample_rate = audio["sample_rate"]
         except Exception as e:
-            import logging
-            logging.getLogger("ffmpega").warning(
+            logger.warning(
                 f"Skipping audio mux — could not extract audio: {e}"
             )
             return
@@ -354,7 +370,11 @@ class MediaConverter:
 
         tmp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         tmp_wav.close()
-        tmp_out = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+        # The temp output must reuse the source container: `-c:v copy` of a
+        # VP9 stream into an .mp4 fails, and the failure used to be swallowed
+        # silently, producing a silent video.
+        out_suffix = os.path.splitext(video_path)[1] or ".mp4"
+        tmp_out = tempfile.NamedTemporaryFile(suffix=out_suffix, delete=False)
         tmp_out.close()
 
         try:
@@ -402,7 +422,7 @@ class MediaConverter:
                     # Audio is longer or equal — just trim to video
                     cmd.extend(["-i", video_path, "-i", tmp_wav.name])
                 cmd.extend(["-map", "0:v", "-map", "1:a"])
-                cmd.extend(["-c:v", "copy", "-c:a", "aac"])
+                cmd.extend(["-c:v", "copy", "-c:a", audio_codec])
                 if af_filters:
                     cmd.extend(["-af", ",".join(af_filters)])
                 cmd.extend(["-shortest", tmp_out.name])
@@ -411,21 +431,32 @@ class MediaConverter:
                 # Pad audio with silence to match video length
                 cmd.extend(["-i", video_path, "-i", tmp_wav.name])
                 cmd.extend(["-map", "0:v", "-map", "1:a"])
-                cmd.extend(["-c:v", "copy", "-c:a", "aac"])
+                cmd.extend(["-c:v", "copy", "-c:a", audio_codec])
                 cmd.extend(["-af", "apad"])
                 # Use -shortest so the padded audio stops at video end
                 cmd.extend(["-shortest", tmp_out.name])
 
-            else:  # trim
+            else:  # trim / replace / trim_to_audio
                 cmd.extend(["-i", video_path, "-i", tmp_wav.name])
                 cmd.extend(["-map", "0:v", "-map", "1:a"])
-                cmd.extend(["-c:v", "copy", "-c:a", "aac"])
+                cmd.extend(["-c:v", "copy", "-c:a", audio_codec])
                 cmd.extend(["-shortest", tmp_out.name])
 
             subprocess.run(cmd, capture_output=True, check=True)
             shutil.move(tmp_out.name, video_path)
-        except Exception:
-            pass  # If muxing fails, keep the original video without audio
+        except subprocess.CalledProcessError as e:
+            # Keep the silent video rather than failing the run, but say why —
+            # a container/codec mismatch here used to vanish without a trace.
+            stderr = (e.stderr or b"").decode("utf-8", "backslashreplace")
+            logger.warning(
+                "Audio mux failed (%s, codec=%s); keeping video without audio: %s",
+                audio_mode, audio_codec, stderr.strip()[-400:],
+            )
+        except Exception as e:
+            logger.warning(
+                "Audio mux failed (%s); keeping video without audio: %s",
+                audio_mode, e,
+            )
         finally:
             for f in [tmp_wav.name, tmp_out.name]:
                 if os.path.exists(f):

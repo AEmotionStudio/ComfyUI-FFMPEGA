@@ -6509,6 +6509,15 @@ async def process_sharp_only(
     # Detect FPS: use 30 fps for rendered trajectories
     render_fps = 30
 
+    try:
+        from ..core.video import encode_opts as _eo
+    except (ImportError, Exception):
+        from core.video import encode_opts as _eo  # type: ignore
+
+    # PNG frames are RGB, so this is the same conversion the tensor encoders
+    # do.  The old `-color_range pc` tag disagreed with the limited-range
+    # samples swscale actually wrote.
+    _colour = _eo.color_filter(_eo.DEFAULT_COLOR_POLICY)
     ffmpeg_cmd = [
         _ffmpeg, "-y",
         "-framerate", str(render_fps),
@@ -6517,12 +6526,16 @@ async def process_sharp_only(
         "-crf", str(effective_crf),
         "-preset", effective_preset,
         "-pix_fmt", "yuv420p",
-        "-color_range", "pc",
         "-an",  # No audio for rendered trajectories
     ]
 
+    _vf = [f for f in (
+        "scale=480:trunc(ow/a/2)*2" if preview_mode else "", _colour,
+    ) if f]
+    if _vf:
+        ffmpeg_cmd.extend(["-vf", ",".join(_vf)])
     if preview_mode:
-        ffmpeg_cmd.extend(["-vf", "scale=480:trunc(ow/a/2)*2", "-t", "10"])
+        ffmpeg_cmd.extend(["-t", "10"])
 
     ffmpeg_cmd.append(output_path)
 
@@ -7120,24 +7133,24 @@ def _encode_frames_to_video(frames, output_path, fps=30):
     except (ImportError, Exception):
         ffmpeg_bin = "ffmpeg"
 
-    cmd = [
-        ffmpeg_bin, "-y", "-f", "rawvideo",
-        "-vcodec", "rawvideo", "-s", f"{w}x{h}",
-        "-pix_fmt", "rgb24",
-        # Explicit full-range BT.709 color space to prevent
-        # color darkening during RGB → YUV conversion.
-        "-color_range", "pc",
-        "-colorspace", "rgb",
-        "-color_primaries", "bt709",
-        "-color_trc", "iec61966-2-1",  # sRGB transfer
-        "-r", str(fps),
-        "-i", "-",
-        "-c:v", "libx264", "-pix_fmt", "yuv420p",
-        # Preserve full color range in output
-        "-color_range", "pc",
-        "-crf", "18", "-preset", "fast",
-        output_path,
-    ]
+    # Colour handling is shared with every other FFMPEGA encoder.  This used
+    # to tag the output full-range while swscale wrote limited-range samples,
+    # so players re-expanded levels that were never compressed.
+    try:
+        from ..core.video import encode_opts as _eo
+    except (ImportError, Exception):
+        from core.video import encode_opts as _eo  # type: ignore
+
+    _spec = _eo.EncodeSpec(
+        format="h264-mp4", crf=18, preset="fast", faststart=False,
+    )
+    cmd = [ffmpeg_bin, "-y"]
+    cmd += _eo.raw_input_args(w, h, fps, _spec.bit_depth)
+    _vf = _eo.video_filter(_spec)
+    if _vf:
+        cmd += ["-vf", _vf]
+    cmd += _eo.video_output_args(_spec)
+    cmd.append(output_path)
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         for frame in frames:

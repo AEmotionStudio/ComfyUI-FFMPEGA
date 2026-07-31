@@ -936,7 +936,11 @@ def _apply_export_settings(
     # Explicit stream selection for safety
     cmd += ["-map", "0:v", "-map", "0:a?"]
 
-    # Video filter for resolution scaling (if needed)
+    # Video filter for resolution scaling (if needed).  No colour arguments
+    # here on purpose: ffmpeg carries the source's colour properties through
+    # the filter graph into the encoder, so a tagged input stays tagged
+    # across the whole multi-pass chain, and an untagged one has nothing we
+    # could honestly invent for it.
     if res_filter:
         cmd += ["-vf", res_filter]
 
