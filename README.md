@@ -37,6 +37,8 @@
 *   🖼️ **Multi-Source Comparison** — Save Video and Save Image now combine multiple inputs into one side-by-side or grid clip/image, with layout, per-panel labels and gap controls
 *   📹 **FaceCam Analytic Face Mesh** — camera pose is projected from MediaPipe's canonical model instead of being detected back off a rendered proxy head, so conditioning survives past 40–50° of yaw and `orbit_left`/`orbit_right` are exact mirrors
 *   🎨 **Correct Video Levels** — encoding now emits standard limited-range BT.709 instead of deprecated `yuvj420p`, fixing crushed blacks and blown highlights in players that re-expand it
+*   🎬 **Advanced Save Video Output** — H.264/H.265/VP9/AV1/ProRes/FFV1/GIF/WebP, CRF, presets, 10-bit, audio codec, loop, pingpong and workflow-in-the-container metadata — while the default stays a zero-cost file copy
+*   🌈 **Selectable Colour Policy** — one shared, measured colour path across every encoder, with a truthful sRGB default and an exact "match ComfyUI native" mode for A/B comparison
 
 <details>
 <summary><b>🚀 What's New in v2.19.0</b></summary>
@@ -741,13 +743,47 @@ Validates the video file exists and outputs the path as a STRING — loads ZERO 
 <details>
 <summary><b>Save Video (FFMPEGA)</b> — Zero-memory video output with inline preview.</summary>
 
-Takes a video path (from FFMPEGA Agent or Load Video Path), copies the file to ComfyUI's output directory, and shows a preview. No re-encoding — just a file copy.
+Takes a video path (from FFMPEGA Agent or Load Video Path), copies the file to ComfyUI's output directory, and shows a preview. By default there is no re-encoding — just a file copy. Also encodes a connected IMAGE batch, and combines several sources into one comparison clip.
 
 | Input | Type | Description |
 | :--- | :--- | :--- |
 | `video_path` | STRING | Path to video file (typically from FFMPEGA Agent's output). |
 | `filename_prefix` | STRING | Prefix for saved filename. Supports `%date:yyyy-MM-dd%`. |
 | `overwrite` | BOOLEAN | *(optional)* Overwrite existing file vs auto-increment counter. |
+
+**Advanced output options** — all collapsed behind a single `show_advanced` toggle (off by default), so the node stays as small as it always was until you need them. All optional, so existing workflows keep the old behaviour.
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `show_advanced` | BOOLEAN | Reveal the encoding controls below. Purely a display toggle — collapsing it never resets or ignores a value you have set. |
+| `output_format` | DROPDOWN | `source (no re-encode)` (default), `h264-mp4`, `h265-mp4`, `vp9-webm`, `av1-webm`, `prores-mov`, `ffv1-mkv`, `gif`, `webp`. |
+| `color_policy` | DROPDOWN | `sRGB (recommended)`, `BT.709 broadcast`, `ComfyUI native match`, `full range (pc)`. See below. |
+| `crf` | INT | Quality, 0–63. Lower is better and larger. Ignored by ProRes and FFV1. |
+| `encode_preset` | DROPDOWN | `ultrafast`…`veryslow`. H.264/H.265 only. |
+| `bit_depth` | DROPDOWN | `8` or `10`. 10-bit greatly reduces banding on gradients. |
+| `audio_codec` | DROPDOWN | `auto`, `aac`, `libopus`, `flac`, `pcm_s16le`, `copy`, `none`. |
+| `audio_bitrate` | DROPDOWN | `96k`–`320k`. Ignored by lossless codecs. |
+| `faststart` | BOOLEAN | Move the MP4 index to the front so it streams before fully downloading. |
+| `loop_count` | INT | Extra repeats of the clip. |
+| `pingpong` | BOOLEAN | Play forwards then backwards. Image input only. |
+| `trim_to_audio` | BOOLEAN | End the video when the audio ends, instead of padding audio with silence. |
+| `embed_workflow` | BOOLEAN | Write the workflow into the video file itself, so dragging it onto the canvas restores it. |
+| `frame_output` | DROPDOWN | `preview (64)`, `all`, `none` — how many frames the `images` output carries. |
+
+Visibility works on two levels: `show_advanced` reveals the section, and within it any widget the selected format cannot use collapses automatically (VP9 and AV1 take a deadline rather than an x264 preset, ProRes and FFV1 have fixed quality, GIF and WebP carry no audio).
+
+**Copy, remux or re-encode.** With `output_format` on its default the node still does a plain file copy with no ffmpeg call. If only the container differs — or the source already holds exactly the codec the chosen format produces — the file is stream-copied, which is lossless and near-instant. A full re-encode happens only when the codec genuinely has to change.
+
+**About `color_policy`.** ComfyUI IMAGE tensors are sRGB, but video wants YUV, and the choice of conversion matrix visibly changes the result. Measured on FFmpeg 8 with a pure-green frame:
+
+| Policy | Matrix | Tags written | Notes |
+| :--- | :--- | :--- | :--- |
+| `sRGB (recommended)` | BT.709 (Y=172) | `tv`, `bt709`, `iec61966-2-1`, `bt709` | Honest about what the tensors are. Colour-managed players match the ComfyUI preview. |
+| `BT.709 broadcast` | BT.709 (Y=172) | `tv`, `bt709`, `bt709`, `bt709` | Same pixels, transfer tagged as BT.709. What VideoHelperSuite intends. |
+| `ComfyUI native match` | BT.601 (Y=144) | none | Byte-identical to `Create Video` → `Save Video`. |
+| `full range (pc)` | BT.709, full range | `pc`, `bt709`, `iec61966-2-1`, `bt709` | Archival. |
+
+If your saved videos have ever looked different from the ComfyUI preview, this is the knob. Note that ComfyUI's native path is not simply "untagged" — swscale falls back to the **BT.601** matrix there, so its pixel data genuinely differs from a BT.709 encode. The policy applies when encoding images; a copied video keeps whatever colour it already had.
 
 </details>
 
@@ -874,7 +910,7 @@ Scans ComfyUI's output/temp directories for the newest video. Decodes frames (wi
 | `images` | IMAGE | *(optional)* Override: provide frames directly instead of auto-discovery. |
 | `audio` | AUDIO | *(optional)* Override: provide audio directly. |
 | `video_path` | STRING | *(optional)* Override: path to a specific video file. |
-| `frame_select_mode` | DROPDOWN | Frame selection strategy: `manual`, `uniform_5`, `uniform_10`, `first_last`, `every_2nd`, `every_5th`, `timestamps`. |
+| `frame_select_mode` | DROPDOWN | Frame selection strategy: `manual`, `uniform_5`, `uniform_10`, `first_last`, `last`, `every_2nd`, `every_5th`, `timestamps`. |
 | `auto_timestamps` | STRING | *(optional)* Comma-separated timestamps for `timestamps` mode. |
 | `pause_for_selection` | BOOLEAN | *(optional)* Block execution until frames are selected (manual mode). |
 
@@ -888,6 +924,68 @@ Scans ComfyUI's output/temp directories for the newest video. Decodes frames (wi
 | `frame_count` | Total frame count |
 | `fps` | Video frame rate |
 | `duration` | Video duration in seconds |
+
+</details>
+
+<details>
+<summary><b>Save Last Frame (FFMPEGA)</b> — Persist the tail of a generation to a named slot for scene continuation.</summary>
+
+Writes the last frame(s) of a video or IMAGE batch into `output/ffmpega_last_frame/<slot>/`, so a later queue run can start the next shot from where this one ended. Built for i2v chaining (Wan 2.2 and similar), where extending a shot means handing the model the frame you finished on.
+
+Shows a thumbnail strip of the slot's current contents as soon as the node is placed — no need to queue a prompt to see which frame you're working with.
+
+Connect `images` whenever possible: the tensor is written straight to PNG with no h264 round-trip. Pulling the frame out of the encoded file instead bakes in compression artifacts and yuv420p chroma subsampling, which compound visibly over a chain of generations.
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `slot_name` | STRING | Named slot to write into. Use different names to keep several chains apart (`drone_a`, `drone_b`). Sanitized to `[A-Za-z0-9_-]`. |
+| `frame_count` | INT | How many trailing frames to save (default 1). |
+| `offset_from_end` | INT | Skip this many frames at the very end. The literal final frame is often motion-blurred; try 1–3. |
+| `keep_history` | BOOLEAN | Off (default) keeps the slot at exactly `frame_count` files with fixed names. On appends numbered files, building an archive. |
+| `images` | IMAGE | *(optional)* Preferred, lossless source. Takes priority over `video_path`. |
+| `video_path` | STRING | *(optional)* Fallback source — ffmpeg decodes the file's tail. |
+| `filename_prefix` | STRING | *(optional)* Base filename inside the slot (default `lastframe`). |
+
+| Output | Description |
+| :--- | :--- |
+| `last_frame` | The saved frame(s), oldest first — the exact tensor written, not a re-read |
+| `frame_path` | Absolute path of the newest saved frame |
+| `slot_name` | The sanitized slot name |
+| `frame_count` | How many frames were actually written |
+
+> **Chaining inside one workflow:** wire `last_frame` straight into the next generation rather than adding a Load Last Frame node. Two unconnected nodes have no guaranteed execution order, and ComfyUI decides node caching *before* execution starts — so the load side would read the previous run's frame.
+
+</details>
+
+<details>
+<summary><b>Load Last Frame (FFMPEGA)</b> — Read a saved slot back to continue a scene in a later run.</summary>
+
+Loads the frame(s) Save Last Frame wrote to a named slot. Discovery is deterministic — the slot directory comes from the slot name and files carry fixed zero-padded names, so the pairing is an explicit contract rather than an mtime race against everything else in your output folder.
+
+Shows the same inline thumbnail strip as Save Last Frame, so you can see what the slot holds before running. The eight resize sub-widgets stay collapsed until `enable_resize` is turned on.
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `slot_name` | STRING | Slot to read — must match Save Last Frame's `slot_name`. |
+| `refresh_mode` | DROPDOWN | `auto` (reload when the slot changes) or `manual`. |
+| `frame_count` | INT | How many of the slot's trailing frames to load. |
+| `offset_from_end` | INT | Skip this many frames at the end of the slot. |
+| `on_missing` | DROPDOWN | *(optional)* `fallback` / `empty` / `error` — what to do when the slot is empty. |
+| `fallback_image` | IMAGE | *(optional)* Used when the slot is empty. |
+| `source_folder` | STRING | *(optional)* Read an arbitrary folder instead of the slot (picked by mtime). |
+| `filename_filter` | STRING | *(optional)* Only consider files with this prefix. |
+| `mask` | MASK | *(optional)* Upstream mask pass-through. |
+| `trigger` | ANY | *(optional)* Ordering hint — wire any Save Last Frame output in to force it to run first. |
+
+| Output | Description |
+| :--- | :--- |
+| `IMAGE` | The loaded frame(s), oldest first |
+| `MASK` | Solid white mask matching the frames |
+| `image_path` | Absolute path of the newest loaded frame |
+| `width` / `height` | Frame dimensions |
+| `frame_count` | How many frames were loaded (0 = slot was empty) |
+
+> **Starting a chain:** on the first run the slot is empty. Wire your original start image into `fallback_image` so run 1 and run N are the same graph with no rewiring — otherwise you get a black frame that silently poisons the generation.
 
 </details>
 
