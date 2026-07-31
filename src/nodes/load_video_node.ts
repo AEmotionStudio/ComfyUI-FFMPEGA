@@ -11,9 +11,10 @@
 import { api } from "comfyui/api";
 import {
     addDownloadOverlay, addVideoPreviewMenu, attachFileDropZone,
-    createUploadButton, fitHeight, flashNode, toggleWidget,
+    attachPlayheadTracker, createUploadButton, fitHeight, flashNode,
+    frameAtTime, rangeEndSeconds, toggleWidget,
 } from "@ffmpega/shared/ui_helpers";
-import type { UploadButtonElement } from "@ffmpega/shared/ui_helpers";
+import type { PlayheadCause, UploadButtonElement } from "@ffmpega/shared/ui_helpers";
 import type { ComfyNodeType, ComfyNodeData, ComfyNode, ComfyWidget } from "@ffmpega/types/comfyui";
 
 // ---- Type definitions ----
@@ -251,13 +252,18 @@ export function registerLoadVideoNode(
         videoEl.setAttribute("aria-label", "Video preview");
         videoEl.style.cssText = "width:100%;display:block;";
 
-        // Playback position tracking for live frame counter
+        // Effective (post-trim) figures behind the info bar, recomputed by
+        // updateDynamicInfo() and read by the live frame counter.
         let _srcMeta: VideoMeta | null = null;
         let _effAvailFrames = 0;
         let _effFps = 0;
-        let _effSkipFirst = 0;
         let _effEveryNth = 1;
-        let _effInfoText = "";
+        /** Segments shown before the frame count: resolution, frame rate. */
+        let _infoHead: string[] = [];
+        /** Segments shown after it: duration, in-point. */
+        let _infoTail: string[] = [];
+        /** " (of N)" source-frame context, empty when nothing is trimmed. */
+        let _infoOfSrc = "";
 
         // Info overlay (defined early — referenced by videoEl events)
         const infoEl = document.createElement("div");
@@ -329,41 +335,74 @@ export function registerLoadVideoNode(
             );
             node.setDirtyCanvas(true, true);
 
+            // Playing the selected frames back at effFps is what makes this the
+            // *output* duration; the playback range in source time is longer
+            // whenever select_every_nth skips frames (see rangeEndSeconds).
             const effDuration = effFps > 0 && availFrames > 0
                 ? availFrames / effFps
                 : srcDuration;
 
             const startTime = effFps > 0 ? skipFirst / effFps : 0;
 
-            const parts: string[] = [];
+            const head: string[] = [];
             if (_srcMeta.width && _srcMeta.height) {
-                parts.push(`${_srcMeta.width}×${_srcMeta.height}`);
+                head.push(`${_srcMeta.width}×${_srcMeta.height}`);
             }
             if (forceRate > 0 && forceRate !== srcFps) {
-                parts.push(`${srcFps}fps → ${forceRate}fps`);
+                head.push(`${srcFps}fps → ${forceRate}fps`);
             } else {
-                parts.push(`${srcFps}fps`);
-            }
-            if (availFrames !== srcFrames) {
-                parts.push(`${availFrames} frames (of ${srcFrames})`);
-            } else {
-                parts.push(`${availFrames} frames`);
-            }
-            if (Math.abs(effDuration - srcDuration) > 0.1) {
-                parts.push(`${formatTimeLV(effDuration)} (of ${formatTimeLV(srcDuration)})`);
-            } else {
-                parts.push(formatTimeLV(srcDuration));
-            }
-            if (startTime > 0.05) {
-                parts.push(`from ${formatTimeLV(startTime)}`);
+                head.push(`${srcFps}fps`);
             }
 
-            infoEl.textContent = parts.join(" • ");
-            _effInfoText = infoEl.textContent;
+            const tail: string[] = [];
+            if (Math.abs(effDuration - srcDuration) > 0.1) {
+                tail.push(`${formatTimeLV(effDuration)} (of ${formatTimeLV(srcDuration)})`);
+            } else {
+                tail.push(formatTimeLV(srcDuration));
+            }
+            if (startTime > 0.05) {
+                tail.push(`from ${formatTimeLV(startTime)}`);
+            }
+
+            _infoHead = head;
+            _infoTail = tail;
+            _infoOfSrc = availFrames !== srcFrames ? ` (of ${srcFrames})` : "";
             _effAvailFrames = availFrames;
             _effFps = effFps;
-            _effSkipFirst = skipFirst;
             _effEveryNth = everyNth;
+
+            paintInfo();
+        };
+
+        /**
+         * Assemble the info bar.
+         *
+         * With no `currentFrame` the frame total sits in its usual place,
+         * between the frame rate and the duration. Given one, that segment
+         * becomes the playhead and moves to the front, where a number that
+         * changes several times a second is easiest to read — and where it
+         * cannot be mistaken for the static total it replaces. The ▶ marks
+         * playback; a paused scrub still reports the frame it landed on.
+         */
+        const buildInfoText = (currentFrame?: number, playing = false): string => {
+            if (!_srcMeta) return "No video selected";
+            if (currentFrame === undefined) {
+                return [
+                    ..._infoHead,
+                    `${_effAvailFrames} frames${_infoOfSrc}`,
+                    ..._infoTail,
+                ].join(" • ");
+            }
+            const marker = playing ? "▶ " : "";
+            return [
+                `${marker}${currentFrame}/${_effAvailFrames}f${_infoOfSrc}`,
+                ..._infoHead,
+                ..._infoTail,
+            ].join(" • ");
+        };
+
+        const paintInfo = (currentFrame?: number, playing = false): void => {
+            infoEl.textContent = buildInfoText(currentFrame, playing);
         };
 
         videoEl.addEventListener("loadedmetadata", () => {
@@ -422,34 +461,51 @@ export function registerLoadVideoNode(
         // Playback range clamping
         let _playStart = 0;
         let _playEnd = Infinity;
+        let _lastTime = 0;
 
-        videoEl.addEventListener("timeupdate", () => {
-            if (_playEnd < Infinity && videoEl.currentTime >= _playEnd) {
-                videoEl.currentTime = _playStart;
-            }
-            if (_srcMeta && _srcMeta.fps > 0 && _effAvailFrames > 0 && _effInfoText) {
-                const elapsed = Math.max(0, videoEl.currentTime - _playStart);
-                // Map elapsed time → raw frame index, then account for nth-frame selection
-                const rawFrame = Math.floor(elapsed * _effFps);
-                const curFrame = Math.min(
-                    Math.floor(rawFrame / _effEveryNth) + 1,
-                    _effAvailFrames,
+        const detachPlayhead = attachPlayheadTracker(
+            videoEl,
+            (time: number, playing: boolean, cause: PlayheadCause) => {
+                // Loop back to the in-point only when playback runs off the
+                // out-point on its own. A seek — the scrubber, or the "Jump:"
+                // menu items — must never be undone; and once the user has
+                // deliberately parked past the out-point, playing on from
+                // there is their call too, which is what the previous-tick
+                // test preserves.
+                if (
+                    cause === "frame" && playing && _playEnd < Infinity
+                    && time >= _playEnd && _lastTime < _playEnd
+                ) {
+                    videoEl.currentTime = _playStart;
+                    _lastTime = _playStart;
+                    return;
+                }
+                _lastTime = time;
+
+                // Nothing to count against until the trim maths has run.
+                if (!_srcMeta || _effAvailFrames <= 0) return;
+                const frame = frameAtTime(
+                    time - _playStart, _effFps, _effEveryNth, _effAvailFrames,
                 );
-                infoEl.textContent = `▶ ${curFrame}/${_effAvailFrames} • ${_effInfoText}`;
-            }
-        });
+                paintInfo(frame > 0 ? frame : undefined, playing);
+            },
+        );
 
         const updatePlaybackRange = (): void => {
-            if (!_srcMeta || !_srcMeta.fps) return;
+            if (!_srcMeta) return;
 
             const forceRate = (node.widgets?.find((w: ComfyWidget) => w.name === "force_rate")?.value as number) ?? 0;
             const skipFirst = (node.widgets?.find((w: ComfyWidget) => w.name === "skip_first_frames")?.value as number) ?? 0;
             const frameCap = (node.widgets?.find((w: ComfyWidget) => w.name === "frame_load_cap")?.value as number) ?? 0;
             const everyNth = (node.widgets?.find((w: ComfyWidget) => w.name === "select_every_nth")?.value as number) ?? 1;
 
-            const srcFps = _srcMeta.fps;
+            // Same fallback the info bar uses — ffprobe may not have answered
+            // yet, and a range built on a different rate than the one on
+            // display would clamp playback somewhere the numbers don't explain.
+            const srcFps = _srcMeta.fps || 24;
             const effFps = forceRate > 0 ? forceRate : srcFps;
 
+            const prevStart = _playStart;
             _playStart = effFps > 0 ? skipFirst / effFps : 0;
 
             let availFrames = forceRate > 0
@@ -459,20 +515,31 @@ export function registerLoadVideoNode(
             if (everyNth > 1) availFrames = Math.floor(availFrames / everyNth);
             if (frameCap > 0) availFrames = Math.min(availFrames, frameCap);
 
-            if (effFps > 0 && availFrames > 0) {
-                _playEnd = _playStart + (availFrames / effFps);
-            } else {
-                _playEnd = Infinity;
-            }
+            _playEnd = rangeEndSeconds(_playStart, availFrames, everyNth, effFps);
 
             if (isFinite(_playEnd) && _playEnd > _srcMeta.duration) {
                 _playEnd = _srcMeta.duration;
             }
 
-            if (isFinite(_playStart) && _playStart < videoEl.duration) {
+            // Chase the in-point only when it actually moved. Editing
+            // frame_load_cap or select_every_nth leaves the start alone, and
+            // should leave the position the user scrubbed to alone with it.
+            if (
+                _playStart !== prevStart
+                && isFinite(_playStart) && _playStart < videoEl.duration
+            ) {
                 videoEl.currentTime = _playStart;
             }
         };
+
+        // Seed the cache with what the widgets already hold, so the first tick
+        // reports only real edits. An empty cache makes every widget look
+        // changed, which used to fire a range update — and a seek to the
+        // in-point — about 800 ms after the node appeared.
+        for (const name of TRIM_WIDGETS) {
+            const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+            if (w) lvWidgetValues[name] = w.value;
+        }
 
         const lvPollInterval = setInterval(() => {
             if (!node.graph) {
@@ -723,6 +790,9 @@ export function registerLoadVideoNode(
 
         // Update preview from filename
         const updatePreview = (filename: string | null | undefined): void => {
+            // Drop the outgoing clip's frame budget either way — until the new
+            // one has been probed there is nothing to count a playhead against.
+            _effAvailFrames = 0;
             if (!filename) {
                 previewContainer.style.display = "none";
                 infoEl.textContent = "No video selected";
@@ -762,6 +832,7 @@ export function registerLoadVideoNode(
             clearInterval(lvPollInterval);
             clearInterval(maskPollInterval);
             if (_dragTimer) clearTimeout(_dragTimer);
+            detachPlayhead();
             detachPreviewDrop();
             detachButtonDrop();
             fileInput?.remove();
