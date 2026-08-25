@@ -8,7 +8,10 @@
 
 declare module 'comfyui/app' {
     interface ComfyApp {
+        /** The graph on screen — a subgraph when the user has navigated into one. */
         graph: any;
+        /** The whole workflow's graph, regardless of what is on screen. */
+        rootGraph?: any;
         canvas: any;
         ui: any;
         extensionManager: any;

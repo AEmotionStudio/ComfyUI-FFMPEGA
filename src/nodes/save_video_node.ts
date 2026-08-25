@@ -3,6 +3,9 @@
  *
  * Features:
  * - Video preview after execution (DOM widget)
+ * - The preview outlives the node instance, from two sources: ComfyUI's own
+ *   `app.nodeOutputs` (a workflow tab switch, or a run opened from history) and
+ *   a descriptor kept in the workflow itself (a reload or a server restart)
  * - Download overlay button
  * - Context menu with preview controls
  * - Info bar: resolution, frame count (live playhead while playing), duration,
@@ -15,7 +18,10 @@ import {
     wireDynamicInputs, toggleWidget, fitHeight,
 } from "@ffmpega/shared/ui_helpers";
 import type { PlayheadCause } from "@ffmpega/shared/ui_helpers";
-import type { ComfyNodeType, ComfyNodeData, ComfyNode, ComfyWidget } from "@ffmpega/types/comfyui";
+import type {
+    ComfyNodeType, ComfyNodeData, ComfyNode, ComfyWidget,
+    ComfyNodeSerializedInfo,
+} from "@ffmpega/types/comfyui";
 
 /** Must match core.video.encode_opts.SOURCE_FORMAT. */
 const SOURCE_FORMAT = "source (no re-encode)";
@@ -107,6 +113,170 @@ interface SaveVideoExecutionData {
 /** Preview container element with value property */
 interface PreviewContainerElement extends HTMLDivElement {
     value?: unknown;
+}
+
+/**
+ * Node property holding the last save, so the player survives a page reload or
+ * a server restart — neither of which keeps `app.nodeOutputs` alive.
+ *
+ * LiteGraph serializes `properties` into the workflow and restores them before
+ * `onConfigure` runs. The preview DOM widget itself stays `serialize: false`:
+ * writing it into `widgets_values` would mean reshaping that array, and
+ * existing workflows depend on its order.
+ */
+const SAVED_VIDEO_PROP = "_ffmpega_saved_video";
+
+/** Set on each live node, so the extension-level output hook can reach it. */
+const APPLY_FN = "_ffmpegaApplySavedVideo";
+
+/** What we remember about the last save. Must stay JSON-round-trippable. */
+export interface SavedPreviewState {
+    filename: string;
+    subfolder: string;
+    /** "output" for a real save, "temp" for a preview-only run. */
+    type: string;
+    file_size?: string;
+    frame_count?: number;
+    fps?: number;
+}
+
+/**
+ * Repack an execution payload into the state worth remembering, or null when
+ * the run produced no file.
+ *
+ * Only the first video is kept: in comparison mode the payload carries one
+ * entry per output, but the player has only ever shown `video[0]`.
+ */
+export function packPreviewState(
+    data: SaveVideoExecutionData | undefined,
+): SavedPreviewState | null {
+    const v = data?.video?.[0];
+    if (!v?.filename) return null;
+    return {
+        filename: v.filename,
+        subfolder: v.subfolder || "",
+        type: v.type || "output",
+        file_size: data?.file_size?.[0],
+        frame_count: data?.frame_count?.[0] ?? 0,
+        fps: data?.fps?.[0] ?? 0,
+    };
+}
+
+/**
+ * Validate a value read back out of the workflow.
+ *
+ * The property is plain JSON in a file users edit, share, and downgrade, so
+ * anything without a usable filename is treated as absent rather than trusted.
+ */
+export function readPreviewState(raw: unknown): SavedPreviewState | null {
+    if (!raw || typeof raw !== "object") return null;
+    const o = raw as Record<string, unknown>;
+    if (typeof o.filename !== "string" || !o.filename) return null;
+
+    const num = (x: unknown): number | undefined =>
+        typeof x === "number" && isFinite(x) ? x : undefined;
+
+    return {
+        filename: o.filename,
+        subfolder: typeof o.subfolder === "string" ? o.subfolder : "",
+        type: typeof o.type === "string" && o.type ? o.type : "output",
+        file_size: typeof o.file_size === "string" ? o.file_size : undefined,
+        frame_count: num(o.frame_count),
+        fps: num(o.fps),
+    };
+}
+
+/**
+ * Build the `/view` query for a remembered save.
+ *
+ * The timestamp is passed in rather than stored: `overwrite` lets a later run
+ * replace a file under the same name, so every URL build needs a fresh one or
+ * the browser serves the previous video from cache.
+ */
+export function previewQuery(state: SavedPreviewState, timestamp: number): string {
+    return new URLSearchParams({
+        filename: state.filename,
+        subfolder: state.subfolder || "",
+        type: state.type || "output",
+        timestamp: String(timestamp),
+    }).toString();
+}
+
+/**
+ * A node id out of a NodeLocatorId.
+ *
+ * Root-graph nodes are keyed by the bare id; nodes inside a subgraph are keyed
+ * `<subgraphId>:<nodeId>`. Only the trailing segment identifies the node.
+ */
+export function nodeIdFromLocator(locatorId: string): string {
+    const cut = locatorId.lastIndexOf(":");
+    return cut === -1 ? locatorId : locatorId.slice(cut + 1);
+}
+
+/**
+ * Re-show every Save Video preview from a fresh `app.nodeOutputs` map.
+ *
+ * This is the path that covers switching workflow tabs. ComfyUI keeps the last
+ * execution payload per node in `app.nodeOutputs`, and `ChangeTracker` snapshots
+ * that map per workflow and reassigns the whole object when you come back to a
+ * tab — which fires the `onNodeOutputsUpdated` extension hook. Core's own audio
+ * and 3D previews restore themselves exactly here, and it is the reason the
+ * native Save Video keeps its player across a tab switch.
+ *
+ * The payload is our own `ui` dict, so it already carries the file plus the
+ * frame count and rate; the workflow property is refreshed from it so a run
+ * recovered this way is also good across a later reload.
+ */
+export function applySaveVideoOutputs(
+    graph: PreviewGraph | undefined,
+    nodeOutputs: Record<string, Record<string, unknown> | undefined> | undefined,
+): void {
+    if (!graph || !nodeOutputs) return;
+
+    const byNodeId = new Map<string, Record<string, unknown>>();
+    for (const [locatorId, output] of Object.entries(nodeOutputs)) {
+        if (output) byNodeId.set(nodeIdFromLocator(locatorId), output);
+    }
+    if (!byNodeId.size) return;
+
+    for (const node of walkNodes(graph)) {
+        // Carrying the applier *is* the test for one of our nodes — no need to
+        // second-guess how the node type is spelled on the instance.
+        const apply = (node as unknown as Record<string, unknown>)[APPLY_FN];
+        if (typeof apply !== "function") continue;
+
+        const output = byNodeId.get(String(node.id));
+        const state = packPreviewState(output as SaveVideoExecutionData | undefined);
+        if (!state) continue;
+
+        if (node.properties) node.properties[SAVED_VIDEO_PROP] = state;
+        (apply as (s: SavedPreviewState) => void)(state);
+    }
+}
+
+/** A graph to search, plus whatever subgraphs hang off its nodes. */
+interface PreviewGraph {
+    _nodes?: Array<ComfyNode & { subgraph?: PreviewGraph }>;
+}
+
+/**
+ * Every node in a graph and in any subgraph nested under it.
+ *
+ * The hook hands us one graph but the outputs map covers the whole workflow, and
+ * a Save Video node inside a subgraph is not in the root graph's `_nodes`.
+ * Subgraph definitions can be shared between instances, so already-visited
+ * graphs are skipped rather than walked twice.
+ */
+function* walkNodes(
+    graph: PreviewGraph,
+    seen = new Set<PreviewGraph>(),
+): Generator<ComfyNode> {
+    if (seen.has(graph)) return;
+    seen.add(graph);
+    for (const node of graph._nodes ?? []) {
+        yield node;
+        if (node.subgraph) yield* walkNodes(node.subgraph, seen);
+    }
 }
 
 /**
@@ -272,31 +442,54 @@ export function registerSaveVideoNode(
             return [width, -4];
         };
 
+        /**
+         * Point the player at a saved file, from a fresh run or from the
+         * workflow.
+         *
+         * Only the filename is shown here; `loadedmetadata` follows with the
+         * full bar once the resolution and duration are known — so a restored
+         * preview settles into exactly the same readout as a fresh one. If the
+         * file is gone the `error` listener above hides the player instead.
+         */
+        function showSavedVideo(state: SavedPreviewState): void {
+            if (state.file_size) {
+                node._savedFileSize = state.file_size;
+            }
+            node._savedFrameCount = state.frame_count ?? 0;
+            node._savedFps = state.fps ?? 0;
+
+            previewContainer.style.display = "";
+            videoEl.src = api.apiURL("/view?" + previewQuery(state, Date.now()));
+
+            infoEl.textContent = `Saved: ${state.filename}`;
+            if (node._savedFileSize) {
+                infoEl.textContent += ` (${node._savedFileSize})`;
+            }
+        }
+
+        // Reachable from `applySaveVideoOutputs`, which only has the graph.
+        (node as unknown as Record<string, unknown>)[APPLY_FN] = showSavedVideo;
+
         const origOnExecuted = this.onExecuted;
         this.onExecuted = function (this: SaveVideoNode, data: SaveVideoExecutionData) {
             origOnExecuted?.apply(this, arguments as unknown as [SaveVideoExecutionData]);
-            if (data?.video?.[0]) {
-                const v = data.video[0];
-                const params = new URLSearchParams({
-                    filename: v.filename,
-                    subfolder: v.subfolder || "",
-                    type: v.type || "output",
-                    timestamp: String(Date.now()),
-                });
-                previewContainer.style.display = "";
-                videoEl.src = api.apiURL("/view?" + params.toString());
+            const state = packPreviewState(data);
+            // A run that wrote nothing leaves the previous preview on screen,
+            // so leave the remembered state alone too — the two stay in step.
+            if (!state) return;
+            if (this.properties) this.properties[SAVED_VIDEO_PROP] = state;
+            showSavedVideo(state);
+        };
 
-                if (data?.file_size?.[0]) {
-                    node._savedFileSize = data.file_size[0];
-                }
-                node._savedFrameCount = data?.frame_count?.[0] ?? 0;
-                node._savedFps = data?.fps?.[0] ?? 0;
-
-                infoEl.textContent = `Saved: ${v.filename}`;
-                if (node._savedFileSize) {
-                    infoEl.textContent += ` (${node._savedFileSize})`;
-                }
-            }
+        // --- Restore the last save when the graph is rebuilt from JSON ---
+        const origConfigure = this.onConfigure;
+        this.onConfigure = function (this: SaveVideoNode, _info: ComfyNodeSerializedInfo) {
+            origConfigure?.apply(this, arguments as unknown as [ComfyNodeSerializedInfo]);
+            const state = readPreviewState(this.properties?.[SAVED_VIDEO_PROP]);
+            if (!state) return;
+            // Deferred so the restored node size is in place before the preview
+            // asks for a height of its own.
+            requestAnimationFrame(() => showSavedVideo(state));
         };
 
         const getVideoUrlSave = (): string | null => videoEl.src || null;

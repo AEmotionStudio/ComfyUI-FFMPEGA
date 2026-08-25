@@ -2396,6 +2396,72 @@ function applyWidgetVisibility(node) {
   }
   fitHeight(node);
 }
+const SAVED_VIDEO_PROP = "_ffmpega_saved_video";
+const APPLY_FN = "_ffmpegaApplySavedVideo";
+function packPreviewState(data) {
+  var _a, _b, _c, _d;
+  const v = (_a = data == null ? void 0 : data.video) == null ? void 0 : _a[0];
+  if (!(v == null ? void 0 : v.filename)) return null;
+  return {
+    filename: v.filename,
+    subfolder: v.subfolder || "",
+    type: v.type || "output",
+    file_size: (_b = data == null ? void 0 : data.file_size) == null ? void 0 : _b[0],
+    frame_count: ((_c = data == null ? void 0 : data.frame_count) == null ? void 0 : _c[0]) ?? 0,
+    fps: ((_d = data == null ? void 0 : data.fps) == null ? void 0 : _d[0]) ?? 0
+  };
+}
+function readPreviewState(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw;
+  if (typeof o.filename !== "string" || !o.filename) return null;
+  const num = (x) => typeof x === "number" && isFinite(x) ? x : void 0;
+  return {
+    filename: o.filename,
+    subfolder: typeof o.subfolder === "string" ? o.subfolder : "",
+    type: typeof o.type === "string" && o.type ? o.type : "output",
+    file_size: typeof o.file_size === "string" ? o.file_size : void 0,
+    frame_count: num(o.frame_count),
+    fps: num(o.fps)
+  };
+}
+function previewQuery(state, timestamp) {
+  return new URLSearchParams({
+    filename: state.filename,
+    subfolder: state.subfolder || "",
+    type: state.type || "output",
+    timestamp: String(timestamp)
+  }).toString();
+}
+function nodeIdFromLocator(locatorId) {
+  const cut = locatorId.lastIndexOf(":");
+  return cut === -1 ? locatorId : locatorId.slice(cut + 1);
+}
+function applySaveVideoOutputs(graph, nodeOutputs) {
+  if (!graph || !nodeOutputs) return;
+  const byNodeId = /* @__PURE__ */ new Map();
+  for (const [locatorId, output] of Object.entries(nodeOutputs)) {
+    if (output) byNodeId.set(nodeIdFromLocator(locatorId), output);
+  }
+  if (!byNodeId.size) return;
+  for (const node of walkNodes(graph)) {
+    const apply = node[APPLY_FN];
+    if (typeof apply !== "function") continue;
+    const output = byNodeId.get(String(node.id));
+    const state = packPreviewState(output);
+    if (!state) continue;
+    if (node.properties) node.properties[SAVED_VIDEO_PROP] = state;
+    apply(state);
+  }
+}
+function* walkNodes(graph, seen = /* @__PURE__ */ new Set()) {
+  if (seen.has(graph)) return;
+  seen.add(graph);
+  for (const node of graph._nodes ?? []) {
+    yield node;
+    if (node.subgraph) yield* walkNodes(node.subgraph, seen);
+  }
+}
 function registerSaveVideoNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGASaveVideo") return;
   const onNodeCreated = nodeType.prototype.onNodeCreated;
@@ -2521,30 +2587,35 @@ function registerSaveVideoNode(nodeType, nodeData) {
       }
       return [width, -4];
     };
+    function showSavedVideo(state) {
+      if (state.file_size) {
+        node._savedFileSize = state.file_size;
+      }
+      node._savedFrameCount = state.frame_count ?? 0;
+      node._savedFps = state.fps ?? 0;
+      previewContainer.style.display = "";
+      videoEl.src = api.apiURL("/view?" + previewQuery(state, Date.now()));
+      infoEl.textContent = `Saved: ${state.filename}`;
+      if (node._savedFileSize) {
+        infoEl.textContent += ` (${node._savedFileSize})`;
+      }
+    }
+    node[APPLY_FN] = showSavedVideo;
     const origOnExecuted = this.onExecuted;
     this.onExecuted = function(data) {
-      var _a2, _b, _c, _d;
       origOnExecuted == null ? void 0 : origOnExecuted.apply(this, arguments);
-      if ((_a2 = data == null ? void 0 : data.video) == null ? void 0 : _a2[0]) {
-        const v = data.video[0];
-        const params = new URLSearchParams({
-          filename: v.filename,
-          subfolder: v.subfolder || "",
-          type: v.type || "output",
-          timestamp: String(Date.now())
-        });
-        previewContainer.style.display = "";
-        videoEl.src = api.apiURL("/view?" + params.toString());
-        if ((_b = data == null ? void 0 : data.file_size) == null ? void 0 : _b[0]) {
-          node._savedFileSize = data.file_size[0];
-        }
-        node._savedFrameCount = ((_c = data == null ? void 0 : data.frame_count) == null ? void 0 : _c[0]) ?? 0;
-        node._savedFps = ((_d = data == null ? void 0 : data.fps) == null ? void 0 : _d[0]) ?? 0;
-        infoEl.textContent = `Saved: ${v.filename}`;
-        if (node._savedFileSize) {
-          infoEl.textContent += ` (${node._savedFileSize})`;
-        }
-      }
+      const state = packPreviewState(data);
+      if (!state) return;
+      if (this.properties) this.properties[SAVED_VIDEO_PROP] = state;
+      showSavedVideo(state);
+    };
+    const origConfigure = this.onConfigure;
+    this.onConfigure = function(_info) {
+      var _a2;
+      origConfigure == null ? void 0 : origConfigure.apply(this, arguments);
+      const state = readPreviewState((_a2 = this.properties) == null ? void 0 : _a2[SAVED_VIDEO_PROP]);
+      if (!state) return;
+      requestAnimationFrame(() => showSavedVideo(state));
     };
     const getVideoUrlSave = () => videoEl.src || null;
     addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, getVideoUrlSave);
@@ -4958,6 +5029,15 @@ app.registerExtension({
   name: "FFMPEGA.UI",
   async setup() {
     initSidebar();
+  },
+  /**
+   * Fires when ComfyUI swaps the whole `app.nodeOutputs` map, which is what
+   * happens on a workflow tab switch (`ChangeTracker.restore()`) and when a
+   * run is opened from the queue history. Save Video rebuilds its player from
+   * it — the same hook core's audio and 3D previews restore themselves in.
+   */
+  onNodeOutputsUpdated(nodeOutputs) {
+    applySaveVideoOutputs(app.rootGraph ?? app.graph, nodeOutputs);
   },
   async beforeRegisterNodeDef(nodeType, nodeData, _app) {
     if (registerNodeStyling(nodeType, nodeData)) return;

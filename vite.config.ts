@@ -45,7 +45,14 @@ export default defineConfig({
     },
     test: {
         environment: 'happy-dom',
-        globals: true
+        globals: true,
+        // `comfyui/*` is external at build time and rewritten to the host's
+        // /scripts/*.js, so nothing resolves it in a test run. Point it at a
+        // stub — build output is untouched.
+        alias: {
+            'comfyui/api': resolve(__dirname, 'src/test/comfyui_stub.ts'),
+            'comfyui/app': resolve(__dirname, 'src/test/comfyui_stub.ts'),
+        }
     }
 });
 

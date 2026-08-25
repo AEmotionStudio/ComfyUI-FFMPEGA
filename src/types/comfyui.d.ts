@@ -10,7 +10,10 @@
 // ============================================================================
 
 export interface ComfyApp {
+    /** The graph currently on screen — a subgraph when the user has navigated in. */
     graph: ComfyGraph;
+    /** The whole workflow's graph, regardless of what is on screen. */
+    rootGraph?: ComfyGraph;
     canvas: ComfyCanvas;
     ui: ComfyUI;
     extensionManager: ComfyExtensionManager;
@@ -27,7 +30,20 @@ export interface ComfyExtension {
         nodeData: ComfyNodeData,
         app: ComfyApp,
     ) => void;
+    /**
+     * Fires whenever ComfyUI replaces the whole `app.nodeOutputs` map — which
+     * is what `ChangeTracker.restore()` does when a workflow tab is switched
+     * back to, and what loading a run from the queue history does.
+     *
+     * Keyed by NodeLocatorId: the node id for a root-graph node, or
+     * `<subgraphId>:<nodeId>` inside a subgraph. Each value is the `ui` dict
+     * the node's Python returned.
+     */
+    onNodeOutputsUpdated?: (nodeOutputs: Record<string, NodeOutputPayload>) => void;
 }
+
+/** The `ui` dict a node's Python returned, as ComfyUI stores it. */
+export type NodeOutputPayload = Record<string, unknown> | undefined;
 
 export interface ComfyNodeType {
     prototype: ComfyNodePrototype;
