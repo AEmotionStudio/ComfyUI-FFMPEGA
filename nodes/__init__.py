@@ -98,6 +98,13 @@ try:
 except ImportError as e:
     _log.warning("[FFMPEGA] Node FFMPEGAShaderOverlay unavailable: %s", e)
 
+try:
+    from .video_resolution_node import VideoResolutionNode
+    NODE_CLASS_MAPPINGS["FFMPEGAVideoResolution"] = VideoResolutionNode
+    NODE_DISPLAY_NAME_MAPPINGS["FFMPEGAVideoResolution"] = "Video Resolution (FFMPEGA)"
+except ImportError as e:
+    _log.warning("[FFMPEGA] Node FFMPEGAVideoResolution unavailable: %s", e)
+
 # --- LoadLast nodes (merged from ComfyUI-LoadLast) ---
 try:
     from ..loadlast import LoadLastImage, LoadLastVideo
@@ -214,3 +221,7 @@ except ImportError:
 # Add FaceCam name only if successfully imported
 if "FFMPEGAFaceCam" in NODE_CLASS_MAPPINGS:
     __all__.append("FaceCamNode")
+
+# Add VideoResolution name only if successfully imported
+if "FFMPEGAVideoResolution" in NODE_CLASS_MAPPINGS:
+    __all__.append("VideoResolutionNode")
