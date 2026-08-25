@@ -28,8 +28,10 @@ import torch
 import folder_paths
 try:
     from ..core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin
+    from ..core.media_converter import MediaConverter, decode_video_frames
 except ImportError:
     from core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin  # type: ignore
+    from core.media_converter import MediaConverter, decode_video_frames  # type: ignore
 
 logger = logging.getLogger("FFMPEGA")
 
@@ -572,23 +574,36 @@ class LoadVideoPathNode:
         if images is not None:
             images_out = images
         else:
-            try:
-                from .save_video_node import SaveVideoNode
-                images_out = SaveVideoNode._extract_frames(
-                    SaveVideoNode(), resolved_path,
-                )
-            except Exception as e:
-                logger.warning("LoadVideoPath: frame extraction failed: %s", e)
-                images_out = torch.zeros(1, 64, 64, 3, dtype=torch.float32)
+            # Decode every frame. The trim widgets (skip_first_frames,
+            # frame_load_cap, select_every_nth, force_rate) are the only things
+            # that may reduce the count, and they have already been applied to
+            # resolved_path above. Never pass a limit here: sampling would be
+            # evenly spaced across the clip, which speeds the video up rather
+            # than shortening it.
+            images_out = decode_video_frames(resolved_path)
+
+        # Report what was actually produced. available_frames is predicted from
+        # ffprobe metadata before decoding, and container frame counts are not
+        # always truthful, so the images tensor is the authority. Keeping these
+        # in sync matters: downstream nodes size their work off frame_count.
+        decoded_frames = int(images_out.shape[0]) if hasattr(images_out, "shape") else 0
+        if decoded_frames and decoded_frames != available_frames:
+            logger.info(
+                "LoadVideoPath: decoded %d frames (metadata predicted %d) — "
+                "reporting the decoded count",
+                decoded_frames, available_frames,
+            )
+            available_frames = decoded_frames
+            if effective_fps > 0:
+                effective_duration = round(available_frames / effective_fps, 3)
+            video_info["effective_frames"] = available_frames
+            video_info["effective_duration"] = effective_duration
 
         if audio is not None:
             audio_out = audio
         else:
             try:
-                from .save_video_node import SaveVideoNode
-                audio_out = SaveVideoNode._extract_audio(
-                    SaveVideoNode(), resolved_path,
-                )
+                audio_out = MediaConverter().extract_audio(resolved_path)
             except Exception as e:
                 logger.warning("LoadVideoPath: audio extraction failed: %s", e)
                 audio_out = {"waveform": torch.zeros(1, 1, 1), "sample_rate": 44100}

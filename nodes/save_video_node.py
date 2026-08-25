@@ -20,18 +20,19 @@ import subprocess
 import tempfile
 from dataclasses import replace
 
-import numpy as np
 import torch
 
 import folder_paths
 try:
     from ..core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin
     from ..core.last_frame import probe_video_stats
+    from ..core.media_converter import decode_video_frames
     from ..core.video import encode_opts
     from ..core.video import metadata as video_metadata
 except ImportError:
     from core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin  # type: ignore
     from core.last_frame import probe_video_stats  # type: ignore
+    from core.media_converter import decode_video_frames  # type: ignore
     from core.video import encode_opts  # type: ignore
     from core.video import metadata as video_metadata  # type: ignore
 
@@ -119,14 +120,20 @@ class SaveVideoNode:
                         "Pixel gap between panels in a combined video."
                     ),
                 }),
-                "fps": ("INT", {
-                    "default": 24,
-                    "min": 1,
-                    "max": 120,
+                "fps": ("FLOAT", {
+                    "default": 24.0,
+                    "min": 0.01,
+                    "max": 1000.0,
+                    "step": 0.001,
+                    "round": False,
                     "tooltip": (
-                        "Frame rate for encoding images to video. "
-                        "Only used when images are provided without "
-                        "a video_path."
+                        "Frame rate this node encodes at. Fractional rates "
+                        "are allowed, so 23.976 and 29.97 work. Applies "
+                        "whenever the node encodes — that is, when images "
+                        "are connected, or when an output_format other than "
+                        "'source' re-encodes. A pass-through file "
+                        "('source (no re-encode)' with a video_path) keeps "
+                        "its own rate; pick an output_format to re-encode it."
                     ),
                 }),
                 "audio": ("AUDIO", {
@@ -324,18 +331,21 @@ class SaveVideoNode:
                     ),
                 }),
                 "frame_output": (
-                    ["preview (64)", "all", "none"],
+                    ["all", "preview (64)", "none"],
                     {
-                        "default": "preview (64)",
+                        "default": "all",
                         "tooltip": (
                             "How many frames the 'images' output carries "
                             "when they have to be decoded from the video. "
-                            "'preview' samples up to 64 evenly spaced "
-                            "frames (cheap). 'all' decodes every frame and "
-                            "can use a lot of memory. 'none' skips decoding "
-                            "entirely. An IMAGE batch connected to this node "
-                            "is always forwarded unchanged, whatever this "
-                            "is set to."
+                            "'all' decodes every frame — the only safe "
+                            "choice if you wire this output into another "
+                            "node. 'preview' samples up to 64 frames spread "
+                            "evenly across the clip: cheap, but it keeps the "
+                            "whole action with fewer frames, so re-encoding "
+                            "it plays faster than the source. 'none' skips "
+                            "decoding entirely. An IMAGE batch connected to "
+                            "this node is always forwarded unchanged, "
+                            "whatever this is set to."
                         ),
                     },
                 ),
@@ -370,7 +380,7 @@ class SaveVideoNode:
         mask=None,
         images_a=None,
         audio=None,
-        fps: int = 24,
+        fps: float = 24.0,
         layout: str = "auto",
         label_panels: bool = False,
         labels: str = "",
@@ -379,7 +389,7 @@ class SaveVideoNode:
         extra_pnginfo=None,
         pingpong: bool = False,
         embed_workflow: bool = True,
-        frame_output: str = "preview (64)",
+        frame_output: str = "all",
         **kwargs,
     ) -> dict:
         """Copy video to output directory and return UI data for preview.
@@ -430,7 +440,7 @@ class SaveVideoNode:
                     from core.video_compare import combine_videos  # type: ignore
                 combined_temp = combine_videos(
                     sources, layout=str(layout), labels=label_list,
-                    gap=int(panel_gap), fps=int(fps),
+                    gap=int(panel_gap), fps=float(fps),
                 )
             except Exception as e:
                 logger.error("SaveVideo: combine failed: %s", e)
@@ -476,7 +486,7 @@ class SaveVideoNode:
                 )
                 video_path = temp_video_from_images
                 logger.info(
-                    "SaveVideo: encoded %d images → %s @ %d fps",
+                    "SaveVideo: encoded %d images → %s @ %s fps",
                     images.shape[0], video_path, fps,
                 )
                 # Encoding from images produces a silent file, so a connected
@@ -505,6 +515,23 @@ class SaveVideoNode:
                 "result": (empty_tensor, silent_audio, "", mask_points or "",
                            mask if mask is not None else torch.zeros(1, 64, 64, dtype=torch.float32)),
             }
+
+        # A pass-through file keeps its own frame rate, so the fps widget has
+        # nothing to act on. Say so rather than silently ignoring it — a
+        # mismatch here is invisible otherwise, and the user has every reason
+        # to expect the widget they set to mean something.
+        if temp_video_from_images is None:
+            try:
+                src_fps, _d, _n = probe_video_stats(video_path)
+                if src_fps > 0 and abs(src_fps - float(fps)) > 0.01:
+                    logger.warning(
+                        "SaveVideo: fps is set to %s but '%s' is a pass-through "
+                        "file at %.3f fps, so it keeps its own rate. Choose an "
+                        "output_format other than 'source' to re-encode at %s.",
+                        fps, os.path.basename(video_path), src_fps, fps,
+                    )
+            except Exception:
+                pass
 
         # --- Decide copy vs remux vs re-encode ---
         # The images path already produced the requested format, so it never
@@ -779,7 +806,7 @@ class SaveVideoNode:
         self, sources, filename_prefix, save_output, overwrite,
         mask_points, mask, audio, fps, prompt, extra_pnginfo,
         spec=None, pingpong=False, embed_workflow=True,
-        frame_output="preview (64)",
+        frame_output="all",
     ) -> dict:
         """layout='none': save each source separately, preview them all."""
         if spec is None:
@@ -912,66 +939,26 @@ class SaveVideoNode:
         }
 
     def _extract_frames(
-        self, video_path: str, mode: str = "preview (64)",
+        self, video_path: str, mode: str,
     ) -> torch.Tensor:
         """Extract frames from video as an IMAGE tensor.
 
         ``mode`` controls how many frames the caller gets back:
-        ``"preview (64)"`` samples up to MAX_PREVIEW_FRAMES evenly (the
-        default, and cheap); ``"all"`` decodes every frame, which on a long
-        clip can be several GB; ``"none"`` skips decoding entirely.
+        ``"all"`` decodes every frame (the default for the widget, and the
+        only correct choice when the frames are treated as the video itself);
+        ``"preview (64)"`` samples up to MAX_PREVIEW_FRAMES evenly, which is
+        cheap but compresses time; ``"none"`` skips decoding entirely.
+
+        ``mode`` is deliberately required. It used to default to the preview
+        setting, and a caller that omitted it silently got a time-compressed
+        clip — see decode_video_frames' note.
 
         Returns shape (B, H, W, 3) float32 in [0, 1].
         """
         if str(mode).startswith("none"):
             return torch.zeros(1, 64, 64, 3, dtype=torch.float32)
         limit = None if str(mode).startswith("all") else MAX_PREVIEW_FRAMES
-
-        try:
-            import av  # type: ignore[import-not-found]
-
-            with av.open(video_path) as container:
-                stream = container.streams.video[0]
-                total = stream.frames or 0
-
-                # First pass: count frames if metadata is missing
-                if total <= 0:
-                    for _ in container.decode(video=0):
-                        total += 1
-                    if total == 0:
-                        return torch.zeros(1, 64, 64, 3, dtype=torch.float32)
-                    # Reopen to decode selected frames
-                    container.close()
-                    container2 = av.open(video_path)
-                else:
-                    container2 = container
-
-                # Determine which frame indices to keep
-                if limit is None or total <= limit:
-                    keep = set(range(total))
-                else:
-                    keep = set(np.linspace(0, total - 1, limit, dtype=int).tolist())
-
-                sampled = []
-                try:
-                    for idx, frame in enumerate(container2.decode(video=0)):
-                        if idx in keep:
-                            sampled.append(frame.to_ndarray(format="rgb24"))
-                        if idx >= total - 1:
-                            break
-                finally:
-                    if container2 is not container:
-                        container2.close()
-
-            if not sampled:
-                return torch.zeros(1, 64, 64, 3, dtype=torch.float32)
-
-            stacked = np.stack(sampled)
-            return torch.from_numpy(stacked).float().div_(255.0)
-
-        except Exception as e:
-            logger.warning("SaveVideo: frame extraction failed: %s", e)
-            return torch.zeros(1, 64, 64, 3, dtype=torch.float32)
+        return decode_video_frames(video_path, limit=limit)
 
     def _extract_audio(self, video_path: str) -> dict:
         """Extract audio from video as a ComfyUI AUDIO dict.

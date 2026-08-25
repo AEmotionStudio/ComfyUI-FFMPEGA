@@ -100,7 +100,7 @@ def combine_videos(
     labels: list[str] | None = None,
     gap: int = 4,
     bg_color: str = _DEFAULT_BG,
-    fps: int = 24,
+    fps: float = 24.0,
 ) -> str | None:
     """Stack ``sources`` into one comparison mp4 and return its path.
 

@@ -394,3 +394,102 @@ class TestSaveVideoRealEncode:
             capture_output=True, timeout=60,
         )
         assert "audio" in probe.stdout.decode()
+
+
+@pytest.mark.skipif(not FFMPEG or not FFPROBE, reason="ffmpeg/ffprobe required")
+class TestFrameOutputDoesNotCompressTime:
+    """Decoded frames must represent the video, not an evenly-spaced sample.
+
+    ``preview (64)`` picks 64 frames spread across the whole clip, so it keeps
+    the full action with fewer frames. Re-encoding that at the source rate
+    plays faster than the source. Load Video Path used to get it by accident
+    because ``_extract_frames`` defaulted to preview, which silently sped up
+    every clip longer than 64 frames.
+    """
+
+    @staticmethod
+    def _make_long_source(path, frames=100, rate=25):
+        subprocess.run(
+            [FFMPEG, "-v", "error", "-y", "-f", "lavfi",
+             "-i", f"testsrc2=s=32x32:d=10:r={rate}", "-frames:v", str(frames),
+             "-c:v", "libx264", "-pix_fmt", "yuv420p", str(path)],
+            check=True, timeout=60,
+        )
+        return str(path)
+
+    def test_frame_output_widget_defaults_to_all(self):
+        from nodes.save_video_node import SaveVideoNode
+        spec = SaveVideoNode.INPUT_TYPES()["optional"]["frame_output"]
+        assert spec[1]["default"] == "all"
+        assert set(spec[0]) == {"all", "preview (64)", "none"}
+
+    def test_extract_frames_requires_an_explicit_mode(self):
+        """The preview default is what caused the bug; it must not come back."""
+        import inspect
+        from nodes.save_video_node import SaveVideoNode
+        sig = inspect.signature(SaveVideoNode._extract_frames)
+        assert sig.parameters["mode"].default is inspect.Parameter.empty
+
+    def test_all_mode_returns_every_frame(self, node, tmp_path):
+        from core.media_converter import decode_video_frames
+        src = self._make_long_source(tmp_path / "long.mp4", frames=100)
+        assert decode_video_frames(src).shape[0] == 100
+
+    def test_preview_mode_still_caps_when_asked(self, node, tmp_path):
+        from core.media_converter import decode_video_frames
+        from nodes.save_video_node import MAX_PREVIEW_FRAMES
+        src = self._make_long_source(tmp_path / "long.mp4", frames=100)
+        assert decode_video_frames(src, limit=MAX_PREVIEW_FRAMES).shape[0] == 64
+
+    def test_limit_above_total_returns_every_frame(self, tmp_path):
+        from core.media_converter import decode_video_frames
+        src = self._make_long_source(tmp_path / "short.mp4", frames=20)
+        assert decode_video_frames(src, limit=64).shape[0] == 20
+
+    def test_unreadable_video_returns_a_placeholder(self):
+        from core.media_converter import decode_video_frames
+        out = decode_video_frames("/definitely/not/a/video.mp4")
+        assert out.shape == (1, 64, 64, 3)
+
+    def test_round_trip_preserves_duration(self, node, tmp_path):
+        """The regression: decode a clip, re-encode it, and land on the same length."""
+        from core.media_converter import decode_video_frames, MediaConverter
+
+        src = self._make_long_source(tmp_path / "src.mp4", frames=100, rate=25)
+        images = decode_video_frames(src)
+        assert images.shape[0] == 100
+
+        out = MediaConverter().images_to_video(images, fps=25.0)
+        probe = subprocess.run(
+            [FFPROBE, "-v", "error", "-select_streams", "v:0", "-count_frames",
+             "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", out],
+            capture_output=True, text=True, timeout=60,
+        )
+        assert int(probe.stdout.strip()) == 100
+
+
+@pytest.mark.skipif(not FFMPEG or not FFPROBE, reason="ffmpeg/ffprobe required")
+class TestFractionalFps:
+    """fps is a FLOAT so NTSC rates are expressible, matching VHS's floatOrInt."""
+
+    def test_fps_widget_accepts_fractional_rates(self):
+        from nodes.save_video_node import SaveVideoNode
+        spec = SaveVideoNode.INPUT_TYPES()["optional"]["fps"]
+        assert spec[0] == "FLOAT"
+        assert spec[1]["min"] < 1
+
+    def test_encodes_at_23_976(self, node):
+        images = torch.rand(12, 32, 32, 3, dtype=torch.float32)
+        result = node.save_video(
+            filename_prefix="ntsc", images_a=images, fps=23.976,
+            output_format="h264-mp4", crf=32, encode_preset="ultrafast",
+            frame_output="none",
+        )
+        probe = subprocess.run(
+            [FFPROBE, "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=avg_frame_rate", "-of", "csv=p=0",
+             TestSaveVideoRealEncode._out_file(result)],
+            capture_output=True, text=True, timeout=60,
+        )
+        num, den = probe.stdout.strip().split("/")
+        assert abs(int(num) / int(den) - 23.976) < 0.01
