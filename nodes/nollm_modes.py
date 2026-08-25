@@ -4694,7 +4694,7 @@ async def process_ai_upscale_only(
 
     upscale_output = None
     temp_render_dir = None
-    _SEEDVR_MODELS = {"seedvr2_3b_fp8", "seedvr2_3b_gguf", "seedvr2_7b_fp8", "seedvr2_7b_fp8_mixed", "seedvr2_7b_gguf"}
+    _SEEDVR_MODELS = {"seedvr2_3b_int8", "seedvr2_7b_int8", "seedvr2_3b_fp8", "seedvr2_3b_gguf", "seedvr2_7b_fp8", "seedvr2_7b_fp8_mixed", "seedvr2_7b_gguf"}
     _FLASHVSR_MODELS = {"flashvsr_full", "flashvsr_tiny", "flashvsr_tiny_long"}
 
     # --- Build output path (same pattern as flux_klein and other no-LLM modes) ---

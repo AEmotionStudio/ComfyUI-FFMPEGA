@@ -355,9 +355,12 @@ def register_skills(registry: SkillRegistry) -> None:
                     "'realesrgan_x4_anime' (anime/cartoon), "
                     "'hat_x4' (SOTA quality), 'dat_x4' (balanced), "
                     "'swinir_x4' (classical SR), "
+                    "'seedvr2_3b_int8' (diffusion, recommended 3B — fastest, smallest), "
+                    "'seedvr2_7b_int8' (diffusion, recommended 7B — highest quality), "
                     "'seedvr2_3b_fp8' (diffusion, great quality), "
                     "'seedvr2_3b_gguf' (diffusion, lowest VRAM), "
                     "'seedvr2_7b_fp8' (diffusion, highest quality), "
+                    "'seedvr2_7b_fp8_mixed' (7B fp8 with fp16 last block, no seam artifacts), "
                     "'seedvr2_7b_gguf' (diffusion, highest quality quantized), "
                     "'flashvsr_full' (one-step diffusion, best quality), "
                     "'flashvsr_tiny' (one-step diffusion, fast), "
@@ -368,8 +371,9 @@ def register_skills(registry: SkillRegistry) -> None:
                 choices=[
                     "realesrgan_x4plus", "realesrgan_x4_anime",
                     "hat_x4", "dat_x4", "swinir_x4",
+                    "seedvr2_3b_int8", "seedvr2_7b_int8",
                     "seedvr2_3b_fp8", "seedvr2_3b_gguf",
-                    "seedvr2_7b_fp8", "seedvr2_7b_gguf",
+                    "seedvr2_7b_fp8", "seedvr2_7b_fp8_mixed", "seedvr2_7b_gguf",
                     "flashvsr_full", "flashvsr_tiny", "flashvsr_tiny_long",
                 ],
             ),
@@ -397,6 +401,8 @@ def register_skills(registry: SkillRegistry) -> None:
             "ai_upscale:model=realesrgan_x4_anime - Anime-optimized upscale",
             "ai_upscale:model=dat_x4,scale_factor=2 - 2x upscale with DAT",
             "ai_upscale:tile_size=256 - Lower VRAM usage with smaller tiles",
+            "ai_upscale:model=seedvr2_3b_int8 - Diffusion upscale (recommended 3B)",
+            "ai_upscale:model=seedvr2_7b_int8 - Diffusion upscale (recommended 7B)",
             "ai_upscale:model=seedvr2_3b_fp8 - Diffusion upscale (great quality)",
             "ai_upscale:model=seedvr2_3b_gguf - Diffusion upscale (lowest VRAM)",
             "ai_upscale:model=seedvr2_7b_fp8 - Highest quality diffusion upscale",

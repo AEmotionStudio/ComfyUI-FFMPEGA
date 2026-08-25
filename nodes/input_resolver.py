@@ -14,6 +14,46 @@ from typing import Optional
 
 logger = logging.getLogger("ffmpega")
 
+# Used when frames arrive with no source video to take a rate from. An IMAGE
+# batch genuinely has no frame rate, so this is a display convention, not a
+# measurement — the downstream Save Video node's fps widget is what decides
+# the rate of anything the user actually keeps.
+DEFAULT_IMAGE_SEQUENCE_FPS = 24.0
+
+
+def _source_fps(video_path: str, extra_video_paths: list) -> float:
+    """Frame rate of the first readable source video, or the default.
+
+    Frames connected alongside a source video (the usual Load Video Path →
+    Agent wiring) should keep that video's rate rather than silently becoming
+    24 fps.
+    """
+    candidates = []
+    if video_path and str(video_path).strip():
+        candidates.append(str(video_path).strip())
+    candidates.extend(extra_video_paths or [])
+
+    try:
+        from ..core.last_frame import probe_video_stats
+    except ImportError:
+        from core.last_frame import probe_video_stats  # type: ignore
+
+    for candidate in candidates:
+        if not candidate or not os.path.isfile(candidate):
+            continue
+        try:
+            fps, _duration, _frames = probe_video_stats(candidate)
+        except Exception:
+            continue
+        if fps and fps > 0:
+            logger.info(
+                "resolve_inputs: images have no frame rate; using %.3f fps "
+                "from %s", fps, os.path.basename(candidate),
+            )
+            return float(fps)
+
+    return DEFAULT_IMAGE_SEQUENCE_FPS
+
 
 def resolve_inputs(
     media_converter,
@@ -106,7 +146,15 @@ def resolve_inputs(
 
     if images_a is not None:
         _images_a_shape = images_a.shape
-        temp_video_from_images = media_converter.images_to_video(images_a)
+        # Frames alone carry no frame rate, so the intermediate would be
+        # stamped with images_to_video's 24 fps default. Frame *count* is
+        # preserved either way, but the agent's video_path output inherits
+        # this rate — wrong for 30/60 fps footage. Take the real rate from a
+        # connected source video when there is one.
+        _src_fps = _source_fps(video_path, _all_video_paths)
+        temp_video_from_images = media_converter.images_to_video(
+            images_a, fps=_src_fps,
+        )
         effective_video_path = temp_video_from_images
         del images_a
         gc.collect()

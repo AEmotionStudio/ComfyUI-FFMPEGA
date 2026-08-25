@@ -192,6 +192,14 @@ def download_weight(dit_model: str, vae_model: str, model_dir: Optional[str] = N
             # Debug log: Model found
             if debug:
                 debug.log(f"{model_type} model found: {filepath}", category="setup")
+        elif model_info.local_only:
+            # No mirror to fall back on — fail here with somewhere to put the file,
+            # rather than deeper in the loader with a bare "file not found".
+            searched = "\n  ".join(get_all_model_paths())
+            raise FileNotFoundError(
+                f"SeedVR2 {model_type} model '{filename}' was not found on disk, and this "
+                f"variant has no download mirror. Place the file in one of:\n  {searched}"
+            )
         else:
             filepath = os.path.join(cache_dir, filename)
             # Debug log: Model not found, will need to download

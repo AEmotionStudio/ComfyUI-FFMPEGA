@@ -63,9 +63,18 @@ except ImportError:
 from .infer import VideoDiffusionInfer
 from ..common.config import create_object
 from ..optimization.compatibility import (
+    COMPUTE_DTYPE,
     GGUF_AVAILABLE,
     GGMLQuantizationType,
     validate_gguf_availability
+)
+from ..optimization.int8_ops import (
+    convert_state_to_compute_dtype,
+    is_int8_convrot_state,
+    parse_comfy_quant,
+    replace_linear_with_int8,
+    strip_quant_metadata,
+    validate_int8_availability,
 )
 
 # GGUF-specific imports (only when available)
@@ -583,14 +592,22 @@ def _load_model_weights(model: torch.nn.Module, checkpoint_path: str, target_dev
     load_device = torch.device("cpu") if is_gguf else target_device
     state = load_quantized_state_dict(checkpoint_path, load_device, debug)
     debug.end_timer(f"{model_type_lower}_weights_load", f"{model_type} weights loaded from file")
-    
+
+    # INT8 ConvRot (ComfyUI's int8_tensorwise layout) is detected from the per-layer
+    # tags in the checkpoint rather than the file extension — it is plain safetensors.
+    # The Linear swap has to happen before load_state_dict so the replacement modules
+    # are the ones that receive the weights.
+    is_int8 = is_int8_convrot_state(state)
+    if is_int8:
+        model = _prepare_int8_model(model, state, model_type, model_type_lower, debug)
+
     # Apply dtype conversion if requested
     if override_dtype is not None:
         state = _convert_state_dtype(state, override_dtype, model_type, debug)
-    
+
     # Log weight statistics
     _log_weight_stats(state, used_meta, model_type, debug)
-    
+
     # Handle GGUF or standard loading
     if is_gguf:
         model = _load_gguf_weights(model, state, used_meta, model_type_lower, debug)
@@ -610,6 +627,89 @@ def _load_model_weights(model: torch.nn.Module, checkpoint_path: str, target_dev
         initialize_meta_buffers(model, target_device, debug)
     
     return model
+
+
+def _prepare_int8_model(model: torch.nn.Module, state: Dict[str, torch.Tensor],
+                        model_type: str, model_type_lower: str,
+                        debug: Optional['Debug'] = None) -> torch.nn.Module:
+    """
+    Prepare a model and its state dict for INT8 ConvRot weights.
+
+    Swaps every quantized nn.Linear for an Int8ConvRotLinear, removes the
+    quantization tags from the state dict, and casts the remaining floating point
+    tensors to the compute dtype.
+
+    That last step matters: the non-quantized tensors ship as FP16, and if they were
+    left alone CompatibleDiT._detect_model_dtype would see FP16 and treat the whole
+    DiT as an FP16 model. Casting them to BF16 puts the model on the same effective
+    compute precision as the FP8 path. The INT8 weights are untouched (not floating
+    point) and the weight_scale tensors stay FP32, which the kernel requires.
+
+    Args:
+        model: Model instance (typically still on meta device)
+        state: Loaded state dict, mutated in place
+        model_type: Model type string for logging
+        model_type_lower: Lowercase model type for logging categories
+        debug: Debug instance
+
+    Returns:
+        Model with quantized layers in place
+    """
+    validate_int8_availability()
+
+    debug.start_timer(f"{model_type_lower}_int8_prepare")
+
+    quant_map = parse_comfy_quant(state)
+    replacements, group_sizes = replace_linear_with_int8(model, quant_map, debug)
+    strip_quant_metadata(state)
+    converted = convert_state_to_compute_dtype(state, COMPUTE_DTYPE)
+
+    _validate_int8_architecture(model, state, debug)
+
+    debug.end_timer(f"{model_type_lower}_int8_prepare", f"{model_type} INT8 layers prepared")
+
+    groups_str = ', '.join(f"{label}:{count}" for label, count in group_sizes.items())
+    debug.log(
+        f"INT8 precision path: {replacements} Linear layers ({groups_str}) → INT8 tensor cores, "
+        f"{converted} remaining tensors → {COMPUTE_DTYPE}",
+        category="precision", force=True
+    )
+
+    return model
+
+
+def _validate_int8_architecture(model: torch.nn.Module, state: Dict[str, torch.Tensor],
+                                debug: Optional['Debug'] = None) -> None:
+    """
+    Verify an INT8 checkpoint actually matches the model before loading it.
+
+    _load_standard_weights uses strict=False, so a checkpoint for the wrong variant
+    would load "successfully" and render noise. Checking that every parameter and
+    persistent buffer the model expects is present turns that into a clear failure.
+
+    Extra keys are tolerated: these checkpoints carry baked-in
+    positive_conditioning/negative_conditioning text embeddings that this port does
+    not use (it loads pos_emb.pt/neg_emb.pt instead).
+
+    Raises:
+        RuntimeError: If the checkpoint is missing keys the model requires.
+    """
+    expected = set(model.state_dict().keys())
+    provided = set(state.keys())
+
+    missing = sorted(expected - provided)
+    if missing:
+        raise RuntimeError(
+            f"INT8 checkpoint does not match the selected SeedVR2 architecture: "
+            f"{len(missing)} expected tensors are absent "
+            f"(e.g. {', '.join(missing[:5])}). "
+            f"Check that the model file matches the 3B/7B variant it is registered as."
+        )
+
+    extra = sorted(provided - expected)
+    if extra and debug:
+        debug.log(f"Ignoring {len(extra)} unused checkpoint tensors: {', '.join(extra[:5])}",
+                  category="dit")
 
 
 def _move_cpu_params_to_device(model: torch.nn.Module, device: torch.device) -> None:

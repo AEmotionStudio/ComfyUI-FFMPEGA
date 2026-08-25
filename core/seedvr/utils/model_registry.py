@@ -29,6 +29,7 @@ class ModelInfo:
     size: str = "3B" # '3B', '7B', etc.
     variant: Optional[str] = None # 'sharp', etc.
     sha256: Optional[str] = None # Cached hash
+    local_only: bool = False # No mirror to download from; must already be on disk
 
 # Model registry with metadata
 MODEL_REGISTRY = {
@@ -43,7 +44,14 @@ MODEL_REGISTRY = {
     # 7B-specific seam/grid artifacts of pure FP8 at the same VRAM footprint.
     # Mirrored to AEmotionStudio/SeedVR2-models (source: mekrod/...mixed_block35_fp16).
     "seedvr2_ema_7b_fp8_e4m3fn_mixed_block35_fp16.safetensors": ModelInfo(size="7B", precision="fp8_e4m3fn", variant="mixed_block35_fp16", sha256="3d68b5ec0b295ae28092e355c8cad870edd00b817b26587d0cb8f9dd2df19bb2"),
-    
+
+    # INT8 ConvRot models — ComfyUI's native int8_tensorwise layout with the
+    # block-Hadamard rotation. Smaller and faster than FP8 on tensor cores.
+    # Local-only: place them in ComfyUI/models/diffusion_models/ (where ComfyUI
+    # downloads them) or ComfyUI/models/SEEDVR2/; both are searched.
+    "seedvr2_3b_int8_convrot.safetensors": ModelInfo(size="3B", precision="int8_convrot", local_only=True),
+    "seedvr2_7b_int8_convrot.safetensors": ModelInfo(size="7B", precision="int8_convrot", local_only=True),
+
     # VAE models
     "ema_vae_fp16.safetensors": ModelInfo(category="vae", precision="fp16", sha256="20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1"),
 }

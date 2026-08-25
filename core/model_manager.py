@@ -9,6 +9,7 @@ that may trigger a download.
 from __future__ import annotations
 
 import logging
+import os
 
 log = logging.getLogger("ffmpega")
 
@@ -529,6 +530,32 @@ def require_downloads_allowed(model_key: str) -> None:
         f"'allow_model_downloads' is disabled on the FFMPEG Agent node. "
         f"Enable it to auto-download, or download manually from: {info['url']}"
     )
+
+
+def require_downloads_allowed_for_missing(model_key: str, paths) -> list:
+    """Gate on downloads only when a file is actually absent.
+
+    ``require_downloads_allowed`` asks "may I download?" — calling it
+    unconditionally at the top of a loader also blocks users who already have
+    every weight on disk, which is the opposite of what the toggle is for. Ask
+    "do I need to download?" first, and only then ask permission.
+
+    Args:
+        model_key: A key from ``_MODEL_INFO``.
+        paths: Resolved local paths the loader needs. Falsy entries are
+            treated as unresolved, and therefore missing.
+
+    Returns:
+        The subset of ``paths`` that is missing (empty when everything is
+        present, in which case no permission was required).
+
+    Raises:
+        RuntimeError: If something is missing and downloads are disabled.
+    """
+    missing = [p for p in paths if not p or not os.path.isfile(p)]
+    if missing:
+        require_downloads_allowed(model_key)
+    return missing
 
 
 # ---------------------------------------------------------------------------

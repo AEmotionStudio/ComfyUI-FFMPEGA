@@ -55,8 +55,9 @@ class TestAIUpscaleSkillRegistration:
         expected = {
             "realesrgan_x4plus", "realesrgan_x4_anime",
             "hat_x4", "dat_x4", "swinir_x4",
+            "seedvr2_3b_int8", "seedvr2_7b_int8",
             "seedvr2_3b_fp8", "seedvr2_3b_gguf",
-            "seedvr2_7b_fp8", "seedvr2_7b_gguf",
+            "seedvr2_7b_fp8", "seedvr2_7b_fp8_mixed", "seedvr2_7b_gguf",
             "flashvsr_full", "flashvsr_tiny", "flashvsr_tiny_long",
         }
         assert set(choices) == expected
@@ -433,3 +434,296 @@ class TestFlashVSRSynthesizer:
         fvsr._pipeline = None
         fvsr.cleanup()  # Should not raise
         assert fvsr._pipeline is None
+
+
+class TestSeedVR2Int8ConvRot:
+    """INT8 ConvRot variants (ComfyUI's int8_tensorwise layout + block-Hadamard rotation)."""
+
+    INT8_MODELS = ("seedvr2_3b_int8", "seedvr2_7b_int8")
+
+    def test_int8_variants_in_seedvr_configs(self):
+        from core.seedvr_synthesizer import SEEDVR_CONFIGS
+        for name in self.INT8_MODELS:
+            assert name in SEEDVR_CONFIGS
+            assert SEEDVR_CONFIGS[name]["dit_model"].endswith("_int8_convrot.safetensors")
+
+    def test_int8_variants_in_every_enum(self):
+        """All four model lists must agree, or a variant is selectable but rejected."""
+        pytest.importorskip("torch")
+        from nodes.agent_node import FFMPEGAgentNode
+        from nodes.nollm_modes import process_ai_upscale_only  # noqa: F401
+        from skills.handlers.upscale import _VALID_MODELS, _SEEDVR_MODELS
+        from skills.registry import get_registry
+
+        node_models = FFMPEGAgentNode.INPUT_TYPES()["optional"]["upscale_model"][0]
+        skill_choices = {
+            p.name: p for p in get_registry().get("ai_upscale").parameters
+        }["model"].choices
+
+        for name in self.INT8_MODELS:
+            assert name in node_models, f"{name} missing from agent_node dropdown"
+            assert name in skill_choices, f"{name} missing from ai_upscale skill choices"
+            assert name in _SEEDVR_MODELS, f"{name} missing from handler _SEEDVR_MODELS"
+            assert name in _VALID_MODELS, f"{name} missing from handler _VALID_MODELS"
+
+    def test_fp8_mixed_parity_across_enums(self):
+        """seedvr2_7b_fp8_mixed was previously missing from the skill layer."""
+        from skills.handlers.upscale import _VALID_MODELS, _SEEDVR_MODELS
+        from skills.registry import get_registry
+
+        skill_choices = {
+            p.name: p for p in get_registry().get("ai_upscale").parameters
+        }["model"].choices
+        assert "seedvr2_7b_fp8_mixed" in _SEEDVR_MODELS
+        assert "seedvr2_7b_fp8_mixed" in _VALID_MODELS
+        assert "seedvr2_7b_fp8_mixed" in skill_choices
+
+    def test_int8_models_registered_local_only(self):
+        from core.seedvr.utils.model_registry import MODEL_REGISTRY
+        from core.seedvr_synthesizer import SEEDVR_CONFIGS
+
+        for name in self.INT8_MODELS:
+            filename = SEEDVR_CONFIGS[name]["dit_model"]
+            assert filename in MODEL_REGISTRY
+            info = MODEL_REGISTRY[filename]
+            assert info.local_only is True
+            assert info.precision == "int8_convrot"
+
+    def test_diffusion_models_folder_is_searched(self):
+        """int8 checkpoints live in diffusion_models/, not SEEDVR2/."""
+        pytest.importorskip("folder_paths")
+        from core.seedvr.utils.constants import get_all_model_paths
+        paths = [os.path.normpath(p).lower() for p in get_all_model_paths()]
+        assert any(p.endswith("seedvr2") for p in paths)
+        assert any(p.endswith("diffusion_models") for p in paths)
+
+    def test_shared_folder_discovery_filters_by_name(self, tmp_path, monkeypatch):
+        """diffusion_models also holds unrelated checkpoints; they must not be offered."""
+        from core.seedvr.utils import constants
+
+        seedvr_dir = tmp_path / "SEEDVR2"
+        shared_dir = tmp_path / "diffusion_models"
+        seedvr_dir.mkdir()
+        shared_dir.mkdir()
+
+        (seedvr_dir / "ema_vae_fp16.safetensors").touch()
+        (shared_dir / "seedvr2_3b_int8_convrot.safetensors").touch()
+        (shared_dir / "Wan2_2-T2V-A14B-LOW_fp8.safetensors").touch()
+        (shared_dir / "krea2_turbo_fp8.safetensors").touch()
+        (shared_dir / "seedvr2_notes.txt").touch()
+
+        monkeypatch.setattr(constants, "get_seedvr2_model_paths", lambda: [str(seedvr_dir)])
+        monkeypatch.setattr(constants, "get_shared_dit_paths", lambda: [str(shared_dir)])
+
+        found = constants.get_all_model_files()
+        assert set(found) == {
+            "ema_vae_fp16.safetensors",
+            "seedvr2_3b_int8_convrot.safetensors",
+        }
+
+    def test_seedvr2_folder_wins_on_duplicate_filename(self, tmp_path, monkeypatch):
+        """The dedicated folder is searched first, so it takes priority."""
+        from core.seedvr.utils import constants
+
+        seedvr_dir = tmp_path / "SEEDVR2"
+        shared_dir = tmp_path / "diffusion_models"
+        seedvr_dir.mkdir()
+        shared_dir.mkdir()
+        (seedvr_dir / "seedvr2_3b_int8_convrot.safetensors").touch()
+        (shared_dir / "seedvr2_3b_int8_convrot.safetensors").touch()
+
+        monkeypatch.setattr(constants, "get_seedvr2_model_paths", lambda: [str(seedvr_dir)])
+        monkeypatch.setattr(constants, "get_shared_dit_paths", lambda: [str(shared_dir)])
+
+        resolved = constants.get_all_model_files()["seedvr2_3b_int8_convrot.safetensors"]
+        assert resolved == str(seedvr_dir / "seedvr2_3b_int8_convrot.safetensors")
+
+    def test_parse_comfy_quant_decodes_tag(self):
+        torch = pytest.importorskip("torch")
+        import json
+        from core.seedvr.optimization.int8_ops import parse_comfy_quant
+
+        payload = json.dumps(
+            {"format": "int8_tensorwise", "convrot": True, "convrot_groupsize": 256}
+        ).encode()
+        state = {
+            "blocks.0.mlp.vid.proj_in.comfy_quant": torch.tensor(
+                list(payload), dtype=torch.uint8
+            ),
+            "blocks.0.mlp.vid.proj_in.weight": torch.zeros(4, 4, dtype=torch.int8),
+        }
+        quant_map = parse_comfy_quant(state)
+        assert list(quant_map) == ["blocks.0.mlp.vid.proj_in"]
+        assert quant_map["blocks.0.mlp.vid.proj_in"]["convrot_groupsize"] == 256
+
+    def test_parse_comfy_quant_rejects_unknown_format(self):
+        torch = pytest.importorskip("torch")
+        import json
+        from core.seedvr.optimization.int8_ops import parse_comfy_quant
+
+        payload = json.dumps({"format": "nvfp4"}).encode()
+        state = {"x.comfy_quant": torch.tensor(list(payload), dtype=torch.uint8)}
+        with pytest.raises(ValueError, match="nvfp4"):
+            parse_comfy_quant(state)
+
+    def test_strip_quant_metadata_removes_only_tags(self):
+        torch = pytest.importorskip("torch")
+        from core.seedvr.optimization.int8_ops import strip_quant_metadata
+
+        state = {
+            "a.comfy_quant": torch.zeros(4, dtype=torch.uint8),
+            "a.weight": torch.zeros(2, 2, dtype=torch.int8),
+            "a.weight_scale": torch.zeros(2, 1),
+        }
+        assert strip_quant_metadata(state) == 1
+        assert set(state) == {"a.weight", "a.weight_scale"}
+
+    def test_convert_state_preserves_int8_and_scales(self):
+        torch = pytest.importorskip("torch")
+        from core.seedvr.optimization.int8_ops import convert_state_to_compute_dtype
+
+        state = {
+            "a.weight": torch.zeros(2, 2, dtype=torch.int8),
+            "a.weight_scale": torch.zeros(2, 1, dtype=torch.float32),
+            "a.bias": torch.zeros(2, dtype=torch.float16),
+        }
+        converted = convert_state_to_compute_dtype(state, torch.bfloat16)
+        assert converted == 1
+        assert state["a.weight"].dtype == torch.int8
+        assert state["a.weight_scale"].dtype == torch.float32
+        assert state["a.bias"].dtype == torch.bfloat16
+
+    def test_replace_linear_and_load_state_dict(self):
+        """The BlockSwap contract: buffers load by name and survive .to() moves."""
+        torch = pytest.importorskip("torch")
+        import json
+        import torch.nn as nn
+        from core.seedvr.optimization.int8_ops import (
+            Int8ConvRotLinear,
+            parse_comfy_quant,
+            replace_linear_with_int8,
+            strip_quant_metadata,
+        )
+
+        class Toy(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.with_bias = nn.Linear(512, 256, bias=True)
+                self.no_bias = nn.Linear(512, 256, bias=False)
+
+        with torch.device("meta"):
+            model = Toy()
+
+        payload = json.dumps(
+            {"format": "int8_tensorwise", "convrot": True, "convrot_groupsize": 256}
+        ).encode()
+        tag = torch.tensor(list(payload), dtype=torch.uint8)
+        state = {
+            "with_bias.weight": torch.zeros(256, 512, dtype=torch.int8),
+            "with_bias.weight_scale": torch.ones(256, 1, dtype=torch.float32),
+            "with_bias.bias": torch.zeros(256, dtype=torch.bfloat16),
+            "with_bias.comfy_quant": tag.clone(),
+            "no_bias.weight": torch.zeros(256, 512, dtype=torch.int8),
+            "no_bias.weight_scale": torch.ones(256, 1, dtype=torch.float32),
+            "no_bias.comfy_quant": tag.clone(),
+        }
+
+        replacements, groups = replace_linear_with_int8(model, parse_comfy_quant(state))
+        strip_quant_metadata(state)
+        assert replacements == 2
+        assert groups == {"convrot256": 2}
+        assert isinstance(model.with_bias, Int8ConvRotLinear)
+
+        result = model.load_state_dict(state, strict=False, assign=True)
+        assert result.missing_keys == []
+        assert result.unexpected_keys == []
+        assert model.with_bias.weight.dtype == torch.int8
+        assert model.with_bias.weight_scale.dtype == torch.float32
+        assert model.no_bias.bias is None
+
+        # BlockSwap moves whole blocks with .to(); int8 must survive the round-trip.
+        model.to("cpu")
+        assert model.with_bias.weight.dtype == torch.int8
+        assert model.with_bias.weight.device.type == "cpu"
+
+    def test_replace_rejects_missing_module(self):
+        torch = pytest.importorskip("torch")
+        import torch.nn as nn
+        from core.seedvr.optimization.int8_ops import replace_linear_with_int8
+
+        with torch.device("meta"):
+            model = nn.Module()
+        with pytest.raises(ValueError, match="does not exist"):
+            replace_linear_with_int8(model, {"nope": {"convrot": True}})
+
+
+class TestDownloadGateChecksDiskFirst:
+    """allow_model_downloads gates downloading, not using what is already there.
+
+    The SeedVR2 loader called require_downloads_allowed() unconditionally at the
+    top, so users with every weight on disk but the toggle off were refused a
+    download they did not need.
+    """
+
+    def test_present_files_need_no_permission(self, tmp_path):
+        from core import model_manager as mm
+
+        weight = tmp_path / "present.safetensors"
+        weight.write_bytes(b"x")
+        original = mm._downloads_allowed
+        try:
+            mm._downloads_allowed = False
+            assert mm.require_downloads_allowed_for_missing(
+                "seedvr2", [str(weight)]
+            ) == []
+        finally:
+            mm._downloads_allowed = original
+
+    def test_absent_file_still_blocks(self, tmp_path):
+        from core import model_manager as mm
+
+        original = mm._downloads_allowed
+        try:
+            mm._downloads_allowed = False
+            with pytest.raises(RuntimeError, match="allow_model_downloads"):
+                mm.require_downloads_allowed_for_missing(
+                    "seedvr2", [str(tmp_path / "absent.safetensors")]
+                )
+        finally:
+            mm._downloads_allowed = original
+
+    def test_absent_file_is_reported_when_downloads_allowed(self, tmp_path):
+        from core import model_manager as mm
+
+        present = tmp_path / "present.safetensors"
+        present.write_bytes(b"x")
+        absent = tmp_path / "absent.safetensors"
+        original = mm._downloads_allowed
+        try:
+            mm._downloads_allowed = True
+            missing = mm.require_downloads_allowed_for_missing(
+                "seedvr2", [str(present), str(absent)]
+            )
+            assert missing == [str(absent)]
+        finally:
+            mm._downloads_allowed = original
+
+    def test_unresolved_path_counts_as_missing(self):
+        from core import model_manager as mm
+
+        original = mm._downloads_allowed
+        try:
+            mm._downloads_allowed = False
+            with pytest.raises(RuntimeError):
+                mm.require_downloads_allowed_for_missing("seedvr2", [""])
+        finally:
+            mm._downloads_allowed = original
+
+    def test_seedvr_loader_no_longer_gates_unconditionally(self):
+        """Guard: the gate must sit behind a disk check, not above it."""
+        import inspect
+        from core import seedvr_synthesizer
+
+        src = inspect.getsource(seedvr_synthesizer._load_model)
+        assert "require_downloads_allowed_for_missing" in src
+        assert "require_downloads_allowed(" not in src

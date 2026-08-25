@@ -26,6 +26,8 @@ if "folder_paths" not in sys.modules:
     mock_fp.get_save_image_path = lambda prefix, output_dir, *a, **kw: (
         output_dir, prefix, 1, "", ""
     )
+    from _comfy_stubs import install_model_folders
+    install_model_folders(mock_fp)
     sys.modules["folder_paths"] = mock_fp
 
 # --------------------------------------------------------------------------

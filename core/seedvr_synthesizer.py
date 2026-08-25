@@ -43,6 +43,22 @@ log = logging.getLogger("ffmpega")
 # ---------------------------------------------------------------------------
 
 SEEDVR_CONFIGS = {
+    "seedvr2_3b_int8": {
+        "description": "SeedVR2 3B INT8 ConvRot — recommended, fastest and smallest 3B",
+        "dit_model": "seedvr2_3b_int8_convrot.safetensors",
+        "vae_model": "ema_vae_fp16.safetensors",
+        "size": "3B",
+        "download_size": "~3.4 GB (local only)",
+        "vram": "~6-9 GB",
+    },
+    "seedvr2_7b_int8": {
+        "description": "SeedVR2 7B INT8 ConvRot — recommended 7B, highest quality",
+        "dit_model": "seedvr2_7b_int8_convrot.safetensors",
+        "vae_model": "ema_vae_fp16.safetensors",
+        "size": "7B",
+        "download_size": "~8.3 GB (local only)",
+        "vram": "~10-14 GB (use BlockSwap under 16 GB)",
+    },
     "seedvr2_3b_fp8": {
         "description": "SeedVR2 3B FP8 — fast diffusion upscaler, great quality",
         "dit_model": "seedvr2_ema_3b_fp8_e4m3fn.safetensors",
@@ -180,16 +196,15 @@ def _load_model(
     # Free VRAM from other models BEFORE loading
     _free_vram()
 
-    # Check download permission
     try:
-        from .model_manager import require_downloads_allowed
+        from .model_manager import require_downloads_allowed_for_missing
     except ImportError:
-        from core.model_manager import require_downloads_allowed  # type: ignore
-    require_downloads_allowed("seedvr2")
+        from core.model_manager import require_downloads_allowed_for_missing  # type: ignore
 
     # Import vendored SeedVR2 modules
     from .seedvr.utils.debug import Debug
     from .seedvr.utils.downloads import download_weight
+    from .seedvr.utils.constants import find_model_file
     from .seedvr.core.generation_utils import (
         setup_generation_context,
         prepare_runner,
@@ -202,6 +217,16 @@ def _load_model(
     # Download models if needed
     dit_model = cfg["dit_model"]
     vae_model = cfg["vae_model"]
+
+    # Ask permission only for what is genuinely absent. Gating before this
+    # check blocked users who already had every weight on disk — which is
+    # exactly who the toggle is meant to leave alone.
+    missing = require_downloads_allowed_for_missing(
+        "seedvr2", [find_model_file(dit_model), find_model_file(vae_model)],
+    )
+    if missing:
+        log.info("[SeedVR2] Missing weights, will download: %s",
+                 ", ".join(os.path.basename(p) for p in missing))
 
     log.info("[SeedVR2] Checking/downloading models...")
     if not download_weight(dit_model=dit_model, vae_model=vae_model, debug=debug):

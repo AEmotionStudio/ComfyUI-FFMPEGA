@@ -5,6 +5,7 @@ extracted from FFMPEGAgentNode to keep the node class focused on orchestration.
 """
 
 import concurrent.futures
+import logging
 import os
 import re
 import shutil
@@ -14,6 +15,81 @@ import numpy as np  # type: ignore[import-not-found]
 import torch  # type: ignore[import-not-found]
 
 from .bin_paths import get_ffmpeg_bin, get_ffprobe_bin
+
+logger = logging.getLogger("ffmpega")
+
+# Placeholder returned when a video cannot be decoded at all.
+_PLACEHOLDER_SIZE = 64
+
+
+def _placeholder_frames() -> torch.Tensor:
+    """A single blank frame, returned when decoding fails."""
+    return torch.zeros(1, _PLACEHOLDER_SIZE, _PLACEHOLDER_SIZE, 3, dtype=torch.float32)
+
+
+def decode_video_frames(video_path: str, limit: int | None = None) -> torch.Tensor:
+    """Decode a video to an IMAGE tensor of shape (B, H, W, 3), float32 in [0, 1].
+
+    Args:
+        video_path: Path to the video file.
+        limit: Maximum number of frames to return. ``None`` (the default)
+            decodes every frame. When set and the video is longer, frames are
+            sampled *evenly across the whole clip*.
+
+    Note that sampling compresses time rather than truncating it: the result
+    covers the full duration with fewer frames, so re-encoding it at the source
+    rate plays faster. Only pass ``limit`` for previews or thumbnails, never on
+    a path whose frames are treated as the video itself.
+    """
+    try:
+        import av  # type: ignore[import-not-found]
+
+        with av.open(video_path) as container:
+            total = container.streams.video[0].frames or 0
+
+            # Container metadata is missing or lies (common for VFR and for
+            # some muxers), so count the frames before deciding what to keep.
+            # The decode generator is consumed by counting, hence the reopen.
+            if total <= 0:
+                for _ in container.decode(video=0):
+                    total += 1
+                if total == 0:
+                    return _placeholder_frames()
+
+        if limit is None or total <= limit:
+            keep = None  # keep everything; avoids building a large index set
+        else:
+            keep = set(np.linspace(0, total - 1, limit, dtype=int).tolist())
+            logger.info(
+                "decode_video_frames: sampling %d of %d frames from %s "
+                "(evenly spaced — this compresses time)",
+                limit, total, os.path.basename(video_path),
+            )
+
+        sampled = []
+        with av.open(video_path) as container:
+            for idx, frame in enumerate(container.decode(video=0)):
+                if keep is None or idx in keep:
+                    sampled.append(frame.to_ndarray(format="rgb24"))
+                if idx >= total - 1:
+                    break
+
+        if not sampled:
+            return _placeholder_frames()
+
+        stacked = np.stack(sampled)
+        tensor = torch.from_numpy(stacked).float().div_(255.0)
+        logger.info(
+            "decode_video_frames: %s → %d frames %dx%d (%.2f GB)",
+            os.path.basename(video_path), tensor.shape[0],
+            tensor.shape[2], tensor.shape[1],
+            tensor.nelement() * tensor.element_size() / (1024 ** 3),
+        )
+        return tensor
+
+    except Exception as e:
+        logger.warning("decode_video_frames: failed on %s: %s", video_path, e)
+        return _placeholder_frames()
 
 
 class MediaConverter:
@@ -162,7 +238,7 @@ class MediaConverter:
     def images_to_video(
         self,
         images: torch.Tensor,
-        fps: int = 24,
+        fps: float = 24.0,
         spec=None,
         output_path: str | None = None,
         pingpong: bool = False,

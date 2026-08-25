@@ -965,7 +965,7 @@ class FFMPEGAgentNode:
                 }),
 
                 # ── Advanced: AI Upscale ───────────────────────────────────
-                "upscale_model": (["realesrgan_x4plus", "realesrgan_x4_anime", "hat_x4", "dat_x4", "swinir_x4", "seedvr2_3b_fp8", "seedvr2_3b_gguf", "seedvr2_7b_fp8", "seedvr2_7b_fp8_mixed", "seedvr2_7b_gguf", "flashvsr_full", "flashvsr_tiny", "flashvsr_tiny_long", "rtx_vsr"], {
+                "upscale_model": (["realesrgan_x4plus", "realesrgan_x4_anime", "hat_x4", "dat_x4", "swinir_x4", "seedvr2_3b_int8", "seedvr2_7b_int8", "seedvr2_3b_fp8", "seedvr2_3b_gguf", "seedvr2_7b_fp8", "seedvr2_7b_fp8_mixed", "seedvr2_7b_gguf", "flashvsr_full", "flashvsr_tiny", "flashvsr_tiny_long", "rtx_vsr"], {
                     "default": "realesrgan_x4plus",
                     "tooltip": "AI upscaler model (used in 'ai_upscale' no_llm_mode). "
                                "'realesrgan_x4plus' = fast general-purpose. "
@@ -973,6 +973,8 @@ class FFMPEGAgentNode:
                                "'hat_x4' = SOTA quality (Real-HAT-GAN). "
                                "'dat_x4' = balanced (DAT-2). "
                                "'swinir_x4' = classical SR. "
+                               "'seedvr2_3b_int8' = INT8 diffusion upscaler, recommended 3B — fastest and smallest (~6-9 GB VRAM). "
+                               "'seedvr2_7b_int8' = INT8 diffusion upscaler, recommended 7B — highest quality (~10-14 GB VRAM, use blockswap_blocks under 16 GB). "
                                "'seedvr2_3b_fp8' = diffusion upscaler, great quality (~8-12 GB VRAM). "
                                "'seedvr2_3b_gguf' = diffusion upscaler, lowest VRAM (~6-8 GB). "
                                "'seedvr2_7b_fp8' = highest quality diffusion upscaler (~16-24 GB VRAM). "
@@ -2103,7 +2105,12 @@ class FFMPEGAgentNode:
             for ti, (tkey, tensor) in enumerate(all_image_keys):
                 logger.debug("Multi-input tensor %d (%s): shape=%s", ti, tkey, tensor.shape)
                 if tensor.shape[0] > 10:
-                    tmp_vid = self.media_converter.images_to_video(tensor)
+                    # Match the rate of the primary source when there is one;
+                    # an image batch on its own has no frame rate to inherit.
+                    tmp_vid = self.media_converter.images_to_video(
+                        tensor,
+                        fps=_ir._source_fps(effective_video_path, _all_video_paths),
+                    )
                     all_frame_paths.append(tmp_vid)
                     temp_multi_videos.append(tmp_vid)
                     try:

@@ -33,6 +33,8 @@ if root_pkg_name not in sys.modules:
 if "folder_paths" not in sys.modules:
     mock_fp = types.ModuleType("folder_paths")
     mock_fp.get_output_directory = lambda: "/tmp/comfyui_output"
+    from _comfy_stubs import install_model_folders
+    install_model_folders(mock_fp)
     sys.modules["folder_paths"] = mock_fp
 
 # Prevent pytest from collecting these files as tests
