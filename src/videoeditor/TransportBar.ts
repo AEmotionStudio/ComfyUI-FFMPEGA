@@ -25,6 +25,7 @@ export class TransportBar {
     private video: HTMLVideoElement | null = null;
     private callbacks: TransportBarCallbacks;
     private timeDisplay: HTMLSpanElement;
+    private frameDisplay: HTMLSpanElement;
     private playBtn: HTMLButtonElement;
     private loopBtn: HTMLButtonElement;
     private shuttleSpeed: number = 1;
@@ -40,6 +41,8 @@ export class TransportBar {
     private _transitions: TransitionDef[] = [];
     private _lastSegIdx: number = -1;
     private _audioEditManager: AudioEditManager | null = null;
+    private _fps: number = 30;
+    private _totalDuration: number = 0;
 
     constructor(callbacks: TransportBarCallbacks) {
         this.callbacks = callbacks;
@@ -69,12 +72,19 @@ export class TransportBar {
         this.timeDisplay.setAttribute('aria-label', 'Current time / total duration');
         this.timeDisplay.setAttribute('aria-live', 'polite');
 
+        // Frame counter
+        this.frameDisplay = document.createElement('span');
+        this.frameDisplay.className = 'veditor-frame-counter';
+        this.frameDisplay.textContent = 'F: 0 / 0';
+        this.frameDisplay.setAttribute('data-tool-id', 'veditor-frame-counter');
+        this.frameDisplay.setAttribute('aria-label', 'Current frame / total frames');
+
         // Loop toggle
         this.loopBtn = this._makeBtn(iconRepeat, 'Toggle loop playback', () => this._toggleLoop(), 'veditor-loop-btn');
         this.loopBtn.classList.add('active');
         this.loopBtn.setAttribute('aria-pressed', 'true');
 
-        this.container.append(goStart, stepBack, this.playBtn, stepFwd, this.timeDisplay, this.loopBtn);
+        this.container.append(goStart, stepBack, this.playBtn, stepFwd, this.timeDisplay, this.frameDisplay, this.loopBtn);
 
         // Keyboard shortcuts
         this._keyHandler = (e: KeyboardEvent) => this._onKeyDown(e);
@@ -213,6 +223,16 @@ export class TransportBar {
     /** Bind the audio edit manager for live volume enforcement */
     setAudioEditManager(mgr: AudioEditManager): void {
         this._audioEditManager = mgr;
+    }
+
+    /** Set the video frame rate (from backend probe). Also fixes frame-step size. */
+    setFps(fps: number): void {
+        this._fps = fps > 0 ? fps : 30;
+    }
+
+    /** Set total source duration (for frame count when no edit manager). */
+    setTotalDuration(dur: number): void {
+        this._totalDuration = dur > 0 ? dur : 0;
     }
 
     /** Update playback rate live (used by speed controls for preview). */
@@ -402,7 +422,7 @@ export class TransportBar {
     private _stepFrame(direction: number): void {
         if (!this.video) return;
         this.video.pause();
-        const fps = 30;
+        const fps = this._fps;
         const dt = direction / fps;
         let newTime = this.video.currentTime + dt;
 
@@ -508,6 +528,9 @@ export class TransportBar {
         // Use target time if we have one (pending seek)
         const currentTime = this._targetTime !== null ? this._targetTime : this.video.currentTime;
 
+        let displayTime = currentTime;
+        let displayDur = this.video.duration || this._totalDuration;
+
         if (this._editManager) {
             const mgr = this._editManager;
             const segs = mgr.segments;
@@ -525,11 +548,22 @@ export class TransportBar {
             }
 
             this.timeDisplay.textContent = `${this._formatTime(outputTime)} / ${this._formatTime(outputDur)}`;
+            displayTime = outputTime;
+            displayDur = outputDur;
         } else {
             const current = this._formatTime(currentTime);
             const total = this._formatTime(this.video.duration || 0);
             this.timeDisplay.textContent = `${current} / ${total}`;
         }
+
+        // Update frame counter
+        const fps = this._fps;
+        const currentFrame = Math.min(
+            Math.floor(displayTime * fps) + 1,
+            Math.round(displayDur * fps),
+        );
+        const totalFrames = Math.round(displayDur * fps);
+        this.frameDisplay.textContent = `F: ${Math.max(currentFrame, 0)} / ${totalFrames}`;
     }
 
     private _formatTime(seconds: number): string {

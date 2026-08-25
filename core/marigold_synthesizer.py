@@ -222,7 +222,8 @@ def cleanup() -> None:
 
 
 def _process_single_image(pipe, image, output_type: str,
-                          num_steps: int, ensemble_size: int) -> dict:
+                          num_steps: int, ensemble_size: int,
+                          colormap: str = "Spectral") -> dict:
     """Run Marigold inference on a single PIL Image.
 
     Returns:
@@ -235,7 +236,7 @@ def _process_single_image(pipe, image, output_type: str,
     )
 
     if output_type == "depth":
-        vis_list = pipe.image_processor.visualize_depth(result.prediction)
+        vis_list = pipe.image_processor.visualize_depth(result.prediction, color_map=colormap)
         return {"depth": vis_list[0]}
 
     elif output_type == "normals":
@@ -330,6 +331,7 @@ def _save_frames_as_video(frames, output_path: str, fps: float) -> None:
 def run_marigold(
     input_path: str,
     output_type: str = "depth",
+    colormap: str = "Spectral",
     num_steps: int = 4,
     ensemble_size: int = 1,
     max_res: int = 768,
@@ -372,22 +374,23 @@ def run_marigold(
 
     if ext in _image_exts:
         return _process_image(pipe, input_path, output_type,
-                              num_steps, ensemble_size)
+                              num_steps, ensemble_size, colormap)
     elif ext in _video_exts:
         return _process_video(pipe, input_path, output_type,
-                              num_steps, ensemble_size, max_res)
+                              num_steps, ensemble_size, max_res, colormap)
     else:
         # Try as image first, fall back to video
         try:
             return _process_image(pipe, input_path, output_type,
-                                  num_steps, ensemble_size)
+                                  num_steps, ensemble_size, colormap)
         except Exception:
             return _process_video(pipe, input_path, output_type,
-                                  num_steps, ensemble_size, max_res)
+                                  num_steps, ensemble_size, max_res, colormap)
 
 
 def _process_image(pipe, input_path: str, output_type: str,
-                   num_steps: int, ensemble_size: int) -> str:
+                   num_steps: int, ensemble_size: int,
+                   colormap: str = "Spectral") -> str:
     """Process a single image through Marigold."""
     from PIL import Image
 
@@ -398,7 +401,7 @@ def _process_image(pipe, input_path: str, output_type: str,
 
     with torch.inference_mode():
         vis = _process_single_image(pipe, image, output_type,
-                                    num_steps, ensemble_size)
+                                    num_steps, ensemble_size, colormap)
 
     # Save the primary output
     # For depth/normals: single image. For IID: pick the first key.
@@ -419,7 +422,8 @@ def _process_image(pipe, input_path: str, output_type: str,
 
 def _process_video(pipe, input_path: str, output_type: str,
                    num_steps: int, ensemble_size: int,
-                   max_res: int) -> str:
+                   max_res: int,
+                   colormap: str = "Spectral") -> str:
     """Process a video through Marigold with temporal consistency.
 
     Uses exponential moving average (EMA) smoothing on raw prediction
@@ -472,7 +476,7 @@ def _process_video(pipe, input_path: str, output_type: str,
 
             # Visualize from the smoothed prediction
             if output_type == "depth":
-                vis = pipe.image_processor.visualize_depth(ema_prediction)
+                vis = pipe.image_processor.visualize_depth(ema_prediction, color_map=colormap)
                 output_frames.append(vis[0])
             elif output_type == "normals":
                 vis = pipe.image_processor.visualize_normals(ema_prediction)

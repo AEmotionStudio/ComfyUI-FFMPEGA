@@ -1,4 +1,4 @@
-"""FLUX Klein Editor — per-frame image editing and removal using FLUX.2 Klein 4B.
+"""FLUX Klein Editor — per-frame image editing and removal using FLUX.2 Klein (4B / 9B).
 
 Uses the ``diffusers`` library's ``Flux2KleinPipeline`` for text-guided
 image editing via reference-image conditioning.  Each video frame is
@@ -8,8 +8,8 @@ Key capabilities:
 - **Object removal**: mask + reference image → "fill naturally"
 - **Text-guided editing**: mask + prompt → "change hair to blonde", etc.
 
-Model: FLUX.2 [klein] 4B (Apache 2.0)
-VRAM:  ~8–13 GB (fp16/bf16, with CPU offload)
+Model: FLUX.2 [klein] 4B or 9B (Apache 2.0), selectable per call
+VRAM:  ~8–13 GB (4B) / ~16–24 GB (9B), bf16/fp16 with sequential CPU offload
 Speed: 4-step inference, sub-second per frame
 
 License: Apache 2.0 (compatible with GPL-3.0)
@@ -18,6 +18,7 @@ License: Apache 2.0 (compatible with GPL-3.0)
 from __future__ import annotations
 
 import gc
+import json
 import logging
 import os
 import subprocess
@@ -44,9 +45,29 @@ log = logging.getLogger("ffmpega")
 #  Constants
 # ---------------------------------------------------------------------------
 
-_HF_REPO = "black-forest-labs/FLUX.2-klein-4B"
-_MIRROR_REPO = "AEmotionStudio/flux-klein"
-_MODEL_DIR_NAME = "flux_klein"
+# Per-variant model configuration, keyed by model size ("4b" / "9b" / "9b_fp8").
+# Mirrors the multi-variant pattern used by core/kiwi_edit_synthesizer.py.
+_HF_REPOS = {
+    "4b": "black-forest-labs/FLUX.2-klein-4B",
+    "9b": "black-forest-labs/FLUX.2-klein-9B",
+    "9b_fp8": "black-forest-labs/FLUX.2-klein-9B",  # same pipeline; transformer is local FP8
+}
+_MIRROR_REPOS = {
+    "4b": "AEmotionStudio/flux-klein",
+    "9b": "AEmotionStudio/flux-klein-9b",
+    "9b_fp8": "AEmotionStudio/flux-klein-9b",
+}
+_MODEL_DIR_NAMES = {"4b": "flux_klein", "9b": "flux_klein_9b", "9b_fp8": "flux_klein_9b"}
+_MM_KEYS = {
+    "4b": "flux_klein",
+    "9b": "flux_klein_9b",
+    "9b_fp8": "flux_klein_9b_fp8",
+}  # model_manager registry keys
+
+# Standard filename for the FP8 transformer in ComfyUI's diffusion_models folder
+_FP8_TRANSFORMER_FILENAME = "flux-2-klein-9b-fp8.safetensors"
+
+_DEFAULT_MODEL = "4b"
 
 # Default prompt for object removal (narrative prose per BFL best practices)
 _REMOVAL_PROMPT = (
@@ -62,55 +83,313 @@ _OUTPUT_SIZE = 1024  # Klein generates at 1024x1024
 
 # Cached pipeline
 _pipeline = None
+_pipeline_variant: str = ""  # which variant is currently loaded
 
 
 # ---------------------------------------------------------------------------
 #  Model directory and downloading
 # ---------------------------------------------------------------------------
 
-def _get_model_dir() -> Path:
-    """Get or create the FLUX Klein model directory.
+def _find_fp8_transformer() -> Path:
+    """Locate the local FP8 transformer safetensors file.
+
+    Searches ComfyUI's standard diffusion_models folder and the home
+    ComfyUI install.  Raises FileNotFoundError if not found so callers
+    can show a clear error before attempting inference.
+    """
+    candidates = [
+        Path(__file__).resolve().parents[3] / "models" / "diffusion_models" / _FP8_TRANSFORMER_FILENAME,
+        Path.home() / "ComfyUI" / "models" / "diffusion_models" / _FP8_TRANSFORMER_FILENAME,
+    ]
+    try:
+        import folder_paths  # type: ignore[import-not-found]
+        for name in folder_paths.get_filename_list("diffusion_models"):
+            p = Path(folder_paths.get_full_path("diffusion_models", name))
+            if p.name == _FP8_TRANSFORMER_FILENAME and p.is_file():
+                return p
+    except Exception:
+        pass
+
+    for p in candidates:
+        if p.is_file():
+            return p
+
+    raise FileNotFoundError(
+        f"FLUX Klein 9B FP8 transformer not found.\n"
+        f"Expected at: {candidates[0]}\n"
+        f"Place {_FP8_TRANSFORMER_FILENAME} in "
+        f"ComfyUI/models/diffusion_models/ and retry."
+    )
+
+
+# Standard filename for the Qwen3 text encoder in ComfyUI's text_encoders folder.
+# The FLUX.2 Klein 9B pipeline uses a Qwen3-8B text encoder.  Rather than the
+# sharded diffusers ``text_encoder/`` weights, we load ComfyUI's single-file
+# mixed fp8/nvfp4 checkpoint and dequantise it on load (see
+# ``_build_qwen_text_encoder``).  Variants that share the Qwen3 encoder:
+_QWEN_TE_FILENAME = "qwen_3_8b_fp8mixed.safetensors"
+_QWEN_TE_VARIANTS = {"9b", "9b_fp8"}
+
+
+def _find_qwen_text_encoder() -> Path:
+    """Locate the local Qwen3 text-encoder safetensors file.
+
+    Search order:
+    1. ``FFMPEGA_FLUX_KLEIN_TEXT_ENCODER`` env var (full path override)
+    2. ComfyUI ``folder_paths`` "text_encoders" registry
+    3. ``models/text_encoders/<filename>`` under the ComfyUI install / home
+
+    Raises FileNotFoundError with a clear message if not found.
+    """
+    override = os.environ.get("FFMPEGA_FLUX_KLEIN_TEXT_ENCODER")
+    if override:
+        p = Path(override)
+        if p.is_file():
+            return p
+
+    try:
+        import folder_paths  # type: ignore[import-not-found]
+        for name in folder_paths.get_filename_list("text_encoders"):
+            p = Path(folder_paths.get_full_path("text_encoders", name))
+            if p.name == _QWEN_TE_FILENAME and p.is_file():
+                return p
+    except Exception:
+        pass
+
+    for p in [
+        Path(__file__).resolve().parents[3] / "models" / "text_encoders" / _QWEN_TE_FILENAME,
+        Path.home() / "ComfyUI" / "models" / "text_encoders" / _QWEN_TE_FILENAME,
+    ]:
+        if p.is_file():
+            return p
+
+    raise FileNotFoundError(
+        f"FLUX Klein Qwen3 text encoder not found.\n"
+        f"Place '{_QWEN_TE_FILENAME}' in ComfyUI/models/text_encoders/ "
+        f"(or set FFMPEGA_FLUX_KLEIN_TEXT_ENCODER to its full path)."
+    )
+
+
+def _dequantize_comfy_state_dict(te_path: Path, target_shapes: dict, dtype) -> dict:
+    """Dequantise a ComfyUI mixed-fp8/nvfp4 checkpoint to a plain state dict.
+
+    ComfyUI stores each quantised linear weight as several tensors:
+    ``<L>.weight`` (fp8, or packed nvfp4 uint8), ``<L>.weight_scale`` (and
+    ``<L>.weight_scale_2`` for nvfp4), plus a ``<L>.comfy_quant`` JSON blob
+    naming the format.  We rebuild ComfyUI's own ``QuantizedTensor`` for each
+    and call ``.dequantize()`` so the numerics exactly match ComfyUI rather
+    than re-implementing the fp4 maths.  Non-quantised tensors (layernorms,
+    embeddings, q/k norms) pass through.  Only keys present in
+    ``target_shapes`` are kept; the original tensor shape supplies the
+    ``orig_shape`` the dequantiser needs to unpack packed formats.
+    """
+    import torch
+    from safetensors import safe_open
+
+    try:
+        from comfy.quant_ops import QUANT_ALGOS, get_layout_class
+        from comfy_kitchen.tensor import QuantizedTensor
+    except ImportError as e:
+        raise ImportError(
+            "ComfyUI quantisation support (comfy.quant_ops / comfy_kitchen) is "
+            "required to load the fp8 Qwen3 text encoder."
+        ) from e
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    out: dict = {}
+
+    with safe_open(str(te_path), framework="pt") as f:
+        keys = set(f.keys())
+        quant_bases = {
+            k[: -len(".comfy_quant")] for k in keys if k.endswith(".comfy_quant")
+        }
+
+        for base in sorted(quant_bases):
+            wkey = base + ".weight"
+            orig_shape = target_shapes.get(wkey)
+            if orig_shape is None:
+                continue  # key not used by our model (e.g. lm_head)
+
+            fmt = json.loads(
+                bytes(f.get_tensor(base + ".comfy_quant").tolist()).decode("utf-8")
+            )["format"]
+            algo = QUANT_ALGOS.get(fmt)
+            if algo is None:
+                raise ValueError(f"Unsupported quant format {fmt!r} for layer {base}")
+            layout_cls = get_layout_class(algo["comfy_tensor_layout"])
+
+            w = f.get_tensor(wkey).to(device)
+            if fmt in ("float8_e4m3fn", "float8_e5m2"):
+                scales = {"scale": f.get_tensor(base + ".weight_scale").to(device)}
+            elif fmt == "nvfp4":
+                scales = {
+                    "scale": f.get_tensor(base + ".weight_scale_2").to(device),
+                    "block_scale": f.get_tensor(base + ".weight_scale")
+                    .to(device)
+                    .view(torch.float8_e4m3fn),
+                }
+            else:
+                raise ValueError(f"Unsupported quant format {fmt!r} for layer {base}")
+
+            params = layout_cls.Params(
+                orig_dtype=dtype, orig_shape=tuple(orig_shape), **scales
+            )
+            qt = QuantizedTensor(
+                w.to(algo["storage_t"]), algo["comfy_tensor_layout"], params
+            )
+            out[wkey] = qt.dequantize().to(dtype=dtype, device="cpu")
+            del w, qt
+
+        # Non-quantised tensors pass straight through (cast to compute dtype).
+        quant_aux = set()
+        for base in quant_bases:
+            quant_aux.update({
+                base + ".weight", base + ".weight_scale",
+                base + ".weight_scale_2", base + ".comfy_quant",
+            })
+        for k in keys:
+            if k in quant_aux or k not in target_shapes:
+                continue
+            out[k] = f.get_tensor(k).to(dtype=dtype, device="cpu")
+
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    return out
+
+
+def _build_qwen_text_encoder(model_dir: Path, dtype):
+    """Construct the FLUX Klein Qwen3 text encoder from ComfyUI's single-file
+    fp8 checkpoint instead of the sharded diffusers ``text_encoder/`` weights.
+
+    The pipeline only consumes intermediate hidden states (layers 9/18/27 in
+    ``Flux2KleinPipeline._get_qwen3_prompt_embeds``), so the absent ``lm_head``
+    is harmless — we materialise it with zeros so no parameter is left on the
+    meta device (which would crash during sequential CPU offload).
+    """
+    import torch
+    from transformers import Qwen3ForCausalLM, AutoConfig
+
+    te_path = _find_qwen_text_encoder()
+    config_dir = model_dir / "text_encoder"
+    if not (config_dir / "config.json").is_file():
+        raise FileNotFoundError(
+            f"FLUX Klein text_encoder/config.json not found under {model_dir}"
+        )
+    config = AutoConfig.from_pretrained(str(config_dir))
+
+    log.info("Building FLUX Klein Qwen3 text encoder from %s", te_path)
+    try:
+        from accelerate import init_empty_weights
+        with init_empty_weights():
+            model = Qwen3ForCausalLM(config)
+    except ImportError:
+        model = Qwen3ForCausalLM(config)
+
+    target_shapes = {k: tuple(v.shape) for k, v in model.state_dict().items()}
+    state = _dequantize_comfy_state_dict(te_path, target_shapes, dtype)
+
+    # lm_head is unused by the pipeline and absent from the fp8 file; fill it
+    # so no parameter remains on the meta device after assignment.
+    if "lm_head.weight" in target_shapes and "lm_head.weight" not in state:
+        state["lm_head.weight"] = torch.zeros(
+            target_shapes["lm_head.weight"], dtype=dtype
+        )
+
+    missing, unexpected = model.load_state_dict(state, strict=False, assign=True)
+    real_missing = [k for k in missing if k != "lm_head.weight"]
+    if real_missing:
+        log.warning(
+            "Qwen3 text encoder: %d unexpected missing keys (e.g. %s)",
+            len(real_missing), real_missing[:5],
+        )
+    if unexpected:
+        log.warning(
+            "Qwen3 text encoder: %d unexpected keys (e.g. %s)",
+            len(unexpected), unexpected[:5],
+        )
+
+    # Guard: any parameter left on meta would crash during offload/inference.
+    still_meta = [n for n, p in model.named_parameters() if p.is_meta]
+    if still_meta:
+        raise RuntimeError(
+            f"Qwen3 text encoder has {len(still_meta)} uninitialised parameters "
+            f"after load (e.g. {still_meta[:5]})"
+        )
+
+    model.eval()
+    log.info("FLUX Klein Qwen3 text encoder ready (dtype=%s)", dtype)
+    return model
+
+
+def _get_model_dir(model: str = _DEFAULT_MODEL) -> Path:
+    """Get or create the FLUX Klein model directory for the given variant.
 
     Checks (in order):
-    1. FFMPEGA_FLUX_KLEIN_MODEL_DIR env var (set by subprocess wrapper)
-    2. ComfyUI/models/flux_klein/ (standard ComfyUI convention)
-    3. Extension's own models/flux_klein/ (fallback)
+    1. Variant-specific env var (FFMPEGA_FLUX_KLEIN_MODEL_DIR for 4b,
+       FFMPEGA_FLUX_KLEIN_9B_MODEL_DIR for 9b; set by subprocess wrapper)
+    2. ComfyUI/models/<dir>/ (standard ComfyUI convention)
+    3. Extension's own models/<dir>/ (fallback)
+
+    where <dir> is ``flux_klein`` (4b) or ``flux_klein_9b`` (9b).
     """
-    env_dir = os.environ.get("FFMPEGA_FLUX_KLEIN_MODEL_DIR")
+    dir_name = _MODEL_DIR_NAMES[model]
+
+    env_var = (
+        "FFMPEGA_FLUX_KLEIN_MODEL_DIR" if model == "4b"
+        else "FFMPEGA_FLUX_KLEIN_9B_MODEL_DIR"
+    )
+    env_dir = os.environ.get(env_var)
     if env_dir:
         p = Path(env_dir)
         p.mkdir(parents=True, exist_ok=True)
         return p
 
     for candidate in [
-        Path(__file__).resolve().parents[3] / "models" / _MODEL_DIR_NAME,
-        Path.home() / "ComfyUI" / "models" / _MODEL_DIR_NAME,
+        Path(__file__).resolve().parents[3] / "models" / dir_name,
+        Path.home() / "ComfyUI" / "models" / dir_name,
     ]:
         if candidate.parent.is_dir():
             candidate.mkdir(parents=True, exist_ok=True)
             return candidate
 
-    fallback = Path.home() / ".cache" / _MODEL_DIR_NAME
+    fallback = Path.home() / ".cache" / dir_name
     fallback.mkdir(parents=True, exist_ok=True)
     return fallback
 
 
-def _download_model(model_dir: Path) -> None:
+
+
+def _download_model(model_dir: Path, model: str = _DEFAULT_MODEL) -> None:
     """Download model weights from HuggingFace if not present.
 
     Tries the AEmotionStudio mirror first, then falls back to the
-    official BFL repo.
+    official BFL repo, for the requested variant ("4b" / "9b").
     """
-    # Check if already downloaded (look for model_index.json — diffusers marker)
-    if (model_dir / "model_index.json").is_file():
-        return
+    mm_key = _MM_KEYS[model]
+    mirror_repo = _MIRROR_REPOS[model]
+    hf_repo = _HF_REPOS[model]
+
+    # For the FP8 variant the transformer comes from a local safetensors file.
+    # We only need the pipeline components (text encoders, scheduler, etc.).
+    # model_index.json present is sufficient — the 9b snapshot may not have a
+    # separate vae/ subdir depending on how it was downloaded.
+    if model == "9b_fp8":
+        if (model_dir / "model_index.json").is_file():
+            return
+    else:
+        # Check if already downloaded — require both the diffusers marker
+        # AND the transformer weights to avoid treating partial downloads
+        # as complete (e.g. from a previous selective download).
+        transformer_weights = model_dir / "transformer" / "diffusion_pytorch_model.safetensors"
+        if (model_dir / "model_index.json").is_file() and transformer_weights.is_file():
+            return
 
     try:
         from . import model_manager as _mm
     except ImportError:
         from core import model_manager as _mm  # type: ignore
 
-    _mm.require_downloads_allowed("flux_klein")
+    _mm.require_downloads_allowed(mm_key)
 
     try:
         from huggingface_hub import snapshot_download
@@ -121,31 +400,31 @@ def _download_model(model_dir: Path) -> None:
         )
 
     # Try AEmotionStudio mirror first
-    log.info("FLUX Klein weights not found. Downloading...")
+    log.info("FLUX Klein %s weights not found. Downloading...", model)
     try:
         _mm.download_with_progress(
-            "flux_klein",
+            mm_key,
             lambda: snapshot_download(
-                repo_id=_MIRROR_REPO,
+                repo_id=mirror_repo,
                 local_dir=str(model_dir),
             ),
-            extra="~8 GB fp16",
+            extra="~8 GB fp16" if model == "4b" else "~35 GB bf16",
         )
-        log.info("FLUX Klein downloaded from AEmotionStudio mirror")
+        log.info("FLUX Klein %s downloaded from AEmotionStudio mirror", model)
         return
     except Exception as e:
         log.warning("Mirror download failed: %s — trying official repo", e)
 
     # Fall back to official BFL repo
     _mm.download_with_progress(
-        "flux_klein",
+        mm_key,
         lambda: snapshot_download(
-            repo_id=_HF_REPO,
+            repo_id=hf_repo,
             local_dir=str(model_dir),
         ),
-        extra="~8 GB",
+        extra="~8 GB" if model == "4b" else "~35 GB",
     )
-    log.info("FLUX Klein downloaded from official repo: %s", _HF_REPO)
+    log.info("FLUX Klein %s downloaded from official repo: %s", model, hf_repo)
 
 
 # ---------------------------------------------------------------------------
@@ -167,24 +446,52 @@ def _free_vram() -> None:
     free_for_module(exclude="flux_klein_editor")
 
 
+
+
 # ---------------------------------------------------------------------------
 #  Pipeline loading
 # ---------------------------------------------------------------------------
 
-def load_pipeline():
-    """Load and cache the FLUX Klein pipeline.
+def load_pipeline(model: str = _DEFAULT_MODEL):
+    """Load and cache the FLUX Klein pipeline for the given variant.
+
+    Downloads from the AEmotionStudio mirror if not already present.
+    The pipeline is cached per-variant: requesting a different variant
+    than the one currently loaded evicts the old pipeline first.
+
+    Args:
+        model: which variant to load — "4b" (default), "9b", or "9b_fp8".
+            "9b_fp8" loads the 9b pipeline components from flux_klein_9b/
+            and swaps in the transformer weights from the local FP8 file
+            (ComfyUI/models/diffusion_models/flux-2-klein-9b-fp8.safetensors).
 
     Returns:
         Flux2KleinPipeline instance ready for inference.
 
     Raises:
         ImportError: If diffusers is not installed or too old.
+        FileNotFoundError: If "9b_fp8" is selected but the local FP8 file
+            is not found in ComfyUI/models/diffusion_models/.
         RuntimeError: If model download fails.
     """
-    global _pipeline
+    global _pipeline, _pipeline_variant
 
+    if model not in _MODEL_DIR_NAMES:
+        raise ValueError(
+            f"Unknown FLUX Klein model variant {model!r}; "
+            f"expected one of {sorted(_MODEL_DIR_NAMES)}"
+        )
+
+    # Return the cached pipeline only when it matches the requested
+    # variant — otherwise evict it before loading the new one.
     if _pipeline is not None:
-        return _pipeline
+        if _pipeline_variant == model:
+            return _pipeline
+        log.info(
+            "FLUX Klein variant change (%s → %s); reloading pipeline",
+            _pipeline_variant, model,
+        )
+        cleanup()
 
     try:
         from diffusers import Flux2KleinPipeline  # type: ignore[attr-defined]
@@ -194,11 +501,12 @@ def load_pipeline():
             "Install with: pip install git+https://github.com/huggingface/diffusers.git"
         )
 
-    model_dir = _get_model_dir()
-    _download_model(model_dir)
+    model_dir = _get_model_dir(model)
+    _download_model(model_dir, model)
+
     _free_vram()
 
-    log.info("Loading FLUX Klein pipeline from %s", model_dir)
+    log.info("Loading FLUX Klein %s pipeline from %s", model, model_dir)
 
     import torch
 
@@ -211,10 +519,36 @@ def load_pipeline():
             dtype = torch.float16
             log.info("Using float16 (GPU compute capability %d.%d)", *cap)
 
+    # The 9b variants use a Qwen3-8B text encoder.  Load it from ComfyUI's
+    # single-file fp8 checkpoint (dequantised) instead of the sharded
+    # text_encoder/ weights — passing the instance makes diffusers skip the
+    # text_encoder/ subfolder entirely.
+    te_kwargs = {}
+    if model in _QWEN_TE_VARIANTS:
+        te_kwargs["text_encoder"] = _build_qwen_text_encoder(model_dir, dtype)
+
     pipe = Flux2KleinPipeline.from_pretrained(
         str(model_dir),
         torch_dtype=dtype,
+        **te_kwargs,
     )
+
+    if model == "9b_fp8":
+        # Swap in the local FP8 transformer weights.
+        # The FP8 safetensors contains only the transformer state dict
+        # (ComfyUI diffusion_models convention).  We cast to the pipeline
+        # dtype on load so diffusers' sequential-offload path works unchanged.
+        fp8_path = _find_fp8_transformer()
+        log.info("Loading FP8 transformer weights from %s", fp8_path)
+        from safetensors.torch import load_file as _st_load_file
+        fp8_sd = {k: v.to(dtype) for k, v in _st_load_file(str(fp8_path)).items()}
+        missing, unexpected = pipe.transformer.load_state_dict(fp8_sd, strict=False)
+        if missing:
+            log.warning("FP8 transformer: %d missing keys (e.g. %s)", len(missing), missing[:3])
+        if unexpected:
+            log.warning("FP8 transformer: %d unexpected keys (e.g. %s)", len(unexpected), unexpected[:3])
+        log.info("FP8 transformer loaded and cast to %s", dtype)
+
     # Sequential offload moves individual *layers* to GPU one at a time,
     # keeping peak VRAM at ~2-3 GB instead of ~8+ GB.
     # We cannot use enable_model_cpu_offload() because Klein's __call__
@@ -225,7 +559,8 @@ def load_pipeline():
     pipe.enable_sequential_cpu_offload()
 
     _pipeline = pipe
-    log.info("FLUX Klein pipeline loaded successfully (dtype=%s)", dtype)
+    _pipeline_variant = model
+    log.info("FLUX Klein %s pipeline loaded successfully (dtype=%s)", model, dtype)
     return _pipeline
 
 
@@ -491,6 +826,10 @@ def _edit_frame(
     prompt: str,
     seed: int = 42,
     reference_images: "list | None" = None,
+    num_steps: int = _NUM_STEPS,
+    guidance_scale: float = _GUIDANCE_SCALE,
+    width: int = _OUTPUT_SIZE,
+    height: int = _OUTPUT_SIZE,
 ):
     """Edit a single frame using FLUX Klein reference-image conditioning.
 
@@ -502,6 +841,10 @@ def _edit_frame(
         reference_images: Optional list of extra PIL.Image.Image references.
             When provided they are prepended to Klein's ``image`` list so
             they condition the generation alongside the source frame.
+        num_steps: Number of denoising steps
+        guidance_scale: CFG scale
+        width: Output width in pixels
+        height: Output height in pixels
 
     Returns:
         PIL.Image.Image — edited result at the original resolution
@@ -512,16 +855,16 @@ def _edit_frame(
     orig_w, orig_h = image.size
 
     # Resize to model's expected resolution
-    ref_image = image.resize((_OUTPUT_SIZE, _OUTPUT_SIZE), Image.LANCZOS)  # type: ignore[attr-defined]
+    ref_image = image.resize((width, height), Image.LANCZOS)  # type: ignore[attr-defined]
 
-    # Build the image list: extra references first, then the source frame
-    image_list: list = []
+    # Build the image list: source frame first (strongest influence),
+    # then extra references for style conditioning
+    image_list: list = [ref_image]
     if reference_images:
         for ri in reference_images:
             image_list.append(
-                ri.resize((_OUTPUT_SIZE, _OUTPUT_SIZE), Image.LANCZOS)  # type: ignore[attr-defined]
+                ri.resize((width, height), Image.LANCZOS)  # type: ignore[attr-defined]
             )
-    image_list.append(ref_image)
 
     device = pipe._execution_device if hasattr(pipe, '_execution_device') else "cuda"
     generator = torch.Generator(device=device).manual_seed(seed)
@@ -529,10 +872,10 @@ def _edit_frame(
     result = pipe(
         prompt=prompt,
         image=image_list,
-        height=_OUTPUT_SIZE,
-        width=_OUTPUT_SIZE,
-        guidance_scale=_GUIDANCE_SCALE,
-        num_inference_steps=_NUM_STEPS,
+        height=height,
+        width=width,
+        guidance_scale=guidance_scale,
+        num_inference_steps=num_steps,
         generator=generator,
     ).images[0]
 
@@ -548,6 +891,10 @@ def _remove_frame(
     image,
     mask,
     seed: int = 42,
+    num_steps: int = _NUM_STEPS,
+    guidance_scale: float = _GUIDANCE_SCALE,
+    width: int = _OUTPUT_SIZE,
+    height: int = _OUTPUT_SIZE,
 ):
     """Remove masked region from a single frame using FLUX Klein.
 
@@ -559,6 +906,10 @@ def _remove_frame(
         image: PIL.Image.Image (RGB)
         mask: PIL.Image.Image (L, 255 = region to remove)
         seed: Random seed
+        num_steps: Number of denoising steps
+        guidance_scale: CFG scale
+        width: Output width in pixels
+        height: Output height in pixels
 
     Returns:
         PIL.Image.Image — result with object removed
@@ -576,7 +927,7 @@ def _remove_frame(
     masked_image = Image.fromarray(img_arr)
 
     # Resize to model resolution
-    ref_image = masked_image.resize((_OUTPUT_SIZE, _OUTPUT_SIZE), Image.LANCZOS)  # type: ignore[attr-defined]
+    ref_image = masked_image.resize((width, height), Image.LANCZOS)  # type: ignore[attr-defined]
 
     device = pipe._execution_device if hasattr(pipe, '_execution_device') else "cuda"
     generator = torch.Generator(device=device).manual_seed(seed)
@@ -584,10 +935,10 @@ def _remove_frame(
     result = pipe(
         prompt=_REMOVAL_PROMPT,
         image=[ref_image],
-        height=_OUTPUT_SIZE,
-        width=_OUTPUT_SIZE,
-        guidance_scale=_GUIDANCE_SCALE,
-        num_inference_steps=_NUM_STEPS,
+        height=height,
+        width=width,
+        guidance_scale=guidance_scale,
+        num_inference_steps=num_steps,
         generator=generator,
     ).images[0]
 
@@ -639,6 +990,7 @@ def remove_object(
     mask_video_path: str,
     output_path: Optional[str] = None,
     smoothing: str = "none",
+    model: str = _DEFAULT_MODEL,
 ) -> str:
     """Remove an object from a video using FLUX Klein per-frame inpainting.
 
@@ -664,6 +1016,7 @@ def remove_object(
         output_path=output_path,
         mode="remove",
         smoothing=smoothing,
+        model=model,
     )
 
 
@@ -673,6 +1026,11 @@ def edit_single_image(
     output_path: Optional[str] = None,
     seed: int = 42,
     reference_images: "list | None" = None,
+    num_steps: int = _NUM_STEPS,
+    guidance_scale: float = _GUIDANCE_SCALE,
+    width: int = _OUTPUT_SIZE,
+    height: int = _OUTPUT_SIZE,
+    model: str = _DEFAULT_MODEL,
 ) -> str:
     """Edit a single image using FLUX Klein (no mask, full-frame).
 
@@ -686,6 +1044,10 @@ def edit_single_image(
         output_path: output path (auto-generated if None)
         seed: random seed for reproducibility
         reference_images: optional list of extra PIL images to condition on
+        num_steps: number of denoising steps
+        guidance_scale: classifier-free guidance scale
+        width: output width in pixels
+        height: output height in pixels
 
     Returns:
         Path to the edited image.
@@ -703,11 +1065,18 @@ def edit_single_image(
     image = Image.open(image_path).convert("RGB")
 
     try:
-        pipe = load_pipeline()
+        pipe = load_pipeline(model)
 
         import torch
         with torch.no_grad():
-            result = _edit_frame(pipe, image, prompt, seed=seed, reference_images=reference_images)
+            result = _edit_frame(
+                pipe, image, prompt, seed=seed,
+                reference_images=reference_images,
+                num_steps=num_steps,
+                guidance_scale=guidance_scale,
+                width=width,
+                height=height,
+            )
 
         result.save(output_path)
         log.info("FLUX Klein single-image edit complete: %s", output_path)
@@ -725,6 +1094,12 @@ def edit_video(
     mode: str = "edit",
     smoothing: str = "none",
     reference_images: "list | None" = None,
+    seed: int = 42,
+    num_steps: int = _NUM_STEPS,
+    guidance_scale: float = _GUIDANCE_SCALE,
+    width: int = _OUTPUT_SIZE,
+    height: int = _OUTPUT_SIZE,
+    model: str = _DEFAULT_MODEL,
 ) -> str:
     """Edit a video using FLUX Klein per-frame image editing.
 
@@ -789,7 +1164,7 @@ def edit_video(
             masks, masks_tmpdir = _load_mask_frames(mask_video_path, total_frames)
 
         # Load pipeline
-        pipe = load_pipeline()
+        pipe = load_pipeline(model)
 
         # Flush VRAM fragments left by pipeline + model load so the
         # subsequent VAE encode has enough contiguous memory.
@@ -799,7 +1174,7 @@ def edit_video(
             torch.cuda.empty_cache()
 
         # Use a fixed seed for temporal consistency across frames
-        base_seed = 42
+        base_seed = seed
 
         # Per-frame processing — write composited frames to disk to
         # avoid accumulating ~135 MiB of numpy arrays in memory.
@@ -817,7 +1192,7 @@ def edit_video(
             if maskless:
                 # Full-frame mode — edit entire frame, no compositing
                 with torch.no_grad():
-                    edited = _edit_frame(pipe, frame_i, prompt, seed=base_seed, reference_images=reference_images)
+                    edited = _edit_frame(pipe, frame_i, prompt, seed=base_seed, reference_images=reference_images, num_steps=num_steps, guidance_scale=guidance_scale, width=width, height=height)
                 edited.save(os.path.join(comp_tmpdir, f"{i:06d}.png"))
                 del edited
                 frames[i] = None  # type: ignore[assignment]
@@ -845,9 +1220,9 @@ def edit_video(
                 # accumulating graph memory across frames)
                 with torch.no_grad():
                     if mode == "remove":
-                        edited = _remove_frame(pipe, frame_i, mask_i, seed=base_seed)
+                        edited = _remove_frame(pipe, frame_i, mask_i, seed=base_seed, num_steps=num_steps, guidance_scale=guidance_scale, width=width, height=height)
                     else:
-                        edited = _edit_frame(pipe, frame_i, prompt, seed=base_seed, reference_images=reference_images)
+                        edited = _edit_frame(pipe, frame_i, prompt, seed=base_seed, reference_images=reference_images, num_steps=num_steps, guidance_scale=guidance_scale, width=width, height=height)
 
                 # Composite and write to disk
                 result = _composite_frame(frame_i, edited, mask_i)

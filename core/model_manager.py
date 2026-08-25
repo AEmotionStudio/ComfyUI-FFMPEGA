@@ -9,6 +9,7 @@ that may trigger a download.
 from __future__ import annotations
 
 import logging
+import os
 
 log = logging.getLogger("ffmpega")
 
@@ -46,6 +47,30 @@ _MODEL_INFO: dict[str, dict] = {
         "mirror_repo": "AEmotionStudio/sam3",
         "manual": "Download sam3.safetensors and place it in ComfyUI/models/SAM3/",
     },
+    "sam3_1": {
+        "name": "SAM 3.1 (Multiplex Tracker)",
+        "size": "~3.5 GB (multiplex checkpoint + tokenizer)",
+        "url": "https://huggingface.co/AEmotionStudio/sam3.1",
+        "mirror_repo": "AEmotionStudio/sam3.1",
+        "license": "SAM License (Meta)",
+        "manual": "Download sam3.1_multiplex.pt (or .safetensors) plus "
+                  "tokenizer.json/vocab.json/merges.txt from "
+                  "https://huggingface.co/AEmotionStudio/sam3.1 "
+                  "and place them in ComfyUI/models/SAM3.1/. "
+                  "Falls back to facebook/sam3.1 on HF if mirror is unavailable.",
+    },
+    "scail2": {
+        "name": "SCAIL-2 (Wan 2.1 pose-driven character animation)",
+        "size": "~16 GB (fp8 diffusion model)",
+        "url": "https://huggingface.co/Comfy-Org/SCAIL-2",
+        "mirror_repo": "Comfy-Org/SCAIL-2",
+        "mirror_filename": "diffusion_models/wan2.1_14B_SCAIL_2_fp8_scaled.safetensors",
+        "manual": "Download wan2.1_14B_SCAIL_2_fp8_scaled.safetensors from "
+                  "https://huggingface.co/Comfy-Org/SCAIL-2/tree/main/diffusion_models "
+                  "and place it in ComfyUI/models/diffusion_models/. Also requires the "
+                  "Wan 2.1 VAE (models/vae/), the UMT5-XXL text encoder "
+                  "(models/text_encoders/) and clip_vision_h (models/clip_vision/).",
+    },
     "lama": {
         "name": "LaMa (Large Mask Inpainting)",
         "size": "~200 MB",
@@ -76,6 +101,18 @@ _MODEL_INFO: dict[str, dict] = {
                   "and place them in ComfyUI/models/mmaudio/. "
                   "⚠️ Model weights are CC-BY-NC 4.0 (non-commercial).",
     },
+    "audiox": {
+        "name": "AudioX (Unified Audio/Music Generation)",
+        "size": "~5 GB (model + VAE + Synchformer)",
+        "url": "https://huggingface.co/HKUSTAudio/AudioX-MAF",
+        "mirror_repo": "AEmotionStudio/audiox-models",
+        "license": "CC-BY-NC (non-commercial use only)",
+        "manual": "Download model.ckpt, config.json, VAE.ckpt, and "
+                  "synchformer_state_dict.pth from "
+                  "https://huggingface.co/HKUSTAudio/AudioX-MAF "
+                  "and place them in ComfyUI/models/audiox/. "
+                  "⚠️ Model weights are CC-BY-NC (non-commercial).",
+    },
     "musetalk": {
         "name": "MuseTalk (Lip Sync)",
         "size": "~3.2 GB (UNet) + ~335 MB (VAE, Whisper – separate downloads)",
@@ -95,6 +132,30 @@ _MODEL_INFO: dict[str, dict] = {
         "manual": "Download model files from "
                   "https://huggingface.co/AEmotionStudio/flux-klein "
                   "and place them in ComfyUI/models/flux_klein/.",
+    },
+    "flux_klein_9b": {
+        "name": "FLUX Klein 9B (Image Editing)",
+        "size": "~35 GB (bf16)",
+        "url": "https://huggingface.co/AEmotionStudio/flux-klein-9b",
+        "mirror_repo": "AEmotionStudio/flux-klein-9b",
+        "license": "Apache 2.0",
+        "manual": "Download model files from "
+                  "https://huggingface.co/AEmotionStudio/flux-klein-9b "
+                  "(the upstream black-forest-labs/FLUX.2-klein-9B is gated) "
+                  "and place them in ComfyUI/models/flux_klein_9b/.",
+    },
+    "flux_klein_9b_fp8": {
+        "name": "FLUX Klein 9B FP8 (Image Editing)",
+        "size": "~9 GB (fp8 transformer, local file)",
+        "url": "https://huggingface.co/black-forest-labs/FLUX.2-klein-9B",
+        "mirror_repo": "AEmotionStudio/flux-klein-9b",
+        "license": "Apache 2.0",
+        "manual": "Place flux-2-klein-9b-fp8.safetensors in "
+                  "ComfyUI/models/diffusion_models/. "
+                  "Pipeline components (VAE, text encoders, scheduler) are "
+                  "shared with the 9b variant — download them from "
+                  "https://huggingface.co/AEmotionStudio/flux-klein-9b "
+                  "and place in ComfyUI/models/flux_klein_9b/ if not already present.",
     },
     "minimax_remover": {
         "name": "MiniMax-Remover (Video Object Removal)",
@@ -145,6 +206,281 @@ _MODEL_INFO: dict[str, dict] = {
         "manual": "Models are auto-downloaded from HuggingFace on first use. "
                   "See https://huggingface.co/AEmotionStudio/ai-upscale-models",
     },
+    "acestep": {
+        "name": "ACE-Step 1.5 (Music Generation)",
+        "size": "~6 GB (DiT turbo + 1.7B LM + VAE + text encoder)",
+        "url": "https://huggingface.co/ACE-Step/Ace-Step1.5",
+        "mirror_repo": "AEmotionStudio/acestep-models",
+        "license": "MIT",
+        "manual": "Download model files from "
+                  "https://huggingface.co/ACE-Step/Ace-Step1.5 "
+                  "and place them in ComfyUI/models/acestep/checkpoints/.",
+    },
+    "normalcrafter": {
+        "name": "NormalCrafter (Video Normal Maps)",
+        "size": "~4.5 GB (UNet + VAE + SVD base)",
+        "url": "https://huggingface.co/AEmotionStudio/NormalCrafter",
+        "mirror_repo": "AEmotionStudio/NormalCrafter",
+        "license": "Apache-2.0",
+        "manual": "Models are auto-downloaded from HuggingFace via from_pretrained(). "
+                  "See https://github.com/Binyr/NormalCrafter for upstream.",
+    },
+    "seedvr2": {
+        "name": "SeedVR2 (Diffusion Video/Image Upscaler)",
+        "size": "~3-4 GB (DiT) + ~300 MB (VAE)",
+        "url": "https://huggingface.co/AEmotionStudio/SeedVR2-models",
+        "mirror_repo": "AEmotionStudio/SeedVR2-models",
+        "license": "Apache-2.0",
+        "manual": "Download DiT model (e.g. seedvr2_ema_3b_fp8_e4m3fn.safetensors, or "
+                  "seedvr2_ema_7b_fp8_e4m3fn_mixed_block35_fp16.safetensors for the seam-free 7B) "
+                  "and ema_vae_fp16.safetensors from "
+                  "https://huggingface.co/AEmotionStudio/SeedVR2-models "
+                  "and place them in the SeedVR2 cache directory.",
+    },
+    "kiwi_edit_instruct": {
+        "name": "Kiwi-Edit 5B (Instruct Only)",
+        "size": "~10 GB",
+        "url": "https://huggingface.co/linyq/kiwi-edit-5b-instruct-only-diffusers",
+        "mirror_repo": "AEmotionStudio/kiwi-edit-instruct",
+        "license": "MIT",
+        "manual": "Download model files from "
+                  "https://huggingface.co/linyq/kiwi-edit-5b-instruct-only-diffusers "
+                  "and place them in ComfyUI/models/kiwi_edit_instruct/.",
+    },
+    "kiwi_edit_reference": {
+        "name": "Kiwi-Edit 5B (Reference Only)",
+        "size": "~10 GB",
+        "url": "https://huggingface.co/linyq/kiwi-edit-5b-reference-only-diffusers",
+        "mirror_repo": "AEmotionStudio/kiwi-edit-reference",
+        "license": "MIT",
+        "manual": "Download model files from "
+                  "https://huggingface.co/linyq/kiwi-edit-5b-reference-only-diffusers "
+                  "and place them in ComfyUI/models/kiwi_edit_reference/.",
+    },
+    "kiwi_edit_instruct_reference": {
+        "name": "Kiwi-Edit 5B (Instruct + Reference)",
+        "size": "~10 GB",
+        "url": "https://huggingface.co/linyq/kiwi-edit-5b-instruct-reference-diffusers",
+        "mirror_repo": "AEmotionStudio/kiwi-edit-instruct-reference",
+        "license": "MIT",
+        "manual": "Download model files from "
+                  "https://huggingface.co/linyq/kiwi-edit-5b-instruct-reference-diffusers "
+                  "and place them in ComfyUI/models/kiwi_edit_instruct_reference/.",
+    },
+    # Kiwi-Edit FP8 variants (auto-downloaded by default)
+    "kiwi_edit_instruct_fp8": {
+        "name": "Kiwi-Edit 5B FP8 (Instruct Only)",
+        "size": "~5 GB",
+        "url": "https://huggingface.co/AEmotionStudio/kiwi-edit-instruct-fp8",
+        "mirror_repo": "AEmotionStudio/kiwi-edit-instruct-fp8",
+        "license": "MIT",
+        "manual": "Downloaded automatically when Kiwi-Edit is used.",
+    },
+    "kiwi_edit_reference_fp8": {
+        "name": "Kiwi-Edit 5B FP8 (Reference Only)",
+        "size": "~5 GB",
+        "url": "https://huggingface.co/AEmotionStudio/kiwi-edit-reference-fp8",
+        "mirror_repo": "AEmotionStudio/kiwi-edit-reference-fp8",
+        "license": "MIT",
+        "manual": "Downloaded automatically when Kiwi-Edit is used.",
+    },
+    "kiwi_edit_instruct_reference_fp8": {
+        "name": "Kiwi-Edit 5B FP8 (Instruct + Reference)",
+        "size": "~5 GB",
+        "url": "https://huggingface.co/AEmotionStudio/kiwi-edit-instruct-reference-fp8",
+        "mirror_repo": "AEmotionStudio/kiwi-edit-instruct-reference-fp8",
+        "license": "MIT",
+        "manual": "Downloaded automatically when Kiwi-Edit is used.",
+    },
+    "dreamid_omni": {
+        "name": "DreamID-Omni (Fusion DiT)",
+        "size": "~5 GB",
+        "url": "https://github.com/Guoxu1233/DreamID-Omni",
+        "mirror_repo": "AEmotionStudio/dreamid-omni",
+        "license": "Apache-2.0",
+        "manual": "Download dreamid_omni.safetensors from "
+                  "https://github.com/Guoxu1233/DreamID-Omni "
+                  "and place it in ComfyUI/models/dreamid_omni/DreamID_Omni/.",
+    },
+    "dreamid_omni_wan": {
+        "name": "DreamID-Omni Wan2.2 (T5 + VAE)",
+        "size": "~10.5 GB",
+        "url": "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B",
+        "mirror_repo": "AEmotionStudio/dreamid-omni-wan",
+        "license": "Apache-2.0",
+        "manual": "Download Wan2.2_VAE.pth, models_t5_umt5-xxl-enc-bf16.pth, and "
+                  "google/umt5-xxl/ from https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B "
+                  "and place them in ComfyUI/models/dreamid_omni/Wan2.2-TI2V-5B/.",
+    },
+    "dreamid_omni_mmaudio": {
+        "name": "DreamID-Omni MMAudio (Audio VAE)",
+        "size": "~350 MB",
+        "url": "https://huggingface.co/hkchengrex/MMAudio",
+        "mirror_repo": "AEmotionStudio/dreamid-omni-mmaudio",
+        "license": "CC-BY-NC 4.0",
+        "manual": "Download ext_weights/v1-16.pth and ext_weights/best_netG.pt from "
+                  "https://huggingface.co/hkchengrex/MMAudio "
+                  "and place them in ComfyUI/models/dreamid_omni/MMAudio/ext_weights/.",
+    },
+    "facecam": {
+        "name": "FaceCam (Portrait Camera Control)",
+        "size": "~16.8 GB (high+low bf16) + ~44 MB (gaussians.ply)",
+        "url": "https://huggingface.co/wlyu/FaceCam",
+        "license": "Apache-2.0",
+        "manual": "Run: python scripts/merge_facecam_shards.py to download "
+                  "and merge FaceCam bf16 checkpoints into "
+                  "ComfyUI/models/diffusion_models/.",
+    },
+    "matanyone2": {
+        "name": "MatAnyone2 (Video Matting)",
+        "size": "~135 MB",
+        "url": "https://huggingface.co/AEmotionStudio/matanyone2",
+        "mirror_repo": "AEmotionStudio/matanyone2",
+        "license": "NTU S-Lab License 1.0 (non-commercial)",
+        "manual": "Download matanyone2.safetensors from "
+                  "https://huggingface.co/AEmotionStudio/matanyone2 "
+                  "and place it in ComfyUI/models/matanyone2/. "
+                  "⚠️ Non-commercial use only.",
+    },
+    "flashvsr": {
+        "name": "FlashVSR v1.1 (One-Step Video Super Resolution)",
+        "size": "~5 GB (DiT + VAE + LQ_proj + TCDecoder + Prompt)",
+        "url": "https://huggingface.co/AEmotionStudio/flashvsr-models",
+        "mirror_repo": "AEmotionStudio/flashvsr-models",
+        "license": "GPL-3.0",
+        "manual": "Download model files from "
+                  "https://huggingface.co/AEmotionStudio/flashvsr-models "
+                  "and place them in ComfyUI/models/FlashVSR/.",
+    },
+    "svi": {
+        "name": "Stable Video Infinity 2.0 Pro LoRAs",
+        "size": "~500 MB (high + low noise LoRAs)",
+        "url": "https://huggingface.co/vita-video-gen/svi-model",
+        "mirror_repo": "AEmotionStudio/svi-loras",
+        "license": "Apache 2.0",
+        "manual": "Download SVI LoRA files from "
+                  "https://huggingface.co/vita-video-gen/svi-model "
+                  "and place them in ComfyUI/models/svi/version-2.0/. "
+                  "⚠️ Also requires Wan 2.2 I2V-A14B base model (~28 GB).",
+    },
+    "sharp": {
+        "name": "SHARP (3D Gaussian View Synthesis)",
+        "size": "~400 MB",
+        "url": "https://huggingface.co/AEmotionStudio/sharp",
+        "mirror_repo": "AEmotionStudio/sharp",
+        "license": "Apple ML Research License (research/non-commercial only)",
+        "manual": "Download sharp.safetensors from "
+                  "https://huggingface.co/AEmotionStudio/sharp "
+                  "and place it in ComfyUI/models/sharp/. "
+                  "⚠️ Model weights are research/non-commercial use only.",
+    },
+    "wan_animate_det": {
+        "name": "Wan-Animate YOLOv10m (Person Detector)",
+        "size": "~62 MB",
+        "url": "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B",
+        "mirror_repo": "Wan-AI/Wan2.2-Animate-14B",
+        "mirror_filename": "process_checkpoint/det/yolov10m.onnx",
+        "license": "Apache 2.0",
+        "manual": "Download yolov10m.onnx from "
+                  "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B "
+                  "and place it in models/wan_animate/det/.",
+    },
+    "wan_animate_pose": {
+        "name": "Wan-Animate ViTPose-H Wholebody (Pose Estimator)",
+        "size": "~2.5 GB (model.onnx + data.bin)",
+        "url": "https://huggingface.co/Kijai/vitpose_comfy",
+        "mirror_repo": "Kijai/vitpose_comfy",
+        "license": "Apache 2.0",
+        "manual": "Download vitpose_h_wholebody_model.onnx and vitpose_h_wholebody_data.bin from "
+                  "https://huggingface.co/Kijai/vitpose_comfy/tree/main/onnx "
+                  "and place them in models/wan_animate/pose2d/.",
+    },
+    "wan_animate_dit": {
+        "name": "Wan-Animate 14B DiT (FP8 Scaled)",
+        "size": "~18 GB",
+        "url": "https://huggingface.co/Kijai/WanVideo_comfy_fp8_scaled/tree/main/Wan22Animate",
+        "mirror_repo": "Kijai/WanVideo_comfy_fp8_scaled",
+        "license": "Apache 2.0",
+        "manual": "Download the Wan22Animate folder from "
+                  "https://huggingface.co/Kijai/WanVideo_comfy_fp8_scaled "
+                  "and place it in models/wan_animate/Wan22Animate/.",
+    },
+    # Sapiens2 (Meta, ICLR 2026) — human-centric vision transformers.
+    # Six task families × four size variants (0.4B / 1B / 5B / 1B-4K).
+    # License: Meta Proprietary (no surveillance, biometric identification,
+    # deepfake generation, or weapons/critical-infrastructure use;
+    # attribution required on publications).
+    "sapiens2_pose": {
+        "name": "Sapiens2 Pose (308 keypoints)",
+        "size": "~1 GB (0.4B) – ~10 GB (5B fp16)",
+        "url": "https://huggingface.co/AEmotionStudio/sapiens2-pose",
+        "mirror_repo": "AEmotionStudio/sapiens2-pose",
+        "license": "Meta Proprietary (non-surveillance, attribution required)",
+        "manual": "Download sapiens2_{0.4b,1b,5b}_pose.safetensors from "
+                  "https://huggingface.co/AEmotionStudio/sapiens2-pose "
+                  "and place it in ComfyUI/models/sapiens2/pose/. "
+                  "Pose task additionally needs facebook/detr-resnet-101-dc5 "
+                  "(downloaded automatically). "
+                  "⚠️ Not for surveillance, biometric ID, or deepfake use.",
+    },
+    "sapiens2_seg": {
+        "name": "Sapiens2 Body-Part Segmentation (29 classes)",
+        "size": "~1 GB (0.4B) – ~10 GB (5B fp16)",
+        "url": "https://huggingface.co/AEmotionStudio/sapiens2-seg",
+        "mirror_repo": "AEmotionStudio/sapiens2-seg",
+        "license": "Meta Proprietary (non-surveillance, attribution required)",
+        "manual": "Download sapiens2_{0.4b,1b,5b}_seg.safetensors from "
+                  "https://huggingface.co/AEmotionStudio/sapiens2-seg "
+                  "and place it in ComfyUI/models/sapiens2/seg/. "
+                  "⚠️ Not for surveillance, biometric ID, or deepfake use.",
+    },
+    "sapiens2_normal": {
+        "name": "Sapiens2 Surface Normals",
+        "size": "~1 GB (0.4B) – ~10 GB (5B fp16)",
+        "url": "https://huggingface.co/AEmotionStudio/sapiens2-normal",
+        "mirror_repo": "AEmotionStudio/sapiens2-normal",
+        "license": "Meta Proprietary (non-surveillance, attribution required)",
+        "manual": "Download sapiens2_{0.4b,1b,5b}_normal.safetensors "
+                  "(or the quantized sapiens2_5b_normal_fp8.safetensors for the "
+                  "'5b (fp8)' size option) from "
+                  "https://huggingface.co/AEmotionStudio/sapiens2-normal "
+                  "and place it in ComfyUI/models/sapiens2/normal/. "
+                  "⚠️ Not for surveillance, biometric ID, or deepfake use.",
+    },
+    "sapiens2_pointmap": {
+        "name": "Sapiens2 Pointmap (3D)",
+        "size": "~1 GB (0.4B) – ~10 GB (5B fp16)",
+        "url": "https://huggingface.co/AEmotionStudio/sapiens2-pointmap",
+        "mirror_repo": "AEmotionStudio/sapiens2-pointmap",
+        "license": "Meta Proprietary (non-surveillance, attribution required)",
+        "manual": "Download sapiens2_{0.4b,1b,5b}_pointmap.safetensors from "
+                  "https://huggingface.co/AEmotionStudio/sapiens2-pointmap "
+                  "and place it in ComfyUI/models/sapiens2/pointmap/. "
+                  "⚠️ Not for surveillance, biometric ID, or deepfake use.",
+    },
+    "sapiens2_matting": {
+        "name": "Sapiens2 Human Matting (1B only)",
+        "size": "~3 GB (fp16)",
+        "url": "https://huggingface.co/AEmotionStudio/sapiens2-matting",
+        "mirror_repo": "AEmotionStudio/sapiens2-matting",
+        "license": "Meta Proprietary (non-surveillance, attribution required)",
+        "manual": "Download sapiens2_1b_matting.safetensors from "
+                  "https://huggingface.co/AEmotionStudio/sapiens2-matting "
+                  "and place it in ComfyUI/models/sapiens2/matting/. "
+                  "⚠️ Not for surveillance, biometric ID, or deepfake use.",
+    },
+    "sapiens2_pretrain": {
+        "name": "Sapiens2 Pretrain Backbone (features only)",
+        "size": "~0.5 GB (0.1B) – ~10 GB (5B fp16)",
+        "url": "https://huggingface.co/AEmotionStudio/sapiens2-pretrain",
+        "mirror_repo": "AEmotionStudio/sapiens2-pretrain",
+        "license": "Meta Proprietary (non-surveillance, attribution required)",
+        "manual": "Download sapiens2_{0.1b,0.4b,0.8b,1b,5b}_pretrain.safetensors "
+                  "or sapiens2_1b_4k_pretrain.safetensors from "
+                  "https://huggingface.co/AEmotionStudio/sapiens2-pretrain "
+                  "and place it in ComfyUI/models/sapiens2/pretrain/. "
+                  "⚠️ Not for surveillance, biometric ID, or deepfake use.",
+    },
 }
 
 
@@ -194,6 +530,32 @@ def require_downloads_allowed(model_key: str) -> None:
         f"'allow_model_downloads' is disabled on the FFMPEG Agent node. "
         f"Enable it to auto-download, or download manually from: {info['url']}"
     )
+
+
+def require_downloads_allowed_for_missing(model_key: str, paths) -> list:
+    """Gate on downloads only when a file is actually absent.
+
+    ``require_downloads_allowed`` asks "may I download?" — calling it
+    unconditionally at the top of a loader also blocks users who already have
+    every weight on disk, which is the opposite of what the toggle is for. Ask
+    "do I need to download?" first, and only then ask permission.
+
+    Args:
+        model_key: A key from ``_MODEL_INFO``.
+        paths: Resolved local paths the loader needs. Falsy entries are
+            treated as unresolved, and therefore missing.
+
+    Returns:
+        The subset of ``paths`` that is missing (empty when everything is
+        present, in which case no permission was required).
+
+    Raises:
+        RuntimeError: If something is missing and downloads are disabled.
+    """
+    missing = [p for p in paths if not p or not os.path.isfile(p)]
+    if missing:
+        require_downloads_allowed(model_key)
+    return missing
 
 
 # ---------------------------------------------------------------------------

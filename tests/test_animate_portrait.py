@@ -33,7 +33,7 @@ class TestAnimatePortraitSkillRegistration:
         skill = registry.get("animate_portrait")
         param = skill.get_param("driving_video")
         assert param is not None, "Should have driving_video parameter"
-        assert param.required is True
+        assert param.required is False  # optional when expression sliders are set
 
     def test_skill_has_driving_multiplier_param(self):
         registry = get_registry()

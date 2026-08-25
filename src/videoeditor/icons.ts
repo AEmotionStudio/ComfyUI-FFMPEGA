@@ -275,3 +275,226 @@ export const iconHelp = L(
     '<path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>' +
     '<path d="M12 17h.01"/>'
 );
+
+/** Palette — lucide/palette */
+export const iconPalette = L(
+    '<circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/>' +
+    '<circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/>' +
+    '<circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/>' +
+    '<circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/>' +
+    '<path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>'
+);
+
+/** Wand Sparkles — lucide/wand-sparkles */
+export const iconWand = L(
+    '<path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/>' +
+    '<path d="m14 7 3 3"/>' +
+    '<path d="M5 6v4"/>' +
+    '<path d="M19 14v4"/>' +
+    '<path d="M10 2v2"/>' +
+    '<path d="M7 8H3"/>' +
+    '<path d="M21 16h-4"/>' +
+    '<path d="M11 3H9"/>'
+);
+
+/** Sun — lucide/sun */
+export const iconSun = L(
+    '<circle cx="12" cy="12" r="4"/>' +
+    '<path d="M12 2v2"/>' +
+    '<path d="M12 20v2"/>' +
+    '<path d="m4.93 4.93 1.41 1.41"/>' +
+    '<path d="m17.66 17.66 1.41 1.41"/>' +
+    '<path d="M2 12h2"/>' +
+    '<path d="M20 12h2"/>' +
+    '<path d="m6.34 17.66-1.41 1.41"/>' +
+    '<path d="m19.07 4.93-1.41 1.41"/>'
+);
+
+/** Settings — lucide/settings-2 */
+export const iconSettings = L(
+    '<path d="M20 7h-9"/>' +
+    '<path d="M14 17H5"/>' +
+    '<circle cx="17" cy="17" r="3"/>' +
+    '<circle cx="7" cy="7" r="3"/>'
+);
+
+/** Layers — lucide/layers */
+export const iconLayers = L(
+    '<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.84Z"/>' +
+    '<path d="m22.18 12.08-1.39-.63-8.58 3.9a2 2 0 0 1-1.66 0l-8.58-3.9-1.39.63a1 1 0 0 0 0 1.84l8.58 3.9a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.84Z"/>' +
+    '<path d="m22.18 16.08-1.39-.63-8.58 3.9a2 2 0 0 1-1.66 0l-8.58-3.9-1.39.63a1 1 0 0 0 0 1.84l8.58 3.9a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.84Z"/>'
+);
+
+/** Brain — lucide/brain */
+export const iconBrain = L(
+    '<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/>' +
+    '<path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/>' +
+    '<path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/>' +
+    '<path d="M17.599 6.5a3 3 0 0 0 .399-1.375"/>' +
+    '<path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/>' +
+    '<path d="M3.477 10.896a4 4 0 0 1 .585-.396"/>' +
+    '<path d="M19.938 10.5a4 4 0 0 1 .585.396"/>' +
+    '<path d="M6 18a4 4 0 0 1-1.967-.516"/>' +
+    '<path d="M19.967 17.484A4 4 0 0 1 18 18"/>'
+);
+
+/** Move — lucide/move */
+export const iconMove = L(
+    '<polyline points="5 9 2 12 5 15"/>' +
+    '<polyline points="9 5 12 2 15 5"/>' +
+    '<polyline points="15 19 12 22 9 19"/>' +
+    '<polyline points="19 9 22 12 19 15"/>' +
+    '<line x1="2" x2="22" y1="12" y2="12"/>' +
+    '<line x1="12" x2="12" y1="2" y2="22"/>'
+);
+
+// ── Frame Picker Icons ────────────────────────────────────────────
+
+/** Flip Vertical — lucide/flip-vertical-2 */
+export const iconFlipVertical = L(
+    '<path d="m17 3-5 5-5-5h10"/>' +
+    '<path d="m17 21-5-5-5 5h10"/>' +
+    '<path d="M4 12H2"/>' +
+    '<path d="M10 12H8"/>' +
+    '<path d="M16 12h-2"/>' +
+    '<path d="M22 12h-2"/>'
+);
+
+/** Rotate CW — lucide/rotate-cw */
+export const iconRotateCW = L(
+    '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>' +
+    '<path d="M21 3v5h-5"/>'
+);
+
+/** Copy — lucide/copy */
+export const iconCopy = L(
+    '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>' +
+    '<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'
+);
+
+/** Clipboard Paste — lucide/clipboard-paste */
+export const iconPaste = L(
+    '<path d="M15 2H9a1 1 0 0 0-1 1v2c0 .6.4 1 1 1h6c.6 0 1-.4 1-1V3c0-.6-.4-1-1-1Z"/>' +
+    '<path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2M16 4h2a2 2 0 0 1 2 2v2"/>' +
+    '<path d="M21 14H11"/>' +
+    '<path d="m15 10-4 4 4 4"/>'
+);
+
+/** Circle Check — lucide/circle-check */
+export const iconCircleCheck = L(
+    '<circle cx="12" cy="12" r="10"/>' +
+    '<path d="m9 12 2 2 4-4"/>'
+);
+
+/** Circle X — lucide/circle-x */
+export const iconCircleX = L(
+    '<circle cx="12" cy="12" r="10"/>' +
+    '<path d="m15 9-6 6"/>' +
+    '<path d="m9 9 6 6"/>'
+);
+
+/** Select All — lucide/check-square */
+export const iconSelectAll = L(
+    '<rect x="3" y="3" width="18" height="18" rx="2"/>' +
+    '<path d="m9 12 2 2 4-4"/>'
+);
+
+/** Square Off / Deselect — lucide/square */
+export const iconDeselect = L(
+    '<rect x="3" y="3" width="18" height="18" rx="2"/>'
+);
+
+/** Invert — lucide/contrast */
+export const iconInvert = L(
+    '<circle cx="12" cy="12" r="10"/>' +
+    '<path d="M12 18a6 6 0 0 0 0-12v12z"/>'
+);
+
+/** Grid 2x2 — lucide/grid-2x2 */
+export const iconGrid = L(
+    '<rect width="18" height="18" x="3" y="3" rx="2"/>' +
+    '<path d="M3 12h18"/>' +
+    '<path d="M12 3v18"/>'
+);
+
+/** Filmstrip — lucide/film */
+export const iconFilmstrip = L(
+    '<rect width="18" height="18" x="3" y="3" rx="2"/>' +
+    '<path d="M7 3v18"/>' +
+    '<path d="M3 7.5h4"/>' +
+    '<path d="M3 12h18"/>' +
+    '<path d="M3 16.5h4"/>' +
+    '<path d="M17 3v18"/>' +
+    '<path d="M17 7.5h4"/>' +
+    '<path d="M17 16.5h4"/>'
+);
+
+/** Skip End — lucide/skip-forward */
+export const iconSkipEnd = L(
+    '<polygon points="5 4 15 12 5 20 5 4"/>' +
+    '<line x1="19" x2="19" y1="5" y2="19"/>'
+);
+
+/** Chevron Left — lucide/chevron-left */
+export const iconPrev = L('<path d="m15 18-6-6 6-6"/>');
+
+/** Chevron Right — lucide/chevron-right */
+export const iconNext = L('<path d="m9 18 6-6-6-6"/>');
+
+/** Plus Circle — lucide/plus-circle */
+export const iconPlusCircle = L(
+    '<circle cx="12" cy="12" r="10"/>' +
+    '<path d="M8 12h8"/>' +
+    '<path d="M12 8v8"/>'
+);
+
+// ── LoadLastImage Icons ──────────────────────────────────────────
+
+/** Lock — lucide/lock */
+export const iconLock = L(
+    '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>' +
+    '<path d="M7 11V7a5 5 0 0 1 10 0v4"/>'
+);
+
+/** Pin — lucide/pin */
+export const iconPin = L(
+    '<line x1="12" x2="12" y1="17" y2="22"/>' +
+    '<path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>'
+);
+
+/** Expand — lucide/expand */
+export const iconExpand = L(
+    '<path d="M21 11V3h-8"/>' +
+    '<path d="M3 13v8h8"/>' +
+    '<path d="M21 3l-9 9"/>' +
+    '<path d="M3 21l9-9"/>'
+);
+
+/** Image — lucide/image */
+export const iconImage = L(
+    '<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>' +
+    '<circle cx="9" cy="9" r="2"/>' +
+    '<path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>'
+);
+
+/** Columns — lucide/columns */
+export const iconColumns = L(
+    '<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>' +
+    '<line x1="12" x2="12" y1="3" y2="21"/>'
+);
+
+/** Arrow Left Right — lucide/arrow-left-right */
+export const iconArrowLeftRight = L(
+    '<path d="M8 3 4 7l4 4"/>' +
+    '<path d="M4 7h16"/>' +
+    '<path d="m16 21 4-4-4-4"/>' +
+    '<path d="M20 17H4"/>'
+);
+
+/** Scaling — lucide/scaling */
+export const iconScaling = L(
+    '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>' +
+    '<path d="M14 15H9v-5"/>' +
+    '<path d="M16 3h5v5"/>' +
+    '<path d="M21 3 9 15"/>'
+);

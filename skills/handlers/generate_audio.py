@@ -36,12 +36,12 @@ def _f_generate_audio(p):
     """
     prompt = str(p.get("prompt", ""))
     negative_prompt = str(p.get("negative_prompt", ""))
-    mode = str(p.get("_mmaudio_mode", p.get("mode", "replace"))).lower()
+    mode = str(p.get("_audio_output_mode", p.get("_mmaudio_mode", p.get("mode", "replace")))).lower()
     seed = int(p.get("seed", 42))
     cfg_strength = float(p.get("cfg_strength", 4.5))
     video_path = p.get("_input_path", "")
 
-    if mode not in ("replace", "mix"):
+    if mode not in ("replace", "mix", "save_only"):
         mode = "replace"
 
     log.info(
@@ -101,6 +101,10 @@ def _f_generate_audio(p):
         _metadata_ref["_generated_audio_path"] = audio_path
 
     # Build ffmpeg command based on mode
+    if mode == "save_only":
+        log.info("generate_audio save_only: %s", audio_path)
+        return make_result()
+
     if mode == "replace":
         # The generated audio file needs to be added as an extra input
         # by the composer. We use output options to map it.

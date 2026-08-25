@@ -338,10 +338,14 @@ def _upscale_tensor(model_desc, img_tensor: torch.Tensor,
         except Exception:
             pass
 
+    # Determine model dtype for casting tiles before inference.
+    # Model is loaded in half() on CUDA but input tensors arrive as float32.
+    model_dtype = next(model_desc.model.parameters()).dtype
+
     # Small enough for single-pass — avoid tiling overhead
     if h <= tile_size and w <= tile_size:
         with torch.no_grad():
-            return model_desc(img_tensor)
+            return model_desc(img_tensor.to(model_dtype)).to(img_tensor.dtype)
 
     # Tiled processing with overlap
     overlap = 32
@@ -396,7 +400,7 @@ def _upscale_tensor(model_desc, img_tensor: torch.Tensor,
 
             # Upscale tile
             with torch.no_grad():
-                sr_tile = model_desc(tile)
+                sr_tile = model_desc(tile.to(model_dtype)).to(img_tensor.dtype)
 
             # Remove padding from output
             if pad_h > 0:

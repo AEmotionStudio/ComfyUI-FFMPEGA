@@ -471,10 +471,30 @@ def _f_xfade(p):
 
 
 def _f_split_screen(p):
-    """Show videos/images side-by-side or top-to-bottom."""
+    """Show videos/images side-by-side or top-to-bottom.
+
+    Supports two fit modes:
+    - **height** (default): Scale each input to a common height (horizontal)
+      or common width (vertical) while preserving aspect ratio.  No padding,
+      no black bars — truly edge-to-edge.
+    - **cell**: Force all cells to a fixed ``width × height`` with letterbox
+      padding (legacy behavior).
+
+    ``gap`` controls the pixel gap between cells (default 0).
+    """
     layout = str(p.get("layout", "horizontal")).lower()
-    cell_w = int(p.get("width", 960))
-    cell_h = int(p.get("height", 540))
+    fit = str(p.get("fit", "height")).lower()
+    gap = int(p.get("gap", 0))
+    # In fit=height mode, prefer the main video's actual dimensions so the
+    # largest input sets the standard (no downsizing).  The composer fills
+    # skill defaults (width=960, height=540) BEFORE calling handlers, so we
+    # must explicitly check _input_* first.
+    if fit == "height":
+        cell_w = int(p.get("_input_width") or p.get("width") or 960)
+        cell_h = int(p.get("_input_height") or p.get("height") or 540)
+    else:
+        cell_w = int(p.get("width") or p.get("_input_width") or 960)
+        cell_h = int(p.get("height") or p.get("_input_height") or 540)
     duration = float(p.get("duration", 10.0))
     n_extra = int(p.get("_extra_input_count", 0))
 
@@ -486,32 +506,59 @@ def _f_split_screen(p):
     if total < 2:
         return make_result()
 
-    fps = 25
+    fps = int(p.get("_input_fps", 25))
+    extra_paths = p.get("_extra_input_paths", [])
     parts = []
     labels = []
 
+    is_horizontal = layout == "horizontal"
+
     for i, idx in enumerate(cells):
         lbl = f"[_sp{i}]"
-        extra_paths = p.get("_extra_input_paths", [])
         is_video = (idx == 0) or (idx - 1 < len(extra_paths) and _is_video_file(extra_paths[idx - 1]))
-        if is_video:
-            parts.append(
-                f"[{idx}:v]scale={cell_w}:{cell_h}:force_original_aspect_ratio=decrease,"
-                f"pad={cell_w}:{cell_h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1{lbl}"
+
+        # Build the scale expression depending on fit mode
+        if fit == "height":
+            if is_horizontal:
+                # Match height, auto-compute width (no padding)
+                scale_expr = f"scale=-2:{cell_h}:force_original_aspect_ratio=disable,setsar=1"
+            else:
+                # Match width, auto-compute height (no padding)
+                scale_expr = f"scale={cell_w}:-2:force_original_aspect_ratio=disable,setsar=1"
+        else:
+            # Legacy cell mode — fixed size with letterbox padding
+            scale_expr = (
+                f"scale={cell_w}:{cell_h}:force_original_aspect_ratio=decrease,"
+                f"pad={cell_w}:{cell_h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1"
             )
+
+        if is_video:
+            parts.append(f"[{idx}:v]{scale_expr},fps={fps}{lbl}")
         else:
             n_frames = int(duration * fps)
             parts.append(
                 f"[{idx}:v]loop=loop={n_frames}:size=1:start=0,"
-                f"setpts=N/{fps}/TB,"
-                f"scale={cell_w}:{cell_h}:force_original_aspect_ratio=decrease,"
-                f"pad={cell_w}:{cell_h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1{lbl}"
+                f"setpts=N/{fps}/TB,{scale_expr}{lbl}"
             )
         labels.append(lbl)
 
-    stack_filter = "hstack" if layout == "horizontal" else "vstack"
     label_str = "".join(labels)
-    parts.append(f"{label_str}{stack_filter}=inputs={total}")
+
+    if gap > 0:
+        # Use xstack with explicit layout positions to add gaps
+        layout_parts = []
+        for i in range(total):
+            if is_horizontal:
+                x = f"{i}*(w0+{gap})" if i > 0 else "0"
+                layout_parts.append(f"{x}_0")
+            else:
+                y = f"{i}*(h0+{gap})" if i > 0 else "0"
+                layout_parts.append(f"0_{y}")
+        layout_str = "|".join(layout_parts)
+        parts.append(f"{label_str}xstack=inputs={total}:layout={layout_str}:fill=black")
+    else:
+        stack_filter = "hstack" if is_horizontal else "vstack"
+        parts.append(f"{label_str}{stack_filter}=inputs={total}")
 
     opts = []
     if duration > 0:
@@ -617,3 +664,226 @@ def _f_pip(p):
         return make_result(opts=["-map", "[_vout]", "-map", "[_aout]"], fc=fc)
 
     return make_result(fc=fc)
+
+
+def _f_onion_skin(p):
+    """Onion skin compositing: overlay videos with adjustable opacity/blend.
+
+    Supports two modes:
+    - **composite**: Blend extra video inputs onto the main video using
+      configurable blend mode, opacity, and optional frame offset.
+      Supports multi-layer compositing with decaying opacity.
+    - **temporal**: Self-blend ghost trail from a single video using lagfun.
+    """
+    mode = str(p.get("mode", "composite")).lower()
+    opacity = float(p.get("opacity", 0.5))
+    blend_mode = sanitize_text_param(str(p.get("blend_mode", "screen")))
+    frame_offset = int(p.get("frame_offset", 0))
+    layers = int(p.get("layers", 1))
+    decay = float(p.get("decay", 0.97))
+
+    # Valid blend modes for ffmpeg blend filter
+    _valid_modes = {
+        "normal", "screen", "addition", "difference",
+        "multiply", "overlay", "softlight",
+    }
+    if blend_mode not in _valid_modes:
+        blend_mode = "screen"
+
+    # ── Temporal mode: single-video ghost trail ──────────────────
+    if mode == "temporal":
+        decay = max(0.9, min(0.999, decay))
+        return make_result(vf=[f"lagfun=decay={decay}"])
+
+    # ── Composite mode: multi-input blend ────────────────────────
+    n = int(p.get("_extra_input_count", 0))
+    if n < 1:
+        # No extra inputs — fall back to temporal mode
+        decay = max(0.9, min(0.999, decay))
+        return make_result(vf=[f"lagfun=decay={decay}"])
+
+    fps = int(p.get("_input_fps", 25))
+
+    # Determine how many layers to actually use (capped by available inputs)
+    actual_layers = min(layers, n)
+
+    fc_parts = []
+
+    # Scale and prepare each overlay input
+    for i in range(actual_layers):
+        idx = i + 1  # ffmpeg input index (0 = main)
+        layer_label = f"[_os{i}]"
+
+        # Scale overlay to match main video, apply frame offset
+        prep = f"[{idx}:v]scale=iw:ih:force_original_aspect_ratio=decrease"
+        prep += f",pad=iw:ih:(ow-iw)/2:(oh-ih)/2:black,setsar=1"
+
+        if frame_offset != 0:
+            offset_sec = frame_offset / fps
+            prep += f",setpts=PTS+{offset_sec}/TB"
+
+        prep += layer_label
+        fc_parts.append(prep)
+
+    # Chain blend operations with decaying opacity per layer
+    prev = "[0:v]"
+    for i in range(actual_layers):
+        layer_label = f"[_os{i}]"
+        # Decay opacity for each successive layer
+        layer_opacity = opacity * (0.5 ** i) if actual_layers > 1 else opacity
+        layer_opacity = max(0.01, min(1.0, layer_opacity))
+
+        if i < actual_layers - 1:
+            out_label = f"[_osm{i}]"
+            fc_parts.append(
+                f"{prev}{layer_label}blend=all_mode={blend_mode}"
+                f":all_opacity={layer_opacity:.3f}{out_label}"
+            )
+            prev = out_label
+        else:
+            # Last layer — no output label (final output)
+            fc_parts.append(
+                f"{prev}{layer_label}blend=all_mode={blend_mode}"
+                f":all_opacity={layer_opacity:.3f}"
+            )
+
+    return make_result(fc=";".join(fc_parts))
+
+
+def _f_comparison(p):
+    """Create a comparison video from two inputs with various styles.
+
+    Styles:
+    - **swipe**: Animated divider sweeps left-to-right revealing video B.
+    - **split**: Static 50/50 split with a vertical divider line.
+    - **side_by_side**: Full frames stacked horizontally or vertically.
+    - **diagonal**: Diagonal split from top-left to bottom-right.
+    - **circular_reveal**: Expanding circle reveals video B over time.
+    - **difference**: Pixel-difference blend between A and B.
+
+    Video A (input 0) = "Before", Video B (input 1) = "After".
+    """
+    style = str(p.get("style", "swipe")).lower()
+    labels = str(p.get("labels", "false")).lower() in ("true", "1", "yes")
+    label_a = sanitize_text_param(str(p.get("label_a", "Before")))
+    label_b = sanitize_text_param(str(p.get("label_b", "After")))
+    label_size = int(p.get("label_size", 36))
+    direction = str(p.get("direction", "horizontal")).lower()
+    line_width = int(p.get("line_width", 2))
+    line_color = sanitize_text_param(str(p.get("line_color", "white")))
+    n_extra = int(p.get("_extra_input_count", 0))
+
+    if n_extra < 1:
+        return make_result()
+
+    w = int(p.get("_input_width", 1280))
+    h = int(p.get("_input_height", 720))
+    fps = int(p.get("_input_fps", 25))
+    dur = float(p.get("_video_duration", 10.0))
+
+    # Scale both inputs to the same size for clean compositing
+    prep_a = (f"[0:v]scale={w}:{h}:force_original_aspect_ratio=decrease,"
+              f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps={fps}[_ca]")
+    prep_b = (f"[1:v]scale={w}:{h}:force_original_aspect_ratio=decrease,"
+              f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps={fps}[_cb]")
+
+    fc_parts = [prep_a, prep_b]
+    opts = ["-shortest"]
+
+    if style == "swipe":
+        # Animated wipe: crop B to a growing width, overlay on A
+        crop_w = f"floor((t/{dur})*{w}/2)*2"
+        fc_parts.append(
+            f"[_cb]crop=w={crop_w}:h={h}:x=0:y=0[_cb_crop]"
+        )
+        fc_parts.append(
+            f"[_ca][_cb_crop]overlay=x=0:y=0:shortest=1[_cmp]"
+        )
+
+    elif style == "split":
+        # Static 50/50 vertical split
+        half = (w // 2) // 2 * 2  # ensure even
+        fc_parts.append(
+            f"[_cb]crop=w={half}:h={h}:x=0:y=0[_cb_half]"
+        )
+        fc_parts.append(
+            f"[_ca][_cb_half]overlay=x=0:y=0:shortest=1[_cmp_raw]"
+        )
+        # Draw divider line
+        fc_parts.append(
+            f"[_cmp_raw]drawbox=x={half}:y=0:w={line_width}:h={h}:"
+            f"color={line_color}:t=fill[_cmp]"
+        )
+
+    elif style == "side_by_side":
+        stack = "hstack" if direction == "horizontal" else "vstack"
+        fc_parts.append(f"[_ca][_cb]{stack}=inputs=2:shortest=1[_cmp]")
+
+    elif style == "diagonal":
+        # Diagonal split using blend expression
+        fc_parts.append(
+            f"[_ca][_cb]blend=all_expr='"
+            f"if(lt(X/{w}+Y/{h},1),B,A)'[_cmp]"
+        )
+
+    elif style == "circular_reveal":
+        # Expanding circle reveals B over time
+        max_r = max(w, h)
+        cx, cy = w // 2, h // 2
+        fc_parts.append(
+            f"[_ca][_cb]blend=all_expr='"
+            f"if(lte(hypot(X-{cx},Y-{cy}),{max_r}*T/{dur}),B,A)'[_cmp]"
+        )
+
+    elif style == "difference":
+        fc_parts.append(
+            f"[_ca][_cb]blend=all_mode=difference:all_opacity=1.0[_cmp]"
+        )
+
+    else:
+        # Default to swipe
+        crop_w = f"floor((t/{dur})*{w}/2)*2"
+        fc_parts.append(
+            f"[_cb]crop=w={crop_w}:h={h}:x=0:y=0[_cb_crop]"
+        )
+        fc_parts.append(
+            f"[_ca][_cb_crop]overlay=x=0:y=0:shortest=1[_cmp]"
+        )
+
+    # --- Optional labels ---
+    if labels:
+        safe_a = label_a.replace(":", r"\\:")
+        safe_b = label_b.replace(":", r"\\:")
+
+        if style == "side_by_side" and direction == "horizontal":
+            fc_parts.append(
+                f"[_cmp]drawtext=text='{safe_a}':fontsize={label_size}:"
+                f"fontcolor=white:borderw=2:bordercolor=black:"
+                f"x=({w}/2-text_w)/2:y={h}-{label_size}-20,"
+                f"drawtext=text='{safe_b}':fontsize={label_size}:"
+                f"fontcolor=white:borderw=2:bordercolor=black:"
+                f"x={w}/2+({w}/2-text_w)/2:y={h}-{label_size}-20"
+            )
+        elif style == "side_by_side" and direction == "vertical":
+            fc_parts.append(
+                f"[_cmp]drawtext=text='{safe_a}':fontsize={label_size}:"
+                f"fontcolor=white:borderw=2:bordercolor=black:"
+                f"x=(w-text_w)/2:y={h}/2-{label_size}-10,"
+                f"drawtext=text='{safe_b}':fontsize={label_size}:"
+                f"fontcolor=white:borderw=2:bordercolor=black:"
+                f"x=(w-text_w)/2:y={h}+{h}/2-{label_size}-10"
+            )
+        else:
+            fc_parts.append(
+                f"[_cmp]drawtext=text='{safe_a}':fontsize={label_size}:"
+                f"fontcolor=white:borderw=2:bordercolor=black:"
+                f"x=20:y=20,"
+                f"drawtext=text='{safe_b}':fontsize={label_size}:"
+                f"fontcolor=white:borderw=2:bordercolor=black:"
+                f"x=w-text_w-20:y=20"
+            )
+    else:
+        # No labels — pass through with null filter
+        fc_parts.append("[_cmp]null")
+
+    return make_result(opts=opts, fc=";".join(fc_parts))

@@ -487,6 +487,15 @@ async def video_export(request):
     text_overlays_json = json.dumps(body.get("text_overlays", []))
     transitions_json = json.dumps(body.get("transitions", []))
     audio_segments_json = json.dumps(body.get("audio_segments", []))
+    color_grading_json = json.dumps(body.get("color_grading", {}))
+    filter_preset_json = json.dumps(body.get("filter_preset", {}))
+    shader_preset_json = json.dumps(body.get("shader_preset", {}))
+    keyframes_json = json.dumps(body.get("keyframes", {}))
+    relight_json = json.dumps(body.get("relight_params", {}))
+    export_settings_json = json.dumps(body.get("export_settings", {}))
+    compose_json = json.dumps(body.get("compose_layers", {}))
+    ai_compose_json = json.dumps(body.get("ai_compose", {}))
+    transform_json = json.dumps(body.get("transform", {}))
     try:
         volume = float(body.get("volume", 1.0))
     except (ValueError, TypeError):
@@ -513,6 +522,15 @@ async def video_export(request):
             text_overlays_json=text_overlays_json,
             transitions_json=transitions_json,
             audio_segments_json=audio_segments_json,
+            color_grading_json=color_grading_json,
+            filter_preset_json=filter_preset_json,
+            shader_preset_json=shader_preset_json,
+            keyframes_json=keyframes_json,
+            relight_json=relight_json,
+            export_settings_json=export_settings_json,
+            compose_json=compose_json,
+            ai_compose_json=ai_compose_json,
+            transform_json=transform_json,
             cancel_event=cancel_event,
         )
 
@@ -651,4 +669,509 @@ async def _save_effects_presets(request):
     except Exception as e:
         log.warning("effects_presets POST error: %s", e)
         return web.json_response({"error": str(e)}, status=500)
+
+
+# ── Shader Overlay Presets ───────────────────────────────────────────
+
+_SHADER_PRESETS_FILE = os.path.join(os.path.dirname(__file__), "shader_presets.json")
+
+
+@server.PromptServer.instance.routes.get("/ffmpega/shader_presets")
+async def _get_shader_presets(request):
+    """Return saved custom shader overlay presets."""
+    try:
+        if os.path.isfile(_SHADER_PRESETS_FILE):
+            with open(_SHADER_PRESETS_FILE, "r", encoding="utf-8") as f:
+                presets = json.load(f)
+        else:
+            presets = []
+        return web.json_response(presets)
+    except Exception as e:
+        log.warning("shader_presets GET error: %s", e)
+        return web.json_response([], status=500)
+
+
+@server.PromptServer.instance.routes.post("/ffmpega/shader_presets")
+async def _save_shader_presets(request):
+    """Save custom shader overlay presets (replaces entire list)."""
+    try:
+        data = await request.json()
+        if not isinstance(data, list):
+            return web.json_response({"error": "expected array"}, status=400)
+        with open(_SHADER_PRESETS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        return web.json_response({"ok": True})
+    except Exception as e:
+        log.warning("shader_presets POST error: %s", e)
+        return web.json_response({"error": str(e)}, status=500)
+
+
+# ── SAM3 Point Mask (live preview for click-to-mask) ─────────────────
+
+# Cache of first-frame extractions: video_path → (mtime, temp_png_path)
+_first_frame_cache: dict[str, tuple[float, str]] = {}
+_FIRST_FRAME_CACHE_MAX = 10
+
+
+def _evict_first_frame_cache():
+    """Remove oldest entries when cache exceeds max."""
+    while len(_first_frame_cache) > _FIRST_FRAME_CACHE_MAX:
+        oldest_key = next(iter(_first_frame_cache))
+        _, old_path = _first_frame_cache.pop(oldest_key)
+        try:
+            os.unlink(old_path)
+        except OSError:
+            pass
+
+
+def _cleanup_first_frame_cache():
+    """Remove all cached first-frame temp files at exit."""
+    for _, path in list(_first_frame_cache.values()):
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+    _first_frame_cache.clear()
+
+
+atexit.register(_cleanup_first_frame_cache)
+
+
+@server.PromptServer.instance.routes.post("/ffmpega/first_frame")
+async def extract_first_frame(request):
+    """Extract the first frame from a video and return its path.
+
+    Body JSON:
+        video_path — absolute or ComfyUI-relative path to the video
+
+    Returns JSON:
+        { "frame_path": "/tmp/ffmpega_frame_xxx.png", "width": N, "height": N }
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON"}, status=400)
+
+    raw_path = body.get("video_path", "").strip()
+    skip_frames = int(body.get("skip_frames", 0))
+    filepath = _resolve_video_path(raw_path)
+    if not filepath:
+        return web.json_response({"error": "File not found"}, status=404)
+
+    # Check cache (invalidate if file was modified)
+    mtime = os.path.getmtime(filepath)
+    cache_key = f"{filepath}:{skip_frames}"
+    cached = _first_frame_cache.get(cache_key)
+    if cached and cached[0] == mtime and os.path.isfile(cached[1]):
+        # Return cached result with dimensions and base64
+        from PIL import Image as _PILImage
+        import base64 as _b64
+        try:
+            with _PILImage.open(cached[1]) as img:
+                w, h = img.size
+            with open(cached[1], "rb") as f:
+                frame_b64 = _b64.b64encode(f.read()).decode("ascii")
+        except Exception:
+            w, h = 0, 0
+            frame_b64 = ""
+        return web.json_response({
+            "frame_path": cached[1], "width": w, "height": h,
+            "frame_b64": frame_b64,
+        })
+
+    # Extract first frame using ffmpeg
+    import tempfile
+    tmp = tempfile.NamedTemporaryFile(
+        suffix=".png", prefix="ffmpega_frame_", delete=False,
+    )
+    tmp_path = tmp.name
+    tmp.close()
+
+    ffmpeg_bin = get_ffmpeg_bin()
+    if not ffmpeg_bin:
+        return web.json_response({"error": "ffmpeg not found"}, status=500)
+
+    try:
+        # Build ffmpeg command with optional frame seek
+        cmd = [ffmpeg_bin, "-v", "error", "-y"]
+        if skip_frames > 0:
+            # Estimate seek time: probe fps first, fallback to 30fps
+            try:
+                ffprobe_bin = get_ffprobe_bin()
+                if ffprobe_bin:
+                    probe = await asyncio.create_subprocess_exec(
+                        ffprobe_bin, "-v", "error",
+                        "-select_streams", "v:0",
+                        "-show_entries", "stream=r_frame_rate",
+                        "-of", "csv=p=0", filepath,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.DEVNULL,
+                    )
+                    stdout, _ = await asyncio.wait_for(probe.communicate(), timeout=5)
+                    fps_str = stdout.decode().strip()
+                    if "/" in fps_str:
+                        num, den = fps_str.split("/")
+                        fps = float(num) / float(den) if float(den) != 0 else 30.0
+                    else:
+                        fps = float(fps_str) if fps_str else 30.0
+                else:
+                    fps = 30.0
+            except Exception:
+                fps = 30.0
+            seek_time = skip_frames / fps
+            cmd += ["-ss", str(seek_time)]
+        cmd += ["-i", filepath, "-vframes", "1", "-q:v", "1", tmp_path]
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+        if proc.returncode != 0:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            return web.json_response(
+                {"error": f"ffmpeg failed: {stderr.decode()[:200]}"}, status=500,
+            )
+    except asyncio.TimeoutError:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        return web.json_response({"error": "Frame extraction timed out"}, status=504)
+
+    # Cache the result
+    _first_frame_cache[cache_key] = (mtime, tmp_path)
+    _evict_first_frame_cache()
+
+    # Get dimensions and encode frame as base64 for browser use
+    from PIL import Image as _PILImage
+    import base64 as _b64
+    try:
+        with _PILImage.open(tmp_path) as img:
+            w, h = img.size
+        with open(tmp_path, "rb") as f:
+            frame_b64 = _b64.b64encode(f.read()).decode("ascii")
+    except Exception:
+        w, h = 0, 0
+        frame_b64 = ""
+
+    return web.json_response({
+        "frame_path": tmp_path, "width": w, "height": h,
+        "frame_b64": frame_b64,
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────
+#  /ffmpega/edge_map — Compute Canny edge map for a frame
+# ─────────────────────────────────────────────────────────────────────
+
+_edge_map_cache: dict = {}  # {frame_path: (mtime, edge_b64)}
+
+
+@server.PromptServer.instance.routes.post("/ffmpega/edge_map")
+async def edge_map(request):
+    """Compute a Canny edge map from a frame image.
+
+    Body JSON:
+        frame_path — path to the image (from /ffmpega/first_frame)
+
+    Returns JSON:
+        { "edge_b64": "<base64 PNG of edge map>" }
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON"}, status=400)
+
+    frame_path = body.get("frame_path", "").strip()
+    if not frame_path or not os.path.isfile(frame_path):
+        return web.json_response({"error": "File not found"}, status=404)
+
+    if not _is_path_sandboxed(frame_path):
+        return web.json_response({"error": "Path not allowed"}, status=403)
+
+    # Check cache
+    mtime = os.path.getmtime(frame_path)
+    cached = _edge_map_cache.get(frame_path)
+    if cached and cached[0] == mtime:
+        return web.json_response({"edge_b64": cached[1]})
+
+    try:
+        import cv2
+        import numpy as np
+        import base64 as _b64
+
+        img = cv2.imread(frame_path)
+        if img is None:
+            return web.json_response({"error": "Cannot read image"}, status=400)
+
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        # Gaussian blur to reduce noise
+        blurred = cv2.GaussianBlur(gray, (5, 5), 1.0)
+        # Canny edge detection
+        edges = cv2.Canny(blurred, 50, 150)
+
+        # Encode as PNG
+        _, buf = cv2.imencode(".png", edges)
+        edge_b64 = _b64.b64encode(buf.tobytes()).decode("ascii")
+
+        # Cache result
+        _edge_map_cache[frame_path] = (mtime, edge_b64)
+
+        return web.json_response({"edge_b64": edge_b64})
+    except ImportError:
+        return web.json_response(
+            {"error": "OpenCV not available"}, status=500,
+        )
+    except Exception as e:
+        log.warning("edge_map error: %s", e)
+        return web.json_response({"error": str(e)}, status=500)
+
+
+@server.PromptServer.instance.routes.post("/ffmpega/resolve_image_path")
+async def resolve_image_path(request):
+    """Resolve a ComfyUI input-dir filename to an absolute path.
+
+    Body JSON:
+        filename  — image filename from the file picker
+        subfolder — optional subdirectory within input dir
+
+    Returns JSON:
+        { "image_path": "/abs/path/to/image.png" }
+    """
+    import folder_paths as _fp
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON"}, status=400)
+
+    filename = body.get("filename", "").strip()
+    subfolder = body.get("subfolder", "").strip()
+
+    if not filename:
+        return web.json_response({"error": "No filename"}, status=400)
+
+    input_dir = _fp.get_input_directory()
+    if subfolder:
+        full_path = os.path.join(input_dir, subfolder, filename)
+    else:
+        full_path = os.path.join(input_dir, filename)
+    full_path = os.path.abspath(full_path)
+
+    if not os.path.isfile(full_path):
+        return web.json_response({"error": "File not found"}, status=404)
+
+    if not _is_path_sandboxed(full_path):
+        return web.json_response({"error": "Path not allowed"}, status=403)
+
+    return web.json_response({"image_path": full_path})
+
+
+@server.PromptServer.instance.routes.post("/ffmpega/sam3_point_mask")
+async def sam3_point_mask(request):
+    """Generate a SAM3 mask from point prompts and return as base64 PNG.
+
+    Body JSON:
+        frame_path   — path to the image (from /ffmpega/first_frame)
+        points       — [[x, y], ...] pixel coordinates
+        labels       — [1, 0, ...] (1=foreground, 0=background)
+        image_width  — width of the image the points were drawn on
+        image_height — height of the image the points were drawn on
+
+    Returns JSON:
+        {
+            "mask_b64": "...",      # base64 PNG of the mask overlay
+            "raw_mask_b64": "...",  # base64 PNG of the raw B&W mask
+            "width": N,
+            "height": N
+        }
+    """
+    import base64
+    import io
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON"}, status=400)
+
+    frame_path = body.get("frame_path", "").strip()
+    points = body.get("points", [])
+    labels = body.get("labels", [])
+    image_width = int(body.get("image_width", 0))
+    image_height = int(body.get("image_height", 0))
+    multi_object = bool(body.get("multi_object", False))
+    box = body.get("box", None)  # [x1, y1, x2, y2] or None
+    edge_refine = bool(body.get("edge_refine", False))
+
+    if not frame_path or not os.path.isfile(frame_path):
+        return web.json_response({"error": "Frame not found"}, status=404)
+
+    if not _is_path_sandboxed(frame_path):
+        return web.json_response({"error": "Path not allowed"}, status=403)
+
+    # Need at least points or a box
+    if (not points or not labels) and not box:
+        return web.json_response({"error": "No points or box provided"}, status=400)
+
+    # Run SAM3 in thread pool to avoid blocking the event loop
+    loop = asyncio.get_running_loop()
+
+    def _generate_mask():
+        # Offload other models to make room for SAM3
+        try:
+            import comfy.model_management as _mm
+            _dev = _mm.get_torch_device()
+            _mm.free_memory(6 * 1024 * 1024 * 1024, _dev)  # request 6 GiB
+            _mm.soft_empty_cache()
+        except Exception:
+            pass
+        from .core.sam3_masker import mask_image_with_points
+        return mask_image_with_points(
+            image_path=frame_path,
+            points=points,
+            labels=labels,
+            image_width=image_width,
+            image_height=image_height,
+            device="gpu",
+            multi_object=multi_object,
+            box=box,
+        )
+
+    try:
+        result = await asyncio.wait_for(
+            loop.run_in_executor(None, _generate_mask),
+            timeout=60,
+        )
+    except asyncio.TimeoutError:
+        return web.json_response({"error": "SAM3 timed out"}, status=504)
+    except Exception as e:
+        log.error("sam3_point_mask error: %s", e, exc_info=True)
+        return web.json_response({"error": str(e)[:200]}, status=500)
+
+    from PIL import Image as _PILImage
+    import numpy as _np
+
+    # mask_image_with_points returns tuple (mask, per_object_masks) in
+    # multi-object mode, or just a plain ndarray in single-object mode.
+    per_obj_masks = None
+    if isinstance(result, tuple):
+        mask_np, per_obj_masks = result
+    else:
+        mask_np = result
+
+    # Apply GrabCut edge refinement if requested
+    if edge_refine:
+        from .core.sam3_masker import refine_mask_grabcut
+        mask_np = refine_mask_grabcut(frame_path, mask_np)
+        if per_obj_masks:
+            per_obj_masks = [
+                refine_mask_grabcut(frame_path, m) for m in per_obj_masks
+            ]
+
+    h, w = mask_np.shape[:2]
+
+    # 1. Raw B&W mask (combined)
+    raw_mask_img = _PILImage.fromarray(mask_np, mode="L")
+    raw_buf = io.BytesIO()
+    raw_mask_img.save(raw_buf, format="PNG", optimize=True)
+    raw_mask_b64 = base64.b64encode(raw_buf.getvalue()).decode("ascii")
+
+    # Per-object color palette (RGBA at 40% opacity)
+    _OBJECT_COLORS = [
+        (0, 212, 170, 102),    # Teal
+        (220, 60, 180, 102),   # Magenta
+        (255, 160, 40, 102),   # Orange
+        (40, 180, 255, 102),   # Cyan
+        (120, 220, 40, 102),   # Lime
+        (160, 80, 255, 102),   # Violet
+        (255, 100, 100, 102),  # Coral
+        (50, 255, 200, 102),   # Mint
+        (255, 200, 50, 102),   # Amber
+        (255, 150, 200, 102),  # Pink
+        (80, 100, 255, 102),   # Indigo
+        (180, 255, 50, 102),   # Chartreuse
+    ]
+    _CONTOUR_COLORS = [
+        (0, 255, 200, 255),    # Teal
+        (255, 80, 220, 255),   # Magenta
+        (255, 190, 60, 255),   # Orange
+        (60, 200, 255, 255),   # Cyan
+        (140, 255, 60, 255),   # Lime
+        (180, 100, 255, 255),  # Violet
+        (255, 130, 130, 255),  # Coral
+        (70, 255, 220, 255),   # Mint
+        (255, 220, 70, 255),   # Amber
+        (255, 170, 220, 255),  # Pink
+        (100, 120, 255, 255),  # Indigo
+        (200, 255, 70, 255),   # Chartreuse
+    ]
+
+    # 2. Colored overlay
+    try:
+        orig_img = _PILImage.open(frame_path).convert("RGBA")
+        overlay = _PILImage.new("RGBA", (w, h), (0, 0, 0, 0))
+        overlay_np = _np.array(overlay)
+
+        # Check for per-object masks (multi-object mode)
+        if per_obj_masks and len(per_obj_masks) > 1:
+            # Multi-object: each object gets a distinct color
+            for idx, obj_mask in enumerate(per_obj_masks):
+                color = _OBJECT_COLORS[idx % len(_OBJECT_COLORS)]
+                obj_bool = obj_mask > 127
+                overlay_np[obj_bool] = color
+            # Darken unmasked
+            combined_bool = mask_np > 127
+            overlay_np[~combined_bool] = [30, 60, 90, 128]
+        else:
+            # Single object: standard teal
+            mask_bool = mask_np > 127
+            overlay_np[mask_bool] = [0, 212, 170, 102]
+            overlay_np[~mask_bool] = [30, 60, 90, 128]
+
+        overlay = _PILImage.fromarray(overlay_np, mode="RGBA")
+        result = _PILImage.alpha_composite(orig_img, overlay)
+
+        # Draw contour outlines
+        try:
+            import cv2
+            if per_obj_masks and len(per_obj_masks) > 1:
+                result_np = _np.array(result)
+                for idx, obj_mask in enumerate(per_obj_masks):
+                    contour_color = _CONTOUR_COLORS[idx % len(_CONTOUR_COLORS)]
+                    contours, _ = cv2.findContours(
+                        obj_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE,
+                    )
+                    if contours:
+                        cv2.drawContours(result_np, contours, -1, contour_color, 2)
+                result = _PILImage.fromarray(result_np, mode="RGBA")
+            else:
+                contours, _ = cv2.findContours(
+                    mask_np, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE,
+                )
+                if contours:
+                    result_np = _np.array(result)
+                    cv2.drawContours(result_np, contours, -1, (255, 215, 0, 255), 2)
+                    result = _PILImage.fromarray(result_np, mode="RGBA")
+        except ImportError:
+            pass  # cv2 not available — skip contour
+
+        result_rgb = result.convert("RGB")
+        overlay_buf = io.BytesIO()
+        result_rgb.save(overlay_buf, format="PNG", optimize=True)
+        mask_overlay_b64 = base64.b64encode(overlay_buf.getvalue()).decode("ascii")
+    except Exception as e:
+        log.warning("sam3_point_mask overlay generation failed: %s", e)
+        mask_overlay_b64 = raw_mask_b64  # fallback to raw mask
+
+    return web.json_response({
+        "mask_b64": mask_overlay_b64,
+        "raw_mask_b64": raw_mask_b64,
+        "width": w,
+        "height": h,
+    })
 

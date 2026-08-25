@@ -90,10 +90,12 @@ def assemble_pipeline(
     sam3_det_threshold: float,
     mask_points: str,
     use_flux_klein: bool,
+    use_kiwi_edit: bool,
     use_minimax_remover: bool,
     flux_smoothing: str,
-    mmaudio_mode: str,
+    audio_output_mode: str,
     composer,
+    flux_klein_model: str = "4b",
 ) -> tuple:
     """Build a Pipeline from the LLM spec and apply quality/format/metadata.
 
@@ -197,11 +199,13 @@ def assemble_pipeline(
     if mask_points and mask_points.strip():
         pipeline.metadata["_mask_points"] = mask_points.strip()
     pipeline.metadata["_enable_flux_klein"] = use_flux_klein
+    pipeline.metadata["_flux_klein_model"] = flux_klein_model
+    pipeline.metadata["_enable_kiwi_edit"] = use_kiwi_edit
     pipeline.metadata["_enable_minimax_remover"] = use_minimax_remover
     if flux_smoothing and flux_smoothing != "none":
         pipeline.metadata["_flux_smoothing"] = flux_smoothing
-    if mmaudio_mode and mmaudio_mode != "replace":
-        pipeline.metadata["_mmaudio_mode"] = mmaudio_mode
+    if audio_output_mode and audio_output_mode not in ("auto", "replace"):
+        pipeline.metadata["_audio_output_mode"] = audio_output_mode
 
     return (pipeline, output_path, interpretation, warnings, estimated_changes,
             audio_source, audio_mode)

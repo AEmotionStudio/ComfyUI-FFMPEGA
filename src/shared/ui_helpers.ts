@@ -93,6 +93,242 @@ export function createUploadButton(acceptTypes: string): {
     return { fileInput, uploadBtn, updateBtnStyle };
 }
 
+// --- File drop zones ---
+
+/** Callbacks for a DOM element that accepts dropped files. */
+export interface FileDropZoneOptions {
+    /** Return false to reject the file (routes to onReject instead of onDrop). */
+    accept?: (file: File) => boolean;
+    /** Called with the first accepted file. Any return value is ignored. */
+    onDrop: (file: File) => unknown;
+    /** Called with the first file when `accept` rejects it. */
+    onReject?: (file: File) => void;
+    /** Called as a file drag enters (true) or leaves (false) the element. */
+    onDragStateChange?: (active: boolean) => void;
+    /**
+     * Return true to refuse new files — e.g. while an upload is in flight.
+     * Events are still consumed so nothing else claims the drop.
+     */
+    disabled?: () => boolean;
+}
+
+/**
+ * Make a DOM element accept dropped files.
+ *
+ * ComfyUI routes graph file drops through a `document`-level listener that
+ * dispatches to `app.dragOverNode`, which is only ever set by a `dragover`
+ * listener on the *canvas* element. DOM widgets are layered above the canvas,
+ * so the canvas never sees the drag and that region of the node goes dead —
+ * this restores it. Our `preventDefault()` on drop is what suppresses ComfyUI's
+ * fallback handling, which bails on `e.defaultPrevented`.
+ *
+ * @returns a detach function that removes every listener it added.
+ */
+export function attachFileDropZone(
+    el: HTMLElement,
+    opts: FileDropZoneOptions,
+): () => void {
+    // Entering a child fires dragleave on the parent, so a plain enter/leave
+    // pair flickers across the preview's video, info bar and overlay button.
+    let depth = 0;
+
+    const hasFiles = (e: DragEvent): boolean =>
+        !!e.dataTransfer?.types?.includes?.("Files");
+
+    const setActive = (active: boolean): void => {
+        opts.onDragStateChange?.(active);
+    };
+
+    /**
+     * Claim the event so neither the browser nor ComfyUI's document-level
+     * handler acts on it. Returns false when the zone is refusing files.
+     */
+    const claim = (e: DragEvent): boolean => {
+        // Required on dragenter/dragover — without it the element is not a
+        // valid drop target and no drop event ever fires.
+        e.preventDefault();
+        e.stopPropagation();
+        const refusing = opts.disabled?.() ?? false;
+        if (e.dataTransfer) e.dataTransfer.dropEffect = refusing ? "none" : "copy";
+        return !refusing;
+    };
+
+    const onDragEnter = (e: DragEvent): void => {
+        if (!hasFiles(e) || !claim(e)) return;
+        depth++;
+        if (depth === 1) setActive(true);
+    };
+
+    const onDragOver = (e: DragEvent): void => {
+        if (!hasFiles(e) || !claim(e)) return;
+        if (depth === 0) depth = 1;
+        setActive(true);
+    };
+
+    const onDragLeave = (e: DragEvent): void => {
+        if (!hasFiles(e)) return;
+        depth = Math.max(0, depth - 1);
+        if (depth === 0) setActive(false);
+    };
+
+    const onDrop = (e: DragEvent): void => {
+        if (!hasFiles(e)) return;
+        const accepting = claim(e);
+        depth = 0;
+        setActive(false);
+        if (!accepting) return;
+
+        const file = e.dataTransfer?.files?.[0];
+        if (!file) return;
+        if (opts.accept && !opts.accept(file)) {
+            opts.onReject?.(file);
+            return;
+        }
+        void opts.onDrop(file);
+    };
+
+    el.addEventListener("dragenter", onDragEnter);
+    el.addEventListener("dragover", onDragOver);
+    el.addEventListener("dragleave", onDragLeave);
+    el.addEventListener("drop", onDrop);
+
+    return (): void => {
+        el.removeEventListener("dragenter", onDragEnter);
+        el.removeEventListener("dragover", onDragOver);
+        el.removeEventListener("dragleave", onDragLeave);
+        el.removeEventListener("drop", onDrop);
+    };
+}
+
+// --- Playback position ---
+
+/**
+ * Why the playhead moved.
+ *
+ * `"frame"` is playback advancing on its own; `"seek"` is the user (or code)
+ * jumping. Callers that snap the playhead around must act only on `"frame"` —
+ * undoing a seek fights whoever asked for it.
+ */
+export type PlayheadCause = "frame" | "seek" | "pause" | "load";
+
+/**
+ * Report playhead movement on a `<video>`.
+ *
+ * `requestVideoFrameCallback` fires once per *rendered* frame, so a readout
+ * built on it matches the picture on screen rather than trailing it; the
+ * `timeupdate` fallback runs at ~4 Hz and will lag by a few frames. Seeks,
+ * pauses and metadata loads are reported too, so a readout stays live while
+ * the video is parked.
+ *
+ * The callback receives the position, whether playback is running, and the
+ * cause — it decides what any of that means.
+ *
+ * @returns a detach function that removes every listener it added.
+ */
+export function attachPlayheadTracker(
+    videoEl: HTMLVideoElement,
+    onUpdate: (time: number, playing: boolean, cause: PlayheadCause) => void,
+): () => void {
+    const rvfc = videoEl as HTMLVideoElement & {
+        requestVideoFrameCallback?: (cb: () => void) => number;
+        cancelVideoFrameCallback?: (handle: number) => void;
+    };
+    const supportsRVFC = typeof rvfc.requestVideoFrameCallback === "function";
+    let handle: number | null = null;
+
+    const report = (cause: PlayheadCause): void => {
+        onUpdate(videoEl.currentTime, !videoEl.paused && !videoEl.ended, cause);
+    };
+
+    const scheduleFrame = (): void => {
+        handle = rvfc.requestVideoFrameCallback!(() => {
+            report("frame");
+            if (videoEl.paused || videoEl.ended) {
+                handle = null;
+            } else {
+                scheduleFrame();
+            }
+        });
+    };
+
+    const cancelFrame = (): void => {
+        if (handle !== null) {
+            rvfc.cancelVideoFrameCallback!(handle);
+            handle = null;
+        }
+    };
+
+    const onPlay = (): void => {
+        if (supportsRVFC && handle === null) scheduleFrame();
+    };
+    const onStop = (): void => {
+        cancelFrame();
+        report("pause");
+    };
+    const onSeeked = (): void => report("seek");
+    const onLoaded = (): void => report("load");
+    // Only needed where rVFC is missing — otherwise the frame callback already
+    // covers playback, and timeupdate would just report the same position late.
+    const onTimeUpdate = (): void => {
+        if (!videoEl.paused) report("frame");
+    };
+
+    videoEl.addEventListener("play", onPlay);
+    videoEl.addEventListener("pause", onStop);
+    videoEl.addEventListener("ended", onStop);
+    videoEl.addEventListener("seeked", onSeeked);
+    videoEl.addEventListener("loadedmetadata", onLoaded);
+    if (!supportsRVFC) videoEl.addEventListener("timeupdate", onTimeUpdate);
+
+    return (): void => {
+        cancelFrame();
+        videoEl.removeEventListener("play", onPlay);
+        videoEl.removeEventListener("pause", onStop);
+        videoEl.removeEventListener("ended", onStop);
+        videoEl.removeEventListener("seeked", onSeeked);
+        videoEl.removeEventListener("loadedmetadata", onLoaded);
+        if (!supportsRVFC) videoEl.removeEventListener("timeupdate", onTimeUpdate);
+    };
+}
+
+/**
+ * 1-based index within a selected frame set for a range-relative time.
+ *
+ * `elapsed` is measured from the range's in-point. Time advances over *source*
+ * frames, so an `everyNth` of 2 means two source frames pass per selected one.
+ * Returns 0 when the inputs cannot place a frame.
+ */
+export function frameAtTime(
+    elapsed: number,
+    effFps: number,
+    everyNth: number,
+    availFrames: number,
+): number {
+    if (effFps <= 0 || availFrames <= 0) return 0;
+    const nth = everyNth > 1 ? everyNth : 1;
+    const rawFrame = Math.floor(Math.max(0, elapsed) * effFps);
+    return Math.min(Math.floor(rawFrame / nth) + 1, availFrames);
+}
+
+/**
+ * Out-point, in source seconds, of a range holding `availFrames` selected
+ * frames taken every `everyNth`.
+ *
+ * Those frames are spread across `availFrames * everyNth` source frames — using
+ * the selected count alone would cut the range short by a factor of `everyNth`.
+ * Returns Infinity when there is no range to enforce.
+ */
+export function rangeEndSeconds(
+    playStart: number,
+    availFrames: number,
+    everyNth: number,
+    effFps: number,
+): number {
+    if (effFps <= 0 || availFrames <= 0) return Infinity;
+    const nth = everyNth > 1 ? everyNth : 1;
+    return playStart + (availFrames * nth) / effFps;
+}
+
 // --- Constants ---
 
 /** Alphabet for dynamic slot naming (image_a, image_b, etc.) */
@@ -218,6 +454,96 @@ export function updateDynamicSlots(
         node.removeInput(slotIdx);
         matchingIndices.pop();
     }
+}
+
+/** Config for one auto-growing input family. */
+export interface DynamicPrefixConfig {
+    prefix: string;
+    type: string;
+    excludes?: string[];
+}
+
+/** Serialized info shape used by onConfigure for slot restoration. */
+interface SerializedInfo {
+    inputs?: Array<{ name: string; type: string; link?: number | null }>;
+    [key: string]: unknown;
+}
+
+/**
+ * Wire auto-growing dynamic input slots (a → b → c, ...) onto a node.
+ *
+ * Wraps `onConnectionsChange` (to grow/shrink slots on connect) and
+ * `onConfigure` (to restore saved dynamic + legacy slots on workflow load).
+ * Mirrors the FFMPEGA Agent's behavior so Save Video / Save Image grow the
+ * same way. `legacyNames` recreates renamed bare inputs (e.g. `video_path`,
+ * `images`) so older workflows keep their links.
+ */
+export function wireDynamicInputs(
+    node: ComfyNode,
+    prefixes: DynamicPrefixConfig[],
+    legacyNames: Array<{ name: string; type: string }> = [],
+): void {
+    const origOnConnectionsChange = node.onConnectionsChange;
+    node.onConnectionsChange = function (
+        this: ComfyNode,
+        type: number, slotIndex: number,
+        isConnected: boolean, link: unknown, ioSlot: unknown,
+    ): void {
+        origOnConnectionsChange?.apply(this, arguments as unknown as [number, number, boolean, unknown, unknown]);
+        if (type === LiteGraph.INPUT) {
+            for (const p of prefixes) {
+                updateDynamicSlots(this, p.prefix, p.type, p.excludes ?? []);
+            }
+            fitHeight(this);
+        }
+    };
+
+    const origOnConfigure = node.onConfigure;
+    node.onConfigure = function (this: ComfyNode, info: SerializedInfo): void {
+        origOnConfigure?.apply(this, arguments as unknown as [SerializedInfo]);
+
+        if (info?.inputs) {
+            const existing = new Set(this.inputs.map(i => i.name));
+
+            // Step 1: re-create saved dynamic + legacy slots
+            for (const saved of info.inputs) {
+                if (existing.has(saved.name)) continue;
+                const isLegacy = legacyNames.some(l => l.name === saved.name);
+                const isDynamic = prefixes.some(p =>
+                    saved.name.startsWith(p.prefix) &&
+                    !(p.excludes ?? []).some(e => saved.name.startsWith(e)));
+                if (isLegacy || isDynamic) {
+                    this.addInput(saved.name, saved.type);
+                    existing.add(saved.name);
+                }
+            }
+
+            // Step 2: recreate the one trailing spare slot per family
+            for (const p of prefixes) {
+                let maxLinkedIdx = -1;
+                for (const saved of info.inputs) {
+                    if (!saved.name.startsWith(p.prefix)) continue;
+                    if ((p.excludes ?? []).some(e => saved.name.startsWith(e))) continue;
+                    if (saved.link != null) {
+                        const letter = saved.name.slice(p.prefix.length);
+                        const idx = SLOT_LABELS.indexOf(letter);
+                        if (idx > maxLinkedIdx) maxLinkedIdx = idx;
+                    }
+                }
+                if (maxLinkedIdx >= 0) {
+                    const nextLetter = SLOT_LABELS[maxLinkedIdx + 1];
+                    if (nextLetter) {
+                        const nextName = `${p.prefix}${nextLetter}`;
+                        if (!existing.has(nextName)) {
+                            this.addInput(nextName, p.type);
+                            existing.add(nextName);
+                        }
+                    }
+                }
+            }
+        }
+        fitHeight(this);
+    };
 }
 
 // --- Prompt helpers ---

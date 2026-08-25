@@ -103,7 +103,11 @@ _PRESETS = {
     },
     "📺 Split Screen": {
         "effect_1": "split_screen",
-        "effect_1_params": {"layout": "side_by_side"},
+        "effect_1_params": {"layout": "horizontal", "fit": "height", "gap": 0},
+    },
+    "📺 Split Screen (Vertical)": {
+        "effect_1": "split_screen",
+        "effect_1_params": {"layout": "vertical", "fit": "height", "gap": 0},
     },
     "🖼️ Grid Layout": {
         "effect_1": "grid",
@@ -289,6 +293,7 @@ class FFMPEGAEffectsNode:
     """
 
     SAM3_EFFECTS = ["none", "blur", "pixelate", "remove", "grayscale", "highlight"]
+    SAM_VERSIONS = ["sam3.1", "sam3"]
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -378,6 +383,21 @@ class FFMPEGAEffectsNode:
                     "placeholder": '{"key": "value"}',
                     "tooltip": param_tooltip,
                 }),
+                "use_as_text": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": (
+                        "When enabled, the text box below is treated as plain "
+                        "text for text_overlay effects instead of raw FFmpeg filters."
+                    ),
+                }),
+                "use_prompt_as_text": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": (
+                        "When enabled, the Agent node's prompt input is used as "
+                        "text for text_overlay effects. Overridden by 'use_as_text' "
+                        "if both are set and the text box is non-empty."
+                    ),
+                }),
                 "raw_ffmpeg": ("STRING", {
                     "default": "",
                     "multiline": True,
@@ -388,7 +408,9 @@ class FFMPEGAEffectsNode:
                     ),
                     "tooltip": (
                         "Raw FFmpeg video filter string. Applied after any "
-                        "skill-based effects. Use standard FFmpeg -vf syntax."
+                        "skill-based effects. Use standard FFmpeg -vf syntax.\n\n"
+                        "When 'use_as_text' is enabled, this field is treated as "
+                        "plain text for text_overlay effects instead."
                     ),
                 }),
                 "sam3_target": ("STRING", {
@@ -405,6 +427,17 @@ class FFMPEGAEffectsNode:
                     "tooltip": (
                         "What effect to apply to the SAM3-detected region. "
                         "'none' outputs the raw mask without any effect."
+                    ),
+                }),
+                "sam_version": (cls.SAM_VERSIONS, {
+                    "default": "sam3.1",
+                    "tooltip": (
+                        "Which SAM tracker to use. sam3.1 is the newer "
+                        "multiplex tracker — ~7× faster on multi-object "
+                        "video and ~½ VRAM. Used for text-prompted image "
+                        "masking AND video tracking. Single-image point "
+                        "prompts still fall back to sam3 (interactive "
+                        "head not yet wired for sam3.1)."
                     ),
                 }),
                 # Hidden data for JS — serialized preset/defaults info
@@ -465,9 +498,12 @@ class FFMPEGAEffectsNode:
         effect_4_params: str = "",
         effect_5: str = "none",
         effect_5_params: str = "",
+        use_as_text: bool = False,
+        use_prompt_as_text: bool = False,
         raw_ffmpeg: str = "",
         sam3_target: str = "",
         sam3_effect: str = "blur",
+        sam_version: str = "sam3.1",
         _presets_json: str = "",
         _defaults_json: str = "",
         _param_help_json: str = "",
@@ -510,12 +546,13 @@ class FFMPEGAEffectsNode:
                 "params": params,
             })
 
-        # --- SAM3 integration ---
+        # --- SAM3 / SAM 3.1 integration ---
         sam3_config = None
         if sam3_target and sam3_target.strip():
             sam3_config = {
                 "target": sam3_target.strip(),
                 "effect": sam3_effect if sam3_effect != "none" else "blur",
+                "version": sam_version or "sam3.1",
             }
             # If SAM3 is set and no other effects, add the auto_mask as
             # a pipeline step so the agent knows to run SAM3
@@ -526,12 +563,21 @@ class FFMPEGAEffectsNode:
                     "params": {
                         "target": sam3_target.strip(),
                         "effect": sam3_effect,
+                        "sam_version": sam_version or "sam3.1",
                     },
                 })
 
+        # --- Handle text toggle: raw_ffmpeg becomes overlay text ---
+        overlay_text = ""
+        effective_raw = ""
+        if use_as_text and raw_ffmpeg and raw_ffmpeg.strip():
+            overlay_text = raw_ffmpeg.strip()
+        elif raw_ffmpeg and raw_ffmpeg.strip():
+            effective_raw = raw_ffmpeg.strip()
+
         # --- Determine mode ---
         has_skills = len(pipeline_steps) > 0
-        has_raw = bool(raw_ffmpeg and raw_ffmpeg.strip())
+        has_raw = bool(effective_raw)
 
         if has_skills and has_raw:
             mode = "hybrid"
@@ -543,12 +589,16 @@ class FFMPEGAEffectsNode:
             mode = "empty"
 
         # --- Build output ---
-        output = {
+        output: dict[str, Any] = {
             "effects_mode": mode,
             "pipeline": pipeline_steps,
-            "raw_ffmpeg": raw_ffmpeg.strip() if has_raw else "",
+            "raw_ffmpeg": effective_raw,
             "sam3": sam3_config,
         }
+        if overlay_text:
+            output["overlay_text"] = overlay_text
+        if use_prompt_as_text:
+            output["use_prompt_as_text"] = True
 
         result = json.dumps(output, indent=2)
         logger.debug("Effects Builder output: %s", result)

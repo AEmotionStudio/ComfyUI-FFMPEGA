@@ -12,6 +12,9 @@ const NODE_COLORS: Record<string, [string, string]> = {
     "FFMPEGABatchProcessor": ["#5a3a3a", "#4a2a2a"],
     "FFMPEGAVideoInfo": ["#4a4a3a", "#3a3a2a"],
     "LoadLastImage": ["#5a4a3a", "#4a3a2a"],
+    // FFMPEGASaveLastFrame / FFMPEGALoadLastFrame are deliberately absent:
+    // registerNodeStyling short-circuits the handler chain, and those two
+    // need a real handler (slot preview). They set their own colors.
 };
 
 /**

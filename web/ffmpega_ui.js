@@ -1,13 +1,17 @@
 import { app } from "../../scripts/app.js";
-import { u as updateDynamicSlots, S as SLOT_LABELS, s as setPrompt, R as RANDOM_PROMPTS, f as flashNode, h as handlePaste, c as createUploadButton, a as addDownloadOverlay, b as addVideoPreviewMenu } from "./_chunks/ui_helpers-CvUDB6-L.js";
+import { u as updateDynamicSlots, S as SLOT_LABELS, s as setPrompt, R as RANDOM_PROMPTS, f as flashNode, h as handlePaste, c as createUploadButton, a as addDownloadOverlay, b as addVideoPreviewMenu, d as attachPlayheadTracker, e as attachFileDropZone, t as toggleWidget$2, g as fitHeight, i as frameAtTime, r as rangeEndSeconds, w as wireDynamicInputs } from "./_chunks/ui_helpers-Cs5gHV_9.js";
 import { api } from "../../scripts/api.js";
-import { C as CropOverlay } from "./_chunks/CropOverlay-Chz7vM7Z.js";
+import { o as openPointSelector } from "./_chunks/point_selector-NqapftUC.js";
+import { C as CropOverlay } from "./_chunks/CropOverlay-H6yQHaMz.js";
 const NODE_COLORS = {
   "FFMPEGAPreview": ["#3a5a3a", "#2a4a2a"],
   "FFMPEGAMediaBridge": ["#3a5a4a", "#2a4a3a"],
   "FFMPEGABatchProcessor": ["#5a3a3a", "#4a2a2a"],
   "FFMPEGAVideoInfo": ["#4a4a3a", "#3a3a2a"],
   "LoadLastImage": ["#5a4a3a", "#4a3a2a"]
+  // FFMPEGASaveLastFrame / FFMPEGALoadLastFrame are deliberately absent:
+  // registerNodeStyling short-circuits the handler chain, and those two
+  // need a real handler (slot preview). They set their own colors.
 };
 function registerNodeStyling(nodeType, nodeData) {
   const colors = NODE_COLORS[nodeData.name];
@@ -25,12 +29,12 @@ function registerNodeStyling(nodeType, nodeData) {
 const DYNAMIC_PREFIXES = [
   { prefix: "images_", type: "IMAGE", excludes: [] },
   { prefix: "image_", type: "IMAGE", excludes: ["images_", "image_path_"] },
-  { prefix: "audio_", type: "AUDIO", excludes: [] },
-  { prefix: "video_", type: "STRING", excludes: ["video_path", "video_folder"] },
+  { prefix: "audio_", type: "AUDIO", excludes: ["audio_output_mode", "audio_resample_rate"] },
+  { prefix: "video_", type: "STRING", excludes: ["video_path", "video_folder", "video_depth_encoder", "video_depth_colormap"] },
   { prefix: "image_path_", type: "STRING", excludes: [] },
   { prefix: "text_", type: "STRING", excludes: [] }
 ];
-function toggleWidget(widget, show) {
+function toggleWidget$1(widget, show) {
   if (!widget) return;
   if (!widget._origType) {
     widget._origType = widget.type;
@@ -288,12 +292,12 @@ function registerAgentNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGAgent") return;
   const onNodeCreated = nodeType.prototype.onNodeCreated;
   nodeType.prototype.onNodeCreated = function() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L;
     const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
     const node = this;
     this.color = "#2a3a5a";
     this.bgcolor = "#1a2a4a";
-    const fitHeight = () => {
+    const fitHeight2 = () => {
       var _a2;
       node.setSize([
         node.size[0],
@@ -305,30 +309,44 @@ function registerAgentNode(nodeType, nodeData) {
     const llmWidget = (_a = this.widgets) == null ? void 0 : _a.find((w) => w.name === "llm_model");
     if (llmWidget) {
       let doUpdateLlmVisibility = function() {
-        var _a2;
+        var _a2, _b2, _c2, _d2;
         const model = llmWidget.value;
         const isNone = model === "none";
-        toggleWidget(customWidget, model === "custom");
-        toggleWidget(apiKeyWidget, needsApiKey(model));
-        if (ollamaUrlWidget) toggleWidget(ollamaUrlWidget, !isNone);
-        if (verifyWidget) toggleWidget(verifyWidget, !isNone);
-        if (visionWidget) toggleWidget(visionWidget, !isNone);
-        if (ptcWidget) toggleWidget(ptcWidget, !isNone);
-        const noLlmModeWidget = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "no_llm_mode");
+        toggleWidget$1(customWidget, model === "custom");
+        toggleWidget$1(apiKeyWidget, needsApiKey(model));
+        if (ollamaUrlWidget) toggleWidget$1(ollamaUrlWidget, !isNone);
+        if (verifyWidget) toggleWidget$1(verifyWidget, !isNone);
+        if (visionWidget) toggleWidget$1(visionWidget, !isNone);
+        if (ptcWidget) toggleWidget$1(ptcWidget, !isNone);
+        const ttWidget = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "track_tokens");
+        const luWidget = (_b2 = node.widgets) == null ? void 0 : _b2.find((w) => w.name === "log_usage");
+        if (ttWidget) toggleWidget$1(ttWidget, !isNone);
+        if (luWidget) toggleWidget$1(luWidget, !isNone);
+        const noLlmModeWidget = (_c2 = node.widgets) == null ? void 0 : _c2.find((w) => w.name === "no_llm_mode");
         if (noLlmModeWidget) {
-          toggleWidget(noLlmModeWidget, isNone);
+          toggleWidget$1(noLlmModeWidget, isNone);
           if (!noLlmModeWidget._cbHooked) {
             noLlmModeWidget._cbHooked = true;
             const origNoLlmCb = noLlmModeWidget.callback;
             noLlmModeWidget.callback = function(...args) {
               origNoLlmCb == null ? void 0 : origNoLlmCb.apply(this, args);
               updateNoLlmModeVisibility();
-              fitHeight();
+              fitHeight2();
             };
           }
         }
         updateNoLlmModeVisibility();
-        fitHeight();
+        fitHeight2();
+        const f1StyleTransferWidget = (_d2 = node.widgets) == null ? void 0 : _d2.find((w) => w.name === "f1_style_transfer");
+        if (f1StyleTransferWidget && !f1StyleTransferWidget._cbHooked) {
+          f1StyleTransferWidget._cbHooked = true;
+          const origF1Cb = f1StyleTransferWidget.callback;
+          f1StyleTransferWidget.callback = function(...args) {
+            origF1Cb == null ? void 0 : origF1Cb.apply(this, args);
+            updateNoLlmModeVisibility();
+            fitHeight2();
+          };
+        }
       };
       const customWidget = (_b = this.widgets) == null ? void 0 : _b.find((w) => w.name === "custom_model");
       const apiKeyWidget = (_c = this.widgets) == null ? void 0 : _c.find((w) => w.name === "api_key");
@@ -344,100 +362,448 @@ function registerAgentNode(nodeType, nodeData) {
         doUpdateLlmVisibility();
       };
     }
-    const saveWidget = (_h = this.widgets) == null ? void 0 : _h.find((w) => w.name === "save_output");
-    const outputPathWidget = (_i = this.widgets) == null ? void 0 : _i.find((w) => w.name === "output_path");
-    if (saveWidget && outputPathWidget) {
-      let updateSaveVisibility = function() {
-        toggleWidget(outputPathWidget, Boolean(saveWidget.value));
-        fitHeight();
-      };
-      updateSaveVisibility();
-      const origSaveCb = saveWidget.callback;
-      saveWidget.callback = function(...args) {
-        origSaveCb == null ? void 0 : origSaveCb.apply(this, args);
-        updateSaveVisibility();
-      };
+    const alwaysHidden = [
+      "video_path",
+      "save_output",
+      "output_path",
+      "preview_mode",
+      "crf",
+      "encoding_preset",
+      "batch_mode",
+      "video_folder",
+      "file_pattern",
+      "max_concurrent"
+    ];
+    for (const name of alwaysHidden) {
+      const w = (_h = this.widgets) == null ? void 0 : _h.find((ww) => ww.name === name);
+      if (w) toggleWidget$1(w, false);
     }
-    const advancedWidget = (_j = this.widgets) == null ? void 0 : _j.find((w) => w.name === "advanced_options");
-    const previewWidget = (_k = this.widgets) == null ? void 0 : _k.find((w) => w.name === "preview_mode");
-    const crfWidget = (_l = this.widgets) == null ? void 0 : _l.find((w) => w.name === "crf");
-    const encodingWidget = (_m = this.widgets) == null ? void 0 : _m.find((w) => w.name === "encoding_preset");
-    const subtitleWidget = (_n = this.widgets) == null ? void 0 : _n.find((w) => w.name === "subtitle_path");
-    (_o = this.widgets) == null ? void 0 : _o.find((w) => w.name === "use_vision");
-    (_p = this.widgets) == null ? void 0 : _p.find((w) => w.name === "verify_output");
-    (_q = this.widgets) == null ? void 0 : _q.find((w) => w.name === "whisper_device");
-    (_r = this.widgets) == null ? void 0 : _r.find((w) => w.name === "whisper_model");
-    const sam3MaxObjWidget = (_s = this.widgets) == null ? void 0 : _s.find((w) => w.name === "sam3_max_objects");
-    const sam3ThreshWidget = (_t = this.widgets) == null ? void 0 : _t.find((w) => w.name === "sam3_det_threshold");
-    const maskTypeWidget = (_u = this.widgets) == null ? void 0 : _u.find((w) => w.name === "mask_output_type");
-    const batchWidget = (_v = this.widgets) == null ? void 0 : _v.find((w) => w.name === "batch_mode");
-    const folderWidget = (_w = this.widgets) == null ? void 0 : _w.find((w) => w.name === "video_folder");
-    const patternWidget = (_x = this.widgets) == null ? void 0 : _x.find((w) => w.name === "file_pattern");
-    const concurrentWidget = (_y = this.widgets) == null ? void 0 : _y.find((w) => w.name === "max_concurrent");
-    const trackTokensWidget = (_z = this.widgets) == null ? void 0 : _z.find((w) => w.name === "track_tokens");
-    const logUsageWidget = (_A = this.widgets) == null ? void 0 : _A.find((w) => w.name === "log_usage");
-    const allowDownloadsWidget = (_B = this.widgets) == null ? void 0 : _B.find((w) => w.name === "allow_model_downloads");
-    const fluxSmoothingWidget = (_C = this.widgets) == null ? void 0 : _C.find((w) => w.name === "flux_smoothing");
-    const mmaudioModeWidget = (_D = this.widgets) == null ? void 0 : _D.find((w) => w.name === "mmaudio_mode");
-    (_E = this.widgets) == null ? void 0 : _E.find((w) => w.name === "marigold_output_type");
-    (_F = this.widgets) == null ? void 0 : _F.find((w) => w.name === "video_depth_encoder");
-    (_G = this.widgets) == null ? void 0 : _G.find((w) => w.name === "video_depth_colormap");
+    const advancedWidget = (_i = this.widgets) == null ? void 0 : _i.find((w) => w.name === "advanced_options");
+    (_j = this.widgets) == null ? void 0 : _j.find((w) => w.name === "subtitle_path");
+    (_k = this.widgets) == null ? void 0 : _k.find((w) => w.name === "use_vision");
+    (_l = this.widgets) == null ? void 0 : _l.find((w) => w.name === "verify_output");
+    (_m = this.widgets) == null ? void 0 : _m.find((w) => w.name === "whisper_device");
+    (_n = this.widgets) == null ? void 0 : _n.find((w) => w.name === "whisper_model");
+    (_o = this.widgets) == null ? void 0 : _o.find((w) => w.name === "sam3_max_objects");
+    (_p = this.widgets) == null ? void 0 : _p.find((w) => w.name === "sam3_det_threshold");
+    (_q = this.widgets) == null ? void 0 : _q.find((w) => w.name === "mask_output_type");
+    (_r = this.widgets) == null ? void 0 : _r.find((w) => w.name === "batch_mode");
+    (_s = this.widgets) == null ? void 0 : _s.find((w) => w.name === "video_folder");
+    (_t = this.widgets) == null ? void 0 : _t.find((w) => w.name === "file_pattern");
+    (_u = this.widgets) == null ? void 0 : _u.find((w) => w.name === "max_concurrent");
+    const trackTokensWidget = (_v = this.widgets) == null ? void 0 : _v.find((w) => w.name === "track_tokens");
+    const logUsageWidget = (_w = this.widgets) == null ? void 0 : _w.find((w) => w.name === "log_usage");
+    const allowDownloadsWidget = (_x = this.widgets) == null ? void 0 : _x.find((w) => w.name === "allow_model_downloads");
+    (_y = this.widgets) == null ? void 0 : _y.find((w) => w.name === "flux_smoothing");
+    (_z = this.widgets) == null ? void 0 : _z.find((w) => w.name === "audio_output_mode");
+    (_A = this.widgets) == null ? void 0 : _A.find((w) => w.name === "marigold_output_type");
+    (_B = this.widgets) == null ? void 0 : _B.find((w) => w.name === "video_depth_encoder");
+    (_C = this.widgets) == null ? void 0 : _C.find((w) => w.name === "video_depth_colormap");
     function updateNoLlmModeVisibility() {
-      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2;
+      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o2, _p2, _q2, _r2, _s2, _t2, _u2, _v2, _w2, _x2, _y2, _z2, _A2, _B2, _C2, _D2, _E2, _F2, _G2, _H2, _I2, _J2, _K2, _L2, _M, _N, _O, _P, _Q, _R, _S, _T, _U, _V, _W, _X, _Y, _Z, __, _$, _aa, _ba, _ca, _da, _ea, _fa, _ga, _ha, _ia;
       const adv = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "advanced_options");
       const showAdvanced = Boolean(adv == null ? void 0 : adv.value);
       const llm = (_b2 = node.widgets) == null ? void 0 : _b2.find((w) => w.name === "llm_model");
       const isNone = (llm == null ? void 0 : llm.value) === "none";
       const noLlmMode = (_c2 = node.widgets) == null ? void 0 : _c2.find((w) => w.name === "no_llm_mode");
-      const mode = isNone ? String((noLlmMode == null ? void 0 : noLlmMode.value) ?? "manual") : "";
+      const rawMode = isNone ? String((noLlmMode == null ? void 0 : noLlmMode.value) ?? "manual") : "";
+      const mode = rawMode.replace(/\s*\([^)]*\)\s*$/, "");
       const showMarigold = showAdvanced && mode === "marigold";
       const showVda = showAdvanced && mode === "video_depth";
       const showUpscale = showAdvanced && mode === "ai_upscale";
       const showRembg = showAdvanced && mode === "rembg";
       const showWhisper = showAdvanced && (mode === "transcribe" || mode === "karaoke_subtitles");
+      const showAceStep = showAdvanced && mode === "ace_step";
+      const showOnionSkin = showAdvanced && mode === "onion_skin";
+      const showComparison = showAdvanced && mode === "comparison";
+      const showSamAudio = showAdvanced && mode === "audio_separate";
+      const showNormalcrafter = showAdvanced && mode === "normalcrafter";
+      const showFluxKleinMode = showAdvanced && mode === "flux_klein";
+      const showKiwiEdit = showAdvanced && mode === "kiwi_edit";
+      const showDreamidOmni = showAdvanced && mode === "dreamid_omni";
+      const showScail2 = showAdvanced && mode === "scail2";
+      const showFoundation1 = showAdvanced && mode === "foundation1";
+      const showFishSpeech = showAdvanced && mode === "fish_speech";
+      const showSharp = showAdvanced && mode === "sharp";
+      const showWanAnimate = showAdvanced && mode === "wan_animate";
+      const showSapiens2 = showAdvanced && mode === "sapiens2";
       const mw = (_d2 = node.widgets) == null ? void 0 : _d2.find((w) => w.name === "marigold_output_type");
-      const ve = (_e2 = node.widgets) == null ? void 0 : _e2.find((w) => w.name === "video_depth_encoder");
-      const vc = (_f2 = node.widgets) == null ? void 0 : _f2.find((w) => w.name === "video_depth_colormap");
-      const um = (_g2 = node.widgets) == null ? void 0 : _g2.find((w) => w.name === "upscale_model");
-      const us = (_h2 = node.widgets) == null ? void 0 : _h2.find((w) => w.name === "upscale_scale");
-      const rm = (_i2 = node.widgets) == null ? void 0 : _i2.find((w) => w.name === "rembg_model");
-      const rb = (_j2 = node.widgets) == null ? void 0 : _j2.find((w) => w.name === "rembg_background");
-      const wd = (_k2 = node.widgets) == null ? void 0 : _k2.find((w) => w.name === "whisper_device");
-      const wm = (_l2 = node.widgets) == null ? void 0 : _l2.find((w) => w.name === "whisper_model");
-      if (mw) toggleWidget(mw, showMarigold);
-      if (ve) toggleWidget(ve, showVda);
-      if (vc) toggleWidget(vc, showVda);
-      if (um) toggleWidget(um, showUpscale);
-      if (us) toggleWidget(us, showUpscale);
-      if (rm) toggleWidget(rm, showRembg);
-      if (rb) toggleWidget(rb, showRembg);
-      if (wd) toggleWidget(wd, showWhisper);
-      if (wm) toggleWidget(wm, showWhisper);
+      const mc = (_e2 = node.widgets) == null ? void 0 : _e2.find((w) => w.name === "marigold_colormap");
+      if (mw) toggleWidget$1(mw, showMarigold);
+      if (mc) toggleWidget$1(mc, showMarigold && String(mw == null ? void 0 : mw.value) === "depth");
+      const ve = (_f2 = node.widgets) == null ? void 0 : _f2.find((w) => w.name === "video_depth_encoder");
+      const vc = (_g2 = node.widgets) == null ? void 0 : _g2.find((w) => w.name === "video_depth_colormap");
+      if (ve) toggleWidget$1(ve, showVda);
+      if (vc) toggleWidget$1(vc, showVda);
+      const um = (_h2 = node.widgets) == null ? void 0 : _h2.find((w) => w.name === "upscale_model");
+      const us = (_i2 = node.widgets) == null ? void 0 : _i2.find((w) => w.name === "upscale_scale");
+      const sr = (_j2 = node.widgets) == null ? void 0 : _j2.find((w) => w.name === "seedvr_resolution");
+      const bb = (_k2 = node.widgets) == null ? void 0 : _k2.find((w) => w.name === "blockswap_blocks");
+      const fp = (_l2 = node.widgets) == null ? void 0 : _l2.find((w) => w.name === "flashvsr_processing");
+      const fw = (_m2 = node.widgets) == null ? void 0 : _m2.find((w) => w.name === "flashvsr_frame_window");
+      const fcf = (_n2 = node.widgets) == null ? void 0 : _n2.find((w) => w.name === "flashvsr_color_fix");
+      const fdt = (_o2 = node.widgets) == null ? void 0 : _o2.find((w) => w.name === "flashvsr_decode_tile");
+      const rq = (_p2 = node.widgets) == null ? void 0 : _p2.find((w) => w.name === "rtx_quality");
+      if (um) toggleWidget$1(um, showUpscale);
+      const modelVal = String((um == null ? void 0 : um.value) ?? "");
+      const isSeedvr = showUpscale && modelVal.startsWith("seedvr2");
+      const isRtxVsr = showUpscale && modelVal === "rtx_vsr";
+      const isFlashvsr = showUpscale && modelVal.startsWith("flashvsr");
+      const isGanModel = showUpscale && !isSeedvr && !isRtxVsr;
+      if (us) toggleWidget$1(us, isGanModel || isRtxVsr || isFlashvsr);
+      if (sr) toggleWidget$1(sr, isSeedvr);
+      if (bb) toggleWidget$1(bb, isSeedvr || isFlashvsr);
+      if (fp) toggleWidget$1(fp, isFlashvsr);
+      if (fw) toggleWidget$1(fw, isFlashvsr && String(fp == null ? void 0 : fp.value) === "temporal");
+      if (fcf) toggleWidget$1(fcf, isFlashvsr);
+      if (fdt) toggleWidget$1(fdt, isFlashvsr);
+      if (rq) toggleWidget$1(rq, isRtxVsr);
+      const isDiffusionUpscaler = isSeedvr || isFlashvsr;
+      const vt = (_q2 = node.widgets) == null ? void 0 : _q2.find((w) => w.name === "vae_tiling");
+      const vtp = (_r2 = node.widgets) == null ? void 0 : _r2.find((w) => w.name === "vae_tile_preset");
+      const vts = (_s2 = node.widgets) == null ? void 0 : _s2.find((w) => w.name === "vae_tile_size");
+      const vto = (_t2 = node.widgets) == null ? void 0 : _t2.find((w) => w.name === "vae_tile_overlap");
+      if (vt) toggleWidget$1(vt, isDiffusionUpscaler);
+      if (vtp) toggleWidget$1(vtp, isDiffusionUpscaler && Boolean(vt == null ? void 0 : vt.value));
+      const showCustomTile = isDiffusionUpscaler && Boolean(vt == null ? void 0 : vt.value) && String(vtp == null ? void 0 : vtp.value) === "custom";
+      if (vts) toggleWidget$1(vts, showCustomTile);
+      if (vto) toggleWidget$1(vto, showCustomTile);
+      const rm = (_u2 = node.widgets) == null ? void 0 : _u2.find((w) => w.name === "rembg_model");
+      const rb = (_v2 = node.widgets) == null ? void 0 : _v2.find((w) => w.name === "rembg_background");
+      if (rm) toggleWidget$1(rm, showRembg);
+      if (rb) toggleWidget$1(rb, showRembg);
+      const wd = (_w2 = node.widgets) == null ? void 0 : _w2.find((w) => w.name === "whisper_device");
+      const wm = (_x2 = node.widgets) == null ? void 0 : _x2.find((w) => w.name === "whisper_model");
+      if (wd) toggleWidget$1(wd, showWhisper);
+      if (wm) toggleWidget$1(wm, showWhisper);
+      const sam = (_y2 = node.widgets) == null ? void 0 : _y2.find((w) => w.name === "sam_audio_model");
+      if (sam) toggleWidget$1(sam, showSamAudio);
+      const nc = (_z2 = node.widgets) == null ? void 0 : _z2.find((w) => w.name === "normalcrafter_max_res");
+      if (nc) toggleWidget$1(nc, showNormalcrafter);
+      const fluxKleinWidgetNames = [
+        "flux_image_source",
+        "flux_klein_steps",
+        "flux_klein_guidance",
+        "flux_klein_seed",
+        "flux_klein_width",
+        "flux_klein_height"
+      ];
+      for (const wn of fluxKleinWidgetNames) {
+        const w = (_A2 = node.widgets) == null ? void 0 : _A2.find((w2) => w2.name === wn);
+        if (w) toggleWidget$1(w, showFluxKleinMode);
+      }
+      const kiwiWidgetNames = [
+        "kiwi_model",
+        "kiwi_precision",
+        "kiwi_resolution",
+        "kiwi_max_frames",
+        "kiwi_steps",
+        "kiwi_guidance",
+        "kiwi_block_swap",
+        "kiwi_long_video",
+        "kiwi_seed",
+        "kiwi_flow_shift",
+        "kiwi_task_type",
+        "kiwi_scheduler"
+      ];
+      for (const name of kiwiWidgetNames) {
+        const w = (_B2 = node.widgets) == null ? void 0 : _B2.find((ww) => ww.name === name);
+        if (w) toggleWidget$1(w, showKiwiEdit);
+      }
+      const kiwiRes = (_C2 = node.widgets) == null ? void 0 : _C2.find((ww) => ww.name === "kiwi_resolution");
+      const showKiwiCustom = showKiwiEdit && String(kiwiRes == null ? void 0 : kiwiRes.value) === "custom";
+      const kw = (_D2 = node.widgets) == null ? void 0 : _D2.find((ww) => ww.name === "kiwi_width");
+      const kh = (_E2 = node.widgets) == null ? void 0 : _E2.find((ww) => ww.name === "kiwi_height");
+      if (kw) toggleWidget$1(kw, showKiwiCustom);
+      if (kh) toggleWidget$1(kh, showKiwiCustom);
+      const dreamidWidgetNames = [
+        "dreamid_precision",
+        "dreamid_resolution",
+        "dreamid_steps",
+        "dreamid_seed",
+        "dreamid_solver",
+        "dreamid_video_cfg",
+        "dreamid_video_ref_cfg",
+        "dreamid_audio_cfg",
+        "dreamid_audio_ref_cfg"
+      ];
+      for (const name of dreamidWidgetNames) {
+        const w = (_F2 = node.widgets) == null ? void 0 : _F2.find((ww) => ww.name === name);
+        if (w) toggleWidget$1(w, showDreamidOmni);
+      }
+      const scail2WidgetNames = [
+        "scail2_width",
+        "scail2_height",
+        "scail2_length",
+        "scail2_pose_extend",
+        "scail2_steps",
+        "scail2_cfg",
+        "scail2_shift",
+        "scail2_seed",
+        "scail2_sampler",
+        "scail2_scheduler",
+        "scail2_denoise",
+        "scail2_replacement_mode",
+        "scail2_sort_by",
+        "scail2_object_indices",
+        "scail2_subject",
+        "scail2_max_objects",
+        "scail2_detection_threshold",
+        "scail2_detect_interval",
+        "scail2_point_src_width",
+        "scail2_point_src_height",
+        "scail2_composite_direction",
+        "scail2_main_reference",
+        "scail2_color_match",
+        "scail2_blockswap_blocks",
+        "scail2_tiled_vae"
+      ];
+      for (const name of scail2WidgetNames) {
+        const w = (_G2 = node.widgets) == null ? void 0 : _G2.find((ww) => ww.name === name);
+        if (w) toggleWidget$1(w, showScail2);
+      }
+      let showNextScail2Lora = showScail2;
+      for (const slot of ["a", "b", "c", "d"]) {
+        const loraW = (_H2 = node.widgets) == null ? void 0 : _H2.find((ww) => ww.name === `scail2_lora_${slot}`);
+        const strW = (_I2 = node.widgets) == null ? void 0 : _I2.find((ww) => ww.name === `scail2_lora_strength_${slot}`);
+        if (loraW) toggleWidget$1(loraW, showNextScail2Lora);
+        if (strW) toggleWidget$1(strW, showNextScail2Lora && String((loraW == null ? void 0 : loraW.value) ?? "none") !== "none");
+        showNextScail2Lora = showNextScail2Lora && String((loraW == null ? void 0 : loraW.value) ?? "none") !== "none";
+      }
+      const showSvi = showAdvanced && mode === "svi";
+      const sviWidgetNames = [
+        "svi_num_clips",
+        "svi_height",
+        "svi_width",
+        "svi_fps",
+        "svi_cfg_scale",
+        "svi_overlap_frames",
+        "svi_seed_multiplier",
+        "svi_steps",
+        "svi_high_model_ratio",
+        "svi_frames_per_clip",
+        "svi_variant",
+        "svi_model_high",
+        "svi_model_low",
+        "svi_lora_high",
+        "svi_lora_low",
+        "svi_extra_lora_high",
+        "svi_extra_lora_low",
+        "svi_vae",
+        "svi_text_encoder",
+        "svi_sampler",
+        "svi_scheduler",
+        "svi_blockswap_blocks",
+        "svi_tiled_vae"
+      ];
+      for (const name of sviWidgetNames) {
+        const w = (_J2 = node.widgets) == null ? void 0 : _J2.find((ww) => ww.name === name);
+        if (w) toggleWidget$1(w, showSvi);
+      }
+      const sharpWidgetNames = [
+        "sharp_trajectory",
+        "sharp_num_frames",
+        "sharp_max_disparity",
+        "sharp_max_zoom",
+        "sharp_save_ply",
+        "sharp_device"
+      ];
+      for (const name of sharpWidgetNames) {
+        const w = (_K2 = node.widgets) == null ? void 0 : _K2.find((ww) => ww.name === name);
+        if (w) toggleWidget$1(w, showSharp);
+      }
+      const wanAnimateWidgetNames = [
+        "wan_animate_mode",
+        "wan_animate_steps",
+        "wan_animate_guidance",
+        "wan_animate_seed",
+        "wan_animate_num_frames",
+        "wan_animate_height",
+        "wan_animate_width",
+        "wan_animate_pose_strength",
+        "wan_animate_face_strength"
+      ];
+      for (const name of wanAnimateWidgetNames) {
+        const w = (_L2 = node.widgets) == null ? void 0 : _L2.find((ww) => ww.name === name);
+        if (w) toggleWidget$1(w, showWanAnimate);
+      }
+      const wanLoraSlots = ["a", "b", "c", "d"];
+      let showNextLora = showWanAnimate;
+      for (const slot of wanLoraSlots) {
+        const loraW = (_M = node.widgets) == null ? void 0 : _M.find((ww) => ww.name === `wan_animate_lora_${slot}`);
+        const strW = (_N = node.widgets) == null ? void 0 : _N.find((ww) => ww.name === `wan_animate_lora_strength_${slot}`);
+        if (loraW) toggleWidget$1(loraW, showNextLora);
+        if (strW) toggleWidget$1(strW, showNextLora && String((loraW == null ? void 0 : loraW.value) ?? "none") !== "none");
+        showNextLora = showNextLora && String((loraW == null ? void 0 : loraW.value) ?? "none") !== "none";
+      }
+      const aceWidgetNames = [
+        "ace_negative_prompt",
+        "ace_cover_strength",
+        "ace_steps",
+        "ace_cfg_scale",
+        "ace_bpm",
+        "ace_key",
+        "ace_time_sig"
+      ];
+      for (const name of aceWidgetNames) {
+        const w = (_O = node.widgets) == null ? void 0 : _O.find((ww) => ww.name === name);
+        if (w) toggleWidget$1(w, showAceStep);
+      }
+      const f1WidgetNames = [
+        "f1_preset",
+        "f1_instrument",
+        "f1_fx",
+        "f1_structure",
+        "f1_negative_prompt",
+        "f1_bpm",
+        "f1_bars",
+        "f1_key",
+        "f1_duration",
+        "f1_steps",
+        "f1_cfg_scale",
+        "f1_style_transfer"
+      ];
+      for (const name of f1WidgetNames) {
+        const w = (_P = node.widgets) == null ? void 0 : _P.find((ww) => ww.name === name);
+        if (w) toggleWidget$1(w, showFoundation1);
+      }
+      const f1StyleWidget = (_Q = node.widgets) == null ? void 0 : _Q.find((w) => w.name === "f1_style_transfer");
+      const f1NoiseWidget = (_R = node.widgets) == null ? void 0 : _R.find((w) => w.name === "f1_noise_level");
+      if (f1NoiseWidget) toggleWidget$1(f1NoiseWidget, showFoundation1 && Boolean(f1StyleWidget == null ? void 0 : f1StyleWidget.value));
+      const fishWidgetNames = [
+        "fish_model_variant",
+        "fish_voice",
+        "fish_emotion",
+        "fish_temperature",
+        "fish_top_p",
+        "fish_repetition_penalty"
+      ];
+      for (const name of fishWidgetNames) {
+        const w = (_S = node.widgets) == null ? void 0 : _S.find((ww) => ww.name === name);
+        if (w) toggleWidget$1(w, showFishSpeech);
+      }
+      const onionWidgetNames = ["onion_blend_mode", "onion_opacity", "onion_decay"];
+      for (const name of onionWidgetNames) {
+        const w = (_T = node.widgets) == null ? void 0 : _T.find((ww) => ww.name === name);
+        if (w) toggleWidget$1(w, showOnionSkin);
+      }
+      const comparisonWidgetNames = [
+        "comparison_style",
+        "comparison_labels",
+        "comparison_label_a",
+        "comparison_label_b"
+      ];
+      for (const name of comparisonWidgetNames) {
+        const w = (_U = node.widgets) == null ? void 0 : _U.find((ww) => ww.name === name);
+        if (w) toggleWidget$1(w, showComparison);
+      }
+      const showPhyfps = showAdvanced && mode === "phyfps";
+      const phyfpsActionW = (_V = node.widgets) == null ? void 0 : _V.find((w) => w.name === "phyfps_action");
+      if (phyfpsActionW) toggleWidget$1(phyfpsActionW, showPhyfps);
+      const showMatting = showAdvanced && mode === "video_matting";
+      const mattingWidgetNames = [
+        "matting_output",
+        "matting_background",
+        "matting_max_size"
+      ];
+      for (const name of mattingWidgetNames) {
+        const w = (_W = node.widgets) == null ? void 0 : _W.find((ww) => ww.name === name);
+        if (w) toggleWidget$1(w, showMatting);
+      }
+      const showLivePortrait = showAdvanced && mode === "animate_portrait";
+      const lpWidgetNames = [
+        "lp_rotate_pitch",
+        "lp_rotate_yaw",
+        "lp_rotate_roll",
+        "lp_blink",
+        "lp_eyebrow",
+        "lp_wink",
+        "lp_pupil_x",
+        "lp_pupil_y",
+        "lp_aaa",
+        "lp_eee",
+        "lp_woo",
+        "lp_smile",
+        "lp_retargeting_eyes",
+        "lp_retargeting_mouth",
+        "lp_crop_factor",
+        "lp_expression_preset",
+        "lp_save_expression",
+        "lp_sample_image",
+        "lp_sample_ratio",
+        "lp_sample_parts"
+      ];
+      for (const name of lpWidgetNames) {
+        const w = (_X = node.widgets) == null ? void 0 : _X.find((ww) => ww.name === name);
+        if (w) toggleWidget$1(w, showLivePortrait);
+      }
+      const sapiens2TaskWidget = (_Y = node.widgets) == null ? void 0 : _Y.find((w) => w.name === "sapiens2_task");
+      const sapiens2SizeWidget = (_Z = node.widgets) == null ? void 0 : _Z.find((w) => w.name === "sapiens2_size");
+      if (sapiens2TaskWidget) toggleWidget$1(sapiens2TaskWidget, showSapiens2);
+      if (sapiens2SizeWidget) toggleWidget$1(sapiens2SizeWidget, showSapiens2);
+      const sapiens2Task = String((sapiens2TaskWidget == null ? void 0 : sapiens2TaskWidget.value) ?? "pose");
+      const showSapiensSegAlpha = showSapiens2 && sapiens2Task === "seg";
+      const showSapiensPose = showSapiens2 && sapiens2Task === "pose";
+      const segAlpha = (__ = node.widgets) == null ? void 0 : __.find((w) => w.name === "sapiens2_seg_alpha");
+      if (segAlpha) toggleWidget$1(segAlpha, showSapiensSegAlpha);
+      for (const wName of ["sapiens2_pose_kpt_thr", "sapiens2_pose_radius", "sapiens2_pose_thickness"]) {
+        const w = (_$ = node.widgets) == null ? void 0 : _$.find((ww) => ww.name === wName);
+        if (w) toggleWidget$1(w, showSapiensPose);
+      }
+      const sam3EligibleModes = /* @__PURE__ */ new Set([
+        "lip_sync",
+        "animate_portrait",
+        "marigold",
+        "normalcrafter",
+        "video_depth",
+        "flux_klein",
+        "kiwi_edit",
+        "minimax_remover",
+        "ai_upscale",
+        "rembg",
+        "onion_skin",
+        "comparison"
+      ]);
+      const showUseSam3 = showAdvanced && sam3EligibleModes.has(mode);
+      const useSam3Widget = (_aa = node.widgets) == null ? void 0 : _aa.find((w) => w.name === "use_sam3");
+      if (useSam3Widget) toggleWidget$1(useSam3Widget, showUseSam3);
+      const useSam3On = showUseSam3 && Boolean(useSam3Widget == null ? void 0 : useSam3Widget.value);
+      const showSam3 = showAdvanced && (!isNone || mode === "sam3_masking" || useSam3On);
+      for (const wName of ["sam3_max_objects", "sam3_det_threshold", "mask_output_type"]) {
+        const w = (_ba = node.widgets) == null ? void 0 : _ba.find((ww) => ww.name === wName);
+        if (w) toggleWidget$1(w, showSam3);
+      }
+      const showLlmToggles = showAdvanced && !isNone;
+      for (const wName of ["use_flux_klein", "use_kiwi_edit", "use_minimax_remover", "use_dreamid_omni"]) {
+        const w = (_ca = node.widgets) == null ? void 0 : _ca.find((ww) => ww.name === wName);
+        if (w) toggleWidget$1(w, showLlmToggles);
+      }
+      const fluxKleinWidget = (_da = node.widgets) == null ? void 0 : _da.find((w) => w.name === "use_flux_klein");
+      const fsw = (_ea = node.widgets) == null ? void 0 : _ea.find((w) => w.name === "flux_smoothing");
+      if (fsw) toggleWidget$1(fsw, showLlmToggles && Boolean(fluxKleinWidget == null ? void 0 : fluxKleinWidget.value));
+      const fkm = (_fa = node.widgets) == null ? void 0 : _fa.find((w) => w.name === "flux_klein_model");
+      if (fkm) toggleWidget$1(fkm, showFluxKleinMode || showLlmToggles && Boolean(fluxKleinWidget == null ? void 0 : fluxKleinWidget.value));
+      const _AUDIO_MODES = /* @__PURE__ */ new Set(["generate_audio", "generate_music", "foundation1", "fish_speech", "audio_inpaint", "audio_separate", "ace_step"]);
+      const showAudioMode = showAdvanced && (!isNone || _AUDIO_MODES.has(mode));
+      const mmw = (_ga = node.widgets) == null ? void 0 : _ga.find((w) => w.name === "audio_output_mode");
+      if (mmw) toggleWidget$1(mmw, showAudioMode);
+      const showResample = showAdvanced && mode === "manual";
+      const arw = (_ha = node.widgets) == null ? void 0 : _ha.find((w) => w.name === "audio_resample_rate");
+      if (arw) toggleWidget$1(arw, showResample);
+      const showSubtitle = showAdvanced && (!isNone || mode === "manual" || mode === "transcribe" || mode === "karaoke_subtitles");
+      const sw = (_ia = node.widgets) == null ? void 0 : _ia.find((w) => w.name === "subtitle_path");
+      if (sw) toggleWidget$1(sw, showSubtitle);
     }
     function updateAdvancedVisibility() {
       var _a2;
       const show = Boolean(advancedWidget == null ? void 0 : advancedWidget.value);
-      if (previewWidget) toggleWidget(previewWidget, show);
-      if (subtitleWidget) toggleWidget(subtitleWidget, show);
-      if (crfWidget) toggleWidget(crfWidget, show);
-      if (encodingWidget) toggleWidget(encodingWidget, show);
-      if (sam3MaxObjWidget) toggleWidget(sam3MaxObjWidget, show);
-      if (sam3ThreshWidget) toggleWidget(sam3ThreshWidget, show);
-      if (maskTypeWidget) toggleWidget(maskTypeWidget, show);
-      const fluxKleinWidget = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "use_flux_klein");
-      const showFlux = show && Boolean(fluxKleinWidget == null ? void 0 : fluxKleinWidget.value);
-      if (fluxSmoothingWidget) toggleWidget(fluxSmoothingWidget, showFlux);
-      if (mmaudioModeWidget) toggleWidget(mmaudioModeWidget, show);
-      if (batchWidget) toggleWidget(batchWidget, show);
-      const showBatch = show && Boolean(batchWidget == null ? void 0 : batchWidget.value);
-      if (folderWidget) toggleWidget(folderWidget, showBatch);
-      if (patternWidget) toggleWidget(patternWidget, showBatch);
-      if (concurrentWidget) toggleWidget(concurrentWidget, showBatch);
-      if (trackTokensWidget) toggleWidget(trackTokensWidget, show);
-      if (logUsageWidget) toggleWidget(logUsageWidget, show);
-      if (allowDownloadsWidget) toggleWidget(allowDownloadsWidget, show);
+      const llm = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "llm_model");
+      const isNone = (llm == null ? void 0 : llm.value) === "none";
+      if (trackTokensWidget) toggleWidget$1(trackTokensWidget, show && !isNone);
+      if (logUsageWidget) toggleWidget$1(logUsageWidget, show && !isNone);
+      if (allowDownloadsWidget) toggleWidget$1(allowDownloadsWidget, show);
       updateNoLlmModeVisibility();
-      fitHeight();
+      fitHeight2();
     }
     if (advancedWidget) {
       updateAdvancedVisibility();
@@ -447,7 +813,7 @@ function registerAgentNode(nodeType, nodeData) {
         updateAdvancedVisibility();
       };
     }
-    const fluxKleinToggle = (_H = this.widgets) == null ? void 0 : _H.find((w) => w.name === "use_flux_klein");
+    const fluxKleinToggle = (_D = this.widgets) == null ? void 0 : _D.find((w) => w.name === "use_flux_klein");
     if (fluxKleinToggle) {
       const origFluxCb = fluxKleinToggle.callback;
       fluxKleinToggle.callback = function(...args) {
@@ -455,20 +821,74 @@ function registerAgentNode(nodeType, nodeData) {
         updateAdvancedVisibility();
       };
     }
-    if (batchWidget) {
-      let updateBatchVisibility = function() {
-        const showAdvanced = Boolean((advancedWidget == null ? void 0 : advancedWidget.value) ?? true);
-        const show = Boolean(batchWidget.value) && showAdvanced;
-        if (folderWidget) toggleWidget(folderWidget, show);
-        if (patternWidget) toggleWidget(patternWidget, show);
-        if (concurrentWidget) toggleWidget(concurrentWidget, show);
-        fitHeight();
+    const useSam3Toggle = (_E = this.widgets) == null ? void 0 : _E.find((w) => w.name === "use_sam3");
+    if (useSam3Toggle) {
+      const origSam3Cb = useSam3Toggle.callback;
+      useSam3Toggle.callback = function(...args) {
+        origSam3Cb == null ? void 0 : origSam3Cb.apply(this, args);
+        updateAdvancedVisibility();
       };
-      updateBatchVisibility();
-      const origBatchCb = batchWidget.callback;
-      batchWidget.callback = function(...args) {
-        origBatchCb == null ? void 0 : origBatchCb.apply(this, args);
-        updateBatchVisibility();
+    }
+    const upscaleModelToggle = (_F = this.widgets) == null ? void 0 : _F.find((w) => w.name === "upscale_model");
+    if (upscaleModelToggle) {
+      const origUpscaleCb = upscaleModelToggle.callback;
+      upscaleModelToggle.callback = function(...args) {
+        origUpscaleCb == null ? void 0 : origUpscaleCb.apply(this, args);
+        updateAdvancedVisibility();
+      };
+    }
+    const flashvsrProcToggle = (_G = this.widgets) == null ? void 0 : _G.find((w) => w.name === "flashvsr_processing");
+    if (flashvsrProcToggle) {
+      const origFvCb = flashvsrProcToggle.callback;
+      flashvsrProcToggle.callback = function(...args) {
+        origFvCb == null ? void 0 : origFvCb.apply(this, args);
+        updateAdvancedVisibility();
+      };
+    }
+    for (const wName of ["vae_tiling", "vae_tile_preset"]) {
+      const vaeTileW = (_H = this.widgets) == null ? void 0 : _H.find((w) => w.name === wName);
+      if (vaeTileW) {
+        const origVaeCb = vaeTileW.callback;
+        vaeTileW.callback = function(...args) {
+          origVaeCb == null ? void 0 : origVaeCb.apply(this, args);
+          updateAdvancedVisibility();
+        };
+      }
+    }
+    const kiwiResolutionToggle = (_I = this.widgets) == null ? void 0 : _I.find((w) => w.name === "kiwi_resolution");
+    if (kiwiResolutionToggle) {
+      const origKiwiResCb = kiwiResolutionToggle.callback;
+      kiwiResolutionToggle.callback = function(...args) {
+        origKiwiResCb == null ? void 0 : origKiwiResCb.apply(this, args);
+        updateAdvancedVisibility();
+      };
+    }
+    for (const slot of ["a", "b", "c", "d"]) {
+      const wanLoraSlotW = (_J = this.widgets) == null ? void 0 : _J.find((w) => w.name === `wan_animate_lora_${slot}`);
+      if (wanLoraSlotW) {
+        const origCb = wanLoraSlotW.callback;
+        wanLoraSlotW.callback = function(...args) {
+          origCb == null ? void 0 : origCb.apply(this, args);
+          updateAdvancedVisibility();
+        };
+      }
+    }
+    for (const slot of ["a", "b", "c", "d"]) {
+      const scail2LoraSlotW = (_K = this.widgets) == null ? void 0 : _K.find((w) => w.name === `scail2_lora_${slot}`);
+      if (scail2LoraSlotW) {
+        const origCb = scail2LoraSlotW.callback;
+        scail2LoraSlotW.callback = function(...args) {
+          origCb == null ? void 0 : origCb.apply(this, args);
+          updateAdvancedVisibility();
+        };
+      }
+    }
+    const marigoldTypeWidget = (_L = this.widgets) == null ? void 0 : _L.find((w) => w.name === "marigold_output_type");
+    if (marigoldTypeWidget) {
+      const origMtCb = marigoldTypeWidget.callback;
+      marigoldTypeWidget.callback = function(...args) {
+        origMtCb == null ? void 0 : origMtCb.apply(this, args);
+        updateAdvancedVisibility();
       };
     }
     const origOnConnectionsChange = this.onConnectionsChange;
@@ -481,7 +901,7 @@ function registerAgentNode(nodeType, nodeData) {
         updateDynamicSlots(this, "video_", "STRING", ["video_path", "video_folder"]);
         updateDynamicSlots(this, "image_path_", "STRING", []);
         updateDynamicSlots(this, "text_", "STRING", []);
-        fitHeight();
+        fitHeight2();
       }
     };
     const origOnConfigure = this.onConfigure;
@@ -528,7 +948,7 @@ function registerAgentNode(nodeType, nodeData) {
       function restoreVisibility() {
         updateAdvancedVisibility();
         if (updateLlmVisibility) updateLlmVisibility();
-        fitHeight();
+        fitHeight2();
       }
       restoreVisibility();
       setTimeout(restoreVisibility, 0);
@@ -602,7 +1022,7 @@ function registerAgentNode(nodeType, nodeData) {
     );
   };
 }
-const VIDEO_ACCEPT$1 = [
+const VIDEO_ACCEPT$2 = [
   "video/webm",
   "video/mp4",
   "video/x-matroska",
@@ -630,7 +1050,7 @@ const VIDEO_EXTENSIONS$1 = [
   "gif"
 ];
 const WATCH_WIDGETS = ["video_path", "start_time", "duration", "fps", "max_frames"];
-const PASSTHROUGH_EVENTS$1 = [
+const PASSTHROUGH_EVENTS$2 = [
   "contextmenu",
   "pointerdown",
   "mousewheel",
@@ -651,7 +1071,7 @@ function registerFrameExtractNode(nodeType, nodeData) {
     const node = this;
     this.color = "#2a4a5a";
     this.bgcolor = "#1a3a4a";
-    const { fileInput, uploadBtn, updateBtnStyle: updateUploadBtn } = createUploadButton(VIDEO_ACCEPT$1);
+    const { fileInput, uploadBtn, updateBtnStyle: updateUploadBtn } = createUploadButton(VIDEO_ACCEPT$2);
     document.body.append(fileInput);
     this.addDOMWidget("upload_button", "btn", uploadBtn, {
       serialize: false
@@ -700,7 +1120,7 @@ function registerFrameExtractNode(nodeType, nodeData) {
     previewContainer.appendChild(videoEl);
     previewContainer.appendChild(infoEl);
     addDownloadOverlay(previewContainer, videoEl);
-    for (const evt of PASSTHROUGH_EVENTS$1) {
+    for (const evt of PASSTHROUGH_EVENTS$2) {
       previewContainer.addEventListener(evt, (e) => {
         e.stopPropagation();
       }, true);
@@ -939,7 +1359,7 @@ function registerFrameExtractNode(nodeType, nodeData) {
               }
               updateUploadBtn();
             }
-          }, 100);
+          }, 500);
         }
         return true;
       }
@@ -947,6 +1367,10 @@ function registerFrameExtractNode(nodeType, nodeData) {
     };
     this.onDragDrop = async (e) => {
       var _a, _b, _c, _d, _e, _f;
+      if (uploadBtn._dragTimeout) {
+        clearTimeout(uploadBtn._dragTimeout);
+        delete uploadBtn._dragTimeout;
+      }
       if (!((_c = (_b = (_a = e == null ? void 0 : e.dataTransfer) == null ? void 0 : _a.types) == null ? void 0 : _b.includes) == null ? void 0 : _c.call(_b, "Files"))) return false;
       const file = (_e = (_d = e.dataTransfer) == null ? void 0 : _d.files) == null ? void 0 : _e[0];
       if (!file) return false;
@@ -962,7 +1386,7 @@ function registerFrameExtractNode(nodeType, nodeData) {
     return result;
   };
 }
-const VIDEO_ACCEPT = [
+const VIDEO_ACCEPT$1 = [
   "video/webm",
   "video/mp4",
   "video/x-matroska",
@@ -990,7 +1414,23 @@ const VIDEO_EXTENSIONS = [
   "gif"
 ];
 const TRIM_WIDGETS = ["force_rate", "skip_first_frames", "frame_load_cap", "select_every_nth"];
-const PASSTHROUGH_EVENTS = [
+const MASK_WIDGETS = [
+  "mask_mode",
+  "mask_output_type",
+  "sam_version",
+  "show_mask_preview"
+];
+const LEGACY_SHIFTED_WIDGETS = [
+  "enable_mask",
+  "mask_mode",
+  "mask_output_type",
+  "sam_version",
+  "show_mask_preview",
+  "custom_width",
+  "custom_height"
+];
+const UPLOAD_BTN_HEIGHT = 26;
+const PASSTHROUGH_EVENTS$1 = [
   "contextmenu",
   "pointerdown",
   "mousewheel",
@@ -1007,57 +1447,81 @@ function registerLoadVideoNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGALoadVideoPath") return;
   const onNodeCreated = nodeType.prototype.onNodeCreated;
   nodeType.prototype.onNodeCreated = function() {
-    var _a;
+    var _a, _b, _c;
     const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
     const node = this;
     this.color = "#5a4a2a";
     this.bgcolor = "#4a3a1a";
-    const _syncDynamicOutputs = () => {
-      const imagesIn = node.findInputSlot("images");
-      const audioIn = node.findInputSlot("audio");
-      const anyConnected = imagesIn >= 0 && node.inputs[imagesIn].link != null || audioIn >= 0 && node.inputs[audioIn].link != null;
-      const imagesOut = node.findOutputSlot("images");
-      const audioOut = node.findOutputSlot("audio");
-      const hasOutputs = imagesOut >= 0 || audioOut >= 0;
-      if (anyConnected && !hasOutputs) {
-        node.addOutput("images", "IMAGE");
-        node.addOutput("audio", "AUDIO");
-      } else if (!anyConnected && hasOutputs) {
-        const aIdx = node.findOutputSlot("audio");
-        if (aIdx >= 0) node.removeOutput(aIdx);
-        const iIdx = node.findOutputSlot("images");
-        if (iIdx >= 0) node.removeOutput(iIdx);
+    const updateMaskVisibility = () => {
+      var _a2, _b2;
+      const enableMask = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "enable_mask");
+      const show = Boolean(enableMask == null ? void 0 : enableMask.value);
+      for (const name of MASK_WIDGETS) {
+        const w = (_b2 = node.widgets) == null ? void 0 : _b2.find((ww) => ww.name === name);
+        if (w) toggleWidget$2(w, show);
       }
-      node.setDirtyCanvas(true, true);
+      fitHeight(node);
     };
-    requestAnimationFrame(() => {
-      const aIdx = node.findOutputSlot("audio");
-      if (aIdx >= 0) node.removeOutput(aIdx);
-      const iIdx = node.findOutputSlot("images");
-      if (iIdx >= 0) node.removeOutput(iIdx);
-      node.setDirtyCanvas(true, true);
-    });
-    const origOnCC = this.onConnectionsChange;
-    this.onConnectionsChange = function(type, slotIndex, isConnected, link, ioSlot) {
-      var _a2, _b;
-      origOnCC == null ? void 0 : origOnCC.apply(this, arguments);
-      if (type === LiteGraph.INPUT) {
-        const name = (_b = (_a2 = this.inputs) == null ? void 0 : _a2[slotIndex]) == null ? void 0 : _b.name;
-        if (name === "images" || name === "audio") {
-          _syncDynamicOutputs();
-        }
+    const enableMaskWidget = (_a = this.widgets) == null ? void 0 : _a.find(
+      (w) => w.name === "enable_mask"
+    );
+    if (enableMaskWidget) {
+      updateMaskVisibility();
+      const origMaskCb = enableMaskWidget.callback;
+      enableMaskWidget.callback = function(...args) {
+        origMaskCb == null ? void 0 : origMaskCb.apply(this, args);
+        updateMaskVisibility();
+      };
+    }
+    const repairLegacyWidgetShift = () => {
+      const widgets = node.widgets;
+      if (!widgets) return;
+      const shifted = LEGACY_SHIFTED_WIDGETS.map(
+        (name) => widgets.find((w) => w.name === name)
+      );
+      const enableMask = shifted[0];
+      if (!enableMask || typeof enableMask.value !== "string") return;
+      const loaded = shifted.map((w) => w == null ? void 0 : w.value);
+      for (let i = shifted.length - 1; i > 0; i--) {
+        const w = shifted[i];
+        if (w) w.value = loaded[i - 1];
       }
+      enableMask.value = String(loaded[0]) !== "none";
     };
     const origConfigure = this.onConfigure;
     this.onConfigure = function(data) {
+      var _a2;
       origConfigure == null ? void 0 : origConfigure.apply(this, arguments);
-      requestAnimationFrame(_syncDynamicOutputs);
+      repairLegacyWidgetShift();
+      if (this.widgets) {
+        const staticCombos = ["mask_mode", "mask_output_type"];
+        const intWidgets = ["custom_width", "custom_height"];
+        for (const w of this.widgets) {
+          const wType = w._origType ?? w.type;
+          if (wType === "combo" && staticCombos.includes(w.name) && ((_a2 = w.options) == null ? void 0 : _a2.values)) {
+            const validValues = w.options.values;
+            if (validValues.length > 0 && !validValues.includes(String(w.value))) {
+              w.value = validValues[0];
+            }
+          }
+          if (intWidgets.includes(w.name)) {
+            const v = w.value;
+            if (v === "" || v === null || v === void 0 || isNaN(Number(v))) {
+              w.value = 0;
+            }
+          }
+        }
+      }
+      updateMaskVisibility();
     };
-    const { fileInput, uploadBtn, updateBtnStyle: updateBtn } = createUploadButton(VIDEO_ACCEPT);
+    const { fileInput, uploadBtn, updateBtnStyle: updateBtn } = createUploadButton(VIDEO_ACCEPT$1);
     document.body.append(fileInput);
-    this.addDOMWidget("upload_button", "btn", uploadBtn, {
+    uploadBtn.style.height = `${UPLOAD_BTN_HEIGHT}px`;
+    uploadBtn.style.boxSizing = "border-box";
+    const uploadWidget = this.addDOMWidget("upload_button", "btn", uploadBtn, {
       serialize: false
     });
+    uploadWidget.computeSize = () => [0, UPLOAD_BTN_HEIGHT];
     const previewContainer = document.createElement("div");
     previewContainer.className = "ffmpega_preview";
     previewContainer.style.cssText = "width:100%;background:#1a1a1a;border-radius:6px;overflow:hidden;position:relative;";
@@ -1070,67 +1534,104 @@ function registerLoadVideoNode(nodeType, nodeData) {
     let _srcMeta = null;
     let _effAvailFrames = 0;
     let _effFps = 0;
-    let _effSkipFirst = 0;
-    let _effInfoText = "";
+    let _effEveryNth = 1;
+    let _infoHead = [];
+    let _infoTail = [];
+    let _infoOfSrc = "";
     const infoEl = document.createElement("div");
     infoEl.style.cssText = "padding:4px 8px;font-size:11px;color:#aaa;font-family:monospace;background:#111;";
     infoEl.textContent = "No video selected";
     infoEl.setAttribute("role", "status");
     infoEl.setAttribute("aria-live", "polite");
+    const setTrimLabel = (name, suffix) => {
+      var _a2;
+      const w = (_a2 = node.widgets) == null ? void 0 : _a2.find((ww) => ww.name === name);
+      if (!w) return;
+      if (suffix) {
+        w.label = `${w.name} · ${suffix}`;
+      } else {
+        delete w.label;
+      }
+    };
+    const clearTrimLabels = () => {
+      setTrimLabel("skip_first_frames", null);
+      setTrimLabel("frame_load_cap", null);
+      node.setDirtyCanvas(true, true);
+    };
     const updateDynamicInfo = () => {
-      var _a2, _b, _c, _d, _e, _f, _g, _h;
+      var _a2, _b2, _c2, _d, _e, _f, _g, _h;
       if (!_srcMeta) {
         infoEl.textContent = "No video selected";
+        clearTrimLabels();
         return;
       }
-      const forceRate = ((_b = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "force_rate")) == null ? void 0 : _b.value) ?? 0;
-      const skipFirst = ((_d = (_c = node.widgets) == null ? void 0 : _c.find((w) => w.name === "skip_first_frames")) == null ? void 0 : _d.value) ?? 0;
+      const forceRate = ((_b2 = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "force_rate")) == null ? void 0 : _b2.value) ?? 0;
+      const skipFirst = ((_d = (_c2 = node.widgets) == null ? void 0 : _c2.find((w) => w.name === "skip_first_frames")) == null ? void 0 : _d.value) ?? 0;
       const frameCap = ((_f = (_e = node.widgets) == null ? void 0 : _e.find((w) => w.name === "frame_load_cap")) == null ? void 0 : _f.value) ?? 0;
       const everyNth = ((_h = (_g = node.widgets) == null ? void 0 : _g.find((w) => w.name === "select_every_nth")) == null ? void 0 : _h.value) ?? 1;
       const srcFps = _srcMeta.fps || 24;
       const srcDuration = _srcMeta.duration || 0;
       const srcFrames = _srcMeta.frames || Math.round(srcDuration * srcFps);
       const effFps = forceRate > 0 ? forceRate : srcFps;
-      let availFrames = forceRate > 0 ? Math.ceil(srcDuration * forceRate) : srcFrames;
-      availFrames = Math.max(0, availFrames - skipFirst);
-      if (everyNth > 1) {
-        availFrames = Math.max(0, Math.floor(availFrames / everyNth));
-      }
-      if (frameCap > 0) {
-        availFrames = Math.min(availFrames, frameCap);
-      }
+      const baseFrames = forceRate > 0 ? Math.ceil(srcDuration * forceRate) : srcFrames;
+      const afterSkip = Math.max(0, baseFrames - skipFirst);
+      const afterNth = everyNth > 1 ? Math.max(0, Math.floor(afterSkip / everyNth)) : afterSkip;
+      const availFrames = frameCap > 0 ? Math.min(afterNth, frameCap) : afterNth;
+      setTrimLabel("skip_first_frames", `${afterSkip} left`);
+      setTrimLabel(
+        "frame_load_cap",
+        frameCap > 0 ? `${afterNth - availFrames} left` : `all ${afterNth}`
+      );
+      node.setDirtyCanvas(true, true);
       const effDuration = effFps > 0 && availFrames > 0 ? availFrames / effFps : srcDuration;
       const startTime = effFps > 0 ? skipFirst / effFps : 0;
-      const parts = [];
+      const head = [];
       if (_srcMeta.width && _srcMeta.height) {
-        parts.push(`${_srcMeta.width}×${_srcMeta.height}`);
+        head.push(`${_srcMeta.width}×${_srcMeta.height}`);
       }
       if (forceRate > 0 && forceRate !== srcFps) {
-        parts.push(`${srcFps}fps → ${forceRate}fps`);
+        head.push(`${srcFps}fps → ${forceRate}fps`);
       } else {
-        parts.push(`${srcFps}fps`);
+        head.push(`${srcFps}fps`);
       }
-      if (availFrames !== srcFrames) {
-        parts.push(`${availFrames} frames (of ${srcFrames})`);
-      } else {
-        parts.push(`${availFrames} frames`);
-      }
+      const tail = [];
       if (Math.abs(effDuration - srcDuration) > 0.1) {
-        parts.push(`${formatTimeLV(effDuration)} (of ${formatTimeLV(srcDuration)})`);
+        tail.push(`${formatTimeLV(effDuration)} (of ${formatTimeLV(srcDuration)})`);
       } else {
-        parts.push(formatTimeLV(srcDuration));
+        tail.push(formatTimeLV(srcDuration));
       }
       if (startTime > 0.05) {
-        parts.push(`from ${formatTimeLV(startTime)}`);
+        tail.push(`from ${formatTimeLV(startTime)}`);
       }
-      infoEl.textContent = parts.join(" • ");
-      _effInfoText = infoEl.textContent;
+      _infoHead = head;
+      _infoTail = tail;
+      _infoOfSrc = availFrames !== srcFrames ? ` (of ${srcFrames})` : "";
       _effAvailFrames = availFrames;
       _effFps = effFps;
-      _effSkipFirst = skipFirst;
+      _effEveryNth = everyNth;
+      paintInfo();
+    };
+    const buildInfoText = (currentFrame, playing = false) => {
+      if (!_srcMeta) return "No video selected";
+      if (currentFrame === void 0) {
+        return [
+          ..._infoHead,
+          `${_effAvailFrames} frames${_infoOfSrc}`,
+          ..._infoTail
+        ].join(" • ");
+      }
+      const marker = playing ? "▶ " : "";
+      return [
+        `${marker}${currentFrame}/${_effAvailFrames}f${_infoOfSrc}`,
+        ..._infoHead,
+        ..._infoTail
+      ].join(" • ");
+    };
+    const paintInfo = (currentFrame, playing = false) => {
+      infoEl.textContent = buildInfoText(currentFrame, playing);
     };
     videoEl.addEventListener("loadedmetadata", () => {
-      var _a2, _b;
+      var _a2, _b2;
       previewWidget.aspectRatio = videoEl.videoWidth / videoEl.videoHeight;
       _srcMeta = {
         width: videoEl.videoWidth,
@@ -1159,7 +1660,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
         node.size[0],
         node.computeSize([node.size[0], node.size[1]])[1]
       ]);
-      (_b = node == null ? void 0 : node.graph) == null ? void 0 : _b.setDirtyCanvas(true);
+      (_b2 = node == null ? void 0 : node.graph) == null ? void 0 : _b2.setDirtyCanvas(true);
     });
     videoEl.addEventListener("error", () => {
       var _a2;
@@ -1174,46 +1675,53 @@ function registerLoadVideoNode(nodeType, nodeData) {
     const lvWidgetValues = {};
     let _playStart = 0;
     let _playEnd = Infinity;
-    videoEl.addEventListener("timeupdate", () => {
-      if (_playEnd < Infinity && videoEl.currentTime >= _playEnd) {
-        videoEl.currentTime = _playStart;
-      }
-      if (_srcMeta && _srcMeta.fps > 0 && _effAvailFrames > 0 && _effInfoText) {
-        const elapsed = Math.max(0, videoEl.currentTime - _playStart);
-        const curFrame = Math.min(
-          Math.floor(elapsed * _effFps) + 1,
+    let _lastTime = 0;
+    const detachPlayhead = attachPlayheadTracker(
+      videoEl,
+      (time, playing, cause) => {
+        if (cause === "frame" && playing && _playEnd < Infinity && time >= _playEnd && _lastTime < _playEnd) {
+          videoEl.currentTime = _playStart;
+          _lastTime = _playStart;
+          return;
+        }
+        _lastTime = time;
+        if (!_srcMeta || _effAvailFrames <= 0) return;
+        const frame = frameAtTime(
+          time - _playStart,
+          _effFps,
+          _effEveryNth,
           _effAvailFrames
         );
-        const srcFrame = curFrame + _effSkipFirst;
-        infoEl.textContent = `▶ ${curFrame}/${_effAvailFrames} (src frame ${srcFrame}) • ${_effInfoText}`;
+        paintInfo(frame > 0 ? frame : void 0, playing);
       }
-    });
+    );
     const updatePlaybackRange = () => {
-      var _a2, _b, _c, _d, _e, _f, _g, _h;
-      if (!_srcMeta || !_srcMeta.fps) return;
-      const forceRate = ((_b = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "force_rate")) == null ? void 0 : _b.value) ?? 0;
-      const skipFirst = ((_d = (_c = node.widgets) == null ? void 0 : _c.find((w) => w.name === "skip_first_frames")) == null ? void 0 : _d.value) ?? 0;
+      var _a2, _b2, _c2, _d, _e, _f, _g, _h;
+      if (!_srcMeta) return;
+      const forceRate = ((_b2 = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "force_rate")) == null ? void 0 : _b2.value) ?? 0;
+      const skipFirst = ((_d = (_c2 = node.widgets) == null ? void 0 : _c2.find((w) => w.name === "skip_first_frames")) == null ? void 0 : _d.value) ?? 0;
       const frameCap = ((_f = (_e = node.widgets) == null ? void 0 : _e.find((w) => w.name === "frame_load_cap")) == null ? void 0 : _f.value) ?? 0;
       const everyNth = ((_h = (_g = node.widgets) == null ? void 0 : _g.find((w) => w.name === "select_every_nth")) == null ? void 0 : _h.value) ?? 1;
-      const srcFps = _srcMeta.fps;
+      const srcFps = _srcMeta.fps || 24;
       const effFps = forceRate > 0 ? forceRate : srcFps;
+      const prevStart = _playStart;
       _playStart = effFps > 0 ? skipFirst / effFps : 0;
       let availFrames = forceRate > 0 ? Math.ceil(_srcMeta.duration * forceRate) : _srcMeta.frames || Math.round(_srcMeta.duration * srcFps);
       availFrames = Math.max(0, availFrames - skipFirst);
       if (everyNth > 1) availFrames = Math.floor(availFrames / everyNth);
       if (frameCap > 0) availFrames = Math.min(availFrames, frameCap);
-      if (effFps > 0 && availFrames > 0) {
-        _playEnd = _playStart + availFrames / effFps;
-      } else {
-        _playEnd = Infinity;
-      }
+      _playEnd = rangeEndSeconds(_playStart, availFrames, everyNth, effFps);
       if (isFinite(_playEnd) && _playEnd > _srcMeta.duration) {
         _playEnd = _srcMeta.duration;
       }
-      if (isFinite(_playStart) && _playStart < videoEl.duration) {
+      if (_playStart !== prevStart && isFinite(_playStart) && _playStart < videoEl.duration) {
         videoEl.currentTime = _playStart;
       }
     };
+    for (const name of TRIM_WIDGETS) {
+      const w = (_b = node.widgets) == null ? void 0 : _b.find((ww) => ww.name === name);
+      if (w) lvWidgetValues[name] = w.value;
+    }
     const lvPollInterval = setInterval(() => {
       var _a2;
       if (!node.graph) {
@@ -1236,10 +1744,154 @@ function registerLoadVideoNode(nodeType, nodeData) {
         }, 300);
       }
     }, 500);
-    previewContainer.appendChild(videoEl);
+    const videoWrapper = document.createElement("div");
+    videoWrapper.style.cssText = "position:relative;width:100%;";
+    videoWrapper.appendChild(videoEl);
+    previewContainer.appendChild(videoWrapper);
     previewContainer.appendChild(infoEl);
+    const maskOverlayCanvas = document.createElement("canvas");
+    maskOverlayCanvas.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:2;display:none;";
+    videoWrapper.appendChild(maskOverlayCanvas);
+    const dropOverlay = document.createElement("div");
+    dropOverlay.style.cssText = "position:absolute;inset:0;display:none;z-index:20;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:rgba(74,106,138,0.18);border:2px dashed #4a6a8a;border-radius:6px;color:#cfe3f5;font-family:monospace;font-size:12px;pointer-events:none;";
+    dropOverlay.innerHTML = `<span style="font-size:22px" aria-hidden="true">🎞</span><span>Drop video to load</span>`;
+    previewContainer.appendChild(dropOverlay);
+    let _maskOverlayVisible = false;
+    let _maskOverlayDataHash = "";
+    const showMaskOverlay = () => {
+      if (_maskOverlayVisible) {
+        maskOverlayCanvas.style.display = "block";
+      }
+    };
+    const hideMaskOverlay = () => {
+      maskOverlayCanvas.style.display = "none";
+    };
+    const drawMaskOverlay = (maskImg) => {
+      const w = videoEl.videoWidth || maskImg.naturalWidth;
+      const h = videoEl.videoHeight || maskImg.naturalHeight;
+      if (!w || !h) return;
+      maskOverlayCanvas.width = w;
+      maskOverlayCanvas.height = h;
+      const ctx = maskOverlayCanvas.getContext("2d");
+      if (!ctx) return;
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(maskImg, 0, 0, w, h);
+      const imgData = ctx.getImageData(0, 0, w, h);
+      for (let i = 0; i < imgData.data.length; i += 4) {
+        const val = imgData.data[i];
+        if (val > 128) {
+          imgData.data[i] = 0;
+          imgData.data[i + 1] = 0;
+          imgData.data[i + 2] = 0;
+          imgData.data[i + 3] = 0;
+        } else {
+          imgData.data[i] = 0;
+          imgData.data[i + 1] = 0;
+          imgData.data[i + 2] = 0;
+          imgData.data[i + 3] = 140;
+        }
+      }
+      ctx.putImageData(imgData, 0, 0);
+      _maskOverlayVisible = true;
+      showMaskOverlay();
+    };
+    const refreshMaskOverlay = () => {
+      var _a2, _b2, _c2, _d, _e;
+      const enableWidget = (_a2 = node.widgets) == null ? void 0 : _a2.find(
+        (w) => w.name === "enable_mask"
+      );
+      const showWidget = (_b2 = node.widgets) == null ? void 0 : _b2.find(
+        (w) => w.name === "show_mask_preview"
+      );
+      const showMask = Boolean(enableWidget == null ? void 0 : enableWidget.value) && (showWidget == null ? void 0 : showWidget.value) !== false;
+      const mpWidget = (_c2 = node.widgets) == null ? void 0 : _c2.find(
+        (w) => w.name === "mask_points_data"
+      );
+      const maskData = (mpWidget == null ? void 0 : mpWidget.value) ? String(mpWidget.value) : "";
+      if (!showMask || !maskData || maskData === "undefined") {
+        _maskOverlayVisible = false;
+        hideMaskOverlay();
+        _maskOverlayDataHash = "";
+        return;
+      }
+      const hash = maskData.slice(0, 100) + maskData.length;
+      if (hash === _maskOverlayDataHash) return;
+      _maskOverlayDataHash = hash;
+      try {
+        const ptData = JSON.parse(maskData);
+        if (ptData.mode === "draw" && ptData.mask_data) {
+          const img = new Image();
+          img.onload = () => drawMaskOverlay(img);
+          img.src = "data:image/png;base64," + ptData.mask_data;
+        } else if (((_d = ptData.points) == null ? void 0 : _d.length) > 0 || ptData.box) {
+          const vidWidget = (_e = node.widgets) == null ? void 0 : _e.find(
+            (w) => w.name === "video"
+          );
+          if (!(vidWidget == null ? void 0 : vidWidget.value)) return;
+          fetch("/ffmpega/first_frame", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              video_path: "input/" + String(vidWidget.value)
+            })
+          }).then((r) => r.json()).then((info) => {
+            const body = {
+              frame_path: info.frame_path || "",
+              points: ptData.points || [],
+              labels: ptData.labels || [],
+              image_width: ptData.image_width || 0,
+              image_height: ptData.image_height || 0,
+              multi_object: ptData.mask_multi_object || false,
+              edge_refine: ptData.mask_edge_refine ?? false
+            };
+            if (ptData.box) body.box = ptData.box;
+            return fetch("/ffmpega/sam3_point_mask", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body)
+            });
+          }).then((r) => r.json()).then((data) => {
+            if (data.raw_mask_b64) {
+              const img = new Image();
+              img.onload = () => drawMaskOverlay(img);
+              img.src = "data:image/png;base64," + data.raw_mask_b64;
+            }
+          }).catch(() => {
+          });
+        }
+      } catch {
+      }
+    };
+    videoEl.addEventListener("play", hideMaskOverlay);
+    videoEl.addEventListener("pause", showMaskOverlay);
+    videoEl.addEventListener("ended", showMaskOverlay);
+    videoEl.addEventListener("loadedmetadata", () => {
+      setTimeout(refreshMaskOverlay, 500);
+    });
+    let _maskPollHash = "";
+    const maskPollInterval = setInterval(() => {
+      var _a2, _b2, _c2;
+      if (!node.graph) {
+        clearInterval(maskPollInterval);
+        return;
+      }
+      const enableW = (_a2 = node.widgets) == null ? void 0 : _a2.find(
+        (w) => w.name === "enable_mask"
+      );
+      const showW = (_b2 = node.widgets) == null ? void 0 : _b2.find(
+        (w) => w.name === "show_mask_preview"
+      );
+      const mpW = (_c2 = node.widgets) == null ? void 0 : _c2.find(
+        (w) => w.name === "mask_points_data"
+      );
+      const pollHash = `${enableW == null ? void 0 : enableW.value}|${showW == null ? void 0 : showW.value}|${(mpW == null ? void 0 : mpW.value) ? String(mpW.value).length : 0}`;
+      if (pollHash !== _maskPollHash) {
+        _maskPollHash = pollHash;
+        refreshMaskOverlay();
+      }
+    }, 1e3);
     addDownloadOverlay(previewContainer, videoEl);
-    for (const evt of PASSTHROUGH_EVENTS) {
+    for (const evt of PASSTHROUGH_EVENTS$1) {
       previewContainer.addEventListener(evt, (e) => {
         e.stopPropagation();
       }, true);
@@ -1268,10 +1920,12 @@ function registerLoadVideoNode(nodeType, nodeData) {
       return [width, 34];
     };
     const updatePreview = (filename) => {
+      _effAvailFrames = 0;
       if (!filename) {
         previewContainer.style.display = "none";
         infoEl.textContent = "No video selected";
         _srcMeta = null;
+        clearTrimLabels();
         return;
       }
       previewContainer.style.display = "";
@@ -1294,12 +1948,17 @@ function registerLoadVideoNode(nodeType, nodeData) {
       ]);
       (_a2 = node == null ? void 0 : node.graph) == null ? void 0 : _a2.setDirtyCanvas(true);
     };
-    const videoWidget = (_a = this.widgets) == null ? void 0 : _a.find(
+    const videoWidget = (_c = this.widgets) == null ? void 0 : _c.find(
       (w) => w.name === "video"
     );
     const origOnRemoved = this.onRemoved;
     this.onRemoved = function() {
       clearInterval(lvPollInterval);
+      clearInterval(maskPollInterval);
+      if (_dragTimer) clearTimeout(_dragTimer);
+      detachPlayhead();
+      detachPreviewDrop();
+      detachButtonDrop();
       fileInput == null ? void 0 : fileInput.remove();
       origOnRemoved == null ? void 0 : origOnRemoved.apply(this, arguments);
     };
@@ -1331,12 +1990,19 @@ function registerLoadVideoNode(nodeType, nodeData) {
       const body = new FormData();
       body.append("image", file);
       try {
-        const resp = await fetch("/upload/image", {
+        const resp = await api.fetchApi("/upload/image", {
           method: "POST",
           body
         });
         if (resp.status !== 200) {
-          showError("Upload failed: " + resp.statusText);
+          const detail = await resp.text().catch(() => "");
+          console.error(
+            "FFMPEGA: video upload failed",
+            resp.status,
+            resp.statusText,
+            detail
+          );
+          showError(`Upload failed (${resp.status}): ${resp.statusText}`);
           return false;
         }
         const data = await resp.json();
@@ -1351,7 +2017,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
         updatePreview(filename);
         return true;
       } catch (err) {
-        console.warn("FFMPEGA: Video upload failed", err);
+        console.error("FFMPEGA: video upload threw", err);
         showError("Upload error: " + err);
         return false;
       } finally {
@@ -1364,61 +2030,83 @@ function registerLoadVideoNode(nodeType, nodeData) {
         await handleUpload(fileInput.files[0]);
       }
     };
-    this.onDragOver = (e) => {
-      var _a2, _b, _c;
-      if ((_c = (_b = (_a2 = e == null ? void 0 : e.dataTransfer) == null ? void 0 : _a2.types) == null ? void 0 : _b.includes) == null ? void 0 : _c.call(_b, "Files")) {
-        if (!uploadBtn.disabled) {
-          if (!Object.prototype.hasOwnProperty.call(uploadBtn, "_originalInnerHTML")) {
-            uploadBtn._originalInnerHTML = uploadBtn.innerHTML;
-          }
-          if (!Object.prototype.hasOwnProperty.call(uploadBtn, "_originalBorder")) {
-            uploadBtn._originalBorder = uploadBtn.style.border;
-          }
-          if (!Object.prototype.hasOwnProperty.call(uploadBtn, "_originalAriaLabel")) {
-            uploadBtn._originalAriaLabel = uploadBtn.getAttribute("aria-label");
-          }
-          uploadBtn.innerHTML = `<span aria-hidden="true">📂</span> Drop to Upload`;
-          uploadBtn.setAttribute("aria-label", "Drop to Upload");
-          uploadBtn.style.border = "1px dashed #4a6a8a";
-          uploadBtn.style.backgroundColor = "#333";
-          if (uploadBtn._dragTimeout) clearTimeout(uploadBtn._dragTimeout);
-          uploadBtn._dragTimeout = setTimeout(() => {
-            if (!uploadBtn.disabled) {
-              if (Object.prototype.hasOwnProperty.call(uploadBtn, "_originalInnerHTML")) {
-                uploadBtn.innerHTML = uploadBtn._originalInnerHTML;
-                delete uploadBtn._originalInnerHTML;
-              }
-              if (Object.prototype.hasOwnProperty.call(uploadBtn, "_originalBorder")) {
-                uploadBtn.style.border = uploadBtn._originalBorder;
-                delete uploadBtn._originalBorder;
-              }
-              if (Object.prototype.hasOwnProperty.call(uploadBtn, "_originalAriaLabel")) {
-                if (uploadBtn._originalAriaLabel) {
-                  uploadBtn.setAttribute("aria-label", uploadBtn._originalAriaLabel);
-                } else {
-                  uploadBtn.removeAttribute("aria-label");
-                }
-                delete uploadBtn._originalAriaLabel;
-              }
-              updateBtn();
-            }
-          }, 100);
-        }
-        return true;
-      }
-      return false;
+    const acceptVideoFile = (file) => {
+      var _a2;
+      const ext = (_a2 = file.name.split(".").pop()) == null ? void 0 : _a2.toLowerCase();
+      return !!ext && VIDEO_EXTENSIONS.includes(ext);
     };
-    this.onDragDrop = async (e) => {
-      var _a2, _b, _c, _d, _e, _f;
-      if (!((_c = (_b = (_a2 = e == null ? void 0 : e.dataTransfer) == null ? void 0 : _a2.types) == null ? void 0 : _b.includes) == null ? void 0 : _c.call(_b, "Files"))) return false;
-      const file = (_e = (_d = e.dataTransfer) == null ? void 0 : _d.files) == null ? void 0 : _e[0];
-      if (!file) return false;
-      const ext = (_f = file.name.split(".").pop()) == null ? void 0 : _f.toLowerCase();
-      if (!ext || !VIDEO_EXTENSIONS.includes(ext)) {
-        showError("Invalid file type: " + ext);
+    const rejectVideoFile = (file) => {
+      showError("Invalid file type: " + (file.name.split(".").pop() ?? ""));
+    };
+    const dropVideoFile = async (file) => {
+      if (!acceptVideoFile(file)) {
+        rejectVideoFile(file);
         return false;
       }
       return await handleUpload(file);
+    };
+    let _dragActive = false;
+    let _dragBtnHTML = "";
+    let _dragBtnBorder = "";
+    let _dragBtnAria = null;
+    let _dragTimer = null;
+    const setDragActive = (active) => {
+      if (_dragTimer) {
+        clearTimeout(_dragTimer);
+        _dragTimer = null;
+      }
+      if (active) {
+        _dragTimer = setTimeout(() => setDragActive(false), 400);
+      }
+      if (active === _dragActive) return;
+      if (active && uploadBtn.disabled) return;
+      _dragActive = active;
+      if (active) {
+        _dragBtnHTML = uploadBtn.innerHTML;
+        _dragBtnBorder = uploadBtn.style.border;
+        _dragBtnAria = uploadBtn.getAttribute("aria-label");
+        uploadBtn.innerHTML = `<span aria-hidden="true">📂</span> Drop to Upload`;
+        uploadBtn.setAttribute("aria-label", "Drop to Upload");
+        uploadBtn.style.border = "1px dashed #4a6a8a";
+        uploadBtn.style.backgroundColor = "#333";
+        dropOverlay.style.display = "flex";
+      } else {
+        if (!uploadBtn.disabled) {
+          uploadBtn.innerHTML = _dragBtnHTML;
+          uploadBtn.style.border = _dragBtnBorder;
+          if (_dragBtnAria) {
+            uploadBtn.setAttribute("aria-label", _dragBtnAria);
+          } else {
+            uploadBtn.removeAttribute("aria-label");
+          }
+          updateBtn();
+        }
+        dropOverlay.style.display = "none";
+      }
+    };
+    const dropZoneOpts = {
+      accept: acceptVideoFile,
+      onDrop: dropVideoFile,
+      onReject: rejectVideoFile,
+      onDragStateChange: setDragActive,
+      disabled: () => uploadBtn.disabled
+    };
+    const detachPreviewDrop = attachFileDropZone(previewContainer, dropZoneOpts);
+    const detachButtonDrop = attachFileDropZone(uploadBtn, dropZoneOpts);
+    this.onDragOver = (e) => {
+      var _a2, _b2, _c2;
+      if (!((_c2 = (_b2 = (_a2 = e == null ? void 0 : e.dataTransfer) == null ? void 0 : _a2.types) == null ? void 0 : _b2.includes) == null ? void 0 : _c2.call(_b2, "Files"))) return false;
+      setDragActive(true);
+      return true;
+    };
+    this.onDragDrop = async (e) => {
+      var _a2, _b2, _c2, _d, _e;
+      setDragActive(false);
+      if (!((_c2 = (_b2 = (_a2 = e == null ? void 0 : e.dataTransfer) == null ? void 0 : _a2.types) == null ? void 0 : _b2.includes) == null ? void 0 : _c2.call(_b2, "Files"))) return false;
+      if (uploadBtn.disabled) return true;
+      const file = (_e = (_d = e.dataTransfer) == null ? void 0 : _d.files) == null ? void 0 : _e[0];
+      if (!file) return false;
+      return await dropVideoFile(file);
     };
     if (videoWidget) {
       const origCallback = videoWidget.callback;
@@ -1432,7 +2120,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
     }
     const origOnExecuted = this.onExecuted;
     this.onExecuted = function(data) {
-      var _a2, _b;
+      var _a2, _b2;
       origOnExecuted == null ? void 0 : origOnExecuted.apply(this, arguments);
       if ((_a2 = data == null ? void 0 : data.video) == null ? void 0 : _a2[0]) {
         const v = data.video[0];
@@ -1445,7 +2133,7 @@ function registerLoadVideoNode(nodeType, nodeData) {
         previewContainer.style.display = "";
         videoEl.src = api.apiURL("/view?" + params.toString());
       }
-      if ((_b = data == null ? void 0 : data.video_info) == null ? void 0 : _b[0]) {
+      if ((_b2 = data == null ? void 0 : data.video_info) == null ? void 0 : _b2[0]) {
         const info = data.video_info[0];
         _srcMeta = {
           width: info.source_width || (_srcMeta == null ? void 0 : _srcMeta.width) || 0,
@@ -1462,10 +2150,323 @@ function registerLoadVideoNode(nodeType, nodeData) {
     return result;
   };
 }
+const VIDEO_ACCEPT = [
+  "video/webm",
+  "video/mp4",
+  "video/x-matroska",
+  "video/quicktime",
+  "video/x-msvideo"
+].join(",");
+const PASSTHROUGH_EVENTS = [
+  "contextmenu",
+  "pointerdown",
+  "mousewheel",
+  "pointermove",
+  "pointerup"
+];
+function registerLoadMaskVideoNode(nodeType, nodeData) {
+  if (nodeData.name !== "FFMPEGALoadMaskVideo") return;
+  const onNodeCreated = nodeType.prototype.onNodeCreated;
+  nodeType.prototype.onNodeCreated = function() {
+    var _a;
+    const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
+    const node = this;
+    this.color = "#3a3a5a";
+    this.bgcolor = "#2a2a4a";
+    const { fileInput, uploadBtn } = createUploadButton(VIDEO_ACCEPT);
+    document.body.append(fileInput);
+    this.addDOMWidget("upload_button", "btn", uploadBtn, { serialize: false });
+    const previewContainer = document.createElement("div");
+    previewContainer.className = "ffmpega_preview";
+    previewContainer.style.cssText = "width:100%;background:#1a1a1a;border-radius:6px;overflow:hidden;position:relative;";
+    const videoEl = document.createElement("video");
+    videoEl.controls = true;
+    videoEl.loop = true;
+    videoEl.muted = true;
+    videoEl.setAttribute("aria-label", "Mask video preview");
+    videoEl.style.cssText = "width:100%;display:block;";
+    const infoEl = document.createElement("div");
+    infoEl.style.cssText = "padding:4px 8px;font-size:11px;color:#aaa;font-family:monospace;background:#111;";
+    infoEl.textContent = "No mask video selected";
+    infoEl.setAttribute("role", "status");
+    videoEl.addEventListener("loadedmetadata", () => {
+      var _a2;
+      previewWidget.aspectRatio = videoEl.videoWidth / videoEl.videoHeight;
+      const w = videoEl.videoWidth;
+      const h = videoEl.videoHeight;
+      const d = videoEl.duration;
+      const parts = [];
+      if (w && h) parts.push(`${w}×${h}`);
+      if (d && isFinite(d)) {
+        const m = Math.floor(d / 60);
+        const s = (d % 60).toFixed(1);
+        parts.push(m > 0 ? `${m}m ${s}s` : `${s}s`);
+      }
+      infoEl.textContent = parts.length ? parts.join(" | ") : "Loaded";
+      node.setSize([
+        node.size[0],
+        node.computeSize([node.size[0], node.size[1]])[1]
+      ]);
+      (_a2 = node == null ? void 0 : node.graph) == null ? void 0 : _a2.setDirtyCanvas(true);
+    });
+    videoEl.addEventListener("error", () => {
+      var _a2;
+      previewContainer.style.display = "none";
+      node.setSize([
+        node.size[0],
+        node.computeSize([node.size[0], node.size[1]])[1]
+      ]);
+      (_a2 = node == null ? void 0 : node.graph) == null ? void 0 : _a2.setDirtyCanvas(true);
+    });
+    previewContainer.appendChild(videoEl);
+    previewContainer.appendChild(infoEl);
+    addDownloadOverlay(previewContainer, videoEl);
+    for (const evt of PASSTHROUGH_EVENTS) {
+      previewContainer.addEventListener(evt, (e) => {
+        e.stopPropagation();
+      }, true);
+    }
+    const previewWidget = this.addDOMWidget(
+      "videopreview",
+      "preview",
+      previewContainer,
+      {
+        serialize: false,
+        hideOnZoom: false,
+        getValue() {
+          return previewContainer.value;
+        },
+        setValue(v) {
+          previewContainer.value = v;
+        }
+      }
+    );
+    previewWidget.aspectRatio = null;
+    previewWidget.computeSize = function(width) {
+      if (this.aspectRatio && previewContainer.style.display !== "none") {
+        const h = (node.size[0] - 20) / this.aspectRatio + 10;
+        return [width, Math.max(h, 0) + 30];
+      }
+      return [width, -4];
+    };
+    const updatePreview = (filename) => {
+      if (!filename) {
+        previewContainer.style.display = "none";
+        infoEl.textContent = "No mask video selected";
+        return;
+      }
+      previewContainer.style.display = "";
+      const params = new URLSearchParams({
+        filename,
+        type: "input",
+        timestamp: String(Date.now())
+      });
+      videoEl.src = api.apiURL("/view?" + params.toString());
+      infoEl.textContent = "Loading...";
+    };
+    const handleUpload = async (file) => {
+      var _a2;
+      const body = new FormData();
+      body.append("image", file);
+      try {
+        const resp = await fetch("/upload/image", { method: "POST", body });
+        if (resp.status !== 200) return false;
+        const data = await resp.json();
+        const filename = data.name;
+        if (maskVideoWidget) {
+          if (!maskVideoWidget.options.values.includes(filename)) {
+            maskVideoWidget.options.values.push(filename);
+          }
+          maskVideoWidget.value = filename;
+          (_a2 = maskVideoWidget.callback) == null ? void 0 : _a2.call(maskVideoWidget, filename);
+        }
+        updatePreview(filename);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    fileInput.onchange = async () => {
+      var _a2;
+      if ((_a2 = fileInput.files) == null ? void 0 : _a2.length) {
+        await handleUpload(fileInput.files[0]);
+      }
+    };
+    const maskVideoWidget = (_a = this.widgets) == null ? void 0 : _a.find(
+      (w) => w.name === "mask_video"
+    );
+    if (maskVideoWidget) {
+      const origCallback = maskVideoWidget.callback;
+      maskVideoWidget.callback = function(value) {
+        origCallback == null ? void 0 : origCallback.apply(this, arguments);
+        updatePreview(value);
+      };
+      if (maskVideoWidget.value) {
+        setTimeout(() => updatePreview(maskVideoWidget.value), 100);
+      }
+    }
+    const origOnExecuted = this.onExecuted;
+    this.onExecuted = function(data) {
+      var _a2;
+      origOnExecuted == null ? void 0 : origOnExecuted.apply(this, arguments);
+      if ((_a2 = data == null ? void 0 : data.video) == null ? void 0 : _a2[0]) {
+        const v = data.video[0];
+        const params = new URLSearchParams({
+          filename: v.filename,
+          subfolder: v.subfolder || "",
+          type: v.type || "input",
+          timestamp: String(Date.now())
+        });
+        previewContainer.style.display = "";
+        videoEl.src = api.apiURL("/view?" + params.toString());
+      }
+    };
+    const origOnRemoved = this.onRemoved;
+    this.onRemoved = function() {
+      fileInput == null ? void 0 : fileInput.remove();
+      origOnRemoved == null ? void 0 : origOnRemoved.apply(this, arguments);
+    };
+    const getVideoUrl = () => videoEl.src || null;
+    addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, getVideoUrl);
+    return result;
+  };
+}
+const SOURCE_FORMAT = "source (no re-encode)";
+const ADVANCED_WIDGETS = [
+  "output_format",
+  "color_policy",
+  "crf",
+  "encode_preset",
+  "bit_depth",
+  "audio_codec",
+  "audio_bitrate",
+  "faststart",
+  "loop_count",
+  "pingpong",
+  "trim_to_audio",
+  "embed_workflow",
+  "frame_output"
+];
+const HIDDEN_BY_FORMAT = {
+  [SOURCE_FORMAT]: [
+    "crf",
+    "encode_preset",
+    "bit_depth",
+    "audio_codec",
+    "audio_bitrate",
+    "faststart",
+    "pingpong"
+  ],
+  "h264-mp4": [],
+  "h265-mp4": [],
+  "vp9-webm": ["encode_preset", "faststart"],
+  "av1-webm": ["encode_preset", "faststart"],
+  "prores-mov": ["crf", "encode_preset", "bit_depth", "faststart"],
+  "ffv1-mkv": ["crf", "encode_preset", "faststart"],
+  "gif": [
+    "crf",
+    "encode_preset",
+    "bit_depth",
+    "audio_codec",
+    "audio_bitrate",
+    "faststart",
+    "trim_to_audio"
+  ],
+  "webp": [
+    "encode_preset",
+    "bit_depth",
+    "audio_codec",
+    "audio_bitrate",
+    "faststart",
+    "trim_to_audio"
+  ]
+};
+function applyWidgetVisibility(node) {
+  var _a, _b;
+  const findWidget = (name) => {
+    var _a2;
+    return (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === name);
+  };
+  const advancedOpen = Boolean((_a = findWidget("show_advanced")) == null ? void 0 : _a.value);
+  const format = String(((_b = findWidget("output_format")) == null ? void 0 : _b.value) ?? SOURCE_FORMAT);
+  const hiddenForFormat = HIDDEN_BY_FORMAT[format] ?? [];
+  for (const name of ADVANCED_WIDGETS) {
+    const show = advancedOpen && !hiddenForFormat.includes(name);
+    toggleWidget$2(findWidget(name), show);
+  }
+  fitHeight(node);
+}
+const SAVED_VIDEO_PROP = "_ffmpega_saved_video";
+const APPLY_FN = "_ffmpegaApplySavedVideo";
+function packPreviewState(data) {
+  var _a, _b, _c, _d;
+  const v = (_a = data == null ? void 0 : data.video) == null ? void 0 : _a[0];
+  if (!(v == null ? void 0 : v.filename)) return null;
+  return {
+    filename: v.filename,
+    subfolder: v.subfolder || "",
+    type: v.type || "output",
+    file_size: (_b = data == null ? void 0 : data.file_size) == null ? void 0 : _b[0],
+    frame_count: ((_c = data == null ? void 0 : data.frame_count) == null ? void 0 : _c[0]) ?? 0,
+    fps: ((_d = data == null ? void 0 : data.fps) == null ? void 0 : _d[0]) ?? 0
+  };
+}
+function readPreviewState(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw;
+  if (typeof o.filename !== "string" || !o.filename) return null;
+  const num = (x) => typeof x === "number" && isFinite(x) ? x : void 0;
+  return {
+    filename: o.filename,
+    subfolder: typeof o.subfolder === "string" ? o.subfolder : "",
+    type: typeof o.type === "string" && o.type ? o.type : "output",
+    file_size: typeof o.file_size === "string" ? o.file_size : void 0,
+    frame_count: num(o.frame_count),
+    fps: num(o.fps)
+  };
+}
+function previewQuery(state, timestamp) {
+  return new URLSearchParams({
+    filename: state.filename,
+    subfolder: state.subfolder || "",
+    type: state.type || "output",
+    timestamp: String(timestamp)
+  }).toString();
+}
+function nodeIdFromLocator(locatorId) {
+  const cut = locatorId.lastIndexOf(":");
+  return cut === -1 ? locatorId : locatorId.slice(cut + 1);
+}
+function applySaveVideoOutputs(graph, nodeOutputs) {
+  if (!graph || !nodeOutputs) return;
+  const byNodeId = /* @__PURE__ */ new Map();
+  for (const [locatorId, output] of Object.entries(nodeOutputs)) {
+    if (output) byNodeId.set(nodeIdFromLocator(locatorId), output);
+  }
+  if (!byNodeId.size) return;
+  for (const node of walkNodes(graph)) {
+    const apply = node[APPLY_FN];
+    if (typeof apply !== "function") continue;
+    const output = byNodeId.get(String(node.id));
+    const state = packPreviewState(output);
+    if (!state) continue;
+    if (node.properties) node.properties[SAVED_VIDEO_PROP] = state;
+    apply(state);
+  }
+}
+function* walkNodes(graph, seen = /* @__PURE__ */ new Set()) {
+  if (seen.has(graph)) return;
+  seen.add(graph);
+  for (const node of graph._nodes ?? []) {
+    yield node;
+    if (node.subgraph) yield* walkNodes(node.subgraph, seen);
+  }
+}
 function registerSaveVideoNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGASaveVideo") return;
   const onNodeCreated = nodeType.prototype.onNodeCreated;
   nodeType.prototype.onNodeCreated = function() {
+    var _a;
     const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
     const node = this;
     this.color = "#2a5a3a";
@@ -1480,13 +2481,42 @@ function registerSaveVideoNode(nodeType, nodeData) {
     videoEl.setAttribute("aria-label", "Output video preview");
     videoEl.style.cssText = "width:100%;display:block;";
     videoEl.addEventListener("loadedmetadata", () => {
-      var _a;
+      var _a2;
       previewWidget.aspectRatio = videoEl.videoWidth / videoEl.videoHeight;
+      paintInfo();
+      node.setSize([
+        node.size[0],
+        node.computeSize([node.size[0], node.size[1]])[1]
+      ]);
+      (_a2 = node == null ? void 0 : node.graph) == null ? void 0 : _a2.setDirtyCanvas(true);
+    });
+    videoEl.addEventListener("error", () => {
+      var _a2;
+      previewContainer.style.display = "none";
+      node.setSize([
+        node.size[0],
+        node.computeSize([node.size[0], node.size[1]])[1]
+      ]);
+      (_a2 = node == null ? void 0 : node.graph) == null ? void 0 : _a2.setDirtyCanvas(true);
+    });
+    const infoEl = document.createElement("div");
+    infoEl.style.cssText = "padding:4px 8px;font-size:11px;color:#aaa;font-family:monospace;background:#111;";
+    infoEl.textContent = "Waiting for execution...";
+    infoEl.setAttribute("role", "status");
+    infoEl.setAttribute("aria-live", "polite");
+    function buildInfoText(currentFrame2) {
+      const parts = [];
       const w = videoEl.videoWidth;
       const h = videoEl.videoHeight;
-      const d = videoEl.duration;
-      const parts = [];
       if (w && h) parts.push(`${w}×${h}`);
+      const total = node._savedFrameCount ?? 0;
+      if (total > 0) {
+        const fps = node._savedFps ? ` @ ${node._savedFps}fps` : "";
+        parts.push(
+          currentFrame2 === void 0 ? `${total}f${fps}` : `▶ ${currentFrame2}/${total}f${fps}`
+        );
+      }
+      const d = videoEl.duration;
       if (d && isFinite(d)) {
         const m = Math.floor(d / 60);
         const s = (d % 60).toFixed(1);
@@ -1495,29 +2525,30 @@ function registerSaveVideoNode(nodeType, nodeData) {
       if (node._savedFileSize) {
         parts.push(node._savedFileSize);
       }
-      if (parts.length) {
-        infoEl.textContent = parts.join(" | ");
+      return parts.join(" | ");
+    }
+    function paintInfo(currentFrame2) {
+      const text = buildInfoText(currentFrame2);
+      if (text) infoEl.textContent = text;
+    }
+    function currentFrame() {
+      const fps = node._savedFps ?? 0;
+      const total = node._savedFrameCount ?? 0;
+      if (fps <= 0 || total <= 0) return void 0;
+      return Math.min(Math.floor(videoEl.currentTime * fps) + 1, total);
+    }
+    const detachPlayhead = attachPlayheadTracker(
+      videoEl,
+      (_time, playing, cause) => {
+        const scrubbed = cause === "seek" && !playing;
+        paintInfo(playing || scrubbed ? currentFrame() : void 0);
       }
-      node.setSize([
-        node.size[0],
-        node.computeSize([node.size[0], node.size[1]])[1]
-      ]);
-      (_a = node == null ? void 0 : node.graph) == null ? void 0 : _a.setDirtyCanvas(true);
-    });
-    videoEl.addEventListener("error", () => {
-      var _a;
-      previewContainer.style.display = "none";
-      node.setSize([
-        node.size[0],
-        node.computeSize([node.size[0], node.size[1]])[1]
-      ]);
-      (_a = node == null ? void 0 : node.graph) == null ? void 0 : _a.setDirtyCanvas(true);
-    });
-    const infoEl = document.createElement("div");
-    infoEl.style.cssText = "padding:4px 8px;font-size:11px;color:#aaa;font-family:monospace;background:#111;";
-    infoEl.textContent = "Waiting for execution...";
-    infoEl.setAttribute("role", "status");
-    infoEl.setAttribute("aria-live", "polite");
+    );
+    const origOnRemovedSave = this.onRemoved;
+    this.onRemoved = function() {
+      detachPlayhead();
+      origOnRemovedSave == null ? void 0 : origOnRemovedSave.apply(this, arguments);
+    };
     previewContainer.appendChild(videoEl);
     previewContainer.appendChild(infoEl);
     addDownloadOverlay(previewContainer, videoEl);
@@ -1556,587 +2587,159 @@ function registerSaveVideoNode(nodeType, nodeData) {
       }
       return [width, -4];
     };
+    function showSavedVideo(state) {
+      if (state.file_size) {
+        node._savedFileSize = state.file_size;
+      }
+      node._savedFrameCount = state.frame_count ?? 0;
+      node._savedFps = state.fps ?? 0;
+      previewContainer.style.display = "";
+      videoEl.src = api.apiURL("/view?" + previewQuery(state, Date.now()));
+      infoEl.textContent = `Saved: ${state.filename}`;
+      if (node._savedFileSize) {
+        infoEl.textContent += ` (${node._savedFileSize})`;
+      }
+    }
+    node[APPLY_FN] = showSavedVideo;
     const origOnExecuted = this.onExecuted;
     this.onExecuted = function(data) {
-      var _a, _b;
       origOnExecuted == null ? void 0 : origOnExecuted.apply(this, arguments);
-      if ((_a = data == null ? void 0 : data.video) == null ? void 0 : _a[0]) {
-        const v = data.video[0];
-        const params = new URLSearchParams({
-          filename: v.filename,
-          subfolder: v.subfolder || "",
-          type: v.type || "output",
-          timestamp: String(Date.now())
-        });
-        previewContainer.style.display = "";
-        videoEl.src = api.apiURL("/view?" + params.toString());
-        if ((_b = data == null ? void 0 : data.file_size) == null ? void 0 : _b[0]) {
-          node._savedFileSize = data.file_size[0];
-        }
-        infoEl.textContent = `Saved: ${v.filename}`;
-        if (node._savedFileSize) {
-          infoEl.textContent += ` (${node._savedFileSize})`;
-        }
-      }
+      const state = packPreviewState(data);
+      if (!state) return;
+      if (this.properties) this.properties[SAVED_VIDEO_PROP] = state;
+      showSavedVideo(state);
+    };
+    const origConfigure = this.onConfigure;
+    this.onConfigure = function(_info) {
+      var _a2;
+      origConfigure == null ? void 0 : origConfigure.apply(this, arguments);
+      const state = readPreviewState((_a2 = this.properties) == null ? void 0 : _a2[SAVED_VIDEO_PROP]);
+      if (!state) return;
+      requestAnimationFrame(() => showSavedVideo(state));
     };
     const getVideoUrlSave = () => videoEl.src || null;
     addVideoPreviewMenu(node, videoEl, previewContainer, previewWidget, getVideoUrlSave);
+    wireDynamicInputs(
+      node,
+      [
+        { prefix: "video_path_", type: "STRING", excludes: [] },
+        { prefix: "images_", type: "IMAGE", excludes: [] }
+      ],
+      [
+        { name: "video_path", type: "STRING" },
+        { name: "images", type: "IMAGE" }
+      ]
+    );
+    for (const name of ["show_advanced", "output_format"]) {
+      const widget = (_a = node.widgets) == null ? void 0 : _a.find((w) => w.name === name);
+      if (!widget) continue;
+      const origCallback = widget.callback;
+      widget.callback = function(...args) {
+        const r = origCallback == null ? void 0 : origCallback.apply(this, args);
+        applyWidgetVisibility(node);
+        return r;
+      };
+    }
+    requestAnimationFrame(() => applyWidgetVisibility(node));
     return result;
   };
 }
-const HIT_RADIUS = 20;
-function openPointSelector(node, imgSrc, _videoSrc) {
-  var _a, _b;
-  (_a = document.getElementById("ffmpega-point-selector")) == null ? void 0 : _a.remove();
-  let existing = {
-    points: [],
-    labels: [],
-    image_width: 0,
-    image_height: 0
+function registerSaveImageNode(nodeType, nodeData) {
+  if (nodeData.name !== "FFMPEGASaveImage") return;
+  const onNodeCreated = nodeType.prototype.onNodeCreated;
+  nodeType.prototype.onNodeCreated = function() {
+    const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
+    const node = this;
+    this.color = "#2a5a3a";
+    this.bgcolor = "#1a4a2a";
+    wireDynamicInputs(
+      node,
+      [
+        { prefix: "images_", type: "IMAGE", excludes: [] },
+        { prefix: "image_path_", type: "STRING", excludes: [] }
+      ],
+      [
+        { name: "images", type: "IMAGE" },
+        { name: "image_path", type: "STRING" }
+      ]
+    );
+    return result;
   };
-  const mpWidget = (_b = node.widgets) == null ? void 0 : _b.find((w) => w.name === "mask_points_data");
-  if (mpWidget == null ? void 0 : mpWidget.value) {
-    try {
-      existing = JSON.parse(String(mpWidget.value));
-    } catch {
-    }
+}
+const RESIZE_WIDGETS$1 = [
+  "resize_width",
+  "resize_height",
+  "upscale_method",
+  "keep_proportion",
+  "pad_color",
+  "crop_position",
+  "divisible_by",
+  "resize_device"
+];
+function toggleWidget(widget, show) {
+  if (!widget) return;
+  if (!widget._origType) {
+    widget._origType = widget.type;
+    widget._origComputeSize = widget.computeSize;
   }
-  let mode = existing.mode || "points";
-  const overlay = document.createElement("div");
-  overlay.id = "ffmpega-point-selector";
-  overlay.setAttribute("role", "dialog");
-  overlay.setAttribute("aria-modal", "true");
-  overlay.setAttribute("aria-label", "Mask Editor");
-  overlay.style.cssText = `
-        position:fixed;top:0;left:0;width:100vw;height:100vh;
-        background:rgba(0,0,0,0.85);z-index:999999;
-        display:flex;flex-direction:column;align-items:center;
-        justify-content:center;font-family:sans-serif;
-    `;
-  const header = document.createElement("div");
-  header.style.cssText = `
-        color:#eee;font-size:14px;margin-bottom:8px;
-        display:flex;gap:16px;align-items:center;
-    `;
-  overlay.appendChild(header);
-  const updateHeader = () => {
-    if (mode === "points") {
-      header.innerHTML = `
-                <span><span aria-hidden="true">🎯</span> <b>Point Mode</b></span>
-                <span style="color:#4f4"><span aria-hidden="true">⬤</span> Left-click = Include</span>
-                <span style="color:#f44"><span aria-hidden="true">⬤</span> Right-click = Exclude</span>
-                <span style="color:#888">Click existing point to remove</span>
-            `;
-    } else {
-      header.innerHTML = `
-                <span><span aria-hidden="true">🖌</span> <b>Draw Mode</b></span>
-                <span style="color:#4f4"><span aria-hidden="true">⬤</span> Left-drag = Paint</span>
-                <span style="color:#f44"><span aria-hidden="true">⬤</span> Right-drag = Erase</span>
-            `;
-    }
-  };
-  updateHeader();
-  const canvasWrap = document.createElement("div");
-  canvasWrap.style.cssText = "position:relative;max-width:90vw;max-height:75vh;";
-  const canvas = document.createElement("canvas");
-  canvas.style.cssText = "max-width:90vw;max-height:75vh;cursor:crosshair;display:block;";
-  canvasWrap.appendChild(canvas);
-  overlay.appendChild(canvasWrap);
-  const sliderWrap = document.createElement("div");
-  sliderWrap.style.cssText = `
-        display:flex;gap:10px;align-items:center;margin-top:6px;
-        color:#ccc;font-size:13px;
-    `;
-  sliderWrap.innerHTML = `<span aria-hidden="true">🖌</span> Brush:`;
-  const sizeSlider = document.createElement("input");
-  sizeSlider.type = "range";
-  sizeSlider.min = "3";
-  sizeSlider.max = "80";
-  sizeSlider.value = "20";
-  sizeSlider.style.cssText = "width:140px;accent-color:#4fc;";
-  sizeSlider.setAttribute("aria-label", "Brush Size");
-  const sizeLabel = document.createElement("span");
-  sizeLabel.textContent = "20px";
-  sizeLabel.style.cssText = "min-width:36px;";
-  sizeSlider.oninput = () => {
-    sizeLabel.textContent = `${sizeSlider.value}px`;
-  };
-  sliderWrap.appendChild(sizeSlider);
-  sliderWrap.appendChild(sizeLabel);
-  overlay.appendChild(sliderWrap);
-  const statusBar = document.createElement("div");
-  statusBar.style.cssText = "color:#aaa;font-size:12px;margin-top:6px;";
-  statusBar.textContent = "Loading image...";
-  statusBar.setAttribute("role", "status");
-  statusBar.setAttribute("aria-live", "polite");
-  overlay.appendChild(statusBar);
-  const btnBar = document.createElement("div");
-  btnBar.style.cssText = "display:flex;gap:12px;margin-top:12px;";
-  const makeBtn = (htmlLabel, ariaLabel, bg) => {
-    const b = document.createElement("button");
-    b.innerHTML = htmlLabel;
-    if (ariaLabel) {
-      b.setAttribute("aria-label", ariaLabel);
-    }
-    b.style.cssText = `
-            padding:8px 24px;border:none;border-radius:6px;
-            font-size:14px;cursor:pointer;color:#fff;
-            background:${bg};font-weight:600;
-            transition:opacity 0.15s;
-            outline: none;
-        `;
-    let isHovered = false;
-    let isFocused = false;
-    const update = () => {
-      const active = isHovered || isFocused;
-      b.style.opacity = active ? "0.85" : "1";
-      b.style.outline = isFocused ? "2px solid #fff" : "none";
-      b.style.outlineOffset = isFocused ? "2px" : "0px";
-    };
-    b.onmouseenter = () => {
-      isHovered = true;
-      update();
-    };
-    b.onmouseleave = () => {
-      isHovered = false;
-      update();
-    };
-    b.onfocus = () => {
-      isFocused = true;
-      update();
-    };
-    b.onblur = () => {
-      isFocused = false;
-      update();
-    };
-    return b;
-  };
-  const modeToggle = makeBtn(`<span aria-hidden="true">🖌</span> Draw`, "Draw Mode", "#3a5a8a");
-  const clearBtn = makeBtn("Clear All", "Clear All", "#555");
-  const applyBtn = makeBtn(`<span aria-hidden="true">✓</span> Apply`, "Apply", "#2a7a2a");
-  const cancelBtn = makeBtn("Cancel", "Cancel", "#7a2a2a");
-  btnBar.appendChild(modeToggle);
-  btnBar.appendChild(clearBtn);
-  btnBar.appendChild(applyBtn);
-  btnBar.appendChild(cancelBtn);
-  overlay.appendChild(btnBar);
-  overlay.tabIndex = -1;
-  document.body.appendChild(overlay);
-  overlay.focus();
-  let pts = existing.points ? [...existing.points] : [];
-  let lbls = existing.labels ? [...existing.labels] : [];
-  let imgW = 0;
-  let imgH = 0;
-  let scaleX = 1;
-  let scaleY = 1;
-  const firstImg = new Image();
-  const maskOff = document.createElement("canvas");
-  let maskDirty = false;
-  let _greenOverlay = null;
-  let _greenOverlayDirty = true;
-  const updateModeUI = () => {
-    if (mode === "points") {
-      modeToggle.innerHTML = `<span aria-hidden="true">🖌</span> Draw`;
-      modeToggle.setAttribute("aria-label", "Draw Mode");
-      modeToggle.style.background = "#3a5a8a";
-      canvas.style.cursor = "crosshair";
-      sliderWrap.style.display = "none";
-    } else {
-      modeToggle.innerHTML = `<span aria-hidden="true">🎯</span> Points`;
-      modeToggle.setAttribute("aria-label", "Point Mode");
-      modeToggle.style.background = "#5a3a8a";
-      canvas.style.cursor = "none";
-      sliderWrap.style.display = "flex";
-    }
-    updateHeader();
-    redraw();
-  };
-  modeToggle.onclick = () => {
-    mode = mode === "points" ? "draw" : "points";
-    updateModeUI();
-  };
-  const redraw = () => {
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (firstImg.complete && firstImg.naturalWidth > 0) {
-      ctx.drawImage(firstImg, 0, 0, canvas.width, canvas.height);
-    }
-    if (mode === "points") {
-      for (let i = 0; i < pts.length; i++) {
-        const px = pts[i][0] / scaleX;
-        const py = pts[i][1] / scaleY;
-        const isPos = lbls[i] === 1;
-        ctx.beginPath();
-        ctx.arc(px, py, 14, 0, Math.PI * 2);
-        ctx.fillStyle = isPos ? "rgba(0,255,0,0.25)" : "rgba(255,0,0,0.25)";
-        ctx.fill();
-        ctx.strokeStyle = isPos ? "#0f0" : "#f00";
-        ctx.lineWidth = 2.5;
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(px, py, 5, 0, Math.PI * 2);
-        ctx.fillStyle = isPos ? "#0f0" : "#f00";
-        ctx.fill();
-        ctx.font = "bold 16px sans-serif";
-        ctx.fillStyle = "#fff";
-        ctx.strokeStyle = "#000";
-        ctx.lineWidth = 3;
-        ctx.strokeText(isPos ? "+" : "×", px + 12, py - 8);
-        ctx.fillText(isPos ? "+" : "×", px + 12, py - 8);
-      }
-      statusBar.textContent = `${pts.length} point(s) | ${imgW}×${imgH}`;
-    } else {
-      if (_greenOverlayDirty || !_greenOverlay) {
-        _greenOverlay = document.createElement("canvas");
-        _greenOverlay.width = canvas.width;
-        _greenOverlay.height = canvas.height;
-        const tmpCtx = _greenOverlay.getContext("2d");
-        if (tmpCtx) {
-          tmpCtx.drawImage(maskOff, 0, 0, canvas.width, canvas.height);
-          const imgData = tmpCtx.getImageData(0, 0, canvas.width, canvas.height);
-          for (let i = 0; i < imgData.data.length; i += 4) {
-            if (imgData.data[i] > 128) {
-              imgData.data[i] = 0;
-              imgData.data[i + 1] = 220;
-              imgData.data[i + 2] = 80;
-              imgData.data[i + 3] = 100;
-            } else {
-              imgData.data[i + 3] = 0;
-            }
-          }
-          tmpCtx.putImageData(imgData, 0, 0);
-        }
-        _greenOverlayDirty = false;
-      }
-      ctx.drawImage(_greenOverlay, 0, 0);
-      statusBar.textContent = `Draw mode | ${imgW}×${imgH} | Brush: ${sizeSlider.value}px`;
-    }
-  };
-  const fitCanvas = (w, h) => {
-    imgW = w;
-    imgH = h;
-    const maxW = window.innerWidth * 0.9;
-    const maxH = window.innerHeight * 0.75;
-    let dispW = imgW;
-    let dispH = imgH;
-    if (dispW > maxW) {
-      const r = maxW / dispW;
-      dispW *= r;
-      dispH *= r;
-    }
-    if (dispH > maxH) {
-      const r = maxH / dispH;
-      dispW *= r;
-      dispH *= r;
-    }
-    canvas.width = Math.round(dispW);
-    canvas.height = Math.round(dispH);
-    scaleX = imgW / canvas.width;
-    scaleY = imgH / canvas.height;
-    maskOff.width = imgW;
-    maskOff.height = imgH;
-    const mCtx = maskOff.getContext("2d");
-    if (mCtx) {
-      mCtx.fillStyle = "#000";
-      mCtx.fillRect(0, 0, imgW, imgH);
-    }
-    if (existing.mask_data && existing.mode === "draw") {
-      const maskImg = new Image();
-      maskImg.onload = () => {
-        const restoreCtx = maskOff.getContext("2d");
-        if (restoreCtx) {
-          restoreCtx.drawImage(maskImg, 0, 0, imgW, imgH);
-        }
-        maskDirty = true;
-        redraw();
-      };
-      maskImg.src = "data:image/png;base64," + existing.mask_data;
-    }
-  };
-  firstImg.onload = () => {
-    fitCanvas(firstImg.naturalWidth, firstImg.naturalHeight);
-    updateModeUI();
-    redraw();
-  };
-  firstImg.onerror = () => {
-    statusBar.textContent = "Failed to load image";
-    statusBar.style.color = "#f44";
-  };
-  firstImg.crossOrigin = "anonymous";
-  firstImg.src = imgSrc;
-  let isDrawing = false;
-  let drawButton = -1;
-  let lastDrawX = -1;
-  let lastDrawY = -1;
-  const paintOnMask = (canvasX, canvasY, erase) => {
-    const mCtx = maskOff.getContext("2d");
-    if (!mCtx) return;
-    const mx = canvasX * scaleX;
-    const my = canvasY * scaleY;
-    const brushR = parseInt(sizeSlider.value) * scaleX;
-    mCtx.beginPath();
-    mCtx.arc(mx, my, brushR, 0, Math.PI * 2);
-    mCtx.fillStyle = erase ? "#000" : "#fff";
-    mCtx.fill();
-    maskDirty = true;
-    if (_greenOverlay) {
-      const oCtx = _greenOverlay.getContext("2d");
-      if (oCtx) {
-        const dispBrushR = parseInt(sizeSlider.value);
-        if (erase) {
-          oCtx.save();
-          oCtx.beginPath();
-          oCtx.arc(canvasX, canvasY, dispBrushR, 0, Math.PI * 2);
-          oCtx.clip();
-          oCtx.clearRect(
-            canvasX - dispBrushR,
-            canvasY - dispBrushR,
-            dispBrushR * 2,
-            dispBrushR * 2
-          );
-          oCtx.restore();
-        } else {
-          oCtx.beginPath();
-          oCtx.arc(canvasX, canvasY, dispBrushR, 0, Math.PI * 2);
-          oCtx.fillStyle = "rgba(0, 220, 80, 0.392)";
-          oCtx.fill();
-        }
-      }
-    } else {
-      _greenOverlayDirty = true;
-    }
-  };
-  const paintLine = (x1, y1, x2, y2, erase) => {
-    const dist = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
-    const steps = Math.max(1, Math.floor(dist / 3));
-    for (let i = 0; i <= steps; i++) {
-      const t = i / steps;
-      const x = x1 + (x2 - x1) * t;
-      const y = y1 + (y2 - y1) * t;
-      paintOnMask(x, y, erase);
-    }
-  };
-  const getCanvasPos = (e) => {
-    const rect = canvas.getBoundingClientRect();
-    const cssScaleX = canvas.width / rect.width;
-    const cssScaleY = canvas.height / rect.height;
-    return {
-      x: (e.clientX - rect.left) * cssScaleX,
-      y: (e.clientY - rect.top) * cssScaleY
-    };
-  };
-  const findNearPoint = (mx, my) => {
-    for (let i = 0; i < pts.length; i++) {
-      const dx = pts[i][0] / scaleX - mx;
-      const dy = pts[i][1] / scaleY - my;
-      if (Math.sqrt(dx * dx + dy * dy) < HIT_RADIUS) return i;
-    }
-    return -1;
-  };
-  canvas.addEventListener("mousedown", (e) => {
-    if (mode === "draw") {
-      e.preventDefault();
-      isDrawing = true;
-      drawButton = e.button;
-      const pos = getCanvasPos(e);
-      lastDrawX = pos.x;
-      lastDrawY = pos.y;
-      paintOnMask(pos.x, pos.y, e.button === 2);
-      redraw();
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.beginPath();
-        ctx.arc(pos.x, pos.y, parseInt(sizeSlider.value), 0, Math.PI * 2);
-        ctx.strokeStyle = e.button === 2 ? "rgba(255,80,80,0.7)" : "rgba(80,255,120,0.7)";
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
-    }
-  });
-  canvas.addEventListener("mousemove", (e) => {
-    if (mode === "draw") {
-      const pos = getCanvasPos(e);
-      if (isDrawing) {
-        paintLine(lastDrawX, lastDrawY, pos.x, pos.y, drawButton === 2);
-        lastDrawX = pos.x;
-        lastDrawY = pos.y;
-        redraw();
-      }
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        const brushR = parseInt(sizeSlider.value);
-        ctx.beginPath();
-        ctx.arc(pos.x, pos.y, brushR, 0, Math.PI * 2);
-        ctx.strokeStyle = isDrawing ? drawButton === 2 ? "rgba(255,80,80,0.7)" : "rgba(80,255,120,0.7)" : "rgba(255,255,255,0.5)";
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
-    }
-  });
-  const stopDrawing = () => {
-    if (isDrawing) {
-      _greenOverlayDirty = true;
-      redraw();
-    }
-    isDrawing = false;
-    drawButton = -1;
-    lastDrawX = -1;
-    lastDrawY = -1;
-  };
-  canvas.addEventListener("mouseup", stopDrawing);
-  canvas.addEventListener("mouseleave", () => {
-    stopDrawing();
-    if (mode === "draw") redraw();
-  });
-  canvas.addEventListener("click", (e) => {
-    if (mode !== "points") return;
-    const pos = getCanvasPos(e);
-    const hitIdx = findNearPoint(pos.x, pos.y);
-    if (hitIdx >= 0) {
-      pts.splice(hitIdx, 1);
-      lbls.splice(hitIdx, 1);
-    } else {
-      pts.push([Math.round(pos.x * scaleX), Math.round(pos.y * scaleY)]);
-      lbls.push(1);
-    }
-    redraw();
-  });
-  canvas.addEventListener("contextmenu", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (mode !== "points") return;
-    const pos = getCanvasPos(e);
-    const hitIdx = findNearPoint(pos.x, pos.y);
-    if (hitIdx >= 0) {
-      pts.splice(hitIdx, 1);
-      lbls.splice(hitIdx, 1);
-    } else {
-      pts.push([Math.round(pos.x * scaleX), Math.round(pos.y * scaleY)]);
-      lbls.push(0);
-    }
-    redraw();
-  });
-  overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) {
-      document.removeEventListener("keydown", keyHandler);
-      overlay.remove();
-    }
-  });
-  overlay.addEventListener("contextmenu", (e) => e.preventDefault());
-  clearBtn.onclick = () => {
-    if (mode === "points") {
-      pts.length = 0;
-      lbls.length = 0;
-    } else {
-      const mCtx = maskOff.getContext("2d");
-      if (mCtx) {
-        mCtx.fillStyle = "#000";
-        mCtx.fillRect(0, 0, maskOff.width, maskOff.height);
-      }
-      maskDirty = false;
-      _greenOverlayDirty = true;
-    }
-    redraw();
-  };
-  cancelBtn.onclick = () => {
-    document.removeEventListener("keydown", keyHandler);
-    overlay.remove();
-  };
-  applyBtn.onclick = () => {
-    let data;
-    if (mode === "draw" && maskDirty) {
-      const maskDataUrl = maskOff.toDataURL("image/png");
-      const b64 = maskDataUrl.split(",")[1];
-      data = JSON.stringify({
-        mode: "draw",
-        mask_data: b64,
-        image_width: imgW,
-        image_height: imgH
-      });
-    } else {
-      data = JSON.stringify({
-        mode: "points",
-        points: pts,
-        labels: lbls,
-        image_width: imgW,
-        image_height: imgH
-      });
-    }
-    if (mpWidget) {
-      mpWidget.value = data;
-    } else {
-      const w = node.addWidget(
-        "text",
-        "mask_points_data",
-        data,
-        () => {
-        },
-        { serialize: true }
-      );
-      w.type = "text";
-      if (w.computeSize) w.computeSize = () => [0, -4];
-    }
-    node.setDirtyCanvas(true, true);
-    document.removeEventListener("keydown", keyHandler);
-    overlay.remove();
-    flashNode(node, "#2a7a2a");
-  };
-  const keyHandler = (e) => {
-    if (e.key === "Escape") {
-      overlay.remove();
-      document.removeEventListener("keydown", keyHandler);
-    }
-  };
-  document.addEventListener("keydown", keyHandler);
+  if (show) {
+    widget.type = widget._origType;
+    widget.computeSize = widget._origComputeSize;
+    widget.hidden = false;
+    if (widget.element) widget.element.hidden = false;
+  } else {
+    widget.type = "hidden";
+    widget.computeSize = () => [0, -4];
+    widget.hidden = true;
+    if (widget.element) widget.element.hidden = true;
+  }
 }
 function registerLoadImageNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGALoadImagePath") return;
   const origOnCreatedImg = nodeType.prototype.onNodeCreated;
   nodeType.prototype.onNodeCreated = function() {
+    var _a;
     const result = origOnCreatedImg == null ? void 0 : origOnCreatedImg.apply(this, arguments);
     const node = this;
     this.color = "#3a5a5a";
     this.bgcolor = "#2a4a4a";
-    const _syncImagesOutput = () => {
-      const imagesIn = node.findInputSlot("images");
-      const connected = imagesIn >= 0 && node.inputs[imagesIn].link != null;
-      const imagesOut = node.findOutputSlot("images");
-      const hasOutput = imagesOut >= 0;
-      if (connected && !hasOutput) {
-        node.addOutput("images", "IMAGE");
-      } else if (!connected && hasOutput) {
-        const idx = node.findOutputSlot("images");
-        if (idx >= 0) node.removeOutput(idx);
-      }
-      node.setDirtyCanvas(true, true);
+    const fitHeight2 = () => {
+      var _a2;
+      node.setSize([
+        node.size[0],
+        node.computeSize([node.size[0], node.size[1]])[1]
+      ]);
+      (_a2 = node == null ? void 0 : node.graph) == null ? void 0 : _a2.setDirtyCanvas(true);
     };
-    requestAnimationFrame(() => {
-      const idx = node.findOutputSlot("images");
-      if (idx >= 0) node.removeOutput(idx);
-      node.setDirtyCanvas(true, true);
-    });
-    const origOnCCImg = this.onConnectionsChange;
-    this.onConnectionsChange = function(type, slotIndex, isConnected, link, ioSlot) {
-      var _a, _b;
-      origOnCCImg == null ? void 0 : origOnCCImg.apply(this, arguments);
-      if (type === LiteGraph.INPUT) {
-        const name = (_b = (_a = this.inputs) == null ? void 0 : _a[slotIndex]) == null ? void 0 : _b.name;
-        if (name === "images") {
-          _syncImagesOutput();
-        }
+    const updateResizeVisibility = () => {
+      var _a2, _b;
+      const enableResize = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "enable_resize");
+      const show = Boolean(enableResize == null ? void 0 : enableResize.value);
+      for (const name of RESIZE_WIDGETS$1) {
+        const w = (_b = node.widgets) == null ? void 0 : _b.find((ww) => ww.name === name);
+        if (w) toggleWidget(w, show);
       }
+      fitHeight2();
     };
+    const enableResizeWidget = (_a = this.widgets) == null ? void 0 : _a.find((w) => w.name === "enable_resize");
+    if (enableResizeWidget) {
+      updateResizeVisibility();
+      const origResizeCb = enableResizeWidget.callback;
+      enableResizeWidget.callback = function(...args) {
+        origResizeCb == null ? void 0 : origResizeCb.apply(this, args);
+        updateResizeVisibility();
+      };
+    }
     const origConfigureImg = this.onConfigure;
     this.onConfigure = function(data) {
       origConfigureImg == null ? void 0 : origConfigureImg.apply(this, arguments);
-      requestAnimationFrame(_syncImagesOutput);
+      updateResizeVisibility();
     };
     const origOnExecutedImg = this.onExecuted;
     this.onExecuted = function(data) {
-      var _a, _b, _c, _d;
+      var _a2, _b, _c, _d;
       origOnExecutedImg == null ? void 0 : origOnExecutedImg.apply(this, arguments);
-      if ((_a = data == null ? void 0 : data.images) == null ? void 0 : _a[0]) {
+      if ((_a2 = data == null ? void 0 : data.images) == null ? void 0 : _a2[0]) {
         const img = data.images[0];
         const imgWidgets = (_b = this.widgets) == null ? void 0 : _b.filter(
           (w) => w.name === "image_preview" || w.type === "preview"
@@ -2176,14 +2779,209 @@ function registerLoadImageNode(nodeType, nodeData) {
           flashNode(self, "#7a4a4a");
           return;
         }
+        let resolvedFilename = filename;
+        let subfolder = "";
+        if (filename.includes("/") || filename.includes("\\")) {
+          const sep = filename.includes("/") ? "/" : "\\";
+          const parts = filename.split(sep);
+          resolvedFilename = parts.pop();
+          subfolder = parts.join(sep);
+        }
         const params = new URLSearchParams({
-          filename,
-          type: "input"
+          filename: resolvedFilename,
+          type: "input",
+          ...subfolder ? { subfolder } : {}
         });
-        const src = api.apiURL("/view?" + params.toString());
-        openPointSelector(self, src);
+        const imgSrc = api.apiURL("/view?" + params.toString());
+        fetch("/ffmpega/resolve_image_path", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filename: resolvedFilename,
+            subfolder
+          })
+        }).then((r) => r.json()).then((data) => {
+          openPointSelector(self, imgSrc, void 0, data.image_path || "");
+        }).catch(() => {
+          openPointSelector(self, imgSrc);
+        });
+      }
+    }, {
+      content: "🧹 Clear Mask",
+      callback: () => {
+        var _a, _b;
+        const mpWidget = (_a = self.widgets) == null ? void 0 : _a.find((w) => w.name === "mask_points_data");
+        if (mpWidget) {
+          mpWidget.value = "";
+        }
+        (_b = self.setDirtyCanvas) == null ? void 0 : _b.call(self, true, true);
+        flashNode(self, "#4a7a4a");
       }
     }, null);
+  };
+}
+const SAVE_NODE = "FFMPEGASaveLastFrame";
+const LOAD_NODE = "FFMPEGALoadLastFrame";
+const POLL_INTERVAL = 3e3;
+const RESIZE_WIDGETS = [
+  "resize_width",
+  "resize_height",
+  "upscale_method",
+  "keep_proportion",
+  "pad_color",
+  "crop_position",
+  "divisible_by",
+  "resize_device"
+];
+function frameUrl(frame) {
+  const params = new URLSearchParams({
+    filename: frame.filename,
+    subfolder: frame.subfolder || "",
+    type: frame.type || "output",
+    t: String(frame.mtime ?? Date.now())
+  });
+  return api.apiURL("/view?" + params.toString());
+}
+function applyResizeVisibility(node) {
+  var _a, _b, _c;
+  const enabled = Boolean(
+    (_b = (_a = node.widgets) == null ? void 0 : _a.find((w) => w.name === "enable_resize")) == null ? void 0 : _b.value
+  );
+  for (const name of RESIZE_WIDGETS) {
+    toggleWidget$2((_c = node.widgets) == null ? void 0 : _c.find((w) => w.name === name), enabled);
+  }
+  fitHeight(node);
+}
+function attachSlotPreview(node, emptyHint) {
+  var _a;
+  const container = document.createElement("div");
+  container.style.cssText = "width:100%;background:#1a1a1a;border-radius:6px;overflow:hidden;";
+  const strip = document.createElement("div");
+  strip.style.cssText = "display:flex;gap:4px;padding:4px;overflow-x:auto;align-items:flex-start;";
+  const info = document.createElement("div");
+  info.style.cssText = "padding:4px 8px;font-size:11px;color:#aaa;font-family:monospace;background:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+  info.setAttribute("role", "status");
+  info.setAttribute("aria-live", "polite");
+  info.textContent = emptyHint;
+  container.appendChild(strip);
+  container.appendChild(info);
+  for (const evt of ["contextmenu", "pointerdown", "mousewheel", "pointermove", "pointerup"]) {
+    container.addEventListener(evt, (e) => e.stopPropagation(), true);
+  }
+  const widget = node.addDOMWidget(
+    "slotpreview",
+    "preview",
+    container,
+    { serialize: false, hideOnZoom: false }
+  );
+  let aspectRatio = null;
+  widget.computeSize = function(width) {
+    if (aspectRatio === null) return [width, 44];
+    const thumb = Math.min((node.size[0] - 24) / aspectRatio, 220);
+    return [width, Math.max(thumb, 40) + 38];
+  };
+  let signature = "";
+  const render = (frames, slot) => {
+    strip.replaceChildren();
+    if (!frames.length) {
+      aspectRatio = null;
+      info.textContent = emptyHint;
+      fitHeight(node);
+      return;
+    }
+    for (const frame of frames) {
+      const img = document.createElement("img");
+      img.src = frameUrl(frame);
+      img.alt = frame.filename;
+      img.title = frame.filename;
+      img.style.cssText = "height:100%;max-height:220px;flex:0 0 auto;border-radius:3px;object-fit:contain;background:#000;";
+      img.addEventListener("load", () => {
+        if (aspectRatio === null && img.naturalHeight) {
+          aspectRatio = img.naturalWidth / img.naturalHeight;
+          fitHeight(node);
+        }
+      });
+      strip.appendChild(img);
+    }
+    const last = frames[frames.length - 1];
+    info.textContent = frames.length === 1 ? `${slot}: ${last.filename}` : `${slot}: ${frames.length} frames — newest ${last.filename}`;
+    fitHeight(node);
+  };
+  const refresh = async (force = false) => {
+    var _a2, _b;
+    const slot = String(
+      ((_b = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "slot_name")) == null ? void 0 : _b.value) ?? "default"
+    );
+    try {
+      const resp = await fetch(
+        api.apiURL(`/ffmpega/last_frame/slot?slot=${encodeURIComponent(slot)}`)
+      );
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const sig = `${data.slot ?? slot}#${data.signature ?? ""}`;
+      if (!force && sig === signature) return;
+      signature = sig;
+      aspectRatio = null;
+      render(data.frames ?? [], data.slot ?? slot);
+    } catch {
+    }
+  };
+  void refresh(true);
+  const timer = setInterval(() => void refresh(), POLL_INTERVAL);
+  const origOnRemoved = node.onRemoved;
+  node.onRemoved = function() {
+    clearInterval(timer);
+    return origOnRemoved == null ? void 0 : origOnRemoved.apply(this, arguments);
+  };
+  const slotWidget = (_a = node.widgets) == null ? void 0 : _a.find((w) => w.name === "slot_name");
+  if (slotWidget) {
+    const origCallback = slotWidget.callback;
+    slotWidget.callback = function(...args) {
+      const r = origCallback == null ? void 0 : origCallback.apply(this, args);
+      void refresh(true);
+      return r;
+    };
+  }
+  const origOnExecuted = node.onExecuted;
+  node.onExecuted = function(data) {
+    const r = origOnExecuted == null ? void 0 : origOnExecuted.apply(this, arguments);
+    void refresh(true);
+    return r;
+  };
+}
+function registerLastFrameNodes(nodeType, nodeData) {
+  const isSave = nodeData.name === SAVE_NODE;
+  const isLoad = nodeData.name === LOAD_NODE;
+  if (!isSave && !isLoad) return;
+  const onNodeCreated = nodeType.prototype.onNodeCreated;
+  nodeType.prototype.onNodeCreated = function() {
+    var _a;
+    const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
+    if (isSave) {
+      this.color = "#5a3a4a";
+      this.bgcolor = "#4a2a3a";
+    } else {
+      this.color = "#5a4a3a";
+      this.bgcolor = "#4a3a2a";
+    }
+    attachSlotPreview(
+      this,
+      isSave ? "Slot is empty — run to save a frame" : "Slot is empty — connect fallback_image to start a chain"
+    );
+    if (isLoad) {
+      const node = this;
+      const enableResize = (_a = node.widgets) == null ? void 0 : _a.find((w) => w.name === "enable_resize");
+      if (enableResize) {
+        const origCallback = enableResize.callback;
+        enableResize.callback = function(...args) {
+          const r = origCallback == null ? void 0 : origCallback.apply(this, args);
+          applyResizeVisibility(node);
+          return r;
+        };
+      }
+      setTimeout(() => applyResizeVisibility(node), 0);
+    }
+    return result;
   };
 }
 const BUILTIN_PRESETS = [
@@ -2614,26 +3412,56 @@ function registerTextInputNode(nodeType, nodeData) {
     );
   };
 }
-function captureFirstFrameAndOpen(node, videoSrc) {
+function getSkipTimeSec$1(node) {
+  var _a, _b;
+  const skipWidget = (_a = node.widgets) == null ? void 0 : _a.find((w) => w.name === "skip_first_frames");
+  const rateWidget = (_b = node.widgets) == null ? void 0 : _b.find((w) => w.name === "force_rate");
+  const skipFrames = Number(skipWidget == null ? void 0 : skipWidget.value) || 0;
+  const fps = Number(rateWidget == null ? void 0 : rateWidget.value) || 0;
+  if (skipFrames <= 0) return 0.01;
+  return skipFrames / (fps > 0 ? fps : 30);
+}
+function captureFirstFrameAndOpen(node, videoSrc, startTimeSec = 0.01) {
   const tmpVideo = document.createElement("video");
   tmpVideo.crossOrigin = "anonymous";
   tmpVideo.muted = true;
   tmpVideo.preload = "auto";
   tmpVideo.src = videoSrc;
-  tmpVideo.currentTime = 0.01;
+  tmpVideo.currentTime = startTimeSec;
+  let videoFilePath = "";
+  try {
+    const u = new URL(videoSrc, window.location.origin);
+    videoFilePath = u.searchParams.get("filename") || u.searchParams.get("path") || "";
+  } catch {
+  }
   const seekTimeout = setTimeout(() => {
     flashNode(node, "#7a4a4a");
     tmpVideo.remove();
   }, 1e4);
   tmpVideo.addEventListener("seeked", () => {
+    var _a;
     clearTimeout(seekTimeout);
     const c = document.createElement("canvas");
     c.width = tmpVideo.videoWidth;
     c.height = tmpVideo.videoHeight;
     c.getContext("2d").drawImage(tmpVideo, 0, 0);
     const frameDataUrl = c.toDataURL("image/jpeg", 0.95);
-    openPointSelector(node, frameDataUrl);
     tmpVideo.remove();
+    if (videoFilePath) {
+      const skipWidget = (_a = node.widgets) == null ? void 0 : _a.find((w) => w.name === "skip_first_frames");
+      const skipFrames = Number(skipWidget == null ? void 0 : skipWidget.value) || 0;
+      fetch("/ffmpega/first_frame", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ video_path: videoFilePath, skip_frames: skipFrames })
+      }).then((r) => r.json()).then((data) => {
+        openPointSelector(node, frameDataUrl, videoSrc, data.frame_path || "");
+      }).catch(() => {
+        openPointSelector(node, frameDataUrl);
+      });
+    } else {
+      openPointSelector(node, frameDataUrl);
+    }
   }, { once: true });
   tmpVideo.addEventListener("error", () => {
     clearTimeout(seekTimeout);
@@ -2659,7 +3487,18 @@ function registerPointSelectorHooks(nodeType, nodeData) {
           }
           const params = new URLSearchParams({ filename, type: "input" });
           const src = api.apiURL("/view?" + params.toString());
-          captureFirstFrameAndOpen(self, src);
+          captureFirstFrameAndOpen(self, src, getSkipTimeSec$1(self));
+        }
+      }, {
+        content: "🧹 Clear Mask",
+        callback: () => {
+          var _a, _b;
+          const mpWidget = (_a = self.widgets) == null ? void 0 : _a.find((w) => w.name === "mask_points_data");
+          if (mpWidget) {
+            mpWidget.value = "";
+          }
+          (_b = self.setDirtyCanvas) == null ? void 0 : _b.call(self, true, true);
+          flashNode(self, "#4a7a4a");
         }
       }, null);
     };
@@ -2816,7 +3655,7 @@ function applyCropPreview(node, rect) {
     `;
   container.appendChild(badge);
 }
-function openCropSelector(node, videoSrc) {
+function openCropSelector(node, videoSrc, startTimeSec = 0) {
   var _a, _b;
   ensureCropStyles();
   (_a = document.getElementById("ffmpega-crop-selector")) == null ? void 0 : _a.remove();
@@ -2973,7 +3812,7 @@ function openCropSelector(node, videoSrc) {
       scrubSlider.max = String(Math.floor(videoDuration * 10));
     }
     try {
-      const initialTime = Math.min(0.1, videoDuration * 0.01);
+      const initialTime = startTimeSec > 0 ? startTimeSec : Math.min(0.1, videoDuration * 0.01);
       const dataUrl = await captureFrameAt(tmpVideo, initialTime);
       frameImg.src = dataUrl;
     } catch {
@@ -3072,6 +3911,15 @@ function openCropSelector(node, videoSrc) {
   };
   document.addEventListener("keydown", keyHandler);
 }
+function getSkipTimeSec(node) {
+  var _a, _b;
+  const skipWidget = (_a = node.widgets) == null ? void 0 : _a.find((w) => w.name === "skip_first_frames");
+  const rateWidget = (_b = node.widgets) == null ? void 0 : _b.find((w) => w.name === "force_rate");
+  const skipFrames = Number(skipWidget == null ? void 0 : skipWidget.value) || 0;
+  const fps = Number(rateWidget == null ? void 0 : rateWidget.value) || 0;
+  if (skipFrames <= 0) return 0;
+  return skipFrames / (fps > 0 ? fps : 30);
+}
 function restoreCropPreview(node) {
   var _a;
   const cdWidget = (_a = node.widgets) == null ? void 0 : _a.find((w) => w.name === "crop_data");
@@ -3124,7 +3972,19 @@ function registerCropSelectorHooks(nodeType, nodeData) {
           }
           const params = new URLSearchParams({ filename, type: "input" });
           const src = api.apiURL("/view?" + params.toString());
-          openCropSelector(self, src);
+          openCropSelector(self, src, getSkipTimeSec(self));
+        }
+      }, {
+        content: "🧹 Clear Crop",
+        callback: () => {
+          var _a, _b;
+          const cdWidget = (_a = self.widgets) == null ? void 0 : _a.find((w) => w.name === "crop_data");
+          if (cdWidget) {
+            cdWidget.value = "";
+          }
+          applyCropPreview(self, null);
+          (_b = self.setDirtyCanvas) == null ? void 0 : _b.call(self, true, true);
+          flashNode(self, "#4a7a4a");
         }
       }, null);
     };
@@ -3275,7 +4135,7 @@ const NODE_DOCS = [
       "images_to_path: insert between Load Video Upload and the Agent to free tensors early.",
       "path_to_images: quickly decode a video path into frames for downstream image processing.",
       "Audio is automatically extracted (path_to_images) or muxed in (images_to_path) when connected.",
-      "Outputs fps and frame_count in both modes for easy downstream use."
+      "Lightweight bridge for quick conversions without full Load/Save nodes."
     ],
     inputs: [
       { name: "mode", info: "images_to_path or path_to_images — pick the conversion direction." },
@@ -4170,13 +5030,25 @@ app.registerExtension({
   async setup() {
     initSidebar();
   },
+  /**
+   * Fires when ComfyUI swaps the whole `app.nodeOutputs` map, which is what
+   * happens on a workflow tab switch (`ChangeTracker.restore()`) and when a
+   * run is opened from the queue history. Save Video rebuilds its player from
+   * it — the same hook core's audio and 3D previews restore themselves in.
+   */
+  onNodeOutputsUpdated(nodeOutputs) {
+    applySaveVideoOutputs(app.rootGraph ?? app.graph, nodeOutputs);
+  },
   async beforeRegisterNodeDef(nodeType, nodeData, _app) {
     if (registerNodeStyling(nodeType, nodeData)) return;
     registerAgentNode(nodeType, nodeData);
     registerFrameExtractNode(nodeType, nodeData);
     registerLoadVideoNode(nodeType, nodeData);
+    registerLoadMaskVideoNode(nodeType, nodeData);
     registerSaveVideoNode(nodeType, nodeData);
+    registerSaveImageNode(nodeType, nodeData);
     registerLoadImageNode(nodeType, nodeData);
+    registerLastFrameNodes(nodeType, nodeData);
     registerTextInputNode(nodeType, nodeData);
     registerPointSelectorHooks(nodeType, nodeData);
     registerCropSelectorHooks(nodeType, nodeData);

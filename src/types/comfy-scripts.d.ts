@@ -8,7 +8,10 @@
 
 declare module 'comfyui/app' {
     interface ComfyApp {
+        /** The graph on screen — a subgraph when the user has navigated into one. */
         graph: any;
+        /** The whole workflow's graph, regardless of what is on screen. */
+        rootGraph?: any;
         canvas: any;
         ui: any;
         extensionManager: any;
@@ -25,6 +28,16 @@ declare module 'comfyui/api' {
         addEventListener(event: string, callback: (data: any) => void): void;
     }
     export const api: ComfyAPI;
+}
+
+// Three.js CDN imports (loaded dynamically at runtime)
+declare module 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js' {
+    const THREE: any;
+    export = THREE;
+}
+declare module 'https://unpkg.com/three@0.170.0/build/three.module.min.js' {
+    const THREE: any;
+    export = THREE;
 }
 
 // CSS inline imports (Vite)

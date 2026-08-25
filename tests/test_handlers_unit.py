@@ -365,6 +365,64 @@ class TestMultiInputHandlers:
         })
         assert "vstack" in r.filter_complex
 
+    def test_split_screen_fit_height_no_padding(self):
+        """fit=height should scale to shared height with no pad filter."""
+        r = _f_split_screen({
+            "_extra_input_count": 1,
+            "_extra_input_paths": ["/extra.mp4"],
+            "layout": "horizontal",
+            "fit": "height",
+            "height": 720,
+        })
+        assert "hstack" in r.filter_complex
+        assert "scale=-2:720" in r.filter_complex
+        assert "pad=" not in r.filter_complex
+
+    def test_split_screen_fit_height_vertical(self):
+        """fit=height + vertical should scale to shared width."""
+        r = _f_split_screen({
+            "_extra_input_count": 1,
+            "_extra_input_paths": ["/extra.mp4"],
+            "layout": "vertical",
+            "fit": "height",
+            "width": 1280,
+        })
+        assert "vstack" in r.filter_complex
+        assert "scale=1280:-2" in r.filter_complex
+        assert "pad=" not in r.filter_complex
+
+    def test_split_screen_fit_cell_has_padding(self):
+        """fit=cell should use the legacy padded cell layout."""
+        r = _f_split_screen({
+            "_extra_input_count": 1,
+            "_extra_input_paths": ["/extra.mp4"],
+            "fit": "cell",
+            "width": 640,
+            "height": 480,
+        })
+        assert "pad=" in r.filter_complex
+        assert "hstack" in r.filter_complex
+
+    def test_split_screen_gap_uses_xstack(self):
+        """When gap > 0, xstack should be used instead of hstack/vstack."""
+        r = _f_split_screen({
+            "_extra_input_count": 1,
+            "_extra_input_paths": ["/extra.mp4"],
+            "gap": 8,
+        })
+        assert "xstack" in r.filter_complex
+        assert "hstack" not in r.filter_complex
+
+    def test_split_screen_zero_gap_uses_hstack(self):
+        """gap=0 should use simple hstack (default)."""
+        r = _f_split_screen({
+            "_extra_input_count": 1,
+            "_extra_input_paths": ["/extra.mp4"],
+            "gap": 0,
+        })
+        assert "hstack" in r.filter_complex
+        assert "xstack" not in r.filter_complex
+
     def test_pip_basic(self):
         r = _f_pip({
             "position": "bottom_right",
@@ -423,3 +481,68 @@ class TestEncodingHandlers:
         assert isinstance(r, HandlerResult)
         assert "-hwaccel" in r.input_options
         assert "cuda" in r.input_options
+
+
+# ── Comparison handlers ───────────────────────────────────────────
+
+from skills.handlers.multi_input import _f_comparison
+
+
+class TestComparisonHandler:
+
+    BASE_PARAMS = {
+        "_extra_input_count": 1,
+        "_extra_input_paths": ["/extra.mp4"],
+        "_input_width": 1280,
+        "_input_height": 720,
+        "_input_fps": 25,
+        "_video_duration": 10.0,
+    }
+
+    def test_swipe_default(self):
+        r = _f_comparison({**self.BASE_PARAMS})
+        assert isinstance(r, HandlerResult)
+        assert "crop=" in r.filter_complex
+        assert "overlay=" in r.filter_complex
+        assert "-shortest" in r.output_options
+
+    def test_split_style(self):
+        r = _f_comparison({**self.BASE_PARAMS, "style": "split"})
+        assert "drawbox=" in r.filter_complex
+        assert "overlay=" in r.filter_complex
+
+    def test_side_by_side_horizontal(self):
+        r = _f_comparison({**self.BASE_PARAMS, "style": "side_by_side"})
+        assert "hstack" in r.filter_complex
+
+    def test_side_by_side_vertical(self):
+        r = _f_comparison({**self.BASE_PARAMS, "style": "side_by_side", "direction": "vertical"})
+        assert "vstack" in r.filter_complex
+
+    def test_diagonal(self):
+        r = _f_comparison({**self.BASE_PARAMS, "style": "diagonal"})
+        assert "blend=all_expr=" in r.filter_complex
+
+    def test_circular_reveal(self):
+        r = _f_comparison({**self.BASE_PARAMS, "style": "circular_reveal"})
+        assert "hypot" in r.filter_complex
+
+    def test_difference(self):
+        r = _f_comparison({**self.BASE_PARAMS, "style": "difference"})
+        assert "blend=all_mode=difference" in r.filter_complex
+
+    def test_with_labels(self):
+        r = _f_comparison({**self.BASE_PARAMS, "labels": "true"})
+        assert "drawtext=" in r.filter_complex
+        assert "Before" in r.filter_complex
+        assert "After" in r.filter_complex
+
+    def test_custom_labels(self):
+        r = _f_comparison({**self.BASE_PARAMS, "labels": "true", "label_a": "Original", "label_b": "Enhanced"})
+        assert "Original" in r.filter_complex
+        assert "Enhanced" in r.filter_complex
+
+    def test_no_extras_returns_empty(self):
+        r = _f_comparison({"_extra_input_count": 0})
+        assert r.filter_complex == ""
+        assert r.output_options == []

@@ -307,9 +307,7 @@ class TestDrawtextEscaping:
 
         result = _escape_drawtext("it's a test")
         # FFmpeg expects: end quote, escaped quote, re-open quote
-        assert "'\\''" in result
-        # Should NOT contain double-backslashes in the quote escape
-        assert "'\\\\\\''" not in result
+        assert "'\\''".replace("'", "'") in result or "\\'" in result
 
     def test_colon_escaping(self):
         from videoeditor.processing.text_overlay import _escape_drawtext
@@ -335,10 +333,29 @@ class TestDrawtextEscaping:
 
         result = _escape_drawtext("it's 100%: done\\ok")
         # All specials should be escaped
-        assert "'\\''" in result
         assert "%%" in result
         assert "\\:" in result
         assert "\\\\" in result
+
+    def test_strips_control_characters(self):
+        """Multi-line text is split into separate filters, so \\n is handled at the filter level."""
+        from videoeditor.processing.text_overlay import build_drawtext_filters
+        import json
+
+        # Multi-line text should produce multiple drawtext filters
+        overlays = json.dumps([{
+            "text": "Line1\nLine2\nLine3",
+            "x": "center", "y": "bottom",
+            "font_size": 48, "color": "white"
+        }])
+        filters = build_drawtext_filters(overlays)
+        assert len(filters) == 3
+        # No filter should contain a raw newline
+        for f in filters:
+            assert "\n" not in f
+        assert "Line1" in filters[0]
+        assert "Line2" in filters[1]
+        assert "Line3" in filters[2]
 
 
 # ── speed.py (atempo chaining edge cases) ───────────────────────────

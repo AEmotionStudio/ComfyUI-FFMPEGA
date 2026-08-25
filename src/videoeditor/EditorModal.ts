@@ -19,7 +19,16 @@ import { CropOverlay, CropRect } from './CropOverlay';
 import { SpeedControl } from './SpeedControl';
 import { AudioMixer } from './AudioMixer';
 import { TextOverlayPanel, TextOverlay } from './TextOverlayPanel';
-import { iconClapperboard, iconUndo, iconRedo, iconCheck, iconClose, iconCrop, iconGauge, iconVolume, iconText, iconShuffle } from './icons';
+import { ColorGradingPanel, ColorGradingState } from './ColorGradingPanel';
+import { FiltersPanel, FilterPresetState } from './FiltersPanel';
+import { ShaderPanel, ShaderPresetState } from './ShaderPanel';
+import { KeyframeTrackJSON } from './KeyframeTrack';
+import { RelightPanel, RelightState } from './RelightPanel';
+import { ExportSettingsPanel, ExportSettings } from './ExportSettingsPanel';
+import { ComposePanel, ComposeState } from './ComposePanel';
+import { AIComposePanel, AIComposeState } from './AIComposePanel';
+import { TransformPanel, TransformState } from './TransformPanel';
+import { iconClapperboard, iconUndo, iconRedo, iconCheck, iconClose, iconCrop, iconGauge, iconVolume, iconText, iconShuffle, iconPalette, iconWand, iconSun, iconSettings, iconLayers, iconBrain, iconMove } from './icons';
 import { UndoManager, EditorState } from './UndoManager';
 import { ToolsPanel } from './ToolsPanel';
 import { EditToolbar, ToolMode } from './EditToolbar';
@@ -45,6 +54,15 @@ export interface ModalEditState {
     textOverlays: TextOverlay[];
     transitions: unknown[];
     audioSegments: object[];
+    colorGrading: ColorGradingState;
+    filterPreset: FilterPresetState;
+    shaderPreset: ShaderPresetState;
+    keyframes: KeyframeTrackJSON | null;
+    relight: RelightState;
+    exportSettings: ExportSettings;
+    compose: ComposeState;
+    aiCompose: AIComposeState;
+    transform: TransformState;
 }
 
 export interface EditorModalCallbacks {
@@ -67,6 +85,14 @@ export class EditorModal {
     private speedControl: SpeedControl;
     private audioMixer: AudioMixer;
     private textPanel: TextOverlayPanel;
+    private colorGradingPanel: ColorGradingPanel;
+    private filtersPanel: FiltersPanel;
+    private shaderPanel: ShaderPanel;
+    private relightPanel: RelightPanel;
+    private exportSettingsPanel: ExportSettingsPanel;
+    private composePanel: ComposePanel;
+    private aiComposePanel: AIComposePanel;
+    private transformPanel: TransformPanel;
     private undoManager: UndoManager;
     private toolsPanel: ToolsPanel;
     private editToolbar: EditToolbar;
@@ -127,7 +153,7 @@ export class EditorModal {
             '<kbd>Space</kbd> Play',
             '<kbd>S</kbd> Split',
             '<kbd>V</kbd> Select',
-            '<kbd>1-5</kbd> Tool Tabs',
+            '<kbd>1-0</kbd> Tool Tabs',
             '<kbd>?</kbd> Shortcuts',
         ].join('  ·  ');
 
@@ -297,6 +323,7 @@ export class EditorModal {
                 this._pushUndo();
                 this._refreshTextPreview();
             },
+            getVideoPath: () => this.videoPath,
         });
 
         this.transitionEditor = new TransitionEditor(this.editManager, {
@@ -306,12 +333,85 @@ export class EditorModal {
             },
         });
 
+        this.colorGradingPanel = new ColorGradingPanel({
+            onGradingChanged: () => {
+                this._pushUndo();
+                this._applyCSSPreview();
+            },
+        });
+
+        this.filtersPanel = new FiltersPanel({
+            onFilterChanged: () => {
+                this._pushUndo();
+                this._applyCSSPreview();
+            },
+        });
+
+        this.shaderPanel = new ShaderPanel({
+            onShaderChanged: () => {
+                this._pushUndo();
+            },
+        });
+
+        this.relightPanel = new RelightPanel({
+            onRelightChanged: () => {
+                this._pushUndo();
+            },
+        });
+
+        this.exportSettingsPanel = new ExportSettingsPanel({
+            onSettingsChanged: () => {
+                this._pushUndo();
+            },
+        });
+
+        this.composePanel = new ComposePanel({
+            onComposeChanged: () => {
+                this._pushUndo();
+            },
+        });
+
+        this.aiComposePanel = new AIComposePanel({
+            onAIComposeChanged: () => {
+                this._pushUndo();
+            },
+        });
+
+        this.transformPanel = new TransformPanel({
+            onTransformChanged: () => {
+                this._pushUndo();
+            },
+        });
+
         this.toolsPanel = new ToolsPanel([
-            { id: 'crop', label: 'Crop', icon: iconCrop, content: this.cropOverlay.element },
-            { id: 'speed', label: 'Speed', icon: iconGauge, content: this.speedControl.element },
-            { id: 'audio', label: 'Audio', icon: iconVolume, content: this.audioMixer.element },
-            { id: 'text', label: 'Text', icon: iconText, content: this.textPanel.element },
-            { id: 'transitions', label: 'Trans', icon: iconShuffle, content: this.transitionEditor.element },
+            {
+                label: 'EDIT',
+                tabs: [
+                    { id: 'crop', label: 'Crop', icon: iconCrop, content: this.cropOverlay.element },
+                    { id: 'speed', label: 'Speed', icon: iconGauge, content: this.speedControl.element },
+                    { id: 'audio', label: 'Audio', icon: iconVolume, content: this.audioMixer.element },
+                    { id: 'text', label: 'Text', icon: iconText, content: this.textPanel.element },
+                    { id: 'transitions', label: 'Trans', icon: iconShuffle, content: this.transitionEditor.element },
+                ],
+            },
+            {
+                label: 'FX',
+                tabs: [
+                    { id: 'color', label: 'Color', icon: iconPalette, content: this.colorGradingPanel.element },
+                    { id: 'filters', label: 'Filters', icon: iconWand, content: this.filtersPanel.element },
+                    { id: 'shaders', label: 'Shaders', icon: iconWand, content: this.shaderPanel.element },
+                    { id: 'relight', label: 'Relight', icon: iconSun, content: this.relightPanel.element },
+                    { id: 'export', label: 'Export', icon: iconSettings, content: this.exportSettingsPanel.element },
+                ],
+            },
+            {
+                label: 'COMPOSE',
+                tabs: [
+                    { id: 'compose', label: 'Compose', icon: iconLayers, content: this.composePanel.element },
+                    { id: 'ai', label: 'AI', icon: iconBrain, content: this.aiComposePanel.element },
+                    { id: 'transform', label: 'Xform', icon: iconMove, content: this.transformPanel.element },
+                ],
+            },
         ]);
 
         // Mount crop canvas and text preview overlays on the monitor content
@@ -346,9 +446,40 @@ export class EditorModal {
                 }
             },
             onResetRequested: () => {
+                // Reset timeline segments
                 this.editManager.reset();
                 this.audioEditManager.reset();
                 this.audioMixer.clearSegmentSelection();
+                this.audioMixer.setMasterVolume(1.0);
+                this.audioTimeline?.setSelectedIndex(-1);
+                this.audioTimeline?.render();
+
+                // Reset crop
+                this.cropOverlay.setRect(null);
+
+                // Reset speed
+                this.speedControl.loadSpeedMap({});
+                this.transport.setPlaybackRate(1.0);
+
+                // Reset text overlays
+                this.textPanel.loadOverlays([]);
+                this._refreshTextPreview();
+
+                // Reset FX panels to defaults
+                this.colorGradingPanel.loadState({});
+                this.filtersPanel.loadState({});
+                this.shaderPanel.loadState({});
+                this.relightPanel.loadState({});
+                this.exportSettingsPanel.loadState({});
+
+                // Reset compose panels
+                this.composePanel.loadState({});
+                this.aiComposePanel.loadState({});
+                this.transformPanel.loadState({});
+
+                // Reset CSS preview
+                this._applyCSSPreview();
+
                 this._pushUndo();
                 this.nleTimeline?.render();
             },
@@ -401,6 +532,34 @@ export class EditorModal {
             this.speedControl.loadSpeedMap(initialState.speedMap);
             this.audioMixer.setMasterVolume(initialState.volume);
             this.textPanel.loadOverlays(initialState.textOverlays);
+            if (initialState.colorGrading) {
+                this.colorGradingPanel.loadState(initialState.colorGrading);
+            }
+            if (initialState.filterPreset) {
+                this.filtersPanel.loadState(initialState.filterPreset);
+            }
+            if (initialState.shaderPreset) {
+                this.shaderPanel.loadState(initialState.shaderPreset);
+            }
+            if (initialState.keyframes) {
+                this.speedControl.loadKeyframeData(initialState.keyframes);
+            }
+            if (initialState.relight) {
+                this.relightPanel.loadState(initialState.relight);
+            }
+            if (initialState.exportSettings) {
+                this.exportSettingsPanel.loadState(initialState.exportSettings);
+            }
+            if (initialState.compose) {
+                this.composePanel.loadState(initialState.compose);
+            }
+            if (initialState.aiCompose) {
+                this.aiComposePanel.loadState(initialState.aiCompose);
+            }
+            if (initialState.transform) {
+                this.transformPanel.loadState(initialState.transform);
+            }
+            this._applyCSSPreview();
             try {
                 const crop = JSON.parse(initialState.cropRect);
                 if (crop && crop.w && crop.h) this.cropOverlay.setRect(crop);
@@ -416,6 +575,8 @@ export class EditorModal {
                 this.audioEditManager.init(info.duration || 1);
                 this.cropOverlay.setVideoDimensions(info.width || 640, info.height || 480);
                 this.textPreview.setVideoDimensions(info.width || 640, info.height || 480);
+                this.transport.setFps(info.fps || 30);
+                this.transport.setTotalDuration(info.duration || 1);
 
                 // Load segments from initial state
                 if (initialState && initialState.segments.length > 0) {
@@ -553,10 +714,20 @@ export class EditorModal {
                 return;
             }
 
-            // Number keys → tab switch
+            // Number keys → tab switch (1-9, 0 for tab 10)
             const num = parseInt(e.key, 10);
-            if (num >= 1 && num <= 5 && !e.ctrlKey && !e.altKey) {
-                if (this.toolsPanel.handleNumberKey(num)) {
+            if (!isNaN(num) && !e.ctrlKey && !e.altKey) {
+                const tabNum = num === 0 ? 10 : num;
+                if (this.toolsPanel.handleNumberKey(tabNum)) {
+                    e.preventDefault();
+                    return;
+                }
+            }
+
+            // Extended tab shortcuts: - for tab 11, = for tab 12
+            if ((e.key === '-' || e.key === '=') && !e.ctrlKey && !e.altKey) {
+                const tabNum = e.key === '-' ? 11 : 12;
+                if (this.toolsPanel.handleNumberKey(tabNum)) {
                     e.preventDefault();
                     return;
                 }
@@ -599,6 +770,7 @@ export class EditorModal {
 
         this.video.pause();
         this.video.src = '';
+        this.video.style.filter = 'none';  // Reset CSS preview filter
 
         if (this.nleTimeline) {
             this.nleTimeline.destroy();
@@ -648,6 +820,15 @@ export class EditorModal {
             textOverlays: this.textPanel.getOverlays(),
             transitions: [],
             audioSegments: this.audioEditManager.toJSON(),
+            colorGrading: this.colorGradingPanel.getState(),
+            filterPreset: this.filtersPanel.getState(),
+            shaderPreset: this.shaderPanel.getState(),
+            keyframes: this.speedControl.getKeyframeData() ?? null,
+            relight: this.relightPanel.getState(),
+            exportSettings: this.exportSettingsPanel.getState(),
+            compose: this.composePanel.getState(),
+            aiCompose: this.aiComposePanel.getState(),
+            transform: this.transformPanel.getState(),
         };
     }
 
@@ -693,6 +874,66 @@ export class EditorModal {
         // Text
         this.textPanel.loadOverlays(state.textOverlays as TextOverlay[]);
         this._refreshTextPreview();
+
+        // Color grading
+        if (state.colorGrading) {
+            this.colorGradingPanel.loadState(state.colorGrading);
+        }
+
+        // Filter preset
+        if (state.filterPreset) {
+            this.filtersPanel.loadState(state.filterPreset as FilterPresetState);
+        }
+
+        // Shader preset
+        if ((state as any).shaderPreset) {
+            this.shaderPanel.loadState((state as any).shaderPreset as ShaderPresetState);
+        }
+
+        this._applyCSSPreview();
+
+        // Keyframes
+        if (state.keyframes) {
+            this.speedControl.loadKeyframeData(state.keyframes as any);
+        }
+
+        // Relight
+        if (state.relight) {
+            this.relightPanel.loadState(state.relight as RelightState);
+        }
+
+        // Export settings
+        if (state.exportSettings) {
+            this.exportSettingsPanel.loadState(state.exportSettings as ExportSettings);
+        }
+
+        // Compose
+        if (state.compose) {
+            this.composePanel.loadState(state.compose as ComposeState);
+        }
+
+        // AI Compose
+        if (state.aiCompose) {
+            this.aiComposePanel.loadState(state.aiCompose as AIComposeState);
+        }
+
+        // Transform
+        if (state.transform) {
+            this.transformPanel.loadState(state.transform as TransformState);
+        }
+    }
+
+    /**
+     * Combine CSS filter approximations from color grading and filter preset
+     * into a single style.filter on the video element for live preview.
+     */
+    private _applyCSSPreview(): void {
+        const parts: string[] = [];
+        const gradingCSS = this.colorGradingPanel.getCSSFilter();
+        if (gradingCSS && gradingCSS !== 'none') parts.push(gradingCSS);
+        const filterCSS = this.filtersPanel.getCSSFilter();
+        if (filterCSS && filterCSS !== 'none') parts.push(filterCSS);
+        this.video.style.filter = parts.length > 0 ? parts.join(' ') : 'none';
     }
 
     /** Sync audio segments to match video segments (linked mode) */
@@ -734,6 +975,15 @@ export class EditorModal {
             textOverlays: this.textPanel.getOverlays() as TextOverlay[],
             transitions: [],
             audioSegments: this.audioEditManager.toJSON(),
+            colorGrading: this.colorGradingPanel.getState(),
+            filterPreset: this.filtersPanel.getState(),
+            shaderPreset: this.shaderPanel.getState(),
+            keyframes: this.speedControl.getKeyframeData() ?? null,
+            relight: this.relightPanel.getState(),
+            exportSettings: this.exportSettingsPanel.getState(),
+            compose: this.composePanel.getState(),
+            aiCompose: this.aiComposePanel.getState(),
+            transform: this.transformPanel.getState(),
         };
         this.close();
         this.callbacks.onApply(state);

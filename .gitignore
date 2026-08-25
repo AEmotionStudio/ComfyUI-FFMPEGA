@@ -99,6 +99,13 @@ Agent_Analysis.md
 command_log.md
 response.json
 errors_2.md
+command.md
+VENV_NOTES.md
+VRAM_MANAGEMENT.md
+VENV_AUDIT_*.md
+DOLPHIN_THUMBNAILS.md
+DREAMID_OMNI_STATUS.md
+SCAIL_Memory_Report.md
 
 # Package manager lock files
 
@@ -164,5 +171,22 @@ advert/
 index.html
 index.html.bak
 
+# Internal scripts (not shipped — local tooling only)
+scripts/upload_fp8_missing_components.py
+
 # Legacy JS source (superseded by TypeScript → web/)
 js/
+
+# Internal handoff notes (working scratch docs — not shipped)
+*_HANDOFF.md
+SAM3.1_HANDOFF.md
+SAM31_VIDEO_OOM_HANDOFF.md
+SAPIENS2_HANDOFF.md
+
+# Session transcripts / debugging scratch (local only)
+2026-*.txt
+Console.md
+image.png
+
+# Local HuggingFace mirror cache
+.hf_mirror/

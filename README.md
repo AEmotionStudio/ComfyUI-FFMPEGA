@@ -5,7 +5,7 @@
 **The ultimate video editing suite for ComfyUI — edit with natural language or hands-on manual controls.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-2.15.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-2.19.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-2-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 [![Downloads](https://img.shields.io/badge/dynamic/json?color=blueviolet&label=Downloads&query=downloads.smart_count&url=https://raw.githubusercontent.com/AEmotionStudio/ComfyUI-FFMPEGA/refs/heads/badges/traffic_stats.json&style=for-the-badge&logo=github)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
@@ -24,19 +24,44 @@
 
 ---
 
-## 🚀 What's New in v2.15.0
+## 🚧 In Development (Unreleased)
 
-*   🎭 **MiniMax-Remover** — new AI video object removal with 81-frame DiT inpainting, sliding-window batching for long videos, and automatic tiered fallback (MiniMax → FLUX Klein → LaMa → FFmpeg)
-*   🎛️ **5 New No-LLM Modes** — run `ai_upscale`, `video_depth`, `flux_klein`, `minimax_remover`, and `animate_portrait` directly from the dropdown without any LLM
-*   🧠 **Auto-VRAM Tile Sizing** — AI upscaler auto-calculates optimal tile dimensions from available GPU memory; new `tile_size` parameter for manual VRAM control
-*   ⚡ **VRAM Management Overhaul** — pipelines transfer to CPU before cleanup, only loaded modules are processed, consolidated FFmpeg binary paths across all synthesizers
-*   🎬 **NLE Editor & Upscaler Improvements** — video dimension padding, framerate compatibility fixes, 1-based frame indexing, dynamic mask fallback resolution
+*Landed on the development branch since v2.19.0 — not yet in a tagged release. See [CHANGELOG.md](CHANGELOG.md#unreleased) for the full detail.*
+
+*   🕺 **SCAIL-2** — pose-driven character animation, rebuilt ComfyUI-native and in-process (no subprocess). Native SAM 3.1 identity tracking, colored per-identity pose masks, 25 advanced widgets. Replaces the vendored SCAIL v1 pipeline
+*   ⚡ **FlashVSR** — one-step video super-resolution with `full` / `tiny` / `tiny_long` pipelines, DiT block swap, and near-lossless spatial decode tiling
+*   ♾️ **SVI 2.0 Pro** — infinite-length video generation (ICLR 2026 Oral) via iterative 81-frame Wan 2.2 I2V-A14B clips, with block swap and tiled VAE
+*   🎭 **Wan-Animate** & **MatAnyone2** — ComfyUI-native Wan 2.2 Animate character animation, plus CVPR 2026 video matting with temporal coherence
+*   🧍 **Meta Sapiens2** — human-centric vision: 308-keypoint pose, 29-class body-part segmentation, normals, pointmap and matting, with an fp8 5B option
+*   🧊 **SHARP** & **PhyFPS** — single-image 3D Gaussian view synthesis, and physical frame-rate detection/re-timing via the Visual Chronometer
+*   🖼️ **Multi-Source Comparison** — Save Video and Save Image now combine multiple inputs into one side-by-side or grid clip/image, with layout, per-panel labels and gap controls
+*   📹 **FaceCam Analytic Face Mesh** — camera pose is projected from MediaPipe's canonical model instead of being detected back off a rendered proxy head, so conditioning survives past 40–50° of yaw and `orbit_left`/`orbit_right` are exact mirrors
+*   🎨 **Correct Video Levels** — encoding now emits standard limited-range BT.709 instead of deprecated `yuvj420p`, fixing crushed blacks and blown highlights in players that re-expand it
+*   🎬 **Advanced Save Video Output** — H.264/H.265/VP9/AV1/ProRes/FFV1/GIF/WebP, CRF, presets, 10-bit, audio codec, loop, pingpong and workflow-in-the-container metadata — while the default stays a zero-cost file copy
+*   🌈 **Selectable Colour Policy** — one shared, measured colour path across every encoder, with a truthful sRGB default and an exact "match ComfyUI native" mode for A/B comparison
+
+<details>
+<summary><b>🚀 What's New in v2.19.0</b></summary>
+
+
+*   🗣️ **DreamID-Omni (WIP)** — identity-preserving talking-head video generation. Face image + audio + text prompt → video with preserved identity and voice. FP8 native matmul, sequential layer offloading, streaming VAE decode for 12 GB GPUs
+*   📹 **FaceCam Node** — portrait video camera control via [FaceCam](https://github.com/weijielyu/FaceCam) (CVPR 2026). Camera orbit, zoom, tilt presets with KSampler Advanced chaining support
+*   🎙️ **Fish Speech TTS** — Fish Audio S2 Pro text-to-speech with 80+ languages, voice cloning, emotion tags, and multi-speaker support. FP8 for ~12 GB VRAM
+*   🎵 **Foundation-1 Music Samples** — production-ready musical loop generation with tempo-sync, key awareness, and style transfer
+*   🖼️ **Frame Picker Node** — interactive frame selection and reordering with contact-sheet grid, drag-and-drop, and bulk tools
+*   🎨 **15 New GLSL Shaders** — anime_glow, comic_book, depth_fog, focus_pull, pop_art, toon_3d, watercolor, and more. **70 shaders** total
+
+</details>
 
 <details>
 <summary><b>📋 Previous Releases</b></summary>
 
 | Version | Highlights |
 | :--- | :--- |
+| **v2.18.0** | Kiwi-Edit AI video editing, SAM3 + Kiwi-Edit, RTX Video Super Resolution, SeedVR AI Upscaling, FacePoke expression presets |
+| **v2.17.0** | FacePoke interactive face editor, driving video reference, shader effects system, Flux Klein FP8, onion skin compositing, unified audio output mode |
+| **v2.16.0** | ACE-Step AI music generation, SAM-Audio source separation, Video Editor v2 (10 panels), AudioX vocal enhancement, NormalCrafter, Video Depth Anything |
+| **v2.15.0** | MiniMax-Remover, 5 new no-LLM modes, auto-VRAM tile sizing, VRAM management overhaul |
 | **v2.14.0** | Video Editor NLE node with timeline, razor, crop, transitions, text overlays, keyboard shortcuts |
 | **v2.13.0** | AI Background Removal (BRIA RMBG), FLUX Klein toggle, Edit FFmpeg fallback, smarter defaults |
 | **v2.12.0** | AI Face Animation (LivePortrait), MMAudio in-process inference, MCP progressive disclosure, LaMa safetensors conversion |
@@ -90,7 +115,7 @@ Works with **Ollama** (local, free), **OpenAI**, **Anthropic**, **Google Gemini*
 <td width="50%">
 
 ### 🎨 200+ Skills
-200+ video editing skills across visual effects, audio processing, spatial transforms, temporal edits, encoding, cinematic presets, vintage looks, social media, creative effects, text animations, editing & composition, audio visualization, multi-input operations, transitions, concat, split screen, and AI-powered skills (Whisper transcription, SAM3 masking, MiniMax-Remover object removal, MMAudio generation, MuseTalk lip sync, LivePortrait face animation, Video Depth estimation, AI Upscaling, Marigold dense vision).
+200+ video editing skills across visual effects, audio processing, spatial transforms, temporal edits, encoding, cinematic presets, vintage looks, social media, creative effects, text animations, editing & composition, audio visualization, multi-input operations, transitions, concat, split screen, and AI-powered skills (DreamID-Omni talking-head generation, FaceCam camera control, Fish Speech TTS, Foundation-1 music samples, ACE-Step music generation, SAM-Audio source separation, AudioX vocal enhancement, Whisper transcription, SAM3 masking, MiniMax-Remover object removal, MMAudio generation, MuseTalk lip sync, LivePortrait face animation, NormalCrafter surface normals, Video Depth estimation, AI Upscaling, Marigold dense vision).
 
 </td>
 </tr>
@@ -497,6 +522,7 @@ All models are mirrored to first-party [AEmotionStudio](https://huggingface.co/A
 | Model | Size | Stored In | Triggered By | Manual Download |
 | :--- | :--- | :--- | :--- | :--- |
 | **SAM3** (Segment Anything 3) | ~300 MB | `ComfyUI/models/SAM3/` | `auto_mask` skill, `sam3_masking` no-LLM mode, Effects Builder SAM3 target | [AEmotionStudio/sam3](https://huggingface.co/AEmotionStudio/sam3) — download `sam3.safetensors` |
+| **SAM3.1** (Multiplex Tracker) | ~3.5 GB | `ComfyUI/models/SAM3.1/` | Same triggers with `sam_version = sam3.1` (default). Video masking runs **in-process** on ComfyUI's native SAM3 model (VRAM-managed, ~3 GB peak); set `FFMPEGA_SAM3_NATIVE=0` to force the legacy subprocess path | [AEmotionStudio/sam3.1](https://huggingface.co/AEmotionStudio/sam3.1) — download `sam3.1_multiplex.safetensors` |
 | **Whisper** large-v3 | ~3 GB | `ComfyUI/models/whisper/` | `auto_transcribe`, `karaoke_subtitles` skills, `transcribe` / `karaoke_subtitles` no-LLM modes | [AEmotionStudio/whisper-models](https://huggingface.co/AEmotionStudio/whisper-models) |
 | **Whisper** medium | ~1.5 GB | `ComfyUI/models/whisper/` | Same as above (set `whisper_model` to `medium`) | Same as above |
 | **Whisper** small | ~500 MB | `ComfyUI/models/whisper/` | Same as above (set `whisper_model` to `small`) | Same as above |
@@ -512,6 +538,24 @@ All models are mirrored to first-party [AEmotionStudio](https://huggingface.co/A
 | **Marigold** (Dense Vision) | ~2.5 GB per mode | Auto-downloaded by diffusers | `marigold` no-LLM mode (depth/normals/appearance/lighting) | [AEmotionStudio/marigold-depth-v1-1](https://huggingface.co/AEmotionStudio/marigold-depth-v1-1) |
 | **AI Upscaler** (Real-ESRGAN / HAT / DAT / SwinIR) | ~17–170 MB per model | `ComfyUI/models/upscale_models/` | `ai_upscale` skill, `ai_upscale` no-LLM mode | [AEmotionStudio/ai-upscale-models](https://huggingface.co/AEmotionStudio/ai-upscale-models) |
 | **BRIA RMBG** (rembg) | ~270 MB | `~/.u2net/` | `remove_background` skill | Install with `pip install 'comfyui-ffmpega[masking]'` — model auto-fetched by rembg |
+| **ACE-Step 1.5** (Music Generation) | ~5 GB | `ComfyUI/models/acestep/` | `ace_step` no-LLM mode, `generate_music` skill | [AEmotionStudio/ACE-Step](https://huggingface.co/AEmotionStudio/ACE-Step) |
+| **SAM-Audio** (Source Separation) | ~1.2 GB (large) / ~600 MB (fp8) | `ComfyUI/models/sam_audio/` | `audio_separate` no-LLM mode | [AEmotionStudio/sam-audio](https://huggingface.co/AEmotionStudio/sam-audio) |
+| **AudioX** (Vocal Enhancement) | ~1 GB | `ComfyUI/models/audiox/` | AudioX chaining with ACE-Step | [AEmotionStudio/audiox](https://huggingface.co/AEmotionStudio/audiox) |
+| **NormalCrafter** (Surface Normals) | ~2 GB | `ComfyUI/models/normalcrafter/` | `normalcrafter` no-LLM mode | [AEmotionStudio/NormalCrafter](https://huggingface.co/AEmotionStudio/NormalCrafter) |
+| **Kiwi-Edit** (AI Video Editing) | ~5 GB (FP8) / ~10 GB (BF16) | `ComfyUI/models/kiwi_edit_*` | `kiwi_edit` no-LLM mode | [AEmotionStudio/Kiwi-Edit-Instruct](https://huggingface.co/AEmotionStudio/Kiwi-Edit-Instruct) |
+| **DreamID-Omni** (Talking Head) ⚠️ WIP | ~12 GB (FP8) / ~23 GB (BF16) | `ComfyUI/models/dreamid_omni/` | `dreamid_omni` no-LLM mode | [AEmotionStudio/dreamid-omni](https://huggingface.co/AEmotionStudio/dreamid-omni) |
+| **FaceCam** (Camera Control) | ~16.8 GB (high+low bf16) | `ComfyUI/models/diffusion_models/` | FaceCam node | [AEmotionStudio/facecam-wan2.2-14b-bf16](https://huggingface.co/AEmotionStudio/facecam-wan2.2-14b-bf16) |
+| **Fish Speech S2 Pro** (TTS) | ~6.5 GB (FP8) / ~10.4 GB (BF16) | `ComfyUI/models/fish_speech/` | `fish_speech` no-LLM mode | [AEmotionStudio/fish-speech-s2-pro](https://huggingface.co/AEmotionStudio/fish-speech-s2-pro) |
+| **Foundation-1** (Music Samples) | ~2 GB | `ComfyUI/models/foundation1/` | `foundation1` no-LLM mode | [AEmotionStudio/foundation1-models](https://huggingface.co/AEmotionStudio/foundation1-models) |
+| **SeedVR2** (Diffusion Upscaler) | ~3.4 GB (3B INT8) / ~8.3 GB (7B INT8) + ~300 MB (VAE) | `ComfyUI/models/SEEDVR2/` or `ComfyUI/models/diffusion_models/` (both searched) | `ai_upscale` with `upscale_model = seedvr2_*`. Prefer `seedvr2_3b_int8` / `seedvr2_7b_int8`; raise `blockswap_blocks` to fit the 7B under 16 GB | [AEmotionStudio/SeedVR2-models](https://huggingface.co/AEmotionStudio/SeedVR2-models) (FP8/GGUF). INT8 ConvRot checkpoints are local-only — place `seedvr2_{3b,7b}_int8_convrot.safetensors` in either folder |
+| **FlashVSR v1.1** (One-Step VSR) | ~5 GB (DiT + VAE + LQ_proj + TCDecoder) | `ComfyUI/models/FlashVSR/` | `ai_upscale` with `upscale_model = flashvsr_full` / `flashvsr_tiny` / `flashvsr_tiny_long` | [AEmotionStudio/flashvsr-models](https://huggingface.co/AEmotionStudio/flashvsr-models) — GPL-3.0 |
+| **SCAIL-2** (Pose-Driven Animation) | ~16 GB (fp8) | `ComfyUI/models/diffusion_models/` | `scail2` no-LLM mode. Also needs the Wan 2.1 VAE, UMT5-XXL text encoder and `clip_vision_h` | [Comfy-Org/SCAIL-2](https://huggingface.co/Comfy-Org/SCAIL-2) — `wan2.1_14B_SCAIL_2_fp8_scaled.safetensors` |
+| **SVI 2.0 Pro** (Infinite-Length Video) | ~500 MB (high + low LoRAs) | `ComfyUI/models/svi/version-2.0/` | `svi` no-LLM mode. ⚠️ Also requires the Wan 2.2 I2V-A14B base model (~28 GB) | [AEmotionStudio/svi-loras](https://huggingface.co/AEmotionStudio/svi-loras) |
+| **Wan-Animate** (Character Animation) | ~18 GB (DiT) + ~2.5 GB (pose) + ~62 MB (detector) | `ComfyUI/models/wan_animate/` | `wan_animate` no-LLM mode | [Kijai/WanVideo_comfy_fp8_scaled](https://huggingface.co/Kijai/WanVideo_comfy_fp8_scaled), [Kijai/vitpose_comfy](https://huggingface.co/Kijai/vitpose_comfy) |
+| **MatAnyone2** (Video Matting) | ~135 MB | `ComfyUI/models/matanyone2/` | `video_matting` no-LLM mode | [AEmotionStudio/matanyone2](https://huggingface.co/AEmotionStudio/matanyone2) — ⚠️ NTU S-Lab 1.0, non-commercial |
+| **Sapiens2** (Human-Centric Vision) | ~1 GB (0.4B) – ~10 GB (5B fp16) | `ComfyUI/models/sapiens2/<task>/` | `sapiens2` no-LLM mode — pose (308 keypoints), segmentation (29 classes), normals, pointmap, matting | [AEmotionStudio/sapiens2-normal](https://huggingface.co/AEmotionStudio/sapiens2-normal) and sibling `sapiens2-*` repos |
+| **SHARP** (3D Gaussian View Synthesis) | ~400 MB | `ComfyUI/models/sharp/` | `sharp` no-LLM mode | [AEmotionStudio/sharp](https://huggingface.co/AEmotionStudio/sharp) — ⚠️ Apple ML Research License, non-commercial |
+| **Visual Chronometer** (PhyFPS) | ~1 GB | `ComfyUI/models/visual_chronometer/` | `phyfps` no-LLM mode | [AEmotionStudio/Visual_Chronometer](https://huggingface.co/AEmotionStudio/Visual_Chronometer) |
 
 > [!NOTE]
 > Models are only downloaded when you use the corresponding skill for the first time. Core FFmpeg editing skills (200+ of them) require **zero model downloads**.
@@ -520,7 +564,7 @@ All models are mirrored to first-party [AEmotionStudio](https://huggingface.co/A
 
 ## 🎛️ Nodes
 
-FFMPEGA provides **11 nodes** that work together:
+FFMPEGA provides **14 nodes** that work together:
 
 > [!TIP]
 > **One task per run.** Instead of cramming multiple edits into a single prompt, focus each run on one editing task — then feed the output back into FFMPEGA for the next. This keeps context low and model focus high, leading to significantly better results. Chain FFMPEGA Agent → Save Video → Load Video Path → FFMPEGA Agent for multi-step workflows.
@@ -539,7 +583,7 @@ FFMPEGA provides **11 nodes** that work together:
 | `video_path` | STRING | Absolute path to source video. Used as ffmpeg input unless `images_a` is connected. |
 | `prompt` | STRING | Natural language editing instruction (e.g. *"Add cinematic letterbox"*, *"Speed up 2x"*). Not required in `manual` mode. |
 | `llm_model` | DROPDOWN | AI model selection — local Ollama models, CLI tools, or cloud APIs. Select `none` for no-LLM mode. |
-| `no_llm_mode` | DROPDOWN | Mode when `llm_model` is `none`: `manual` (Effects Builder, default), `sam3_masking`, `transcribe`, `karaoke_subtitles`, `generate_audio`, `lip_sync`, `animate_portrait`, `marigold`, `video_depth`, `flux_klein`, `minimax_remover`, `ai_upscale`. |
+| `no_llm_mode` | DROPDOWN | Mode when `llm_model` is `none` — **31 modes**: `manual` (Effects Builder, default), `sam3_masking`, `transcribe`, `karaoke_subtitles`, `generate_audio`, `generate_music`, `foundation1`, `fish_speech`, `audio_inpaint`, `audio_separate`, `ace_step`, `lip_sync`, `animate_portrait`, `marigold`, `normalcrafter`, `video_depth`, `sapiens2`, `flux_klein`, `kiwi_edit`, `minimax_remover`, `dreamid_omni`, `svi`, `sharp`, `wan_animate`, `scail2`, `ai_upscale`, `rembg`, `video_matting`, `onion_skin`, `comparison`, `phyfps`. |
 | `quality_preset` | DROPDOWN | Output quality: `draft`, `standard`, `high`, `lossless`. |
 | `seed` | INT | Change to force re-execution with the same prompt. Supports randomize control. |
 
@@ -579,6 +623,7 @@ FFMPEGA provides **11 nodes** that work together:
 | :--- | :--- | :--- |
 | `whisper_device` | DROPDOWN | Device for Whisper model: `cpu` (default, avoids VRAM pressure) or `gpu` (faster, ~3 GB VRAM). |
 | `whisper_model` | DROPDOWN | Whisper model size: `large-v3` (default, most accurate), `medium`, `small`, `base`, `tiny`. |
+| `sam_version` | DROPDOWN | SAM model: `sam3.1` (default, multiplex tracker — video masking runs in-process on ComfyUI's native model) or `sam3`. |
 | `sam3_max_objects` | INT | Max objects SAM3 tracks per frame (1–20, default 5). Lower = less VRAM. |
 | `sam3_det_threshold` | FLOAT | Minimum detection confidence for SAM3 (0.0–1.0, default 0.70). Higher = fewer objects. |
 | `mask_output_type` | DROPDOWN | `black_white` (raw mask for compositing) or `colored_overlay` (SAM3-style preview). |
@@ -631,6 +676,7 @@ Select up to 5 skills with parameters, add raw FFmpeg filters, and use presets. 
 | `raw_ffmpeg` | STRING | Raw FFmpeg `-vf` filter string applied after skill effects. |
 | `sam3_target` | STRING | SAM3 text target — apply effects only to the masked region. Leave empty for full-frame. |
 | `sam3_effect` | DROPDOWN | Effect for SAM3-detected region: `blur`, `pixelate`, `remove`, `grayscale`, `highlight`. |
+| `sam_version` | DROPDOWN | SAM model for the target region: `sam3.1` (default) or `sam3`. |
 
 | Output | Description |
 | :--- | :--- |
@@ -697,13 +743,49 @@ Validates the video file exists and outputs the path as a STRING — loads ZERO 
 <details>
 <summary><b>Save Video (FFMPEGA)</b> — Zero-memory video output with inline preview.</summary>
 
-Takes a video path (from FFMPEGA Agent or Load Video Path), copies the file to ComfyUI's output directory, and shows a preview. No re-encoding — just a file copy.
+Takes a video path (from FFMPEGA Agent or Load Video Path), copies the file to ComfyUI's output directory, and shows a preview. By default there is no re-encoding — just a file copy. Also encodes a connected IMAGE batch, and combines several sources into one comparison clip.
 
 | Input | Type | Description |
 | :--- | :--- | :--- |
 | `video_path` | STRING | Path to video file (typically from FFMPEGA Agent's output). |
 | `filename_prefix` | STRING | Prefix for saved filename. Supports `%date:yyyy-MM-dd%`. |
 | `overwrite` | BOOLEAN | *(optional)* Overwrite existing file vs auto-increment counter. |
+
+**Advanced output options** — all collapsed behind a single `show_advanced` toggle (off by default), so the node stays as small as it always was until you need them. All optional, so existing workflows keep the old behaviour.
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `show_advanced` | BOOLEAN | Reveal the encoding controls below. Purely a display toggle — collapsing it never resets or ignores a value you have set. |
+| `output_format` | DROPDOWN | `source (no re-encode)` (default), `h264-mp4`, `h265-mp4`, `vp9-webm`, `av1-webm`, `prores-mov`, `ffv1-mkv`, `gif`, `webp`. |
+| `color_policy` | DROPDOWN | `sRGB (recommended)`, `BT.709 broadcast`, `ComfyUI native match`, `full range (pc)`. See below. |
+| `crf` | INT | Quality, 0–63. Lower is better and larger. Ignored by ProRes and FFV1. |
+| `encode_preset` | DROPDOWN | `ultrafast`…`veryslow`. H.264/H.265 only. |
+| `bit_depth` | DROPDOWN | `8` or `10`. 10-bit greatly reduces banding on gradients. |
+| `audio_codec` | DROPDOWN | `auto`, `aac`, `libopus`, `flac`, `pcm_s16le`, `copy`, `none`. |
+| `audio_bitrate` | DROPDOWN | `96k`–`320k`. Ignored by lossless codecs. |
+| `faststart` | BOOLEAN | Move the MP4 index to the front so it streams before fully downloading. |
+| `loop_count` | INT | Extra repeats of the clip. |
+| `pingpong` | BOOLEAN | Play forwards then backwards. Image input only. |
+| `trim_to_audio` | BOOLEAN | End the video when the audio ends, instead of padding audio with silence. |
+| `embed_workflow` | BOOLEAN | Write the workflow into the video file itself, so dragging it onto the canvas restores it. |
+| `frame_output` | DROPDOWN | `preview (64)`, `all`, `none` — how many frames the `images` output carries. |
+
+Visibility works on two levels: `show_advanced` reveals the section, and within it any widget the selected format cannot use collapses automatically (VP9 and AV1 take a deadline rather than an x264 preset, ProRes and FFV1 have fixed quality, GIF and WebP carry no audio).
+
+**Copy, remux or re-encode.** With `output_format` on its default the node still does a plain file copy with no ffmpeg call. If only the container differs — or the source already holds exactly the codec the chosen format produces — the file is stream-copied, which is lossless and near-instant. A full re-encode happens only when the codec genuinely has to change.
+
+**About `color_policy`.** ComfyUI IMAGE tensors are sRGB, but video wants YUV, and the choice of conversion matrix visibly changes the result. Measured on FFmpeg 8 with a pure-green frame:
+
+| Policy | Matrix | Tags written | Notes |
+| :--- | :--- | :--- | :--- |
+| `sRGB (recommended)` | BT.709 (Y=172) | `tv`, `bt709`, `iec61966-2-1`, `bt709` | Honest about what the tensors are. Colour-managed players match the ComfyUI preview. |
+| `BT.709 broadcast` | BT.709 (Y=172) | `tv`, `bt709`, `bt709`, `bt709` | Same pixels, transfer tagged as BT.709. What VideoHelperSuite intends. |
+| `ComfyUI native match` | BT.601 (Y=144) | none | Byte-identical to `Create Video` → `Save Video`. |
+| `full range (pc)` | BT.709, full range | `pc`, `bt709`, `iec61966-2-1`, `bt709` | Archival. |
+
+If your saved videos have ever looked different from the ComfyUI preview, this is the knob. Note that ComfyUI's native path is not simply "untagged" — swscale falls back to the **BT.601** matrix there, so its pixel data genuinely differs from a BT.709 encode. The policy applies when encoding images; a copied video keeps whatever colour it already had.
+
+**The preview outlives the session.** Switching workflow tabs, reloading the page or restarting the server brings the player and its info bar straight back — no re-running the graph to see what you already rendered. Tab switches restore from ComfyUI's own record of the last execution (the same mechanism that keeps the native preview nodes populated); reloads and restarts restore from a descriptor kept in the workflow itself. If the file has since been deleted, or it was a `save_output = false` preview and ComfyUI cleared its temp directory on boot, the player simply collapses and the node returns to its no-preview size.
 
 </details>
 
@@ -830,7 +912,7 @@ Scans ComfyUI's output/temp directories for the newest video. Decodes frames (wi
 | `images` | IMAGE | *(optional)* Override: provide frames directly instead of auto-discovery. |
 | `audio` | AUDIO | *(optional)* Override: provide audio directly. |
 | `video_path` | STRING | *(optional)* Override: path to a specific video file. |
-| `frame_select_mode` | DROPDOWN | Frame selection strategy: `manual`, `uniform_5`, `uniform_10`, `first_last`, `every_2nd`, `every_5th`, `timestamps`. |
+| `frame_select_mode` | DROPDOWN | Frame selection strategy: `manual`, `uniform_5`, `uniform_10`, `first_last`, `last`, `every_2nd`, `every_5th`, `timestamps`. |
 | `auto_timestamps` | STRING | *(optional)* Comma-separated timestamps for `timestamps` mode. |
 | `pause_for_selection` | BOOLEAN | *(optional)* Block execution until frames are selected (manual mode). |
 
@@ -847,11 +929,136 @@ Scans ComfyUI's output/temp directories for the newest video. Decodes frames (wi
 
 </details>
 
+<details>
+<summary><b>Save Last Frame (FFMPEGA)</b> — Persist the tail of a generation to a named slot for scene continuation.</summary>
+
+Writes the last frame(s) of a video or IMAGE batch into `output/ffmpega_last_frame/<slot>/`, so a later queue run can start the next shot from where this one ended. Built for i2v chaining (Wan 2.2 and similar), where extending a shot means handing the model the frame you finished on.
+
+Shows a thumbnail strip of the slot's current contents as soon as the node is placed — no need to queue a prompt to see which frame you're working with.
+
+Connect `images` whenever possible: the tensor is written straight to PNG with no h264 round-trip. Pulling the frame out of the encoded file instead bakes in compression artifacts and yuv420p chroma subsampling, which compound visibly over a chain of generations.
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `slot_name` | STRING | Named slot to write into. Use different names to keep several chains apart (`drone_a`, `drone_b`). Sanitized to `[A-Za-z0-9_-]`. |
+| `frame_count` | INT | How many trailing frames to save (default 1). |
+| `offset_from_end` | INT | Skip this many frames at the very end. The literal final frame is often motion-blurred; try 1–3. |
+| `keep_history` | BOOLEAN | Off (default) keeps the slot at exactly `frame_count` files with fixed names. On appends numbered files, building an archive. |
+| `images` | IMAGE | *(optional)* Preferred, lossless source. Takes priority over `video_path`. |
+| `video_path` | STRING | *(optional)* Fallback source — ffmpeg decodes the file's tail. |
+| `filename_prefix` | STRING | *(optional)* Base filename inside the slot (default `lastframe`). |
+
+| Output | Description |
+| :--- | :--- |
+| `last_frame` | The saved frame(s), oldest first — the exact tensor written, not a re-read |
+| `frame_path` | Absolute path of the newest saved frame |
+| `slot_name` | The sanitized slot name |
+| `frame_count` | How many frames were actually written |
+
+> **Chaining inside one workflow:** wire `last_frame` straight into the next generation rather than adding a Load Last Frame node. Two unconnected nodes have no guaranteed execution order, and ComfyUI decides node caching *before* execution starts — so the load side would read the previous run's frame.
+
+</details>
+
+<details>
+<summary><b>Load Last Frame (FFMPEGA)</b> — Read a saved slot back to continue a scene in a later run.</summary>
+
+Loads the frame(s) Save Last Frame wrote to a named slot. Discovery is deterministic — the slot directory comes from the slot name and files carry fixed zero-padded names, so the pairing is an explicit contract rather than an mtime race against everything else in your output folder.
+
+Shows the same inline thumbnail strip as Save Last Frame, so you can see what the slot holds before running. The eight resize sub-widgets stay collapsed until `enable_resize` is turned on.
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `slot_name` | STRING | Slot to read — must match Save Last Frame's `slot_name`. |
+| `refresh_mode` | DROPDOWN | `auto` (reload when the slot changes) or `manual`. |
+| `frame_count` | INT | How many of the slot's trailing frames to load. |
+| `offset_from_end` | INT | Skip this many frames at the end of the slot. |
+| `on_missing` | DROPDOWN | *(optional)* `fallback` / `empty` / `error` — what to do when the slot is empty. |
+| `fallback_image` | IMAGE | *(optional)* Used when the slot is empty. |
+| `source_folder` | STRING | *(optional)* Read an arbitrary folder instead of the slot (picked by mtime). |
+| `filename_filter` | STRING | *(optional)* Only consider files with this prefix. |
+| `mask` | MASK | *(optional)* Upstream mask pass-through. |
+| `trigger` | ANY | *(optional)* Ordering hint — wire any Save Last Frame output in to force it to run first. |
+
+| Output | Description |
+| :--- | :--- |
+| `IMAGE` | The loaded frame(s), oldest first |
+| `MASK` | Solid white mask matching the frames |
+| `image_path` | Absolute path of the newest loaded frame |
+| `width` / `height` | Frame dimensions |
+| `frame_count` | How many frames were loaded (0 = slot was empty) |
+
+> **Starting a chain:** on the first run the slot is empty. Wire your original start image into `fallback_image` so run 1 and run N are the same graph with no rewiring — otherwise you get a black frame that silently poisons the generation.
+
+</details>
+
+<details>
+<summary><b>FaceCam (FFMPEGA)</b> — Portrait video camera control with orbits, zooms, and tilts.</summary>
+
+Portrait video generation using [FaceCam](https://github.com/weijielyu/FaceCam) (CVPR 2026). Uses 2+2 architecture: Wan2.2 14B GGUF base models + FaceCam bf16 partial checkpoints. Supports KSampler Advanced-style controls for multi-node chaining (HIGH model for trajectory, LOW model for detail refinement).
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `image` | IMAGE | Source face image or video frame. |
+| `model_high` | MODEL | Wan2.2 GGUF base model (from "Load Diffusion Model"). |
+| `model_low` | MODEL | Wan2.2 GGUF base model for refinement pass. |
+| `camera_preset` | DROPDOWN | Camera movement preset (orbit, zoom, tilt, etc.) with detailed tooltips. |
+| `add_noise` | DROPDOWN | `enable` / `disable` — KSampler Advanced noise control. |
+| `start_at_step` | INT | Step to start denoising at. |
+| `end_at_step` | INT | Step to stop denoising at. |
+| `return_with_leftover_noise` | DROPDOWN | `enable` / `disable` — preserve noise for chaining. |
+
+| Output | Description |
+| :--- | :--- |
+| `LATENT` | Latent output for chaining to next FaceCam node |
+| `images` | Decoded video frames |
+
+</details>
+
+<details>
+<summary><b>Frame Picker (FFMPEGA)</b> — Interactive frame selection and reordering with contact-sheet grid.</summary>
+
+Browse video frames in a contact-sheet grid, select/deselect with click (Shift+click for range, Ctrl+click for toggle), reorder via drag-and-drop. Bulk tools: Select All, Deselect All, Invert Selection, Every Nth Frame. Pause mode blocks execution until selection is applied.
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `images` | IMAGE | *(optional)* Video frames from upstream. |
+| `video_path` | STRING | *(optional)* Path to video file. |
+
+| Output | Description |
+| :--- | :--- |
+| `images` | Selected frames in user-defined order |
+| `video_path` | Path to temp video of selected frames |
+| `frame_count` | Number of selected frames |
+| `selection_json` | JSON array of selected frame indices |
+
+</details>
+
+<details>
+<summary><b>Shader Overlay (FFMPEGA)</b> — GPU-accelerated GLSL shader effects with chaining, depth modes, and animation.</summary>
+
+Apply up to 3 stacked GLSL shaders with per-layer animation speed, hue shift, blend mode, and opacity control. Supports depth-aware shader application (foreground focus, background focus, depth outline, atmospheric) via Video Depth Anything integration, and SAM3 object masking for targeted shader effects. 70 built-in shader presets plus random mode.
+
+| Input | Type | Description |
+| :--- | :--- | :--- |
+| `images` | IMAGE | Video frames to apply shaders to. |
+| `shader_1` | DROPDOWN | First shader effect (70 options + `random`). |
+| `shader_2` | DROPDOWN | *(optional)* Second stacked shader. |
+| `shader_3` | DROPDOWN | *(optional)* Third stacked shader. |
+| `animation_speed` | FLOAT | Animation speed multiplier (0.1–5.0). |
+| `blend_mode` | DROPDOWN | Blend mode for shader compositing. |
+| `depth_mode` | DROPDOWN | Depth-aware application mode. |
+
+| Output | Description |
+| :--- | :--- |
+| `images` | Processed video frames with shader effects |
+
+</details>
+
 ---
 
 ## 🎯 Skill System
 
-FFMPEGA includes a comprehensive skill system with **218 operations** organized into categories. Use them in two ways: let the **AI agent** select skills from your prompt, or pick them yourself with the **Effects Builder** — no LLM needed.
+FFMPEGA includes a comprehensive skill system with **226 operations** organized into categories. Use them in two ways: let the **AI agent** select skills from your prompt, or pick them yourself with the **Effects Builder** — no LLM needed.
 
 > 📄 **See [SKILLS_REFERENCE.md](SKILLS_REFERENCE.md) for the complete skill reference with all parameters and example prompts.**
 >
@@ -1202,7 +1409,7 @@ FFMPEGA includes a comprehensive skill system with **218 operations** organized 
 </details>
 
 <details>
-<summary><b>🤖 AI-Powered (10 skills)</b></summary>
+<summary><b>🤖 AI-Powered (18 skills)</b></summary>
 
 | Skill | Description |
 | :--- | :--- |
@@ -1210,16 +1417,26 @@ FFMPEGA includes a comprehensive skill system with **218 operations** organized 
 | `karaoke_subtitles` | Word-by-word karaoke subtitles with progressive color fill (Whisper) |
 | `auto_mask` | SAM3-powered object segmentation from text prompts |
 | `generate_audio` | AI-generate synchronized audio/foley from video + text (MMAudio) |
+| `generate_music` | AI music generation with ACE-Step 1.5 — text-to-music, style-guided covers |
+| `generate_sample` | AI music sample generation with Foundation-1 — tempo-synced loops |
+| `audio_inpaint` | AI audio repair and enhancement using AudioX/ACE-Step pipeline |
+| `audio_separate` | AI source separation with SAM-Audio — split into vocal/drum/bass/other stems |
 | `lip_sync` | AI lip sync with MuseTalk — synchronize lip movements to audio |
 | `animate_portrait` | AI face animation with LivePortrait — transfer expressions from driving video |
+| `fish_speech` | AI text-to-speech with Fish Audio S2 Pro — 80+ languages, voice cloning, emotion tags |
+| `dreamid_omni` | ⚠️ WIP — AI talking-head video generation with identity and voice preservation (DreamID-Omni) |
+| `kiwi_edit` | AI video editing with Kiwi-Edit — text-instruction and reference-image editing |
 | `remove_background` | AI background removal with BRIA RMBG — 6 model choices |
 | `ai_upscale` | AI super-resolution upscaling with Real-ESRGAN, HAT, DAT, or SwinIR — auto-VRAM tile sizing |
 | `video_depth` | Temporal depth estimation with Video Depth Anything — consistent depth maps across frames |
 | `marigold` | Dense vision analysis with Marigold — depth, normals, appearance, and lighting estimation |
+| `ace_step` | AI music generation with ACE-Step 1.5 — direct no-LLM mode for quick generation |
 
 > ⚠️ **License Notice:** The `generate_audio` skill uses [MMAudio](https://github.com/hkchengrex/MMAudio) model weights which are licensed under **CC-BY-NC 4.0** (non-commercial use only). Model weights are downloaded on first use — by downloading them you accept the [CC-BY-NC 4.0 license](https://creativecommons.org/licenses/by-nc/4.0/). The FFMPEGA code itself remains GPL-3.0.
 
 > ⚠️ **License Notice:** The `auto_mask:effect=remove` skill (when `use_minimax_remover=On`) uses [MiniMax-Remover](https://github.com/zibojia/MiniMax-Remover) model weights which are licensed under **CC-BY-NC 4.0** (non-commercial use only). Model weights are downloaded on first use — by downloading them you accept the [CC-BY-NC 4.0 license](https://creativecommons.org/licenses/by-nc/4.0/). The vendored code is Apache 2.0.
+
+> ⚠️ **License Notice:** Fish Speech S2 Pro is under the Fish Audio Research License — free for research/non-commercial use, commercial use requires a separate license from Fish Audio.
 
 </details>
 

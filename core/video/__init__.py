@@ -10,3 +10,6 @@ __all__ = [
     "AudioFormat",
     "ContainerFormat",
 ]
+
+# encode_opts / metadata are imported lazily by callers: they pull in torch,
+# which must not become an import-time cost for `core.video.analyzer` users.

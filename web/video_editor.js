@@ -3,9 +3,10 @@ var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { en
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
-import { a as addDownloadOverlay } from "./_chunks/ui_helpers-CvUDB6-L.js";
-import { d as collectEdges, s as snapToEdges, E as EditManager, T as TransportBar, S as SpeedControl, a as EditToolbar, U as UndoManager, N as NLETimeline } from "./_chunks/UndoManager-Pyn5f8_1.js";
-import { i as iconVolume, a as iconMuted, b as iconMusic, c as iconPlus, d as iconClose, e as iconBold, f as iconItalic, g as iconAlignLeft, h as iconAlignCenter, j as iconAlignRight, k as iconZoomOut, l as iconZoomIn, m as iconMaximize, n as iconShuffle, o as iconClapperboard, p as iconUndo, q as iconRedo, r as iconCheck, C as CropOverlay, s as iconCrop, t as iconGauge, u as iconText } from "./_chunks/CropOverlay-Chz7vM7Z.js";
+import { a as addDownloadOverlay } from "./_chunks/ui_helpers-Cs5gHV_9.js";
+import { d as collectEdges, s as snapToEdges, E as EditManager, T as TransportBar, S as SpeedControl, a as EditToolbar, U as UndoManager, N as NLETimeline } from "./_chunks/UndoManager-BnlgiwE5.js";
+import { C as CropOverlay } from "./_chunks/CropOverlay-H6yQHaMz.js";
+import { u as iconVolume, v as iconMuted, w as iconMusic, x as iconPlus, y as iconClose, z as iconBold, A as iconItalic, B as iconAlignLeft, C as iconAlignCenter, D as iconAlignRight, m as iconPalette, E as iconZoomOut, F as iconZoomIn, G as iconMaximize, H as iconShuffle, I as iconClapperboard, J as iconUndo, K as iconRedo, p as iconCheck, h as iconCrop, L as iconGauge, M as iconText, d as iconWand, f as iconSun, N as iconSettings, g as iconLayers, O as iconBrain, P as iconMove } from "./_chunks/icons-BOh8YpxI.js";
 class AudioMixer {
   constructor(callbacks) {
     __publicField(this, "container");
@@ -24,6 +25,10 @@ class AudioMixer {
     __publicField(this, "_masterVolume", 1);
     __publicField(this, "segmentHeader");
     __publicField(this, "_selectedSegIndex", -1);
+    __publicField(this, "aceRepaintBtn");
+    __publicField(this, "aceStrengthSlider");
+    __publicField(this, "aceStrengthLabel");
+    __publicField(this, "_aceRepaintActive", false);
     this.callbacks = callbacks;
     this.container = document.createElement("div");
     this.container.className = "veditor-audio";
@@ -147,6 +152,48 @@ class AudioMixer {
     });
     eqRow.append(eqIcon, this.eqSelect);
     eqSection.appendChild(eqRow);
+    const aceSection = this._makeSection("ACE-Step Repaint");
+    aceSection.setAttribute("data-tool-id", "veditor-ace-repaint-section");
+    aceSection.title = "Mark this audio segment for ACE-Step quality enhancement";
+    const aceRow = document.createElement("div");
+    aceRow.className = "veditor-control-row";
+    this.aceRepaintBtn = document.createElement("button");
+    this.aceRepaintBtn.className = "veditor-btn veditor-toggle-btn";
+    this.aceRepaintBtn.textContent = "🎵 Repaint Off";
+    this.aceRepaintBtn.title = "Toggle ACE-Step repaint for this segment";
+    this.aceRepaintBtn.setAttribute("data-tool-id", "veditor-ace-repaint-toggle");
+    this.aceRepaintBtn.setAttribute("aria-label", "Toggle ACE-Step audio repaint");
+    this.aceRepaintBtn.addEventListener("click", () => {
+      var _a, _b;
+      this._aceRepaintActive = !this._aceRepaintActive;
+      this._updateAceRepaintBtn();
+      (_b = (_a = this.callbacks).onAceRepaintChanged) == null ? void 0 : _b.call(_a, this._aceRepaintActive);
+    });
+    aceRow.appendChild(this.aceRepaintBtn);
+    aceSection.appendChild(aceRow);
+    const aceStrengthRow = document.createElement("div");
+    aceStrengthRow.className = "veditor-control-row";
+    this.aceStrengthSlider = document.createElement("input");
+    this.aceStrengthSlider.type = "range";
+    this.aceStrengthSlider.min = "0";
+    this.aceStrengthSlider.max = "1";
+    this.aceStrengthSlider.step = "0.05";
+    this.aceStrengthSlider.value = "0.5";
+    this.aceStrengthSlider.className = "veditor-fade-slider";
+    this.aceStrengthSlider.setAttribute("data-tool-id", "veditor-ace-strength-slider");
+    this.aceStrengthSlider.setAttribute("aria-label", "ACE-Step repaint strength (0 to 1)");
+    this.aceStrengthSlider.addEventListener("input", () => {
+      var _a, _b;
+      const val = parseFloat(this.aceStrengthSlider.value);
+      this.aceStrengthLabel.textContent = `${Math.round(val * 100)}%`;
+      (_b = (_a = this.callbacks).onAceRepaintStrengthChanged) == null ? void 0 : _b.call(_a, val);
+    });
+    this.aceStrengthLabel = document.createElement("span");
+    this.aceStrengthLabel.className = "veditor-fade-label";
+    this.aceStrengthLabel.textContent = "50%";
+    this.aceStrengthLabel.setAttribute("data-tool-id", "veditor-ace-strength-label");
+    aceStrengthRow.append(this.aceStrengthSlider, this.aceStrengthLabel);
+    aceSection.appendChild(aceStrengthRow);
     const resetRow = document.createElement("div");
     resetRow.className = "veditor-control-row";
     const resetBtn = document.createElement("button");
@@ -156,15 +203,17 @@ class AudioMixer {
     resetBtn.setAttribute("data-tool-id", "veditor-audio-reset");
     resetBtn.setAttribute("aria-label", "Reset audio settings");
     resetBtn.addEventListener("click", () => {
-      var _a, _b, _c, _d, _e, _f;
+      var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
       this.callbacks.onVolumeChanged(1);
       (_b = (_a = this.callbacks).onFadeInChanged) == null ? void 0 : _b.call(_a, 0);
       (_d = (_c = this.callbacks).onFadeOutChanged) == null ? void 0 : _d.call(_c, 0);
       (_f = (_e = this.callbacks).onEQChanged) == null ? void 0 : _f.call(_e, "flat");
+      (_h = (_g = this.callbacks).onAceRepaintChanged) == null ? void 0 : _h.call(_g, false);
+      (_j = (_i = this.callbacks).onAceRepaintStrengthChanged) == null ? void 0 : _j.call(_i, 0.5);
       this.reset();
     });
     resetRow.appendChild(resetBtn);
-    this.container.append(volSection, fadeInSection, fadeOutSection, eqSection, resetRow);
+    this.container.append(volSection, fadeInSection, fadeOutSection, eqSection, aceSection, resetRow);
   }
   get element() {
     return this.container;
@@ -207,6 +256,10 @@ class AudioMixer {
     this.eqSelect.value = seg.eq;
     this.isMuted = seg.muted;
     this.muteBtn.innerHTML = seg.muted ? iconMuted : iconVolume;
+    this._aceRepaintActive = seg.aceRepaint;
+    this._updateAceRepaintBtn();
+    this.aceStrengthSlider.value = String(seg.aceRepaintStrength);
+    this.aceStrengthLabel.textContent = `${Math.round(seg.aceRepaintStrength * 100)}%`;
   }
   /** Clear segment selection, restore master volume to slider, and show master label */
   clearSegmentSelection() {
@@ -222,7 +275,9 @@ class AudioMixer {
       fadeIn: parseFloat(this.fadeInSlider.value),
       fadeOut: parseFloat(this.fadeOutSlider.value),
       eq: this.eqSelect.value,
-      muted: this.isMuted
+      muted: this.isMuted,
+      aceRepaint: this._aceRepaintActive,
+      aceRepaintStrength: parseFloat(this.aceStrengthSlider.value)
     };
   }
   get selectedSegmentIndex() {
@@ -248,6 +303,10 @@ class AudioMixer {
     this.eqSelect.value = "flat";
     this.isMuted = false;
     this.muteBtn.innerHTML = iconVolume;
+    this._aceRepaintActive = false;
+    this._updateAceRepaintBtn();
+    this.aceStrengthSlider.value = "0.5";
+    this.aceStrengthLabel.textContent = "50%";
     this.clearSegmentSelection();
   }
   destroy() {
@@ -278,8 +337,19 @@ class AudioMixer {
     section.appendChild(label);
     return section;
   }
+  _updateAceRepaintBtn() {
+    if (this._aceRepaintActive) {
+      this.aceRepaintBtn.textContent = "🎵 Repaint On";
+      this.aceRepaintBtn.style.background = "var(--ve-success, #22c55e)";
+      this.aceRepaintBtn.style.color = "#000";
+    } else {
+      this.aceRepaintBtn.textContent = "🎵 Repaint Off";
+      this.aceRepaintBtn.style.background = "";
+      this.aceRepaintBtn.style.color = "";
+    }
+  }
 }
-const POSITION_PRESETS = [
+const POSITION_PRESETS$1 = [
   { label: "Top", x: "center", y: "top" },
   { label: "Center", x: "center", y: "center" },
   { label: "Bottom", x: "center", y: "bottom" },
@@ -408,11 +478,18 @@ class TextOverlayPanel {
       }
     });
     presetRow.append(presetLabel, presetSelect);
+    const captionBtn = document.createElement("button");
+    captionBtn.className = "veditor-btn veditor-caption-btn";
+    captionBtn.innerHTML = "🎙️ Auto-Generate Captions";
+    captionBtn.setAttribute("data-tool-id", "veditor-text-auto-caption");
+    captionBtn.setAttribute("aria-label", "Auto-generate captions from audio");
+    captionBtn.title = "Transcribe audio and generate subtitle overlays";
+    captionBtn.addEventListener("click", () => this._onAutoCaption(captionBtn));
     this.listEl = document.createElement("div");
     this.listEl.className = "veditor-text-list";
     this.listEl.setAttribute("data-tool-id", "veditor-text-list");
     this.listEl.setAttribute("aria-label", "List of text overlays");
-    this.container.append(header, presetRow, this.listEl);
+    this.container.append(header, captionBtn, presetRow, this.listEl);
   }
   get element() {
     return this.container;
@@ -564,7 +641,7 @@ class TextOverlayPanel {
       const posLabel = document.createElement("span");
       posLabel.className = "veditor-control-label";
       posLabel.textContent = "Position";
-      POSITION_PRESETS.forEach((preset) => {
+      POSITION_PRESETS$1.forEach((preset) => {
         const btn = document.createElement("button");
         btn.className = "veditor-btn veditor-preset-btn";
         if (ov.x === preset.x && ov.y === preset.y) btn.classList.add("active");
@@ -822,17 +899,2672 @@ class TextOverlayPanel {
   _notify() {
     this.callbacks.onOverlaysChanged([...this.overlays]);
   }
+  async _onAutoCaption(btn) {
+    var _a, _b;
+    const videoPath = (_b = (_a = this.callbacks).getVideoPath) == null ? void 0 : _b.call(_a);
+    if (!videoPath) {
+      btn.textContent = "⚠️ No video loaded";
+      setTimeout(() => {
+        btn.innerHTML = "🎙️ Auto-Generate Captions";
+      }, 2e3);
+      return;
+    }
+    btn.disabled = true;
+    btn.innerHTML = "⏳ Transcribing…";
+    try {
+      const res = await fetch("/ffmpega/transcribe_video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ video_path: videoPath })
+      });
+      if (!res.ok) {
+        throw new Error(`Server error: ${res.status}`);
+      }
+      const data = await res.json();
+      const segments = data.segments || [];
+      if (segments.length === 0) {
+        btn.innerHTML = "⚠️ No speech detected";
+        setTimeout(() => {
+          btn.innerHTML = "🎙️ Auto-Generate Captions";
+        }, 2e3);
+        return;
+      }
+      const newOverlays = segments.map((seg) => ({
+        text: seg.text.trim(),
+        x: "center",
+        y: "bottom",
+        font_size: 32,
+        color: "#ffffff",
+        start_time: Math.round(seg.start * 100) / 100,
+        end_time: Math.round(seg.end * 100) / 100,
+        font: "sans-serif",
+        alignment: "center",
+        bold: false,
+        italic: false,
+        backgroundColor: "#000000",
+        backgroundOpacity: 0.6,
+        outlineColor: null,
+        outlineWidth: 0
+      }));
+      this.overlays.push(...newOverlays);
+      this._renderList();
+      this._notify();
+      btn.innerHTML = `✅ ${newOverlays.length} captions added`;
+      setTimeout(() => {
+        btn.innerHTML = "🎙️ Auto-Generate Captions";
+      }, 3e3);
+    } catch (err) {
+      console.error("[VideoEditor] Auto-caption failed:", err);
+      btn.innerHTML = "❌ Transcription failed";
+      setTimeout(() => {
+        btn.innerHTML = "🎙️ Auto-Generate Captions";
+      }, 3e3);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+}
+const DEFAULTS = {
+  brightness: 0,
+  contrast: 1,
+  saturation: 1,
+  exposure: 0,
+  gamma: 1,
+  shadows_r: 0,
+  shadows_g: 0,
+  shadows_b: 0,
+  midtones_r: 0,
+  midtones_g: 0,
+  midtones_b: 0,
+  temperature: 6500
+};
+const EXPOSURE_SLIDERS = [
+  { key: "brightness", label: "Brightness", min: -1, max: 1, step: 0.02, default: 0, format: (v) => v >= 0 ? `+${v.toFixed(2)}` : v.toFixed(2) },
+  { key: "contrast", label: "Contrast", min: 0, max: 3, step: 0.02, default: 1, format: (v) => v.toFixed(2) },
+  { key: "saturation", label: "Saturation", min: 0, max: 3, step: 0.02, default: 1, format: (v) => v.toFixed(2) },
+  { key: "exposure", label: "Exposure", min: -3, max: 3, step: 0.05, default: 0, format: (v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)} EV` },
+  { key: "gamma", label: "Gamma", min: 0.1, max: 4, step: 0.02, default: 1, format: (v) => v.toFixed(2) }
+];
+const SHADOW_SLIDERS = [
+  { key: "shadows_r", label: "Red", min: -1, max: 1, step: 0.02, default: 0, format: (v) => v >= 0 ? `+${v.toFixed(2)}` : v.toFixed(2) },
+  { key: "shadows_g", label: "Green", min: -1, max: 1, step: 0.02, default: 0, format: (v) => v >= 0 ? `+${v.toFixed(2)}` : v.toFixed(2) },
+  { key: "shadows_b", label: "Blue", min: -1, max: 1, step: 0.02, default: 0, format: (v) => v >= 0 ? `+${v.toFixed(2)}` : v.toFixed(2) }
+];
+const MIDTONE_SLIDERS = [
+  { key: "midtones_r", label: "Red", min: -1, max: 1, step: 0.02, default: 0, format: (v) => v >= 0 ? `+${v.toFixed(2)}` : v.toFixed(2) },
+  { key: "midtones_g", label: "Green", min: -1, max: 1, step: 0.02, default: 0, format: (v) => v >= 0 ? `+${v.toFixed(2)}` : v.toFixed(2) },
+  { key: "midtones_b", label: "Blue", min: -1, max: 1, step: 0.02, default: 0, format: (v) => v >= 0 ? `+${v.toFixed(2)}` : v.toFixed(2) }
+];
+class ColorGradingPanel {
+  constructor(callbacks) {
+    __publicField(this, "container");
+    __publicField(this, "callbacks");
+    __publicField(this, "sliders", /* @__PURE__ */ new Map());
+    __publicField(this, "labels", /* @__PURE__ */ new Map());
+    __publicField(this, "defs", /* @__PURE__ */ new Map());
+    this.callbacks = callbacks;
+    this.container = document.createElement("div");
+    this.container.className = "veditor-color-grading";
+    this.container.setAttribute("data-tool-id", "veditor-color-grading");
+    this.container.setAttribute("aria-label", "Color grading controls");
+    const toneSection = this._makeSection("Tone & Exposure");
+    this._buildSliders(toneSection, EXPOSURE_SLIDERS);
+    const shadowSection = this._makeSection("Shadows");
+    this._buildSliders(shadowSection, SHADOW_SLIDERS);
+    const midtoneSection = this._makeSection("Midtones");
+    this._buildSliders(midtoneSection, MIDTONE_SLIDERS);
+    const wbSection = this._makeSection("White Balance");
+    const tempDef = {
+      key: "temperature",
+      label: "Temperature",
+      min: 2e3,
+      max: 12e3,
+      step: 100,
+      default: 6500,
+      format: (v) => `${Math.round(v)}K`
+    };
+    this._buildSliders(wbSection, [tempDef]);
+    const wbHint = document.createElement("div");
+    wbHint.className = "veditor-control-row";
+    wbHint.style.justifyContent = "space-between";
+    wbHint.style.fontSize = "9px";
+    wbHint.style.color = "var(--ve-text-dim)";
+    wbHint.style.marginTop = "-2px";
+    wbHint.innerHTML = '<span style="color:#ff9955">🔥 Warm</span><span style="color:#5599ff">❄️ Cool</span>';
+    wbSection.appendChild(wbHint);
+    const resetRow = document.createElement("div");
+    resetRow.className = "veditor-control-row";
+    const resetBtn = document.createElement("button");
+    resetBtn.className = "veditor-btn veditor-toggle-btn";
+    resetBtn.innerHTML = `${iconPalette} Reset Color`;
+    resetBtn.title = "Reset all color grading to defaults";
+    resetBtn.setAttribute("data-tool-id", "veditor-color-reset");
+    resetBtn.setAttribute("aria-label", "Reset color grading settings");
+    resetBtn.addEventListener("click", () => {
+      this.reset();
+      this.callbacks.onGradingChanged(this.getState());
+    });
+    resetRow.appendChild(resetBtn);
+    this.container.append(toneSection, shadowSection, midtoneSection, wbSection, resetRow);
+  }
+  get element() {
+    return this.container;
+  }
+  /** Get the current state for serialization / undo. */
+  getState() {
+    const state = { ...DEFAULTS };
+    for (const [key, slider] of this.sliders) {
+      state[key] = parseFloat(slider.value);
+    }
+    return state;
+  }
+  /** Load state (from undo restore or initial widget data). */
+  loadState(state) {
+    for (const [key, def] of this.defs) {
+      const val = state[key] ?? def.default;
+      const slider = this.sliders.get(key);
+      const label = this.labels.get(key);
+      if (slider) slider.value = String(val);
+      if (label) label.textContent = def.format(val);
+    }
+  }
+  /** Reset all controls to defaults. */
+  reset() {
+    this.loadState(DEFAULTS);
+  }
+  /**
+   * Build CSS filter string for live preview approximation.
+   * Not pixel-accurate with FFmpeg, but gives immediate visual feedback.
+   */
+  getCSSFilter() {
+    const s = this.getState();
+    const parts = [];
+    if (Math.abs(s.brightness) > 0.01) {
+      parts.push(`brightness(${1 + s.brightness})`);
+    }
+    if (Math.abs(s.contrast - 1) > 0.01) {
+      parts.push(`contrast(${s.contrast})`);
+    }
+    if (Math.abs(s.saturation - 1) > 0.01) {
+      parts.push(`saturate(${s.saturation})`);
+    }
+    if (Math.abs(s.exposure) > 0.01) {
+      parts.push(`brightness(${1 + s.exposure * 0.1})`);
+    }
+    if (Math.abs(s.temperature - 6500) > 100) {
+      const warmth = (s.temperature - 6500) / 5500;
+      if (warmth > 0) {
+        parts.push(`sepia(${(warmth * 0.15).toFixed(3)})`);
+      } else {
+        parts.push(`hue-rotate(${(warmth * 15).toFixed(1)}deg)`);
+      }
+    }
+    return parts.length > 0 ? parts.join(" ") : "none";
+  }
+  destroy() {
+    this.container.remove();
+  }
+  // ── Private ──────────────────────────────────────────────────
+  _buildSliders(section, defs) {
+    for (const def of defs) {
+      this.defs.set(def.key, def);
+      const row = document.createElement("div");
+      row.className = "veditor-control-row veditor-grading-row";
+      const labelEl = document.createElement("span");
+      labelEl.className = "veditor-grading-label";
+      labelEl.textContent = def.label;
+      const slider = document.createElement("input");
+      slider.type = "range";
+      slider.min = String(def.min);
+      slider.max = String(def.max);
+      slider.step = String(def.step);
+      slider.value = String(def.default);
+      slider.className = "veditor-grading-slider";
+      slider.setAttribute("data-tool-id", `veditor-grading-${def.key}`);
+      slider.setAttribute("aria-label", `${def.label} (${def.min} to ${def.max})`);
+      const valueEl = document.createElement("span");
+      valueEl.className = "veditor-grading-value";
+      valueEl.textContent = def.format(def.default);
+      slider.addEventListener("input", () => {
+        const val = parseFloat(slider.value);
+        valueEl.textContent = def.format(val);
+        this.callbacks.onGradingChanged(this.getState());
+      });
+      slider.addEventListener("dblclick", () => {
+        slider.value = String(def.default);
+        valueEl.textContent = def.format(def.default);
+        this.callbacks.onGradingChanged(this.getState());
+      });
+      this.sliders.set(def.key, slider);
+      this.labels.set(def.key, valueEl);
+      row.append(labelEl, slider, valueEl);
+      section.appendChild(row);
+    }
+  }
+  _makeSection(title) {
+    const section = document.createElement("div");
+    section.className = "veditor-panel-section";
+    const label = document.createElement("div");
+    label.className = "veditor-section-label";
+    label.textContent = title;
+    section.appendChild(label);
+    return section;
+  }
+}
+const PRESETS = [
+  { key: "none", label: "None", css: "none", color: "#888" },
+  { key: "cinematic", label: "Cinematic", css: "saturate(0.7) contrast(1.2) brightness(0.95)", color: "#6366f1" },
+  { key: "vintage", label: "Vintage", css: "saturate(0.6) contrast(1.1) sepia(0.2)", color: "#d4a574" },
+  { key: "noir", label: "Noir", css: "saturate(0) contrast(1.3) brightness(0.9)", color: "#555" },
+  { key: "cyberpunk", label: "Cyberpunk", css: "saturate(1.6) contrast(1.3) hue-rotate(10deg)", color: "#00e5ff" },
+  { key: "lofi", label: "Lo-Fi", css: "saturate(0.5) contrast(0.9) brightness(1.1)", color: "#e8b4b8" },
+  { key: "sepia", label: "Sepia", css: "sepia(1)", color: "#c49a6c" },
+  { key: "bleach_bypass", label: "Bleach Bypass", css: "saturate(0.4) contrast(1.5) brightness(0.95)", color: "#b0b0b0" },
+  { key: "dream", label: "Dream", css: "blur(1px) brightness(1.15) saturate(0.8)", color: "#c084fc" },
+  { key: "film_grain", label: "Film Grain", css: "saturate(0.85) contrast(1.1)", color: "#a0826d" },
+  { key: "b_and_w", label: "B&W", css: "saturate(0) contrast(1.1)", color: "#999" },
+  { key: "warm", label: "Warm", css: "sepia(0.15) saturate(1.1)", color: "#f59e0b" },
+  { key: "cool", label: "Cool", css: "hue-rotate(-10deg) saturate(1.05) brightness(0.97)", color: "#3b82f6" },
+  { key: "neon", label: "Neon", css: "saturate(3) brightness(1.1)", color: "#22d3ee" },
+  { key: "comic_book", label: "Comic Book", css: "saturate(1.5) contrast(1.3)", color: "#ef4444" },
+  { key: "thermal", label: "Thermal", css: "hue-rotate(180deg) saturate(2)", color: "#ff5722" }
+];
+class FiltersPanel {
+  constructor(callbacks) {
+    __publicField(this, "container");
+    __publicField(this, "callbacks");
+    __publicField(this, "selectedKey", "none");
+    __publicField(this, "intensity", 1);
+    __publicField(this, "cards", /* @__PURE__ */ new Map());
+    __publicField(this, "intensitySlider");
+    __publicField(this, "intensityLabel");
+    this.callbacks = callbacks;
+    this.container = document.createElement("div");
+    this.container.className = "veditor-filters-panel";
+    this.container.setAttribute("data-tool-id", "veditor-filters-panel");
+    this.container.setAttribute("aria-label", "Filter preset controls");
+    const grid = document.createElement("div");
+    grid.className = "veditor-filter-grid";
+    for (const preset of PRESETS) {
+      const card = this._makeCard(preset);
+      grid.appendChild(card);
+      this.cards.set(preset.key, card);
+    }
+    const intensitySection = document.createElement("div");
+    intensitySection.className = "veditor-panel-section veditor-filter-intensity-section";
+    const intensityHeader = document.createElement("div");
+    intensityHeader.className = "veditor-section-label";
+    intensityHeader.textContent = "Intensity";
+    const intensityRow = document.createElement("div");
+    intensityRow.className = "veditor-control-row";
+    this.intensitySlider = document.createElement("input");
+    this.intensitySlider.type = "range";
+    this.intensitySlider.min = "0";
+    this.intensitySlider.max = "100";
+    this.intensitySlider.step = "1";
+    this.intensitySlider.value = "100";
+    this.intensitySlider.className = "veditor-grading-slider";
+    this.intensitySlider.setAttribute("data-tool-id", "veditor-filter-intensity");
+    this.intensitySlider.setAttribute("aria-label", "Filter intensity (0 to 100%)");
+    this.intensityLabel = document.createElement("span");
+    this.intensityLabel.className = "veditor-grading-value";
+    this.intensityLabel.textContent = "100%";
+    this.intensitySlider.addEventListener("input", () => {
+      this.intensity = parseInt(this.intensitySlider.value, 10) / 100;
+      this.intensityLabel.textContent = `${Math.round(this.intensity * 100)}%`;
+      this.callbacks.onFilterChanged(this.getState());
+    });
+    intensityRow.append(this.intensitySlider, this.intensityLabel);
+    intensitySection.append(intensityHeader, intensityRow);
+    this.container.append(grid, intensitySection);
+    this._selectCard("none");
+  }
+  get element() {
+    return this.container;
+  }
+  getState() {
+    return {
+      preset: this.selectedKey,
+      intensity: this.intensity
+    };
+  }
+  loadState(state) {
+    if (state.preset !== void 0) {
+      this._selectCard(state.preset);
+    }
+    if (state.intensity !== void 0) {
+      this.intensity = state.intensity;
+      this.intensitySlider.value = String(Math.round(this.intensity * 100));
+      this.intensityLabel.textContent = `${Math.round(this.intensity * 100)}%`;
+    }
+  }
+  reset() {
+    this._selectCard("none");
+    this.intensity = 1;
+    this.intensitySlider.value = "100";
+    this.intensityLabel.textContent = "100%";
+  }
+  /**
+   * Build CSS filter string for live preview approximation.
+   * Blends with the selected preset's CSS using opacity scaling.
+   */
+  getCSSFilter() {
+    if (this.selectedKey === "none") return "none";
+    const preset = PRESETS.find((p) => p.key === this.selectedKey);
+    if (!preset || preset.css === "none") return "none";
+    return preset.css;
+  }
+  destroy() {
+    this.container.remove();
+  }
+  // ── Private ──────────────────────────────────────────────────
+  _makeCard(preset) {
+    const card = document.createElement("div");
+    card.className = "veditor-filter-card";
+    card.setAttribute("data-tool-id", `veditor-filter-${preset.key}`);
+    card.setAttribute("aria-label", `Filter: ${preset.label}`);
+    card.title = preset.label;
+    const swatch = document.createElement("div");
+    swatch.className = "veditor-filter-swatch";
+    if (preset.key !== "none") {
+      swatch.style.filter = preset.css;
+      swatch.style.borderColor = preset.color;
+    }
+    const label = document.createElement("span");
+    label.className = "veditor-filter-label";
+    label.textContent = preset.label;
+    card.append(swatch, label);
+    card.addEventListener("click", () => {
+      this._selectCard(preset.key);
+      this.callbacks.onFilterChanged(this.getState());
+    });
+    return card;
+  }
+  _selectCard(key) {
+    this.selectedKey = key;
+    for (const [k, card] of this.cards) {
+      card.classList.toggle("active", k === key);
+    }
+  }
+}
+const SHADERS = [
+  {
+    key: "none",
+    label: "None",
+    description: "No shader effect",
+    css: "none",
+    color: "#888"
+  },
+  {
+    key: "crt",
+    label: "CRT",
+    description: "Scanlines + barrel distortion",
+    css: "contrast(1.2) brightness(0.9)",
+    color: "#22c55e"
+  },
+  {
+    key: "vhs",
+    label: "VHS",
+    description: "Analog tape distortion + color bleed",
+    css: "saturate(0.7) sepia(0.15) blur(0.5px)",
+    color: "#d4a574"
+  },
+  {
+    key: "holographic",
+    label: "Holographic",
+    description: "Iridescent rainbow shift",
+    css: "saturate(1.5) hue-rotate(30deg) brightness(1.1)",
+    color: "#c084fc"
+  },
+  {
+    key: "glitch",
+    label: "Glitch",
+    description: "RGB channel split + displacement",
+    css: "contrast(1.3) saturate(1.2)",
+    color: "#ef4444"
+  },
+  {
+    key: "voronoi",
+    label: "Voronoi",
+    description: "Cell/toon edge shading",
+    css: "contrast(1.5) saturate(0.8)",
+    color: "#f97316"
+  },
+  {
+    key: "water_ripple",
+    label: "Water Ripple",
+    description: "Animated water distortion",
+    css: "brightness(1.05) saturate(1.1)",
+    color: "#3b82f6"
+  },
+  {
+    key: "night_vision",
+    label: "Night Vision",
+    description: "Green phosphor + noise",
+    css: "saturate(0) brightness(1.3) sepia(0.3) hue-rotate(70deg)",
+    color: "#4ade80"
+  },
+  {
+    key: "force_field",
+    label: "Force Field",
+    description: "Energy barrier glow on edges",
+    css: "brightness(1.1) saturate(1.8) contrast(1.2)",
+    color: "#06b6d4"
+  },
+  {
+    key: "plasma_burn",
+    label: "Plasma Burn",
+    description: "Animated plasma field overlay",
+    css: "saturate(1.5) hue-rotate(40deg) brightness(1.1)",
+    color: "#f97316"
+  },
+  {
+    key: "shockwave",
+    label: "Shockwave",
+    description: "Expanding ring distortion",
+    css: "brightness(1.15) contrast(1.1)",
+    color: "#60a5fa"
+  },
+  {
+    key: "datamosh",
+    label: "Datamosh",
+    description: "I-frame corruption glitch art",
+    css: "contrast(1.4) saturate(1.1)",
+    color: "#ef4444"
+  },
+  {
+    key: "crystal",
+    label: "Crystal",
+    description: "Faceted diamond refraction",
+    css: "brightness(1.1) contrast(1.2) saturate(1.1)",
+    color: "#e2e8f0"
+  },
+  {
+    key: "aurora",
+    label: "Aurora",
+    description: "Northern lights ribbons",
+    css: "brightness(0.95) saturate(1.3)",
+    color: "#34d399"
+  },
+  {
+    key: "hologram_scan",
+    label: "Hologram",
+    description: "Sci-fi holographic projection",
+    css: "saturate(0.5) sepia(0.3) hue-rotate(180deg) brightness(1.1)",
+    color: "#22d3ee"
+  },
+  {
+    key: "portal",
+    label: "Portal",
+    description: "Swirling vortex distortion",
+    css: "hue-rotate(250deg) saturate(1.5) brightness(1.1)",
+    color: "#a855f7"
+  },
+  {
+    key: "circuit_board",
+    label: "Circuit",
+    description: "PCB traces on image edges",
+    css: "saturate(0.7) hue-rotate(70deg) brightness(0.8)",
+    color: "#4ade80"
+  },
+  {
+    key: "dissolve",
+    label: "Dissolve",
+    description: "Particle dissolve with embers",
+    css: "brightness(0.9) contrast(1.2)",
+    color: "#fb923c"
+  },
+  {
+    key: "hex_matrix",
+    label: "Hex Matrix",
+    description: "Hex grid with parallax depth",
+    css: "saturate(0.8) hue-rotate(150deg) contrast(1.1)",
+    color: "#06b6d4"
+  },
+  {
+    key: "liquid_metal",
+    label: "Liquid Metal",
+    description: "Chrome mercury surface",
+    css: "saturate(0) contrast(1.5) brightness(1.1)",
+    color: "#94a3b8"
+  },
+  {
+    key: "xray",
+    label: "X-Ray",
+    description: "Medical X-ray imaging",
+    css: "invert(1) saturate(0) brightness(1.2) contrast(1.3)",
+    color: "#818cf8"
+  },
+  // Creative batch 2
+  {
+    key: "cartoon",
+    label: "Cartoon",
+    description: "Cel-shaded toon with ink outlines",
+    css: "contrast(1.4) saturate(1.5)",
+    color: "#f472b6"
+  },
+  {
+    key: "jelly",
+    label: "Jelly",
+    description: "Elastic gelatin wobble distortion",
+    css: "brightness(1.05) saturate(1.1)",
+    color: "#c084fc"
+  },
+  {
+    key: "emboss_3d",
+    label: "Emboss 3D",
+    description: "Relief carving with rotating light",
+    css: "grayscale(0.5) contrast(1.5) brightness(1.1)",
+    color: "#d6d3d1"
+  },
+  {
+    key: "infrared_predator",
+    label: "Predator",
+    description: "Thermal hunting vision + reticle",
+    css: "saturate(0) sepia(1) hue-rotate(-30deg) contrast(1.5)",
+    color: "#ef4444"
+  },
+  {
+    key: "digital_decay",
+    label: "Decay",
+    description: "Corrupted signal with pixel rot",
+    css: "contrast(1.3) brightness(0.95)",
+    color: "#a1a1aa"
+  },
+  {
+    key: "underwater",
+    label: "Underwater",
+    description: "Deep sea with caustics & particles",
+    css: "saturate(0.7) hue-rotate(160deg) brightness(0.85)",
+    color: "#0ea5e9"
+  },
+  {
+    key: "electric_arc",
+    label: "Electric",
+    description: "Tesla arc lightning on edges",
+    css: "brightness(0.85) contrast(1.2) saturate(1.3)",
+    color: "#38bdf8"
+  },
+  {
+    key: "ink_wash",
+    label: "Ink Wash",
+    description: "Sumi-e ink painting on rice paper",
+    css: "grayscale(0.8) contrast(1.3) sepia(0.2)",
+    color: "#57534e"
+  },
+  // Outline shaders (pair with SAM3 masking)
+  {
+    key: "neon_outline",
+    label: "Neon Outline",
+    description: "Glowing neon contour lines",
+    css: "brightness(0.5) contrast(2) saturate(2)",
+    color: "#f0abfc"
+  },
+  {
+    key: "fire_outline",
+    label: "Fire Outline",
+    description: "Burning edge with rising flames",
+    css: "brightness(0.9) contrast(1.3)",
+    color: "#fb923c"
+  },
+  {
+    key: "frost_outline",
+    label: "Frost Outline",
+    description: "Icy crystal edges",
+    css: "brightness(1.1) saturate(0.7) hue-rotate(190deg)",
+    color: "#7dd3fc"
+  },
+  {
+    key: "shadow_outline",
+    label: "Shadow",
+    description: "Dramatic drop shadow silhouette",
+    css: "brightness(0.8) contrast(1.4)",
+    color: "#52525b"
+  },
+  // GPU-enhanced classics
+  {
+    key: "oil_paint",
+    label: "Oil Paint",
+    description: "Kuwahara brush stroke smoothing",
+    css: "blur(1px) saturate(1.3) contrast(1.1)",
+    color: "#fbbf24"
+  },
+  {
+    key: "rain",
+    label: "Rain",
+    description: "Animated rain streaks & lens drops",
+    css: "brightness(0.88) saturate(0.8)",
+    color: "#60a5fa"
+  },
+  {
+    key: "matrix",
+    label: "Matrix",
+    description: "Digital rain with glyph characters",
+    css: "saturate(0) brightness(0.5) sepia(0.5) hue-rotate(70deg)",
+    color: "#22c55e"
+  },
+  {
+    key: "sketch",
+    label: "Sketch",
+    description: "Pencil hatching with paper texture",
+    css: "grayscale(1) contrast(2) brightness(1.2)",
+    color: "#78716c"
+  },
+  // Boundary-pushing batch 3
+  {
+    key: "pixel_sort",
+    label: "Pixel Sort",
+    description: "Glitch art brightness sorting",
+    css: "contrast(1.3) saturate(1.1)",
+    color: "#f43f5e"
+  },
+  {
+    key: "topographic",
+    label: "Topographic",
+    description: "Elevation contour terrain map",
+    css: "saturate(0.5) hue-rotate(60deg) contrast(1.2)",
+    color: "#65a30d"
+  },
+  {
+    key: "stained_glass",
+    label: "Stained Glass",
+    description: "Cathedral window panels",
+    css: "saturate(1.8) brightness(1.1) contrast(1.1)",
+    color: "#e11d48"
+  },
+  {
+    key: "smoke",
+    label: "Smoke",
+    description: "Animated fog wisps drifting",
+    css: "brightness(0.85) contrast(0.8) saturate(0.6)",
+    color: "#9ca3af"
+  },
+  {
+    key: "geometric_shatter",
+    label: "Shatter",
+    description: "Exploding triangle shards",
+    css: "brightness(1.05) contrast(1.2)",
+    color: "#e2e8f0"
+  },
+  {
+    key: "noir",
+    label: "Noir",
+    description: "Film noir with venetian blinds",
+    css: "grayscale(0.9) contrast(1.5) brightness(0.9)",
+    color: "#404040"
+  },
+  {
+    key: "cyberpunk",
+    label: "Cyberpunk",
+    description: "Neon dystopian aesthetic",
+    css: "saturate(2) hue-rotate(270deg) contrast(1.2)",
+    color: "#d946ef"
+  },
+  {
+    key: "mosaic",
+    label: "Mosaic",
+    description: "Byzantine stone tile mosaic",
+    css: "saturate(1.3) contrast(1.1)",
+    color: "#b45309"
+  },
+  {
+    key: "lava_lamp",
+    label: "Lava Lamp",
+    description: "Animated metaball blobs",
+    css: "saturate(1.5) hue-rotate(20deg) brightness(1.1)",
+    color: "#f97316"
+  },
+  {
+    key: "vaporwave",
+    label: "Vaporwave",
+    description: "Retro 80s grid + sunset",
+    css: "saturate(1.5) hue-rotate(280deg) brightness(1.05)",
+    color: "#c084fc"
+  },
+  {
+    key: "supernova",
+    label: "Supernova",
+    description: "Expanding nebula filaments + stars",
+    css: "brightness(1.1) saturate(1.5) hue-rotate(220deg)",
+    color: "#6366f1"
+  },
+  {
+    key: "fractal_loop",
+    label: "Fractal Loop",
+    description: "Iterated inversion fractal",
+    css: "saturate(2) contrast(1.3) hue-rotate(90deg)",
+    color: "#a855f7"
+  },
+  {
+    key: "kaleidoscope",
+    label: "Kaleidoscope",
+    description: "Neon ring fractal",
+    css: "saturate(2) contrast(1.4) hue-rotate(180deg)",
+    color: "#ec4899"
+  },
+  {
+    key: "ebruli",
+    label: "Ebruli",
+    description: "Turkish water marbling",
+    css: "saturate(1.4) contrast(1.1) blur(1px)",
+    color: "#7c3aed"
+  },
+  {
+    key: "spirals",
+    label: "Spirals",
+    description: "Multi-layer spiral vortex",
+    css: "saturate(2) contrast(1.3) hue-rotate(120deg)",
+    color: "#14b8a6"
+  },
+  {
+    key: "space_tunnel",
+    label: "Space Tunnel",
+    description: "Warp tunnel + nebula + stars",
+    css: "saturate(1.5) contrast(1.4) brightness(0.9)",
+    color: "#3b82f6"
+  },
+  {
+    key: "singularity",
+    label: "Singularity",
+    description: "Wormhole with energy fibers",
+    css: "saturate(1.6) contrast(1.5) hue-rotate(260deg)",
+    color: "#8b5cf6"
+  },
+  {
+    key: "blueprint",
+    label: "Blueprint",
+    description: "Sacred geometry + glyph rings",
+    css: "saturate(0.8) contrast(1.6) hue-rotate(200deg)",
+    color: "#60a5fa"
+  },
+  {
+    key: "singularity_box",
+    label: "Singularity Box",
+    description: "Raymarched spiral singularity",
+    css: "saturate(1.8) contrast(1.5) hue-rotate(280deg)",
+    color: "#a78bfa"
+  },
+  // NPR & Stylized batch
+  {
+    key: "anime_pro",
+    label: "Anime Pro",
+    description: "Advanced cel-shading with halftone shadows & rim light",
+    css: "contrast(1.4) saturate(1.5)",
+    color: "#f472b6"
+  },
+  {
+    key: "anime_glow",
+    label: "Anime Glow",
+    description: "Dreamy bloom with pastel tints & sparkle",
+    css: "brightness(1.15) saturate(0.9) contrast(0.95)",
+    color: "#fda4af"
+  },
+  {
+    key: "comic_book",
+    label: "Comic Book",
+    description: "Ben-Day halftone dots with bold Kirby outlines",
+    css: "contrast(1.5) saturate(1.6)",
+    color: "#facc15"
+  },
+  {
+    key: "pop_art",
+    label: "Pop Art",
+    description: "Warhol CMYK halftone with bold posterization",
+    css: "contrast(1.6) saturate(2.5)",
+    color: "#f43f5e"
+  },
+  {
+    key: "watercolor",
+    label: "Watercolor",
+    description: "Realistic pigment pooling & paper texture",
+    css: "blur(0.5px) saturate(0.85) contrast(1.1)",
+    color: "#67e8f9"
+  },
+  {
+    key: "watercolor_bleed",
+    label: "Watercolor Bleed",
+    description: "Animated wet bleeding edges & pigment flow",
+    css: "blur(1px) saturate(0.8) contrast(1.05)",
+    color: "#5eead4"
+  },
+  {
+    key: "woodcut",
+    label: "Woodcut",
+    description: "Japanese linocut with carved line texture",
+    css: "grayscale(0.8) contrast(1.5) sepia(0.3)",
+    color: "#a16207"
+  },
+  {
+    key: "chromatic_prism",
+    label: "Chromatic Prism",
+    description: "Prismatic rainbow edge dispersion",
+    css: "saturate(1.2) brightness(1.05)",
+    color: "#c084fc"
+  },
+  {
+    key: "retro_dither",
+    label: "Retro Dither",
+    description: "Ordered Bayer 8×8 dithering with retro palette",
+    css: "contrast(1.1) saturate(1.2)",
+    color: "#34d399"
+  },
+  {
+    key: "neon_wireframe",
+    label: "Neon Wire",
+    description: "Glowing neon contour lines on dark background",
+    css: "brightness(0.3) contrast(2) saturate(2.5)",
+    color: "#22d3ee"
+  },
+  // Depth-Native batch (read depth per-pixel via SBS)
+  {
+    key: "toon_3d",
+    label: "Toon 3D",
+    description: "Depth-aware cel-shading with 3D silhouette outlines",
+    css: "contrast(1.5) saturate(1.4)",
+    color: "#e879f9"
+  },
+  {
+    key: "depth_fog",
+    label: "Depth Fog",
+    description: "Real atmospheric perspective with depth-based fog",
+    css: "brightness(0.9) saturate(0.7) contrast(0.85)",
+    color: "#94a3b8"
+  },
+  {
+    key: "focus_pull",
+    label: "Focus Pull",
+    description: "Cinematic depth-of-field with bokeh blur",
+    css: "blur(1px) brightness(1.02) contrast(1.05)",
+    color: "#a78bfa"
+  },
+  {
+    key: "relief_sculpt",
+    label: "Relief Sculpt",
+    description: "Emboss relief using depth as 3D height map",
+    css: "grayscale(0.5) contrast(1.6) sepia(0.2)",
+    color: "#d4a276"
+  },
+  {
+    key: "depth_watercolor",
+    label: "Depth Water",
+    description: "Watercolor with depth-modulated strokes",
+    css: "blur(0.5px) saturate(0.8) contrast(1.1)",
+    color: "#38bdf8"
+  }
+];
+class ShaderPanel {
+  constructor(callbacks) {
+    __publicField(this, "container");
+    __publicField(this, "callbacks");
+    __publicField(this, "selectedKey", "none");
+    __publicField(this, "intensity", 1);
+    __publicField(this, "enableVda", false);
+    __publicField(this, "enableNormals", false);
+    __publicField(this, "depthEncoder", "vits");
+    __publicField(this, "depthStrength", 1);
+    __publicField(this, "cards", /* @__PURE__ */ new Map());
+    __publicField(this, "intensitySlider");
+    __publicField(this, "intensityLabel");
+    __publicField(this, "vdaCheckbox");
+    __publicField(this, "normalsCheckbox");
+    __publicField(this, "depthEncoderSelect");
+    __publicField(this, "depthStrengthSlider");
+    __publicField(this, "depthStrengthLabel");
+    __publicField(this, "depthSection");
+    this.callbacks = callbacks;
+    this.container = document.createElement("div");
+    this.container.className = "veditor-filters-panel";
+    this.container.setAttribute("data-tool-id", "veditor-shader-panel");
+    this.container.setAttribute("aria-label", "GPU shader preset controls");
+    const header = document.createElement("div");
+    header.className = "veditor-section-label";
+    header.style.display = "flex";
+    header.style.alignItems = "center";
+    header.style.gap = "8px";
+    const badge = document.createElement("span");
+    badge.textContent = "⚡ GPU";
+    badge.style.cssText = `
+            font-size: 10px; padding: 2px 6px; border-radius: 4px;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            color: #fff; font-weight: 600; letter-spacing: 0.5px;
+        `;
+    const headerText = document.createElement("span");
+    headerText.textContent = "Shader Presets";
+    header.append(headerText, badge);
+    const grid = document.createElement("div");
+    grid.className = "veditor-filter-grid";
+    for (const shader of SHADERS) {
+      const card = this._makeCard(shader);
+      grid.appendChild(card);
+      this.cards.set(shader.key, card);
+    }
+    const intensitySection = document.createElement("div");
+    intensitySection.className = "veditor-panel-section veditor-filter-intensity-section";
+    const intensityHeader = document.createElement("div");
+    intensityHeader.className = "veditor-section-label";
+    intensityHeader.textContent = "Intensity";
+    const intensityRow = document.createElement("div");
+    intensityRow.className = "veditor-control-row";
+    this.intensitySlider = document.createElement("input");
+    this.intensitySlider.type = "range";
+    this.intensitySlider.min = "0";
+    this.intensitySlider.max = "100";
+    this.intensitySlider.step = "1";
+    this.intensitySlider.value = "100";
+    this.intensitySlider.className = "veditor-grading-slider";
+    this.intensitySlider.setAttribute("data-tool-id", "veditor-shader-intensity");
+    this.intensitySlider.setAttribute("aria-label", "Shader intensity (0 to 100%)");
+    this.intensityLabel = document.createElement("span");
+    this.intensityLabel.className = "veditor-grading-value";
+    this.intensityLabel.textContent = "100%";
+    this.intensitySlider.addEventListener("input", () => {
+      this.intensity = parseInt(this.intensitySlider.value, 10) / 100;
+      this.intensityLabel.textContent = `${Math.round(this.intensity * 100)}%`;
+      this.callbacks.onShaderChanged(this.getState());
+    });
+    intensityRow.append(this.intensitySlider, this.intensityLabel);
+    intensitySection.append(intensityHeader, intensityRow);
+    this.depthSection = document.createElement("div");
+    this.depthSection.className = "veditor-panel-section";
+    this.depthSection.style.cssText = `
+            margin-top: 12px; padding-top: 12px;
+            border-top: 1px solid rgba(255,255,255,0.08);
+        `;
+    const depthHeader = document.createElement("div");
+    depthHeader.className = "veditor-section-label";
+    depthHeader.style.display = "flex";
+    depthHeader.style.alignItems = "center";
+    depthHeader.style.gap = "8px";
+    const depthBadge = document.createElement("span");
+    depthBadge.textContent = "🔮 AI";
+    depthBadge.style.cssText = `
+            font-size: 10px; padding: 2px 6px; border-radius: 4px;
+            background: linear-gradient(135deg, #06b6d4, #8b5cf6);
+            color: #fff; font-weight: 600; letter-spacing: 0.5px;
+        `;
+    const depthText = document.createElement("span");
+    depthText.textContent = "AI Passes";
+    depthHeader.append(depthText, depthBadge);
+    const vdaRow = document.createElement("div");
+    vdaRow.className = "veditor-control-row";
+    vdaRow.style.cssText = "margin-top: 6px; gap: 8px; align-items: center;";
+    this.vdaCheckbox = document.createElement("input");
+    this.vdaCheckbox.type = "checkbox";
+    this.vdaCheckbox.checked = false;
+    this.vdaCheckbox.setAttribute("data-tool-id", "veditor-shader-enable-vda");
+    this.vdaCheckbox.style.cssText = "width: 16px; height: 16px; cursor: pointer; accent-color: #06b6d4;";
+    const vdaLabel = document.createElement("span");
+    vdaLabel.className = "veditor-grading-value";
+    vdaLabel.textContent = "VDA Depth";
+    vdaLabel.style.cssText = "flex: 1; cursor: pointer;";
+    vdaLabel.addEventListener("click", () => {
+      this.vdaCheckbox.click();
+    });
+    this.vdaCheckbox.addEventListener("change", () => {
+      this.enableVda = this.vdaCheckbox.checked;
+      this._updateDepthVisibility();
+      this.callbacks.onShaderChanged(this.getState());
+    });
+    vdaRow.append(this.vdaCheckbox, vdaLabel);
+    const normalsRow = document.createElement("div");
+    normalsRow.className = "veditor-control-row";
+    normalsRow.style.cssText = "margin-top: 4px; gap: 8px; align-items: center;";
+    this.normalsCheckbox = document.createElement("input");
+    this.normalsCheckbox.type = "checkbox";
+    this.normalsCheckbox.checked = false;
+    this.normalsCheckbox.setAttribute("data-tool-id", "veditor-shader-enable-normals");
+    this.normalsCheckbox.style.cssText = "width: 16px; height: 16px; cursor: pointer; accent-color: #8b5cf6;";
+    const normalsLabel = document.createElement("span");
+    normalsLabel.className = "veditor-grading-value";
+    normalsLabel.textContent = "NormalCrafter";
+    normalsLabel.style.cssText = "flex: 1; cursor: pointer;";
+    normalsLabel.addEventListener("click", () => {
+      this.normalsCheckbox.click();
+    });
+    this.normalsCheckbox.addEventListener("change", () => {
+      this.enableNormals = this.normalsCheckbox.checked;
+      this.callbacks.onShaderChanged(this.getState());
+    });
+    normalsRow.append(this.normalsCheckbox, normalsLabel);
+    const depthEncoderRow = document.createElement("div");
+    depthEncoderRow.className = "veditor-control-row";
+    depthEncoderRow.style.cssText = "margin-top: 4px; gap: 8px;";
+    const depthEncoderLabel = document.createElement("span");
+    depthEncoderLabel.className = "veditor-grading-value";
+    depthEncoderLabel.textContent = "Model";
+    depthEncoderLabel.style.minWidth = "40px";
+    this.depthEncoderSelect = document.createElement("select");
+    this.depthEncoderSelect.className = "veditor-grading-slider";
+    this.depthEncoderSelect.setAttribute("data-tool-id", "veditor-shader-depth-encoder");
+    this.depthEncoderSelect.style.cssText = `
+            flex: 1; padding: 4px 8px; border-radius: 6px;
+            background: rgba(255,255,255,0.06); color: #e2e8f0;
+            border: 1px solid rgba(255,255,255,0.1);
+            font-size: 12px; cursor: pointer;
+        `;
+    for (const [val, label] of [
+      ["vits", "Small (fast, ~102 MB)"],
+      ["vitb", "Base (~390 MB)"],
+      ["vitl", "Large (best, ~670 MB)"]
+    ]) {
+      const opt = document.createElement("option");
+      opt.value = val;
+      opt.textContent = label;
+      this.depthEncoderSelect.appendChild(opt);
+    }
+    this.depthEncoderSelect.addEventListener("change", () => {
+      this.depthEncoder = this.depthEncoderSelect.value;
+      this.callbacks.onShaderChanged(this.getState());
+    });
+    depthEncoderRow.append(depthEncoderLabel, this.depthEncoderSelect);
+    const depthStrengthRow = document.createElement("div");
+    depthStrengthRow.className = "veditor-control-row";
+    depthStrengthRow.style.cssText = "margin-top: 4px;";
+    const depthStrLabel = document.createElement("span");
+    depthStrLabel.className = "veditor-grading-value";
+    depthStrLabel.textContent = "Strength";
+    depthStrLabel.style.minWidth = "40px";
+    this.depthStrengthSlider = document.createElement("input");
+    this.depthStrengthSlider.type = "range";
+    this.depthStrengthSlider.min = "0";
+    this.depthStrengthSlider.max = "100";
+    this.depthStrengthSlider.step = "1";
+    this.depthStrengthSlider.value = "100";
+    this.depthStrengthSlider.className = "veditor-grading-slider";
+    this.depthStrengthSlider.setAttribute("data-tool-id", "veditor-shader-depth-strength");
+    this.depthStrengthLabel = document.createElement("span");
+    this.depthStrengthLabel.className = "veditor-grading-value";
+    this.depthStrengthLabel.textContent = "100%";
+    this.depthStrengthSlider.addEventListener("input", () => {
+      this.depthStrength = parseInt(this.depthStrengthSlider.value, 10) / 100;
+      this.depthStrengthLabel.textContent = `${Math.round(this.depthStrength * 100)}%`;
+      this.callbacks.onShaderChanged(this.getState());
+    });
+    depthStrengthRow.append(depthStrLabel, this.depthStrengthSlider, this.depthStrengthLabel);
+    this.depthSection.append(
+      depthHeader,
+      vdaRow,
+      normalsRow,
+      depthEncoderRow,
+      depthStrengthRow
+    );
+    this.container.append(header, grid, intensitySection, this.depthSection);
+    this._selectCard("none");
+    this._updateDepthVisibility();
+  }
+  get element() {
+    return this.container;
+  }
+  getState() {
+    return {
+      preset: this.selectedKey,
+      intensity: this.intensity,
+      enable_vda: this.enableVda,
+      enable_normals: this.enableNormals,
+      depth_encoder: this.depthEncoder,
+      depth_strength: this.depthStrength
+    };
+  }
+  loadState(state) {
+    if (state.preset !== void 0) {
+      this._selectCard(state.preset);
+    }
+    if (state.intensity !== void 0) {
+      this.intensity = state.intensity;
+      this.intensitySlider.value = String(Math.round(this.intensity * 100));
+      this.intensityLabel.textContent = `${Math.round(this.intensity * 100)}%`;
+    }
+    if (state.enable_vda !== void 0) {
+      this.enableVda = state.enable_vda;
+      this.vdaCheckbox.checked = state.enable_vda;
+    }
+    if (state.enable_normals !== void 0) {
+      this.enableNormals = state.enable_normals;
+      this.normalsCheckbox.checked = state.enable_normals;
+    }
+    if (state.depth_encoder !== void 0) {
+      this.depthEncoder = state.depth_encoder;
+      this.depthEncoderSelect.value = state.depth_encoder;
+    }
+    if (state.depth_strength !== void 0) {
+      this.depthStrength = state.depth_strength;
+      this.depthStrengthSlider.value = String(Math.round(this.depthStrength * 100));
+      this.depthStrengthLabel.textContent = `${Math.round(this.depthStrength * 100)}%`;
+    }
+    this._updateDepthVisibility();
+  }
+  reset() {
+    this._selectCard("none");
+    this.intensity = 1;
+    this.intensitySlider.value = "100";
+    this.intensityLabel.textContent = "100%";
+    this.enableVda = false;
+    this.vdaCheckbox.checked = false;
+    this.enableNormals = false;
+    this.normalsCheckbox.checked = false;
+    this.depthEncoder = "vits";
+    this.depthEncoderSelect.value = "vits";
+    this.depthStrength = 1;
+    this.depthStrengthSlider.value = "100";
+    this.depthStrengthLabel.textContent = "100%";
+    this._updateDepthVisibility();
+  }
+  destroy() {
+    this.container.remove();
+  }
+  // ── Private ──────────────────────────────────────────────────
+  _makeCard(shader) {
+    const card = document.createElement("div");
+    card.className = "veditor-filter-card";
+    card.setAttribute("data-tool-id", `veditor-shader-${shader.key}`);
+    card.setAttribute("aria-label", `Shader: ${shader.label}`);
+    card.title = `${shader.label} — ${shader.description}`;
+    const swatch = document.createElement("div");
+    swatch.className = "veditor-filter-swatch";
+    if (shader.key !== "none") {
+      swatch.style.filter = shader.css;
+      swatch.style.borderColor = shader.color;
+    }
+    const label = document.createElement("span");
+    label.className = "veditor-filter-label";
+    label.textContent = shader.label;
+    card.append(swatch, label);
+    card.addEventListener("click", () => {
+      this._selectCard(shader.key);
+      this.callbacks.onShaderChanged(this.getState());
+    });
+    return card;
+  }
+  _selectCard(key) {
+    this.selectedKey = key;
+    for (const [k, card] of this.cards) {
+      card.classList.toggle("active", k === key);
+    }
+  }
+  _updateDepthVisibility() {
+    const active = this.enableVda || this.enableNormals;
+    const rows = this.depthSection.querySelectorAll(".veditor-control-row");
+    if (rows.length >= 4) {
+      rows[2].style.display = active ? "" : "none";
+      rows[3].style.display = active ? "" : "none";
+    }
+  }
+}
+const DEFAULT_STATE$3 = {
+  enabled: false,
+  ai_normals: false,
+  azimuth: 0,
+  elevation: 45,
+  intensity: 1,
+  ambient: 0.3,
+  color_r: 255,
+  color_g: 255,
+  color_b: 255
+};
+class RelightPanel {
+  constructor(callbacks) {
+    __publicField(this, "container");
+    __publicField(this, "callbacks");
+    __publicField(this, "state");
+    __publicField(this, "enableToggle");
+    __publicField(this, "aiNormalsToggle");
+    __publicField(this, "dirCanvas");
+    __publicField(this, "dirCtx");
+    __publicField(this, "elevSlider");
+    __publicField(this, "elevLabel");
+    __publicField(this, "intensitySlider");
+    __publicField(this, "intensityLabel");
+    __publicField(this, "ambientSlider");
+    __publicField(this, "ambientLabel");
+    __publicField(this, "colorInput");
+    __publicField(this, "controlsContainer");
+    this.callbacks = callbacks;
+    this.state = { ...DEFAULT_STATE$3 };
+    this.container = document.createElement("div");
+    this.container.className = "veditor-relight-panel";
+    this.container.setAttribute("data-tool-id", "veditor-relight-panel");
+    this.container.setAttribute("aria-label", "Relighting controls");
+    const enableSection = this._makeSection("Directional Relight");
+    const enableRow = document.createElement("div");
+    enableRow.className = "veditor-control-row";
+    const enableLabel = document.createElement("label");
+    enableLabel.className = "veditor-toggle-label";
+    enableLabel.textContent = "Enable relighting";
+    this.enableToggle = document.createElement("input");
+    this.enableToggle.type = "checkbox";
+    this.enableToggle.className = "veditor-checkbox";
+    this.enableToggle.setAttribute("data-tool-id", "veditor-relight-enable");
+    this.enableToggle.addEventListener("change", () => {
+      this.state.enabled = this.enableToggle.checked;
+      this.controlsContainer.style.display = this.state.enabled ? "block" : "none";
+      this._notify();
+    });
+    enableRow.append(enableLabel, this.enableToggle);
+    enableSection.appendChild(enableRow);
+    this.controlsContainer = document.createElement("div");
+    this.controlsContainer.style.display = "none";
+    const aiSection = this._makeSection("AI Normals");
+    const aiRow = document.createElement("div");
+    aiRow.className = "veditor-control-row";
+    const aiLabel = document.createElement("label");
+    aiLabel.className = "veditor-toggle-label";
+    aiLabel.textContent = "Use NormalCrafter";
+    aiLabel.title = "Use AI-generated surface normals (NormalCrafter) for physically accurate relighting instead of FFmpeg approximation. Requires GPU and ~12 GB VRAM.";
+    this.aiNormalsToggle = document.createElement("input");
+    this.aiNormalsToggle.type = "checkbox";
+    this.aiNormalsToggle.className = "veditor-checkbox";
+    this.aiNormalsToggle.setAttribute("data-tool-id", "veditor-relight-ai-normals");
+    this.aiNormalsToggle.addEventListener("change", () => {
+      this.state.ai_normals = this.aiNormalsToggle.checked;
+      this._notify();
+    });
+    const aiHint = document.createElement("span");
+    aiHint.className = "veditor-hint-text";
+    aiHint.textContent = "GPU · ~12 GB VRAM";
+    aiHint.style.fontSize = "9px";
+    aiHint.style.opacity = "0.5";
+    aiHint.style.marginLeft = "6px";
+    aiRow.append(aiLabel, this.aiNormalsToggle, aiHint);
+    aiSection.appendChild(aiRow);
+    const dirSection = this._makeSection("Light Direction");
+    this.dirCanvas = document.createElement("canvas");
+    this.dirCanvas.className = "veditor-relight-dir-canvas";
+    this.dirCanvas.width = 100;
+    this.dirCanvas.height = 100;
+    this.dirCanvas.setAttribute("aria-label", "Light direction picker");
+    this.dirCtx = this.dirCanvas.getContext("2d");
+    this.dirCanvas.addEventListener("mousedown", (e) => this._onDirClick(e));
+    this.dirCanvas.addEventListener("mousemove", (e) => {
+      if (e.buttons === 1) this._onDirClick(e);
+    });
+    dirSection.appendChild(this.dirCanvas);
+    const elevSection = this._makeSection("Elevation");
+    const elevRow = document.createElement("div");
+    elevRow.className = "veditor-control-row";
+    this.elevSlider = document.createElement("input");
+    this.elevSlider.type = "range";
+    this.elevSlider.min = "0";
+    this.elevSlider.max = "90";
+    this.elevSlider.step = "1";
+    this.elevSlider.value = "45";
+    this.elevSlider.className = "veditor-grading-slider";
+    this.elevSlider.setAttribute("data-tool-id", "veditor-relight-elevation");
+    this.elevLabel = document.createElement("span");
+    this.elevLabel.className = "veditor-grading-value";
+    this.elevLabel.textContent = "45°";
+    this.elevSlider.addEventListener("input", () => {
+      this.state.elevation = parseInt(this.elevSlider.value, 10);
+      this.elevLabel.textContent = `${this.state.elevation}°`;
+      this._drawDirection();
+      this._notify();
+    });
+    elevRow.append(this.elevSlider, this.elevLabel);
+    elevSection.appendChild(elevRow);
+    const intSection = this._makeSection("Intensity");
+    const intRow = document.createElement("div");
+    intRow.className = "veditor-control-row";
+    this.intensitySlider = document.createElement("input");
+    this.intensitySlider.type = "range";
+    this.intensitySlider.min = "0";
+    this.intensitySlider.max = "200";
+    this.intensitySlider.step = "1";
+    this.intensitySlider.value = "100";
+    this.intensitySlider.className = "veditor-grading-slider";
+    this.intensitySlider.setAttribute("data-tool-id", "veditor-relight-intensity");
+    this.intensityLabel = document.createElement("span");
+    this.intensityLabel.className = "veditor-grading-value";
+    this.intensityLabel.textContent = "100%";
+    this.intensitySlider.addEventListener("input", () => {
+      this.state.intensity = parseInt(this.intensitySlider.value, 10) / 100;
+      this.intensityLabel.textContent = `${Math.round(this.state.intensity * 100)}%`;
+      this._notify();
+    });
+    intRow.append(this.intensitySlider, this.intensityLabel);
+    intSection.appendChild(intRow);
+    const ambSection = this._makeSection("Ambient Fill");
+    const ambRow = document.createElement("div");
+    ambRow.className = "veditor-control-row";
+    this.ambientSlider = document.createElement("input");
+    this.ambientSlider.type = "range";
+    this.ambientSlider.min = "0";
+    this.ambientSlider.max = "100";
+    this.ambientSlider.step = "1";
+    this.ambientSlider.value = "30";
+    this.ambientSlider.className = "veditor-grading-slider";
+    this.ambientSlider.setAttribute("data-tool-id", "veditor-relight-ambient");
+    this.ambientLabel = document.createElement("span");
+    this.ambientLabel.className = "veditor-grading-value";
+    this.ambientLabel.textContent = "30%";
+    this.ambientSlider.addEventListener("input", () => {
+      this.state.ambient = parseInt(this.ambientSlider.value, 10) / 100;
+      this.ambientLabel.textContent = `${Math.round(this.state.ambient * 100)}%`;
+      this._notify();
+    });
+    ambRow.append(this.ambientSlider, this.ambientLabel);
+    ambSection.appendChild(ambRow);
+    const colorSection = this._makeSection("Light Color");
+    const colorRow = document.createElement("div");
+    colorRow.className = "veditor-control-row";
+    this.colorInput = document.createElement("input");
+    this.colorInput.type = "color";
+    this.colorInput.value = "#ffffff";
+    this.colorInput.className = "veditor-relight-color-input";
+    this.colorInput.setAttribute("data-tool-id", "veditor-relight-color");
+    this.colorInput.addEventListener("input", () => {
+      const hex = this.colorInput.value;
+      this.state.color_r = parseInt(hex.slice(1, 3), 16);
+      this.state.color_g = parseInt(hex.slice(3, 5), 16);
+      this.state.color_b = parseInt(hex.slice(5, 7), 16);
+      this._drawDirection();
+      this._notify();
+    });
+    colorRow.appendChild(this.colorInput);
+    colorSection.appendChild(colorRow);
+    const resetRow = document.createElement("div");
+    resetRow.className = "veditor-control-row";
+    const resetBtn = document.createElement("button");
+    resetBtn.className = "veditor-btn veditor-toggle-btn";
+    resetBtn.textContent = "Reset Lighting";
+    resetBtn.setAttribute("data-tool-id", "veditor-relight-reset");
+    resetBtn.addEventListener("click", () => this.reset());
+    resetRow.appendChild(resetBtn);
+    this.controlsContainer.append(
+      aiSection,
+      dirSection,
+      elevSection,
+      intSection,
+      ambSection,
+      colorSection,
+      resetRow
+    );
+    this.container.append(enableSection, this.controlsContainer);
+    this._drawDirection();
+  }
+  get element() {
+    return this.container;
+  }
+  getState() {
+    return { ...this.state };
+  }
+  loadState(s) {
+    Object.assign(this.state, s);
+    this.enableToggle.checked = this.state.enabled;
+    this.controlsContainer.style.display = this.state.enabled ? "block" : "none";
+    this.aiNormalsToggle.checked = this.state.ai_normals;
+    this.elevSlider.value = String(this.state.elevation);
+    this.elevLabel.textContent = `${this.state.elevation}°`;
+    this.intensitySlider.value = String(Math.round(this.state.intensity * 100));
+    this.intensityLabel.textContent = `${Math.round(this.state.intensity * 100)}%`;
+    this.ambientSlider.value = String(Math.round(this.state.ambient * 100));
+    this.ambientLabel.textContent = `${Math.round(this.state.ambient * 100)}%`;
+    const hex = `#${this.state.color_r.toString(16).padStart(2, "0")}${this.state.color_g.toString(16).padStart(2, "0")}${this.state.color_b.toString(16).padStart(2, "0")}`;
+    this.colorInput.value = hex;
+    this._drawDirection();
+  }
+  reset() {
+    this.state = { ...DEFAULT_STATE$3 };
+    this.enableToggle.checked = false;
+    this.aiNormalsToggle.checked = false;
+    this.controlsContainer.style.display = "none";
+    this.elevSlider.value = "45";
+    this.elevLabel.textContent = "45°";
+    this.intensitySlider.value = "100";
+    this.intensityLabel.textContent = "100%";
+    this.ambientSlider.value = "30";
+    this.ambientLabel.textContent = "30%";
+    this.colorInput.value = "#ffffff";
+    this._drawDirection();
+    this._notify();
+  }
+  destroy() {
+    this.container.remove();
+  }
+  // ── Private ──────────────────────────────────────────────────
+  _notify() {
+    this.callbacks.onRelightChanged(this.getState());
+  }
+  _onDirClick(e) {
+    const rect = this.dirCanvas.getBoundingClientRect();
+    const cx = rect.width / 2;
+    const cy = rect.height / 2;
+    const dx = e.clientX - rect.left - cx;
+    const dy = e.clientY - rect.top - cy;
+    const angle = Math.atan2(dx, -dy) * (180 / Math.PI);
+    this.state.azimuth = Math.round(angle);
+    this._drawDirection();
+    this._notify();
+  }
+  _drawDirection() {
+    const ctx = this.dirCtx;
+    const w = this.dirCanvas.width;
+    const h = this.dirCanvas.height;
+    const cx = w / 2;
+    const cy = h / 2;
+    const r = Math.min(cx, cy) - 4;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = "rgba(30, 30, 44, 0.6)";
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(99,102,241,0.3)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(255,255,255,0.1)";
+    ctx.beginPath();
+    ctx.moveTo(cx - r, cy);
+    ctx.lineTo(cx + r, cy);
+    ctx.moveTo(cx, cy - r);
+    ctx.lineTo(cx, cy + r);
+    ctx.stroke();
+    const azRad = this.state.azimuth * Math.PI / 180;
+    const gx = cx + Math.sin(azRad) * r * 0.5;
+    const gy = cy - Math.cos(azRad) * r * 0.5;
+    const lightColor = `rgba(${this.state.color_r}, ${this.state.color_g}, ${this.state.color_b}, ${0.3 * this.state.intensity})`;
+    const grad = ctx.createRadialGradient(gx, gy, 0, gx, gy, r * 0.8);
+    grad.addColorStop(0, lightColor);
+    grad.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    const arrowLen = r * 0.7;
+    const ax = cx + Math.sin(azRad) * arrowLen;
+    const ay = cy - Math.cos(azRad) * arrowLen;
+    ctx.strokeStyle = "#6366f1";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(ax, ay);
+    ctx.stroke();
+    ctx.fillStyle = "#6366f1";
+    ctx.beginPath();
+    ctx.arc(ax, ay, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.4)";
+    ctx.beginPath();
+    ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    ctx.font = "9px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(`${this.state.azimuth}°`, cx, h - 2);
+  }
+  _makeSection(title) {
+    const section = document.createElement("div");
+    section.className = "veditor-panel-section";
+    const label = document.createElement("div");
+    label.className = "veditor-section-label";
+    label.textContent = title;
+    section.appendChild(label);
+    return section;
+  }
+}
+const DEFAULT_SETTINGS = {
+  resolution: "source",
+  video_codec: "h264",
+  crf: 18,
+  preset: "fast",
+  format: "mp4",
+  audio_codec: "aac",
+  audio_bitrate: "192k"
+};
+class ExportSettingsPanel {
+  constructor(callbacks) {
+    __publicField(this, "container");
+    __publicField(this, "callbacks");
+    __publicField(this, "state");
+    __publicField(this, "resSelect");
+    __publicField(this, "codecSelect");
+    __publicField(this, "crfSlider");
+    __publicField(this, "crfLabel");
+    __publicField(this, "presetSelect");
+    __publicField(this, "formatSelect");
+    __publicField(this, "audioCodecSelect");
+    __publicField(this, "audioBitrateSelect");
+    this.callbacks = callbacks;
+    this.state = { ...DEFAULT_SETTINGS };
+    this.container = document.createElement("div");
+    this.container.className = "veditor-export-panel";
+    this.container.setAttribute("data-tool-id", "veditor-export-panel");
+    this.container.setAttribute("aria-label", "Export settings");
+    const resSection = this._makeSection("Resolution");
+    this.resSelect = this._makeDropdown(
+      [
+        { value: "source", label: "Source (Original)" },
+        { value: "4k", label: "4K (3840×2160)" },
+        { value: "1080p", label: "1080p (1920×1080)" },
+        { value: "720p", label: "720p (1280×720)" },
+        { value: "480p", label: "480p (854×480)" }
+      ],
+      "source",
+      "veditor-export-resolution",
+      "Output resolution",
+      (v) => {
+        this.state.resolution = v;
+        this._notify();
+      }
+    );
+    resSection.appendChild(this.resSelect);
+    const codecSection = this._makeSection("Video Codec");
+    this.codecSelect = this._makeDropdown(
+      [
+        { value: "h264", label: "H.264 (Best Compatibility)" },
+        { value: "h265", label: "H.265/HEVC (Smaller Files)" },
+        { value: "vp9", label: "VP9 (Web)" },
+        { value: "av1", label: "AV1 (Best Quality, Slow)" }
+      ],
+      "h264",
+      "veditor-export-codec",
+      "Video codec",
+      (v) => {
+        this.state.video_codec = v;
+        this._notify();
+      }
+    );
+    codecSection.appendChild(this.codecSelect);
+    const crfSection = this._makeSection("Quality (CRF)");
+    const crfRow = document.createElement("div");
+    crfRow.className = "veditor-control-row";
+    this.crfSlider = document.createElement("input");
+    this.crfSlider.type = "range";
+    this.crfSlider.min = "0";
+    this.crfSlider.max = "51";
+    this.crfSlider.step = "1";
+    this.crfSlider.value = "18";
+    this.crfSlider.className = "veditor-grading-slider";
+    this.crfSlider.setAttribute("data-tool-id", "veditor-export-crf");
+    this.crfLabel = document.createElement("span");
+    this.crfLabel.className = "veditor-grading-value";
+    this.crfLabel.textContent = "18 (High)";
+    this.crfSlider.addEventListener("input", () => {
+      this.state.crf = parseInt(this.crfSlider.value, 10);
+      this.crfLabel.textContent = `${this.state.crf} (${this._crfQualityLabel(this.state.crf)})`;
+      this._notify();
+    });
+    crfRow.append(this.crfSlider, this.crfLabel);
+    crfSection.appendChild(crfRow);
+    const presetSection = this._makeSection("Encoding Speed");
+    this.presetSelect = this._makeDropdown(
+      [
+        { value: "ultrafast", label: "Ultra Fast (Lowest Quality)" },
+        { value: "fast", label: "Fast (Default)" },
+        { value: "medium", label: "Medium (Balanced)" },
+        { value: "slow", label: "Slow (Better Quality)" },
+        { value: "veryslow", label: "Very Slow (Best Quality)" }
+      ],
+      "fast",
+      "veditor-export-preset",
+      "Encoding speed",
+      (v) => {
+        this.state.preset = v;
+        this._notify();
+      }
+    );
+    presetSection.appendChild(this.presetSelect);
+    const fmtSection = this._makeSection("Output Format");
+    this.formatSelect = this._makeDropdown(
+      [
+        { value: "mp4", label: "MP4 (Universal)" },
+        { value: "mkv", label: "MKV (All Codecs)" },
+        { value: "webm", label: "WebM (Web)" },
+        { value: "mov", label: "MOV (Apple)" }
+      ],
+      "mp4",
+      "veditor-export-format",
+      "Output format",
+      (v) => {
+        this.state.format = v;
+        this._notify();
+      }
+    );
+    fmtSection.appendChild(this.formatSelect);
+    const audioSection = this._makeSection("Audio Codec");
+    this.audioCodecSelect = this._makeDropdown(
+      [
+        { value: "aac", label: "AAC (Default)" },
+        { value: "mp3", label: "MP3" },
+        { value: "opus", label: "Opus (Best Quality)" },
+        { value: "flac", label: "FLAC (Lossless)" }
+      ],
+      "aac",
+      "veditor-export-audio-codec",
+      "Audio codec",
+      (v) => {
+        this.state.audio_codec = v;
+        this._notify();
+      }
+    );
+    audioSection.appendChild(this.audioCodecSelect);
+    const bitrateSection = this._makeSection("Audio Bitrate");
+    this.audioBitrateSelect = this._makeDropdown(
+      [
+        { value: "128k", label: "128 kbps" },
+        { value: "192k", label: "192 kbps (Default)" },
+        { value: "256k", label: "256 kbps" },
+        { value: "320k", label: "320 kbps (High)" }
+      ],
+      "192k",
+      "veditor-export-audio-bitrate",
+      "Audio bitrate",
+      (v) => {
+        this.state.audio_bitrate = v;
+        this._notify();
+      }
+    );
+    bitrateSection.appendChild(this.audioBitrateSelect);
+    const resetRow = document.createElement("div");
+    resetRow.className = "veditor-control-row";
+    const resetBtn = document.createElement("button");
+    resetBtn.className = "veditor-btn veditor-toggle-btn";
+    resetBtn.textContent = "Reset to Defaults";
+    resetBtn.setAttribute("data-tool-id", "veditor-export-reset");
+    resetBtn.addEventListener("click", () => this.reset());
+    resetRow.appendChild(resetBtn);
+    this.container.append(
+      resSection,
+      codecSection,
+      crfSection,
+      presetSection,
+      fmtSection,
+      audioSection,
+      bitrateSection,
+      resetRow
+    );
+  }
+  get element() {
+    return this.container;
+  }
+  getState() {
+    return { ...this.state };
+  }
+  loadState(s) {
+    Object.assign(this.state, s);
+    this.resSelect.value = this.state.resolution;
+    this.codecSelect.value = this.state.video_codec;
+    this.crfSlider.value = String(this.state.crf);
+    this.crfLabel.textContent = `${this.state.crf} (${this._crfQualityLabel(this.state.crf)})`;
+    this.presetSelect.value = this.state.preset;
+    this.formatSelect.value = this.state.format;
+    this.audioCodecSelect.value = this.state.audio_codec;
+    this.audioBitrateSelect.value = this.state.audio_bitrate;
+  }
+  reset() {
+    this.state = { ...DEFAULT_SETTINGS };
+    this.loadState(this.state);
+    this._notify();
+  }
+  destroy() {
+    this.container.remove();
+  }
+  // ── Private ──────────────────────────────────────────────────
+  _notify() {
+    this.callbacks.onSettingsChanged(this.getState());
+  }
+  _crfQualityLabel(crf) {
+    if (crf === 0) return "Lossless";
+    if (crf <= 15) return "Very High";
+    if (crf <= 23) return "High";
+    if (crf <= 28) return "Medium";
+    if (crf <= 35) return "Low";
+    return "Very Low";
+  }
+  _makeSection(title) {
+    const section = document.createElement("div");
+    section.className = "veditor-panel-section";
+    const label = document.createElement("div");
+    label.className = "veditor-section-label";
+    label.textContent = title;
+    section.appendChild(label);
+    return section;
+  }
+  _makeDropdown(options, defaultValue, toolId, ariaLabel, onChange) {
+    const select = document.createElement("select");
+    select.className = "veditor-select";
+    select.setAttribute("data-tool-id", toolId);
+    select.setAttribute("aria-label", ariaLabel);
+    options.forEach((opt) => {
+      const o = document.createElement("option");
+      o.value = opt.value;
+      o.textContent = opt.label;
+      if (opt.value === defaultValue) o.selected = true;
+      select.appendChild(o);
+    });
+    select.addEventListener("change", () => onChange(select.value));
+    return select;
+  }
+}
+const DEFAULT_STATE$2 = {
+  pip: {
+    enabled: false,
+    path: "",
+    position: "bottom-right",
+    x: 0,
+    y: 0,
+    size: 25,
+    opacity: 100,
+    start_time: null,
+    end_time: null,
+    border: false,
+    border_color: "#ffffff",
+    border_width: 2
+  },
+  watermark: {
+    enabled: false,
+    path: "",
+    position: "bottom-right",
+    x: 0,
+    y: 0,
+    size: 15,
+    opacity: 80,
+    persistent: true
+  },
+  chromakey: {
+    enabled: false,
+    color: "#00ff00",
+    similarity: 0.3,
+    blend: 0.1,
+    mode: "chromakey"
+  },
+  blend: {
+    enabled: false,
+    mode: "normal",
+    opacity: 1
+  },
+  splitScreen: {
+    enabled: false,
+    layout: "2h",
+    border_width: 0,
+    border_color: "#000000"
+  },
+  vignette: {
+    enabled: false,
+    intensity: 50,
+    softness: 0.5
+  },
+  mask: {
+    enabled: false,
+    shape: "rectangle",
+    x: "iw/4",
+    y: "ih/4",
+    width: "iw/2",
+    height: "ih/2",
+    feather: 5,
+    invert: false,
+    effect: "blur"
+  },
+  onionSkin: {
+    enabled: false,
+    blend_mode: "screen",
+    opacity: 50,
+    decay: 0.97
+  }
+};
+const POSITION_PRESETS = [
+  { value: "top-left", label: "↖ TL" },
+  { value: "top-center", label: "↑ TC" },
+  { value: "top-right", label: "↗ TR" },
+  { value: "center", label: "⊙ C" },
+  { value: "bottom-left", label: "↙ BL" },
+  { value: "bottom-center", label: "↓ BC" },
+  { value: "bottom-right", label: "↘ BR" },
+  { value: "custom", label: "✎ XY" }
+];
+class ComposePanel {
+  constructor(callbacks) {
+    __publicField(this, "container");
+    __publicField(this, "callbacks");
+    __publicField(this, "state");
+    this.callbacks = callbacks;
+    this.state = JSON.parse(JSON.stringify(DEFAULT_STATE$2));
+    this.container = document.createElement("div");
+    this.container.className = "veditor-compose-panel";
+    this.container.setAttribute("data-tool-id", "veditor-compose-panel");
+    this.container.appendChild(
+      this._buildSection("Picture-in-Picture", "pip", () => this._buildPipContent())
+    );
+    this.container.appendChild(
+      this._buildSection("Image Watermark", "watermark", () => this._buildWatermarkContent())
+    );
+    this.container.appendChild(
+      this._buildSection("Vignette", "vignette", () => this._buildVignetteContent())
+    );
+    this.container.appendChild(
+      this._buildSection("Chroma Key", "chromakey", () => this._buildChromaKeyContent())
+    );
+    this.container.appendChild(
+      this._buildSection("Blend Mode", "blend", () => this._buildBlendContent())
+    );
+    this.container.appendChild(
+      this._buildSection("Onion Skin", "onionSkin", () => this._buildOnionSkinContent())
+    );
+  }
+  get element() {
+    return this.container;
+  }
+  getState() {
+    return JSON.parse(JSON.stringify(this.state));
+  }
+  loadState(s) {
+    if (s.pip) Object.assign(this.state.pip, s.pip);
+    if (s.watermark) Object.assign(this.state.watermark, s.watermark);
+    if (s.chromakey) Object.assign(this.state.chromakey, s.chromakey);
+    if (s.blend) Object.assign(this.state.blend, s.blend);
+    if (s.splitScreen) Object.assign(this.state.splitScreen, s.splitScreen);
+    if (s.vignette) Object.assign(this.state.vignette, s.vignette);
+    if (s.mask) Object.assign(this.state.mask, s.mask);
+    if (s.onionSkin) Object.assign(this.state.onionSkin, s.onionSkin);
+    this._rebuild();
+  }
+  reset() {
+    this.state = JSON.parse(JSON.stringify(DEFAULT_STATE$2));
+    this._rebuild();
+    this._notify();
+  }
+  destroy() {
+    this.container.remove();
+  }
+  // ── Section Builder ──────────────────────────────────────────
+  _buildSection(title, stateKey, contentBuilder) {
+    const section = document.createElement("div");
+    section.className = "veditor-compose-section";
+    const header = document.createElement("div");
+    header.className = "veditor-compose-section-header";
+    const toggle = document.createElement("input");
+    toggle.type = "checkbox";
+    toggle.className = "veditor-checkbox";
+    toggle.checked = this.state[stateKey].enabled;
+    toggle.setAttribute("data-tool-id", `veditor-compose-${stateKey}-toggle`);
+    const label = document.createElement("span");
+    label.className = "veditor-compose-section-title";
+    label.textContent = title;
+    const chevron = document.createElement("span");
+    chevron.className = "veditor-compose-chevron";
+    chevron.textContent = "▸";
+    header.append(toggle, label, chevron);
+    const content = document.createElement("div");
+    content.className = "veditor-compose-section-content";
+    content.style.display = "none";
+    toggle.addEventListener("change", () => {
+      this.state[stateKey].enabled = toggle.checked;
+      this._notify();
+    });
+    header.addEventListener("click", (e) => {
+      if (e.target === toggle) return;
+      const isOpen = content.style.display !== "none";
+      content.style.display = isOpen ? "none" : "block";
+      chevron.textContent = isOpen ? "▸" : "▾";
+    });
+    content.appendChild(contentBuilder());
+    section.append(header, content);
+    return section;
+  }
+  // ── PiP Content ──────────────────────────────────────────────
+  _buildPipContent() {
+    const frag = document.createElement("div");
+    const pip = this.state.pip;
+    frag.appendChild(this._labeledInput("Source file", "text", pip.path, (v) => {
+      pip.path = v;
+      this._notify();
+    }, "veditor-compose-pip-path", "/path/to/overlay.mp4"));
+    frag.appendChild(this._positionPresets(pip.position, (v) => {
+      pip.position = v;
+      this._notify();
+    }, "pip"));
+    const xyRow = this._row();
+    xyRow.appendChild(this._smallInput("X", pip.x, (v) => {
+      pip.x = Number(v) || 0;
+      this._notify();
+    }, "veditor-compose-pip-x"));
+    xyRow.appendChild(this._smallInput("Y", pip.y, (v) => {
+      pip.y = Number(v) || 0;
+      this._notify();
+    }, "veditor-compose-pip-y"));
+    frag.appendChild(xyRow);
+    frag.appendChild(this._slider("Size", pip.size, 5, 100, 1, "%", (v) => {
+      pip.size = v;
+      this._notify();
+    }, "veditor-compose-pip-size"));
+    frag.appendChild(this._slider("Opacity", pip.opacity, 0, 100, 1, "%", (v) => {
+      pip.opacity = v;
+      this._notify();
+    }, "veditor-compose-pip-opacity"));
+    const timeRow = this._row();
+    timeRow.appendChild(this._smallInput("Start", pip.start_time ?? "", (v) => {
+      pip.start_time = v === "" ? null : Number(v);
+      this._notify();
+    }, "veditor-compose-pip-start"));
+    timeRow.appendChild(this._smallInput("End", pip.end_time ?? "", (v) => {
+      pip.end_time = v === "" ? null : Number(v);
+      this._notify();
+    }, "veditor-compose-pip-end"));
+    frag.appendChild(timeRow);
+    const borderRow = this._row();
+    const borderCheck = document.createElement("input");
+    borderCheck.type = "checkbox";
+    borderCheck.className = "veditor-checkbox";
+    borderCheck.checked = pip.border;
+    borderCheck.addEventListener("change", () => {
+      pip.border = borderCheck.checked;
+      this._notify();
+    });
+    const borderLabel = document.createElement("span");
+    borderLabel.textContent = "Border";
+    borderLabel.className = "veditor-control-label";
+    borderRow.append(borderCheck, borderLabel);
+    frag.appendChild(borderRow);
+    return frag;
+  }
+  // ── Watermark Content ────────────────────────────────────────
+  _buildWatermarkContent() {
+    const frag = document.createElement("div");
+    const wm = this.state.watermark;
+    frag.appendChild(this._labeledInput("Image file", "text", wm.path, (v) => {
+      wm.path = v;
+      this._notify();
+    }, "veditor-compose-wm-path", "/path/to/logo.png"));
+    frag.appendChild(this._positionPresets(wm.position, (v) => {
+      wm.position = v;
+      this._notify();
+    }, "wm"));
+    frag.appendChild(this._slider("Size", wm.size, 5, 50, 1, "%", (v) => {
+      wm.size = v;
+      this._notify();
+    }, "veditor-compose-wm-size"));
+    frag.appendChild(this._slider("Opacity", wm.opacity, 0, 100, 1, "%", (v) => {
+      wm.opacity = v;
+      this._notify();
+    }, "veditor-compose-wm-opacity"));
+    return frag;
+  }
+  // ── Vignette Content ─────────────────────────────────────────
+  _buildVignetteContent() {
+    const frag = document.createElement("div");
+    const vig = this.state.vignette;
+    frag.appendChild(this._slider("Intensity", vig.intensity, 0, 100, 1, "%", (v) => {
+      vig.intensity = v;
+      this._notify();
+    }, "veditor-compose-vig-intensity"));
+    return frag;
+  }
+  // ── Chroma Key Content ───────────────────────────────────────
+  _buildChromaKeyContent() {
+    const frag = document.createElement("div");
+    const ck = this.state.chromakey;
+    const colorRow = this._row();
+    const colorLabel = document.createElement("span");
+    colorLabel.className = "veditor-control-label";
+    colorLabel.textContent = "Key Color";
+    const colorInput = document.createElement("input");
+    colorInput.type = "color";
+    colorInput.value = ck.color;
+    colorInput.className = "veditor-color-input";
+    colorInput.setAttribute("data-tool-id", "veditor-compose-ck-color");
+    colorInput.addEventListener("change", () => {
+      ck.color = colorInput.value;
+      this._notify();
+    });
+    const greenBtn = document.createElement("button");
+    greenBtn.className = "veditor-btn veditor-preset-btn";
+    greenBtn.textContent = "Green";
+    greenBtn.addEventListener("click", () => {
+      ck.color = "#00ff00";
+      colorInput.value = "#00ff00";
+      this._notify();
+    });
+    const blueBtn = document.createElement("button");
+    blueBtn.className = "veditor-btn veditor-preset-btn";
+    blueBtn.textContent = "Blue";
+    blueBtn.addEventListener("click", () => {
+      ck.color = "#0000ff";
+      colorInput.value = "#0000ff";
+      this._notify();
+    });
+    colorRow.append(colorLabel, colorInput, greenBtn, blueBtn);
+    frag.appendChild(colorRow);
+    frag.appendChild(this._slider("Similarity", ck.similarity * 100, 1, 100, 1, "%", (v) => {
+      ck.similarity = v / 100;
+      this._notify();
+    }, "veditor-compose-ck-similarity"));
+    frag.appendChild(this._slider("Edge Blend", ck.blend * 100, 0, 100, 1, "%", (v) => {
+      ck.blend = v / 100;
+      this._notify();
+    }, "veditor-compose-ck-blend"));
+    return frag;
+  }
+  // ── Blend Mode Content ───────────────────────────────────────
+  _buildBlendContent() {
+    const frag = document.createElement("div");
+    const bl = this.state.blend;
+    const modeRow = this._row();
+    const modeLabel = document.createElement("span");
+    modeLabel.className = "veditor-control-label";
+    modeLabel.textContent = "Mode";
+    const modeSelect = document.createElement("select");
+    modeSelect.className = "veditor-select";
+    modeSelect.setAttribute("data-tool-id", "veditor-compose-blend-mode");
+    const modes = ["normal", "multiply", "screen", "overlay", "difference", "addition", "subtract", "dodge", "burn", "hardlight", "softlight", "exclusion", "darken", "lighten"];
+    modes.forEach((m) => {
+      const o = document.createElement("option");
+      o.value = m;
+      o.textContent = m.charAt(0).toUpperCase() + m.slice(1);
+      if (m === bl.mode) o.selected = true;
+      modeSelect.appendChild(o);
+    });
+    modeSelect.addEventListener("change", () => {
+      bl.mode = modeSelect.value;
+      this._notify();
+    });
+    modeRow.append(modeLabel, modeSelect);
+    frag.appendChild(modeRow);
+    frag.appendChild(this._slider("Opacity", bl.opacity * 100, 0, 100, 1, "%", (v) => {
+      bl.opacity = v / 100;
+      this._notify();
+    }, "veditor-compose-blend-opacity"));
+    return frag;
+  }
+  // ── Onion Skin Content ───────────────────────────────────────
+  _buildOnionSkinContent() {
+    const frag = document.createElement("div");
+    const os = this.state.onionSkin;
+    const modeRow = this._row();
+    const modeLabel = document.createElement("span");
+    modeLabel.className = "veditor-control-label";
+    modeLabel.textContent = "Blend";
+    const modeSelect = document.createElement("select");
+    modeSelect.className = "veditor-select";
+    modeSelect.setAttribute("data-tool-id", "veditor-compose-oskin-blend");
+    const modes = ["screen", "normal", "addition", "difference", "multiply", "overlay", "softlight"];
+    modes.forEach((m) => {
+      const o = document.createElement("option");
+      o.value = m;
+      o.textContent = m.charAt(0).toUpperCase() + m.slice(1);
+      if (m === os.blend_mode) o.selected = true;
+      modeSelect.appendChild(o);
+    });
+    modeSelect.addEventListener("change", () => {
+      os.blend_mode = modeSelect.value;
+      this._notify();
+    });
+    modeRow.append(modeLabel, modeSelect);
+    frag.appendChild(modeRow);
+    frag.appendChild(this._slider("Opacity", os.opacity, 0, 100, 1, "%", (v) => {
+      os.opacity = v;
+      this._notify();
+    }, "veditor-compose-oskin-opacity"));
+    frag.appendChild(this._slider("Trail Length", os.decay * 1e3, 900, 999, 1, "", (v) => {
+      os.decay = v / 1e3;
+      this._notify();
+    }, "veditor-compose-oskin-decay"));
+    return frag;
+  }
+  // ── Rebuild ──────────────────────────────────────────────────
+  _rebuild() {
+    this.container.innerHTML = "";
+    this.container.appendChild(
+      this._buildSection("Picture-in-Picture", "pip", () => this._buildPipContent())
+    );
+    this.container.appendChild(
+      this._buildSection("Image Watermark", "watermark", () => this._buildWatermarkContent())
+    );
+    this.container.appendChild(
+      this._buildSection("Vignette", "vignette", () => this._buildVignetteContent())
+    );
+    this.container.appendChild(
+      this._buildSection("Chroma Key", "chromakey", () => this._buildChromaKeyContent())
+    );
+    this.container.appendChild(
+      this._buildSection("Blend Mode", "blend", () => this._buildBlendContent())
+    );
+    this.container.appendChild(
+      this._buildSection("Onion Skin", "onionSkin", () => this._buildOnionSkinContent())
+    );
+  }
+  // ── Shared UI helpers ────────────────────────────────────────
+  _notify() {
+    this.callbacks.onComposeChanged(this.getState());
+  }
+  _row() {
+    const r = document.createElement("div");
+    r.className = "veditor-control-row";
+    return r;
+  }
+  _slider(label, value, min, max, step, unit, onChange, toolId) {
+    const row = this._row();
+    const lbl = document.createElement("span");
+    lbl.className = "veditor-control-label";
+    lbl.textContent = label;
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = String(min);
+    slider.max = String(max);
+    slider.step = String(step);
+    slider.value = String(value);
+    slider.className = "veditor-grading-slider";
+    slider.setAttribute("data-tool-id", toolId);
+    const val = document.createElement("span");
+    val.className = "veditor-grading-value";
+    val.textContent = `${value}${unit}`;
+    slider.addEventListener("input", () => {
+      const v = parseFloat(slider.value);
+      val.textContent = `${v}${unit}`;
+      onChange(v);
+    });
+    row.append(lbl, slider, val);
+    return row;
+  }
+  _labeledInput(label, type, value, onChange, toolId, placeholder = "") {
+    const row = this._row();
+    const lbl = document.createElement("span");
+    lbl.className = "veditor-control-label";
+    lbl.textContent = label;
+    const input = document.createElement("input");
+    input.type = type;
+    input.className = "veditor-input";
+    input.value = value;
+    input.placeholder = placeholder;
+    input.style.flex = "1";
+    input.setAttribute("data-tool-id", toolId);
+    input.addEventListener("change", () => onChange(input.value));
+    row.append(lbl, input);
+    return row;
+  }
+  _smallInput(label, value, onChange, toolId) {
+    const wrap = document.createElement("span");
+    wrap.style.display = "inline-flex";
+    wrap.style.alignItems = "center";
+    wrap.style.gap = "4px";
+    const lbl = document.createElement("span");
+    lbl.className = "veditor-control-label";
+    lbl.textContent = label;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "veditor-input";
+    input.value = String(value);
+    input.style.width = "60px";
+    input.setAttribute("data-tool-id", toolId);
+    input.addEventListener("change", () => {
+      const n = parseFloat(input.value);
+      onChange(isNaN(n) ? input.value : n);
+    });
+    wrap.append(lbl, input);
+    return wrap;
+  }
+  _positionPresets(current, onChange, prefix) {
+    const row = this._row();
+    row.style.flexWrap = "wrap";
+    row.style.gap = "3px";
+    const lbl = document.createElement("span");
+    lbl.className = "veditor-control-label";
+    lbl.textContent = "Position";
+    row.appendChild(lbl);
+    POSITION_PRESETS.forEach((p) => {
+      const btn = document.createElement("button");
+      btn.className = "veditor-btn veditor-preset-btn";
+      if (p.value === current) btn.classList.add("active");
+      btn.textContent = p.label;
+      btn.title = p.value;
+      btn.setAttribute("data-tool-id", `veditor-compose-${prefix}-pos-${p.value}`);
+      btn.addEventListener("click", () => {
+        row.querySelectorAll(".veditor-preset-btn").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        onChange(p.value);
+      });
+      row.appendChild(btn);
+    });
+    return row;
+  }
+}
+const REMBG_MODELS = [
+  { value: "bria-rmbg", label: "BRIA RMBG (Best Quality)" },
+  { value: "birefnet-general", label: "BiRefNet (High Quality)" },
+  { value: "birefnet-general-lite", label: "BiRefNet Lite (Fast)" },
+  { value: "isnet-general-use", label: "ISNet General" },
+  { value: "u2net", label: "U2Net" },
+  { value: "silueta", label: "Silueta (Lightweight)" }
+];
+const BG_TYPES = [
+  { value: "transparent", label: "Transparent (WebM)" },
+  { value: "blur", label: "Blurred Original" },
+  { value: "solid", label: "Solid Color" },
+  { value: "image", label: "Image File" }
+];
+const DEPTH_MODELS = [
+  { value: "video-depth-anything", label: "Video Depth Anything" },
+  { value: "marigold", label: "Marigold" }
+];
+const DEPTH_EFFECTS = [
+  { value: "bokeh", label: "Depth of Field (Bokeh)" },
+  { value: "fog", label: "Atmospheric Fog" },
+  { value: "tilt-shift", label: "Tilt-Shift (Miniature)" }
+];
+const DEFAULT_STATE$1 = {
+  bg_removal: {
+    enabled: false,
+    model: "bria-rmbg",
+    background_type: "transparent",
+    background_color: "#000000",
+    background_path: "",
+    edge_refine: 0.5,
+    blur_strength: 15
+  },
+  depth_effect: {
+    enabled: false,
+    model: "video-depth-anything",
+    effect: "bokeh",
+    focus_distance: 0.5,
+    blur_amount: 10,
+    fog_density: 0.5,
+    fog_color: "#cccccc",
+    tilt_shift_center: 0.5,
+    tilt_shift_width: 0.3
+  }
+};
+class AIComposePanel {
+  constructor(callbacks) {
+    __publicField(this, "container");
+    __publicField(this, "callbacks");
+    __publicField(this, "state");
+    this.callbacks = callbacks;
+    this.state = JSON.parse(JSON.stringify(DEFAULT_STATE$1));
+    this.container = document.createElement("div");
+    this.container.className = "veditor-ai-compose-panel";
+    this.container.setAttribute("data-tool-id", "veditor-ai-compose-panel");
+    this._build();
+  }
+  get element() {
+    return this.container;
+  }
+  getState() {
+    return JSON.parse(JSON.stringify(this.state));
+  }
+  loadState(s) {
+    if (s.bg_removal) Object.assign(this.state.bg_removal, s.bg_removal);
+    if (s.depth_effect) Object.assign(this.state.depth_effect, s.depth_effect);
+    this._build();
+  }
+  reset() {
+    this.state = JSON.parse(JSON.stringify(DEFAULT_STATE$1));
+    this._build();
+    this._notify();
+  }
+  // ── Build ────────────────────────────────────────────────────
+  _build() {
+    this.container.innerHTML = "";
+    const notice = document.createElement("div");
+    notice.className = "veditor-ai-notice";
+    notice.innerHTML = "⚠️ AI features require GPU and model downloads. Processing may take several minutes.";
+    this.container.appendChild(notice);
+    this.container.appendChild(this._buildBgRemovalSection());
+    this.container.appendChild(this._buildDepthSection());
+  }
+  // ── Background Removal ───────────────────────────────────────
+  _buildBgRemovalSection() {
+    const section = this._section("Background Removal");
+    const bg = this.state.bg_removal;
+    section.appendChild(this._toggle("Enable Background Removal", bg.enabled, (v) => {
+      bg.enabled = v;
+      this._notify();
+    }, "veditor-ai-bg-enable"));
+    section.appendChild(this._dropdown("Model", REMBG_MODELS, bg.model, (v) => {
+      bg.model = v;
+      this._notify();
+    }, "veditor-ai-bg-model"));
+    section.appendChild(this._dropdown("Background", BG_TYPES, bg.background_type, (v) => {
+      bg.background_type = v;
+      this._notify();
+    }, "veditor-ai-bg-type"));
+    if (bg.background_type === "solid") {
+      const colorRow = this._row();
+      const colorLabel = document.createElement("span");
+      colorLabel.className = "veditor-control-label";
+      colorLabel.textContent = "Color";
+      const colorInput = document.createElement("input");
+      colorInput.type = "color";
+      colorInput.value = bg.background_color;
+      colorInput.className = "veditor-color-input";
+      colorInput.addEventListener("change", () => {
+        bg.background_color = colorInput.value;
+        this._notify();
+      });
+      colorRow.append(colorLabel, colorInput);
+      section.appendChild(colorRow);
+    }
+    if (bg.background_type === "blur") {
+      section.appendChild(this._slider("Blur Strength", bg.blur_strength, 1, 50, 1, "", (v) => {
+        bg.blur_strength = v;
+        this._notify();
+      }, "veditor-ai-bg-blur"));
+    }
+    section.appendChild(this._slider("Edge Refinement", bg.edge_refine * 100, 0, 100, 1, "%", (v) => {
+      bg.edge_refine = v / 100;
+      this._notify();
+    }, "veditor-ai-bg-edge"));
+    return section;
+  }
+  // ── Depth Effects ────────────────────────────────────────────
+  _buildDepthSection() {
+    const section = this._section("Depth Effects");
+    const de = this.state.depth_effect;
+    section.appendChild(this._toggle("Enable Depth Effects", de.enabled, (v) => {
+      de.enabled = v;
+      this._notify();
+    }, "veditor-ai-depth-enable"));
+    section.appendChild(this._dropdown("Depth Model", DEPTH_MODELS, de.model, (v) => {
+      de.model = v;
+      this._notify();
+    }, "veditor-ai-depth-model"));
+    section.appendChild(this._dropdown("Effect", DEPTH_EFFECTS, de.effect, (v) => {
+      de.effect = v;
+      this._notify();
+    }, "veditor-ai-depth-effect"));
+    if (de.effect === "bokeh") {
+      section.appendChild(this._slider("Focus Distance", de.focus_distance * 100, 0, 100, 1, "%", (v) => {
+        de.focus_distance = v / 100;
+        this._notify();
+      }, "veditor-ai-depth-focus"));
+      section.appendChild(this._slider("Blur Amount", de.blur_amount, 1, 30, 1, "", (v) => {
+        de.blur_amount = v;
+        this._notify();
+      }, "veditor-ai-depth-blur"));
+    }
+    if (de.effect === "fog") {
+      section.appendChild(this._slider("Fog Density", de.fog_density * 100, 0, 100, 1, "%", (v) => {
+        de.fog_density = v / 100;
+        this._notify();
+      }, "veditor-ai-depth-fog-density"));
+      const colorRow = this._row();
+      const colorLabel = document.createElement("span");
+      colorLabel.className = "veditor-control-label";
+      colorLabel.textContent = "Fog Color";
+      const colorInput = document.createElement("input");
+      colorInput.type = "color";
+      colorInput.value = de.fog_color;
+      colorInput.className = "veditor-color-input";
+      colorInput.addEventListener("change", () => {
+        de.fog_color = colorInput.value;
+        this._notify();
+      });
+      colorRow.append(colorLabel, colorInput);
+      section.appendChild(colorRow);
+    }
+    if (de.effect === "tilt-shift") {
+      section.appendChild(this._slider("Focus Center", de.tilt_shift_center * 100, 0, 100, 1, "%", (v) => {
+        de.tilt_shift_center = v / 100;
+        this._notify();
+      }, "veditor-ai-depth-tilt-center"));
+      section.appendChild(this._slider("Focus Width", de.tilt_shift_width * 100, 5, 100, 1, "%", (v) => {
+        de.tilt_shift_width = v / 100;
+        this._notify();
+      }, "veditor-ai-depth-tilt-width"));
+      section.appendChild(this._slider("Blur Amount", de.blur_amount, 1, 30, 1, "", (v) => {
+        de.blur_amount = v;
+        this._notify();
+      }, "veditor-ai-depth-tilt-blur"));
+    }
+    return section;
+  }
+  // ── Shared UI helpers ────────────────────────────────────────
+  _notify() {
+    this.callbacks.onAIComposeChanged(this.getState());
+  }
+  _row() {
+    const r = document.createElement("div");
+    r.className = "veditor-control-row";
+    return r;
+  }
+  _section(title) {
+    const s = document.createElement("div");
+    s.className = "veditor-compose-section";
+    const header = document.createElement("div");
+    header.className = "veditor-compose-section-header";
+    const t = document.createElement("span");
+    t.className = "veditor-compose-section-title";
+    t.textContent = title;
+    header.appendChild(t);
+    s.appendChild(header);
+    return s;
+  }
+  _toggle(label, checked, onChange, toolId) {
+    const row = this._row();
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.className = "veditor-checkbox";
+    cb.checked = checked;
+    cb.setAttribute("data-tool-id", toolId);
+    cb.addEventListener("change", () => onChange(cb.checked));
+    const lbl = document.createElement("span");
+    lbl.className = "veditor-control-label";
+    lbl.textContent = label;
+    row.append(cb, lbl);
+    return row;
+  }
+  _dropdown(label, options, current, onChange, toolId) {
+    const row = this._row();
+    const lbl = document.createElement("span");
+    lbl.className = "veditor-control-label";
+    lbl.textContent = label;
+    const select = document.createElement("select");
+    select.className = "veditor-select";
+    select.setAttribute("data-tool-id", toolId);
+    options.forEach((o) => {
+      const opt = document.createElement("option");
+      opt.value = o.value;
+      opt.textContent = o.label;
+      if (o.value === current) opt.selected = true;
+      select.appendChild(opt);
+    });
+    select.addEventListener("change", () => onChange(select.value));
+    row.append(lbl, select);
+    return row;
+  }
+  _slider(label, value, min, max, step, unit, onChange, toolId) {
+    const row = this._row();
+    const lbl = document.createElement("span");
+    lbl.className = "veditor-control-label";
+    lbl.textContent = label;
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = String(min);
+    slider.max = String(max);
+    slider.step = String(step);
+    slider.value = String(value);
+    slider.className = "veditor-grading-slider";
+    slider.setAttribute("data-tool-id", toolId);
+    const val = document.createElement("span");
+    val.className = "veditor-grading-value";
+    val.textContent = `${value}${unit}`;
+    slider.addEventListener("input", () => {
+      const v = parseFloat(slider.value);
+      val.textContent = `${v}${unit}`;
+      onChange(v);
+    });
+    row.append(lbl, slider, val);
+    return row;
+  }
+}
+const DEFAULT_STATE = {
+  enabled: false,
+  position_x: 0,
+  position_y: 0,
+  scale: 100,
+  rotation: 0,
+  anchor_x: 50,
+  anchor_y: 50,
+  flip_h: false,
+  flip_v: false,
+  opacity: 100
+};
+class TransformPanel {
+  constructor(callbacks) {
+    __publicField(this, "container");
+    __publicField(this, "callbacks");
+    __publicField(this, "state");
+    this.callbacks = callbacks;
+    this.state = { ...DEFAULT_STATE };
+    this.container = document.createElement("div");
+    this.container.className = "veditor-transform-panel";
+    this.container.setAttribute("data-tool-id", "veditor-transform-panel");
+    this._build();
+  }
+  get element() {
+    return this.container;
+  }
+  getState() {
+    return { ...this.state };
+  }
+  loadState(s) {
+    Object.assign(this.state, s);
+    this._build();
+  }
+  reset() {
+    this.state = { ...DEFAULT_STATE };
+    this._build();
+    this._notify();
+  }
+  // ── Build ────────────────────────────────────────────────────
+  _build() {
+    this.container.innerHTML = "";
+    this.container.appendChild(this._toggle("Enable Transform", this.state.enabled, (v) => {
+      this.state.enabled = v;
+      this._notify();
+    }, "veditor-transform-enable"));
+    const posRow = this._row();
+    posRow.appendChild(this._numInput("X", this.state.position_x, -2e3, 2e3, (v) => {
+      this.state.position_x = v;
+      this._notify();
+    }, "veditor-transform-x"));
+    posRow.appendChild(this._numInput("Y", this.state.position_y, -2e3, 2e3, (v) => {
+      this.state.position_y = v;
+      this._notify();
+    }, "veditor-transform-y"));
+    this.container.appendChild(posRow);
+    this.container.appendChild(this._slider("Scale", this.state.scale, 10, 400, 1, "%", (v) => {
+      this.state.scale = v;
+      this._notify();
+    }, "veditor-transform-scale"));
+    this.container.appendChild(this._slider("Rotation", this.state.rotation, -180, 180, 1, "°", (v) => {
+      this.state.rotation = v;
+      this._notify();
+    }, "veditor-transform-rotation"));
+    this.container.appendChild(this._slider("Opacity", this.state.opacity, 0, 100, 1, "%", (v) => {
+      this.state.opacity = v;
+      this._notify();
+    }, "veditor-transform-opacity"));
+    const flipRow = this._row();
+    flipRow.appendChild(this._toggleBtn("↔ Flip H", this.state.flip_h, (v) => {
+      this.state.flip_h = v;
+      this._notify();
+    }, "veditor-transform-flip-h"));
+    flipRow.appendChild(this._toggleBtn("↕ Flip V", this.state.flip_v, (v) => {
+      this.state.flip_v = v;
+      this._notify();
+    }, "veditor-transform-flip-v"));
+    this.container.appendChild(flipRow);
+    const resetRow = this._row();
+    const resetBtn = document.createElement("button");
+    resetBtn.className = "veditor-btn";
+    resetBtn.textContent = "Reset Transform";
+    resetBtn.setAttribute("data-tool-id", "veditor-transform-reset");
+    resetBtn.addEventListener("click", () => this.reset());
+    resetRow.appendChild(resetBtn);
+    this.container.appendChild(resetRow);
+  }
+  // ── Shared UI helpers ────────────────────────────────────────
+  _notify() {
+    this.callbacks.onTransformChanged(this.getState());
+  }
+  _row() {
+    const r = document.createElement("div");
+    r.className = "veditor-control-row";
+    return r;
+  }
+  _toggle(label, checked, onChange, toolId) {
+    const row = this._row();
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.className = "veditor-checkbox";
+    cb.checked = checked;
+    cb.setAttribute("data-tool-id", toolId);
+    cb.addEventListener("change", () => onChange(cb.checked));
+    const lbl = document.createElement("span");
+    lbl.className = "veditor-control-label";
+    lbl.textContent = label;
+    row.append(cb, lbl);
+    return row;
+  }
+  _slider(label, value, min, max, step, unit, onChange, toolId) {
+    const row = this._row();
+    const lbl = document.createElement("span");
+    lbl.className = "veditor-control-label";
+    lbl.textContent = label;
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = String(min);
+    slider.max = String(max);
+    slider.step = String(step);
+    slider.value = String(value);
+    slider.className = "veditor-grading-slider";
+    slider.setAttribute("data-tool-id", toolId);
+    const val = document.createElement("span");
+    val.className = "veditor-grading-value";
+    val.textContent = `${value}${unit}`;
+    slider.addEventListener("input", () => {
+      const v = parseFloat(slider.value);
+      val.textContent = `${v}${unit}`;
+      onChange(v);
+    });
+    row.append(lbl, slider, val);
+    return row;
+  }
+  _numInput(label, value, min, max, onChange, toolId) {
+    const wrap = document.createElement("span");
+    wrap.style.display = "inline-flex";
+    wrap.style.alignItems = "center";
+    wrap.style.gap = "4px";
+    const lbl = document.createElement("span");
+    lbl.className = "veditor-control-label";
+    lbl.textContent = label;
+    const input = document.createElement("input");
+    input.type = "number";
+    input.className = "veditor-input";
+    input.value = String(value);
+    input.min = String(min);
+    input.max = String(max);
+    input.style.width = "65px";
+    input.setAttribute("data-tool-id", toolId);
+    input.addEventListener("change", () => {
+      let v = parseFloat(input.value) || 0;
+      v = Math.max(min, Math.min(max, v));
+      input.value = String(v);
+      onChange(v);
+    });
+    wrap.append(lbl, input);
+    return wrap;
+  }
+  _toggleBtn(label, active, onChange, toolId) {
+    const btn = document.createElement("button");
+    btn.className = "veditor-btn veditor-preset-btn";
+    if (active) btn.classList.add("active");
+    btn.textContent = label;
+    btn.setAttribute("data-tool-id", toolId);
+    btn.addEventListener("click", () => {
+      const next = !btn.classList.contains("active");
+      btn.classList.toggle("active", next);
+      onChange(next);
+    });
+    return btn;
+  }
 }
 class ToolsPanel {
-  constructor(tabs) {
+  constructor(groups) {
     __publicField(this, "container");
     __publicField(this, "tabBar");
     __publicField(this, "contentArea");
-    __publicField(this, "tabs", []);
+    __publicField(this, "allTabs", []);
     __publicField(this, "tabButtons", /* @__PURE__ */ new Map());
     __publicField(this, "tabPanes", /* @__PURE__ */ new Map());
     __publicField(this, "activeTabId", "");
-    this.tabs = tabs;
+    this.allTabs = groups.flatMap((g) => g.tabs);
     this.container = document.createElement("div");
     this.container.className = "veditor-modal-tools";
     this.container.setAttribute("role", "region");
@@ -842,21 +3574,42 @@ class ToolsPanel {
     this.tabBar.className = "veditor-tabs";
     this.tabBar.setAttribute("role", "tablist");
     this.tabBar.setAttribute("aria-label", "Tool tabs");
+    for (let gi = 0; gi < groups.length; gi++) {
+      const group = groups[gi];
+      const groupEl = document.createElement("div");
+      groupEl.className = "veditor-tab-group";
+      const catLabel = document.createElement("span");
+      catLabel.className = "veditor-tab-group-label";
+      catLabel.textContent = group.label;
+      groupEl.appendChild(catLabel);
+      const btnRow = document.createElement("div");
+      btnRow.className = "veditor-tab-group-btns";
+      for (const tab of group.tabs) {
+        const idx = this.allTabs.indexOf(tab);
+        const btn = document.createElement("button");
+        btn.className = "veditor-tab";
+        btn.innerHTML = tab.icon;
+        btn.setAttribute("role", "tab");
+        btn.setAttribute("aria-selected", "false");
+        btn.setAttribute("aria-controls", `veditor-pane-${tab.id}`);
+        btn.setAttribute("data-tool-id", `veditor-tab-${tab.id}`);
+        btn.setAttribute("aria-label", `${tab.label} tools`);
+        btn.title = `${tab.label} (${this._shortcutLabel(idx)})`;
+        btn.addEventListener("click", () => this.activateTab(tab.id));
+        btnRow.appendChild(btn);
+        this.tabButtons.set(tab.id, btn);
+      }
+      groupEl.appendChild(btnRow);
+      this.tabBar.appendChild(groupEl);
+      if (gi < groups.length - 1) {
+        const divider = document.createElement("div");
+        divider.className = "veditor-tab-divider";
+        this.tabBar.appendChild(divider);
+      }
+    }
     this.contentArea = document.createElement("div");
     this.contentArea.className = "veditor-tab-content";
-    for (const tab of tabs) {
-      const btn = document.createElement("button");
-      btn.className = "veditor-tab";
-      btn.innerHTML = `${tab.icon} ${tab.label}`;
-      btn.setAttribute("role", "tab");
-      btn.setAttribute("aria-selected", "false");
-      btn.setAttribute("aria-controls", `veditor-pane-${tab.id}`);
-      btn.setAttribute("data-tool-id", `veditor-tab-${tab.id}`);
-      btn.setAttribute("aria-label", `${tab.label} tools`);
-      btn.title = `${tab.label} tools`;
-      btn.addEventListener("click", () => this.activateTab(tab.id));
-      this.tabBar.appendChild(btn);
-      this.tabButtons.set(tab.id, btn);
+    for (const tab of this.allTabs) {
       const pane = document.createElement("div");
       pane.className = "veditor-tab-pane";
       pane.id = `veditor-pane-${tab.id}`;
@@ -867,8 +3620,8 @@ class ToolsPanel {
       this.tabPanes.set(tab.id, pane);
     }
     this.container.append(this.tabBar, this.contentArea);
-    if (tabs.length > 0) {
-      this.activateTab(tabs[0].id);
+    if (this.allTabs.length > 0) {
+      this.activateTab(this.allTabs[0].id);
     }
   }
   get element() {
@@ -888,11 +3641,18 @@ class ToolsPanel {
   }
   /** Allow keyboard switching — call from modal's key handler */
   handleNumberKey(num) {
-    if (num >= 1 && num <= this.tabs.length) {
-      this.activateTab(this.tabs[num - 1].id);
+    if (num >= 1 && num <= this.allTabs.length) {
+      this.activateTab(this.allTabs[num - 1].id);
       return true;
     }
     return false;
+  }
+  _shortcutLabel(idx) {
+    if (idx < 9) return String(idx + 1);
+    if (idx === 9) return "0";
+    if (idx === 10) return "-";
+    if (idx === 11) return "=";
+    return "";
   }
   destroy() {
     this.container.remove();
@@ -1756,7 +4516,9 @@ class AudioEditManager {
       fadeIn: 0,
       fadeOut: 0,
       eq: "flat",
-      muted: false
+      muted: false,
+      aceRepaint: false,
+      aceRepaintStrength: 0.5
     }];
   }
   /** Create an audio segment with defaults, optionally overridden */
@@ -1770,6 +4532,8 @@ class AudioEditManager {
       fadeOut: 0,
       eq: "flat",
       muted: false,
+      aceRepaint: false,
+      aceRepaintStrength: 0.5,
       ...overrides
     };
   }
@@ -1874,7 +4638,7 @@ class AudioEditManager {
   hasEdits() {
     if (this.segments.length !== 1) return true;
     const s = this.segments[0];
-    return Math.abs(s.start) > 0.01 || Math.abs(s.end - this.videoDuration) > 0.01 || Math.abs(s.volume - 1) > 0.01 || s.fadeIn > 0 || s.fadeOut > 0 || s.eq !== "flat" || s.muted;
+    return Math.abs(s.start) > 0.01 || Math.abs(s.end - this.videoDuration) > 0.01 || Math.abs(s.volume - 1) > 0.01 || s.fadeIn > 0 || s.fadeOut > 0 || s.eq !== "flat" || s.muted || s.aceRepaint;
   }
   /** Serialize */
   toJSON() {
@@ -1885,7 +4649,9 @@ class AudioEditManager {
       fadeIn: s.fadeIn,
       fadeOut: s.fadeOut,
       eq: s.eq,
-      muted: s.muted
+      muted: s.muted,
+      aceRepaint: s.aceRepaint,
+      aceRepaintStrength: s.aceRepaintStrength
     }));
   }
   /** Deserialize */
@@ -1898,7 +4664,9 @@ class AudioEditManager {
       fadeIn: d.fadeIn ?? 0,
       fadeOut: d.fadeOut ?? 0,
       eq: d.eq ?? "flat",
-      muted: d.muted ?? false
+      muted: d.muted ?? false,
+      aceRepaint: d.aceRepaint ?? false,
+      aceRepaintStrength: d.aceRepaintStrength ?? 0.5
     }));
   }
 }
@@ -2061,7 +4829,7 @@ class AudioTimeline {
     const { trackX, trackY, trackW, trackH, duration } = this.geometry;
     if (duration <= 0) return;
     ctx.save();
-    ctx.scale(dpr, dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (this._lastPlayheadX >= 0) {
       const eraseX = this._lastPlayheadX - PLAYHEAD_W / 2 - 1;
       const eraseW = PLAYHEAD_W + 2;
@@ -2098,7 +4866,7 @@ class AudioTimeline {
       }
       ctx.restore();
       ctx.save();
-      ctx.scale(dpr, dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
     const phX = trackX + this.playhead / duration * trackW;
     this._lastPlayheadX = phX;
@@ -2449,6 +5217,14 @@ class EditorModal {
     __publicField(this, "speedControl");
     __publicField(this, "audioMixer");
     __publicField(this, "textPanel");
+    __publicField(this, "colorGradingPanel");
+    __publicField(this, "filtersPanel");
+    __publicField(this, "shaderPanel");
+    __publicField(this, "relightPanel");
+    __publicField(this, "exportSettingsPanel");
+    __publicField(this, "composePanel");
+    __publicField(this, "aiComposePanel");
+    __publicField(this, "transformPanel");
     __publicField(this, "undoManager");
     __publicField(this, "toolsPanel");
     __publicField(this, "editToolbar");
@@ -2493,7 +5269,7 @@ class EditorModal {
       "<kbd>Space</kbd> Play",
       "<kbd>S</kbd> Split",
       "<kbd>V</kbd> Select",
-      "<kbd>1-5</kbd> Tool Tabs",
+      "<kbd>1-0</kbd> Tool Tabs",
       "<kbd>?</kbd> Shortcuts"
     ].join("  ·  ");
     const headerActions = document.createElement("div");
@@ -2636,7 +5412,8 @@ class EditorModal {
       onOverlaysChanged: () => {
         this._pushUndo();
         this._refreshTextPreview();
-      }
+      },
+      getVideoPath: () => this.videoPath
     });
     this.transitionEditor = new TransitionEditor(this.editManager, {
       onTransitionsChanged: () => {
@@ -2644,12 +5421,77 @@ class EditorModal {
         this.transport.setTransitions(this.transitionEditor.transitions);
       }
     });
+    this.colorGradingPanel = new ColorGradingPanel({
+      onGradingChanged: () => {
+        this._pushUndo();
+        this._applyCSSPreview();
+      }
+    });
+    this.filtersPanel = new FiltersPanel({
+      onFilterChanged: () => {
+        this._pushUndo();
+        this._applyCSSPreview();
+      }
+    });
+    this.shaderPanel = new ShaderPanel({
+      onShaderChanged: () => {
+        this._pushUndo();
+      }
+    });
+    this.relightPanel = new RelightPanel({
+      onRelightChanged: () => {
+        this._pushUndo();
+      }
+    });
+    this.exportSettingsPanel = new ExportSettingsPanel({
+      onSettingsChanged: () => {
+        this._pushUndo();
+      }
+    });
+    this.composePanel = new ComposePanel({
+      onComposeChanged: () => {
+        this._pushUndo();
+      }
+    });
+    this.aiComposePanel = new AIComposePanel({
+      onAIComposeChanged: () => {
+        this._pushUndo();
+      }
+    });
+    this.transformPanel = new TransformPanel({
+      onTransformChanged: () => {
+        this._pushUndo();
+      }
+    });
     this.toolsPanel = new ToolsPanel([
-      { id: "crop", label: "Crop", icon: iconCrop, content: this.cropOverlay.element },
-      { id: "speed", label: "Speed", icon: iconGauge, content: this.speedControl.element },
-      { id: "audio", label: "Audio", icon: iconVolume, content: this.audioMixer.element },
-      { id: "text", label: "Text", icon: iconText, content: this.textPanel.element },
-      { id: "transitions", label: "Trans", icon: iconShuffle, content: this.transitionEditor.element }
+      {
+        label: "EDIT",
+        tabs: [
+          { id: "crop", label: "Crop", icon: iconCrop, content: this.cropOverlay.element },
+          { id: "speed", label: "Speed", icon: iconGauge, content: this.speedControl.element },
+          { id: "audio", label: "Audio", icon: iconVolume, content: this.audioMixer.element },
+          { id: "text", label: "Text", icon: iconText, content: this.textPanel.element },
+          { id: "transitions", label: "Trans", icon: iconShuffle, content: this.transitionEditor.element }
+        ]
+      },
+      {
+        label: "FX",
+        tabs: [
+          { id: "color", label: "Color", icon: iconPalette, content: this.colorGradingPanel.element },
+          { id: "filters", label: "Filters", icon: iconWand, content: this.filtersPanel.element },
+          { id: "shaders", label: "Shaders", icon: iconWand, content: this.shaderPanel.element },
+          { id: "relight", label: "Relight", icon: iconSun, content: this.relightPanel.element },
+          { id: "export", label: "Export", icon: iconSettings, content: this.exportSettingsPanel.element }
+        ]
+      },
+      {
+        label: "COMPOSE",
+        tabs: [
+          { id: "compose", label: "Compose", icon: iconLayers, content: this.composePanel.element },
+          { id: "ai", label: "AI", icon: iconBrain, content: this.aiComposePanel.element },
+          { id: "transform", label: "Xform", icon: iconMove, content: this.transformPanel.element }
+        ]
+      }
     ]);
     this.monitorCanvas.contentElement.appendChild(this.cropOverlay.canvasElement);
     this.monitorCanvas.contentElement.appendChild(this.textPreview.element);
@@ -2680,12 +5522,29 @@ class EditorModal {
         }
       },
       onResetRequested: () => {
-        var _a;
+        var _a, _b, _c;
         this.editManager.reset();
         this.audioEditManager.reset();
         this.audioMixer.clearSegmentSelection();
+        this.audioMixer.setMasterVolume(1);
+        (_a = this.audioTimeline) == null ? void 0 : _a.setSelectedIndex(-1);
+        (_b = this.audioTimeline) == null ? void 0 : _b.render();
+        this.cropOverlay.setRect(null);
+        this.speedControl.loadSpeedMap({});
+        this.transport.setPlaybackRate(1);
+        this.textPanel.loadOverlays([]);
+        this._refreshTextPreview();
+        this.colorGradingPanel.loadState({});
+        this.filtersPanel.loadState({});
+        this.shaderPanel.loadState({});
+        this.relightPanel.loadState({});
+        this.exportSettingsPanel.loadState({});
+        this.composePanel.loadState({});
+        this.aiComposePanel.loadState({});
+        this.transformPanel.loadState({});
+        this._applyCSSPreview();
         this._pushUndo();
-        (_a = this.nleTimeline) == null ? void 0 : _a.render();
+        (_c = this.nleTimeline) == null ? void 0 : _c.render();
       }
     });
     const timelineSlot = document.createElement("div");
@@ -2718,6 +5577,34 @@ class EditorModal {
       this.speedControl.loadSpeedMap(initialState.speedMap);
       this.audioMixer.setMasterVolume(initialState.volume);
       this.textPanel.loadOverlays(initialState.textOverlays);
+      if (initialState.colorGrading) {
+        this.colorGradingPanel.loadState(initialState.colorGrading);
+      }
+      if (initialState.filterPreset) {
+        this.filtersPanel.loadState(initialState.filterPreset);
+      }
+      if (initialState.shaderPreset) {
+        this.shaderPanel.loadState(initialState.shaderPreset);
+      }
+      if (initialState.keyframes) {
+        this.speedControl.loadKeyframeData(initialState.keyframes);
+      }
+      if (initialState.relight) {
+        this.relightPanel.loadState(initialState.relight);
+      }
+      if (initialState.exportSettings) {
+        this.exportSettingsPanel.loadState(initialState.exportSettings);
+      }
+      if (initialState.compose) {
+        this.composePanel.loadState(initialState.compose);
+      }
+      if (initialState.aiCompose) {
+        this.aiComposePanel.loadState(initialState.aiCompose);
+      }
+      if (initialState.transform) {
+        this.transformPanel.loadState(initialState.transform);
+      }
+      this._applyCSSPreview();
       try {
         const crop = JSON.parse(initialState.cropRect);
         if (crop && crop.w && crop.h) this.cropOverlay.setRect(crop);
@@ -2732,6 +5619,8 @@ class EditorModal {
         this.audioEditManager.init(info.duration || 1);
         this.cropOverlay.setVideoDimensions(info.width || 640, info.height || 480);
         this.textPreview.setVideoDimensions(info.width || 640, info.height || 480);
+        this.transport.setFps(info.fps || 30);
+        this.transport.setTotalDuration(info.duration || 1);
         if (initialState && initialState.segments.length > 0) {
           this.editManager.segments = initialState.segments.map(
             ([start, end], i) => ({
@@ -2835,8 +5724,16 @@ class EditorModal {
         return;
       }
       const num = parseInt(e.key, 10);
-      if (num >= 1 && num <= 5 && !e.ctrlKey && !e.altKey) {
-        if (this.toolsPanel.handleNumberKey(num)) {
+      if (!isNaN(num) && !e.ctrlKey && !e.altKey) {
+        const tabNum = num === 0 ? 10 : num;
+        if (this.toolsPanel.handleNumberKey(tabNum)) {
+          e.preventDefault();
+          return;
+        }
+      }
+      if ((e.key === "-" || e.key === "=") && !e.ctrlKey && !e.altKey) {
+        const tabNum = e.key === "-" ? 11 : 12;
+        if (this.toolsPanel.handleNumberKey(tabNum)) {
           e.preventDefault();
           return;
         }
@@ -2868,6 +5765,7 @@ class EditorModal {
     this._isOpen = false;
     this.video.pause();
     this.video.src = "";
+    this.video.style.filter = "none";
     if (this.nleTimeline) {
       this.nleTimeline.destroy();
       this.nleTimeline = null;
@@ -2907,7 +5805,16 @@ class EditorModal {
       volume: this.audioMixer.getMasterVolume(),
       textOverlays: this.textPanel.getOverlays(),
       transitions: [],
-      audioSegments: this.audioEditManager.toJSON()
+      audioSegments: this.audioEditManager.toJSON(),
+      colorGrading: this.colorGradingPanel.getState(),
+      filterPreset: this.filtersPanel.getState(),
+      shaderPreset: this.shaderPanel.getState(),
+      keyframes: this.speedControl.getKeyframeData() ?? null,
+      relight: this.relightPanel.getState(),
+      exportSettings: this.exportSettingsPanel.getState(),
+      compose: this.composePanel.getState(),
+      aiCompose: this.aiComposePanel.getState(),
+      transform: this.transformPanel.getState()
     };
   }
   _pushUndo() {
@@ -2941,6 +5848,46 @@ class EditorModal {
     }
     this.textPanel.loadOverlays(state.textOverlays);
     this._refreshTextPreview();
+    if (state.colorGrading) {
+      this.colorGradingPanel.loadState(state.colorGrading);
+    }
+    if (state.filterPreset) {
+      this.filtersPanel.loadState(state.filterPreset);
+    }
+    if (state.shaderPreset) {
+      this.shaderPanel.loadState(state.shaderPreset);
+    }
+    this._applyCSSPreview();
+    if (state.keyframes) {
+      this.speedControl.loadKeyframeData(state.keyframes);
+    }
+    if (state.relight) {
+      this.relightPanel.loadState(state.relight);
+    }
+    if (state.exportSettings) {
+      this.exportSettingsPanel.loadState(state.exportSettings);
+    }
+    if (state.compose) {
+      this.composePanel.loadState(state.compose);
+    }
+    if (state.aiCompose) {
+      this.aiComposePanel.loadState(state.aiCompose);
+    }
+    if (state.transform) {
+      this.transformPanel.loadState(state.transform);
+    }
+  }
+  /**
+   * Combine CSS filter approximations from color grading and filter preset
+   * into a single style.filter on the video element for live preview.
+   */
+  _applyCSSPreview() {
+    const parts = [];
+    const gradingCSS = this.colorGradingPanel.getCSSFilter();
+    if (gradingCSS && gradingCSS !== "none") parts.push(gradingCSS);
+    const filterCSS = this.filtersPanel.getCSSFilter();
+    if (filterCSS && filterCSS !== "none") parts.push(filterCSS);
+    this.video.style.filter = parts.length > 0 ? parts.join(" ") : "none";
   }
   /** Sync audio segments to match video segments (linked mode) */
   _syncAudioToVideo() {
@@ -2975,7 +5922,16 @@ class EditorModal {
       volume: this.audioMixer.getMasterVolume(),
       textOverlays: this.textPanel.getOverlays(),
       transitions: [],
-      audioSegments: this.audioEditManager.toJSON()
+      audioSegments: this.audioEditManager.toJSON(),
+      colorGrading: this.colorGradingPanel.getState(),
+      filterPreset: this.filtersPanel.getState(),
+      shaderPreset: this.shaderPanel.getState(),
+      keyframes: this.speedControl.getKeyframeData() ?? null,
+      relight: this.relightPanel.getState(),
+      exportSettings: this.exportSettingsPanel.getState(),
+      compose: this.composePanel.getState(),
+      aiCompose: this.aiComposePanel.getState(),
+      transform: this.transformPanel.getState()
     };
     this.close();
     this.callbacks.onApply(state);
@@ -3188,8 +6144,8 @@ const editorCSS = `/* ═══════════════════�
     background: linear-gradient(160deg, var(--ve-bg-primary) 0%, var(--ve-bg-deep) 100%);
     border: 1px solid var(--ve-glass-border);
     border-radius: var(--ve-radius-lg);
-    width: 82vw;
-    height: 82vh;
+    width: 92vw;
+    height: 90vh;
 
     display: grid !important;
     grid-template-areas:
@@ -3198,7 +6154,7 @@ const editorCSS = `/* ═══════════════════�
         "transport tools"
         "toolbar  toolbar"
         "timeline timeline" !important;
-    grid-template-columns: 1fr 280px !important;
+    grid-template-columns: 1fr 350px !important;
     grid-template-rows: auto minmax(0, 1fr) auto auto minmax(180px, 35%) !important;
 
     box-shadow:
@@ -3390,6 +6346,16 @@ const editorCSS = `/* ═══════════════════�
     user-select: none;
 }
 
+.veditor-frame-counter {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--ve-text-dim);
+    padding: 0 8px;
+    letter-spacing: 0.3px;
+    user-select: none;
+    border-left: 1px solid var(--ve-border);
+}
+
 /* ── Tools Panel (tabbed sidebar) ────────────────────────────────── */
 
 .veditor-modal-tools {
@@ -3405,35 +6371,85 @@ const editorCSS = `/* ═══════════════════�
 
 .veditor-tabs {
     display: flex;
+    align-items: stretch;
+    flex-wrap: wrap;
     border-bottom: 1px solid var(--ve-border);
     flex-shrink: 0;
+    padding: 4px 4px 0;
+    gap: 0;
 }
 
+/* ── Category Group ── */
+
+.veditor-tab-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding-bottom: 4px;
+}
+
+.veditor-tab-group-label {
+    font-family: var(--ve-font);
+    font-size: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--ve-text-dim);
+    line-height: 1;
+    user-select: none;
+}
+
+.veditor-tab-group-btns {
+    display: flex;
+    gap: 1px;
+}
+
+/* ── Vertical Divider ── */
+
+.veditor-tab-divider {
+    width: 1px;
+    align-self: stretch;
+    margin: 8px 6px 6px;
+    background: var(--ve-border);
+    opacity: 0.5;
+}
+
+/* ── Individual Tab Button ── */
+
 .veditor-tab {
-    flex: 1;
-    padding: 8px 4px;
+    width: 30px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
     border: none;
     background: transparent;
     color: var(--ve-text-secondary);
-    font-family: var(--ve-font);
-    font-size: 11px;
-    font-weight: 500;
     cursor: pointer;
     transition: all var(--ve-transition);
-    text-align: center;
     border-bottom: 2px solid transparent;
+    border-radius: var(--ve-radius-sm) var(--ve-radius-sm) 0 0;
     outline: none;
+    position: relative;
+}
+
+.veditor-tab svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
 }
 
 .veditor-tab:hover {
     color: var(--ve-text-primary);
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(255, 255, 255, 0.05);
 }
 
 .veditor-tab.active {
     color: var(--ve-accent);
     border-bottom-color: var(--ve-accent);
-    background: rgba(99, 102, 241, 0.06);
+    background: rgba(99, 102, 241, 0.08);
 }
 
 .veditor-tab:focus-visible {
@@ -4193,6 +7209,403 @@ const editorCSS = `/* ═══════════════════�
     font-size: 12px;
     color: var(--ve-text-secondary);
     font-variant-numeric: tabular-nums;
+}
+
+/* ── Color Grading Panel ─────────────────────────────────────────── */
+
+.veditor-color-grading {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.veditor-grading-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 3px;
+}
+
+.veditor-grading-row:last-child {
+    margin-bottom: 0;
+}
+
+.veditor-grading-label {
+    font-size: 10px;
+    color: var(--ve-text-secondary);
+    min-width: 60px;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.veditor-grading-slider {
+    flex: 1;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--ve-border);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+}
+
+.veditor-grading-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--ve-accent);
+    cursor: pointer;
+    border: none;
+    transition: transform 0.1s ease;
+}
+
+.veditor-grading-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.3);
+}
+
+.veditor-grading-slider::-moz-range-thumb {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--ve-accent);
+    cursor: pointer;
+    border: none;
+}
+
+.veditor-grading-value {
+    font-size: 10px;
+    color: var(--ve-text-dim);
+    min-width: 44px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+
+/* ── Filters / Presets Panel ─────────────────────────────────────── */
+
+.veditor-filters-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.veditor-filter-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+}
+
+.veditor-filter-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 6px 2px;
+    border: 1px solid var(--ve-border);
+    border-radius: var(--ve-radius-sm);
+    background: transparent;
+    cursor: pointer;
+    transition: all var(--ve-transition);
+}
+
+.veditor-filter-card:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: var(--ve-border-hover);
+}
+
+.veditor-filter-card.active {
+    border-color: var(--ve-accent);
+    background: rgba(99, 102, 241, 0.08);
+    box-shadow: 0 0 8px var(--ve-accent-glow);
+}
+
+.veditor-filter-swatch {
+    width: 36px;
+    height: 24px;
+    border-radius: 3px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    border: 1px solid var(--ve-border);
+    transition: transform 0.15s ease;
+}
+
+.veditor-filter-card:hover .veditor-filter-swatch {
+    transform: scale(1.1);
+}
+
+.veditor-filter-label {
+    font-size: 9px;
+    color: var(--ve-text-secondary);
+    text-align: center;
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+.veditor-filter-card.active .veditor-filter-label {
+    color: var(--ve-accent);
+    font-weight: 600;
+}
+
+.veditor-filter-intensity-section {
+    margin-top: 4px;
+}
+
+/* ── Keyframe Editor ─────────────────────────────────────────────── */
+
+.veditor-keyframe-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 6px;
+}
+
+.veditor-kf-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.veditor-kf-label {
+    font-size: 10px;
+    color: var(--ve-text-secondary);
+    font-weight: 500;
+}
+
+.veditor-kf-clear-btn {
+    font-size: 9px;
+    padding: 1px 6px;
+    background: transparent;
+    border: 1px solid var(--ve-border);
+    border-radius: var(--ve-radius-sm);
+    color: var(--ve-text-dim);
+    cursor: pointer;
+    transition: all var(--ve-transition);
+}
+
+.veditor-kf-clear-btn:hover {
+    border-color: var(--ve-accent);
+    color: var(--ve-accent);
+}
+
+.veditor-kf-canvas {
+    width: 100%;
+    border-radius: var(--ve-radius-sm);
+    border: 1px solid var(--ve-border);
+    cursor: crosshair;
+}
+
+.veditor-kf-hint {
+    font-size: 9px;
+    color: var(--ve-text-dim);
+    text-align: center;
+    opacity: 0.6;
+}
+
+/* ── Relight Panel ───────────────────────────────────────────────── */
+
+.veditor-relight-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.veditor-relight-dir-canvas {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    border: 1px solid var(--ve-border);
+    cursor: crosshair;
+    margin: 0 auto;
+}
+
+.veditor-relight-color-input {
+    width: 48px;
+    height: 28px;
+    border: 1px solid var(--ve-border);
+    border-radius: var(--ve-radius-sm);
+    background: transparent;
+    cursor: pointer;
+    padding: 0;
+}
+
+/* ── Auto-Captions Button ────────────────────────────────────────── */
+
+.veditor-caption-btn {
+    width: 100%;
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    font-size: 12px;
+    background: var(--ve-bg-card);
+    border: 1px dashed var(--ve-accent);
+    border-radius: var(--ve-radius-sm);
+    color: var(--ve-accent);
+    cursor: pointer;
+    transition: all var(--ve-transition);
+}
+
+.veditor-caption-btn:hover:not(:disabled) {
+    background: rgba(99, 102, 241, 0.1);
+    border-style: solid;
+}
+
+.veditor-caption-btn:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+/* ── Export Settings Panel ────────────────────────────────────────── */
+
+.veditor-export-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.veditor-export-panel .veditor-select {
+    width: 100%;
+}
+
+/* ── Compose Panel ───────────────────────────────────────────────── */
+
+.veditor-compose-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.veditor-compose-section {
+    border: 1px solid var(--ve-border);
+    border-radius: var(--ve-radius-sm);
+    overflow: hidden;
+}
+
+.veditor-compose-section-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    cursor: pointer;
+    user-select: none;
+    background: rgba(255, 255, 255, 0.02);
+    transition: background var(--ve-transition);
+}
+
+.veditor-compose-section-header:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.veditor-compose-section-title {
+    flex: 1;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--ve-text-secondary);
+}
+
+.veditor-compose-chevron {
+    font-size: 10px;
+    color: var(--ve-text-dim);
+    transition: transform var(--ve-transition);
+}
+
+.veditor-compose-section-content {
+    padding: 8px;
+    border-top: 1px solid var(--ve-border);
+}
+
+.veditor-compose-section-content .veditor-control-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.veditor-input {
+    background: var(--ve-bg-elevated);
+    border: 1px solid var(--ve-border);
+    border-radius: var(--ve-radius-sm);
+    color: var(--ve-text-primary);
+    padding: 3px 6px;
+    font-family: var(--ve-font);
+    font-size: 11px;
+}
+
+.veditor-input:focus {
+    outline: none;
+    border-color: var(--ve-accent);
+}
+
+.veditor-preset-btn {
+    padding: 2px 5px;
+    font-size: 10px;
+    border: 1px solid var(--ve-border);
+    border-radius: var(--ve-radius-sm);
+    background: transparent;
+    color: var(--ve-text-secondary);
+    transition: all var(--ve-transition);
+}
+
+.veditor-preset-btn:hover {
+    background: rgba(99, 102, 241, 0.1);
+    border-color: var(--ve-accent);
+}
+
+.veditor-preset-btn.active {
+    background: rgba(99, 102, 241, 0.2);
+    border-color: var(--ve-accent);
+    color: var(--ve-accent);
+}
+
+.veditor-checkbox {
+    accent-color: var(--ve-accent);
+    cursor: pointer;
+}
+
+.veditor-color-input {
+    width: 28px;
+    height: 22px;
+    border: 1px solid var(--ve-border);
+    border-radius: var(--ve-radius-sm);
+    background: transparent;
+    cursor: pointer;
+    padding: 1px;
+}
+
+/* ── AI Compose Panel ────────────────────────────────────────────── */
+
+.veditor-ai-compose-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.veditor-ai-notice {
+    font-size: 10px;
+    color: var(--ve-text-secondary);
+    background: rgba(234, 179, 8, 0.08);
+    border: 1px solid rgba(234, 179, 8, 0.2);
+    border-radius: var(--ve-radius-sm);
+    padding: 6px 8px;
+    line-height: 1.4;
+}
+
+/* ── Transform Panel ─────────────────────────────────────────────── */
+
+.veditor-transform-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.veditor-transform-panel .veditor-control-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }`;
 if (!document.querySelector("#veditor-styles")) {
   const style = document.createElement("style");
@@ -4246,7 +7659,29 @@ function _setupNode(node) {
     volume: 1,
     textOverlays: [],
     transitions: [],
-    audioSegments: []
+    audioSegments: [],
+    colorGrading: {
+      brightness: 0,
+      contrast: 1,
+      saturation: 1,
+      exposure: 0,
+      gamma: 1,
+      shadows_r: 0,
+      shadows_g: 0,
+      shadows_b: 0,
+      midtones_r: 0,
+      midtones_g: 0,
+      midtones_b: 0,
+      temperature: 6500
+    },
+    filterPreset: { preset: "none", intensity: 1 },
+    shaderPreset: { preset: "none", intensity: 1, enable_vda: false, enable_normals: false, depth_encoder: "vits", depth_strength: 1 },
+    keyframes: null,
+    relight: { enabled: false, azimuth: 0, elevation: 45, intensity: 1, ambient: 0.3, color_r: 255, color_g: 255, color_b: 255, ai_normals: false },
+    exportSettings: { resolution: "source", video_codec: "h264", crf: 18, preset: "fast", format: "mp4", audio_codec: "aac", audio_bitrate: "192k" },
+    compose: { pip: { enabled: false }, watermark: { enabled: false }, chromakey: { enabled: false }, blend: { enabled: false }, splitScreen: { enabled: false }, vignette: { enabled: false }, mask: { enabled: false } },
+    aiCompose: { bg_removal: { enabled: false }, depth_effect: { enabled: false } },
+    transform: { enabled: false, position_x: 0, position_y: 0, scale: 100, rotation: 0, anchor_x: 50, anchor_y: 50, flip_h: false, flip_v: false, opacity: 100 }
   };
   const resizeNode = () => {
     var _a2;
@@ -4395,6 +7830,7 @@ function _setupNode(node) {
     {
       serialize: false,
       hideOnZoom: false,
+      hint: "<kbd>1-0</kbd> Tool Tabs",
       getValue() {
         return previewContainer.value;
       },
@@ -4458,13 +7894,46 @@ function _setupNode(node) {
     var _a2;
     if ((_a2 = fileInput.files) == null ? void 0 : _a2.length) await handleUpload(fileInput.files[0]);
   };
+  let _dragTimeout = null;
+  let _origUploadHTML = "";
+  let _origUploadBorder = "";
+  let _hasDragVisual = false;
+  const _revertDragVisual = () => {
+    if (!_hasDragVisual) return;
+    uploadBtn.innerHTML = _origUploadHTML;
+    uploadBtn.style.border = _origUploadBorder;
+    uploadBtn.style.backgroundColor = "";
+    updateBtnStyle();
+    _hasDragVisual = false;
+  };
   node.onDragOver = (e) => {
     var _a2, _b, _c;
-    if ((_c = (_b = (_a2 = e == null ? void 0 : e.dataTransfer) == null ? void 0 : _a2.types) == null ? void 0 : _b.includes) == null ? void 0 : _c.call(_b, "Files")) return true;
+    if ((_c = (_b = (_a2 = e == null ? void 0 : e.dataTransfer) == null ? void 0 : _a2.types) == null ? void 0 : _b.includes) == null ? void 0 : _c.call(_b, "Files")) {
+      if (!uploadBtn.disabled) {
+        if (!_hasDragVisual) {
+          _origUploadHTML = uploadBtn.innerHTML;
+          _origUploadBorder = uploadBtn.style.border;
+          _hasDragVisual = true;
+        }
+        uploadBtn.innerHTML = '<span aria-hidden="true">📂</span> Drop to Upload';
+        uploadBtn.style.border = "1px dashed #4a6a8a";
+        uploadBtn.style.backgroundColor = "#333";
+        if (_dragTimeout) clearTimeout(_dragTimeout);
+        _dragTimeout = setTimeout(() => {
+          if (!uploadBtn.disabled) _revertDragVisual();
+        }, 500);
+      }
+      return true;
+    }
     return false;
   };
   node.onDragDrop = async (e) => {
     var _a2, _b;
+    if (_dragTimeout) {
+      clearTimeout(_dragTimeout);
+      _dragTimeout = null;
+    }
+    _revertDragVisual();
     const file = (_b = (_a2 = e == null ? void 0 : e.dataTransfer) == null ? void 0 : _a2.files) == null ? void 0 : _b[0];
     if (!file || !file.type.startsWith("video/")) return false;
     return await handleUpload(file);
@@ -4543,6 +8012,15 @@ function _syncToWidgets(node, state) {
   _setW(node, "_text_overlays", JSON.stringify(state.textOverlays));
   _setW(node, "_transitions", JSON.stringify(state.transitions));
   _setW(node, "_audio_segments", JSON.stringify(state.audioSegments));
+  _setW(node, "_color_grading", JSON.stringify(state.colorGrading));
+  _setW(node, "_filter_preset", JSON.stringify(state.filterPreset));
+  _setW(node, "_shader_preset", JSON.stringify(state.shaderPreset));
+  _setW(node, "_keyframes", JSON.stringify(state.keyframes ?? {}));
+  _setW(node, "_relight_params", JSON.stringify(state.relight));
+  _setW(node, "_export_settings", JSON.stringify(state.exportSettings));
+  _setW(node, "_compose_layers", JSON.stringify(state.compose));
+  _setW(node, "_ai_compose", JSON.stringify(state.aiCompose));
+  _setW(node, "_transform", JSON.stringify(state.transform));
   _setW(node, "_edit_action", "passthrough");
 }
 function _setW(node, name, value) {
@@ -4563,7 +8041,16 @@ const HIDDEN_WIDGETS = [
   ["_volume", "1.0"],
   ["_text_overlays", "[]"],
   ["_transitions", "[]"],
-  ["_audio_segments", "[]"]
+  ["_audio_segments", "[]"],
+  ["_color_grading", "{}"],
+  ["_filter_preset", "{}"],
+  ["_shader_preset", "{}"],
+  ["_keyframes", "{}"],
+  ["_relight_params", "{}"],
+  ["_export_settings", "{}"],
+  ["_compose_layers", "{}"],
+  ["_ai_compose", "{}"],
+  ["_transform", "{}"]
 ];
 function _ensureHiddenWidgets(node) {
   var _a;
@@ -4620,6 +8107,51 @@ function _loadStateFromWidgets(node, editState) {
   try {
     const a = JSON.parse(_getW(node, "_audio_segments", "[]"));
     if (Array.isArray(a)) editState.audioSegments = a;
+  } catch {
+  }
+  try {
+    const c = JSON.parse(_getW(node, "_color_grading", "{}"));
+    if (typeof c === "object" && c !== null) editState.colorGrading = c;
+  } catch {
+  }
+  try {
+    const f = JSON.parse(_getW(node, "_filter_preset", "{}"));
+    if (typeof f === "object" && f !== null) editState.filterPreset = f;
+  } catch {
+  }
+  try {
+    const sp = JSON.parse(_getW(node, "_shader_preset", "{}"));
+    if (typeof sp === "object" && sp !== null) editState.shaderPreset = sp;
+  } catch {
+  }
+  try {
+    const k = JSON.parse(_getW(node, "_keyframes", "{}"));
+    if (typeof k === "object" && k !== null && k.keyframes) editState.keyframes = k;
+  } catch {
+  }
+  try {
+    const r = JSON.parse(_getW(node, "_relight_params", "{}"));
+    if (typeof r === "object" && r !== null) editState.relight = r;
+  } catch {
+  }
+  try {
+    const e = JSON.parse(_getW(node, "_export_settings", "{}"));
+    if (typeof e === "object" && e !== null) editState.exportSettings = e;
+  } catch {
+  }
+  try {
+    const c = JSON.parse(_getW(node, "_compose_layers", "{}"));
+    if (typeof c === "object" && c !== null) editState.compose = c;
+  } catch {
+  }
+  try {
+    const ai = JSON.parse(_getW(node, "_ai_compose", "{}"));
+    if (typeof ai === "object" && ai !== null) editState.aiCompose = ai;
+  } catch {
+  }
+  try {
+    const tr = JSON.parse(_getW(node, "_transform", "{}"));
+    if (typeof tr === "object" && tr !== null) editState.transform = tr;
   } catch {
   }
 }

@@ -1,0 +1,123 @@
+# ============================================================================
+#  ComfyUI-FFMPEGA — Optional Dependencies (all-in-one)
+# ============================================================================
+#
+#  Install everything at once:
+#    pip install -r requirements-optional.txt
+#
+#  If you only need specific features, install individual sections below.
+#  All --no-deps packages are marked; install them first, then the rest.
+#
+# ============================================================================
+
+
+# ---------------------------------------------------------------------------
+#  Rembg — Background Removal (rembg masking mode)
+# ---------------------------------------------------------------------------
+rembg[cpu]>=2.0.50
+
+
+# ---------------------------------------------------------------------------
+#  SAM3 — Object Segmentation (auto_mask, sam3_masking mode)
+# ---------------------------------------------------------------------------
+# Install separately with --no-deps to avoid numpy conflicts:
+#   pip install --no-deps git+https://github.com/facebookresearch/sam3.git
+iopath
+simple-lama-inpainting
+
+
+# ---------------------------------------------------------------------------
+#  MMAudio — AI Audio Synthesis (generate_audio mode)
+# ---------------------------------------------------------------------------
+# Install separately with --no-deps:
+#   pip install --no-deps git+https://github.com/hkchengrex/MMAudio.git
+torchdiffeq
+open-clip-torch
+scipy
+colorlog
+omegaconf
+librosa
+einops
+
+
+# ---------------------------------------------------------------------------
+#  AudioX — Music Generation & Audio Inpainting (generate_music, audio_inpaint)
+# ---------------------------------------------------------------------------
+# Install separately with --no-deps:
+#   pip install --no-deps git+https://github.com/ZeyueT/AudioX.git
+alias-free-torch
+x-transformers
+einops-exts
+k-diffusion
+descript-audio-codec
+descript-audiotools
+vector-quantize-pytorch
+local-attention
+ema-pytorch
+aeiou
+encodec
+auraloss
+laion-clap
+setuptools<81  # k-diffusion → clip → pkg_resources
+
+
+# ---------------------------------------------------------------------------
+#  SAM-Audio — Audio Separation (audio_separate mode)
+# ---------------------------------------------------------------------------
+# Install these separately with --no-deps:
+#   pip install --no-deps git+https://github.com/facebookresearch/sam-audio.git
+#   pip install --no-deps git+https://github.com/facebookresearch/dacvae.git
+#   pip install --no-deps git+https://github.com/facebookresearch/perception_models@unpin-deps
+pydub
+xformers
+torchcodec
+
+
+# ---------------------------------------------------------------------------
+#  NormalCrafter — Video Normal Maps (normalcrafter mode)
+# ---------------------------------------------------------------------------
+# Install separately with --no-deps (avoids torch==2.0.1 pin):
+#   pip install --no-deps git+https://github.com/Binyr/NormalCrafter.git
+# No companion deps needed — uses diffusers + torch already in ComfyUI.
+
+
+# ---------------------------------------------------------------------------
+#  SHARP — 3D Gaussian View Synthesis (single image → 3DGS video)
+# ---------------------------------------------------------------------------
+# Install separately with --no-deps (avoids torch==2.8.0 pin):
+#   pip install --no-deps git+https://github.com/apple/ml-sharp.git
+# No companion deps needed — uses gsplat + timm + torch already in ComfyUI.
+# ⚠️ Model weights are Apple ML Research License (non-commercial only).
+
+
+# ---------------------------------------------------------------------------
+#  ACE-Step 1.5 — Music Generation, Cover, Repaint (ace_step mode)
+# ---------------------------------------------------------------------------
+# Install separately with --no-deps:
+#   pip install --no-deps git+https://github.com/ace-step/ACE-Step-1.5.git
+vector-quantize-pytorch
+numba
+loguru
+soundfile
+peft
+
+
+# ---------------------------------------------------------------------------
+#  Whisper — Speech-to-Text Transcription (whisper mode)
+# ---------------------------------------------------------------------------
+openai-whisper>=20240930
+
+
+
+# ---------------------------------------------------------------------------
+#  RTX VSR — NVIDIA RTX Video Super Resolution (rtx_vsr upscale model)
+# ---------------------------------------------------------------------------
+# Requires NVIDIA RTX GPU (Turing/Ampere/Ada/Blackwell) and driver 570+
+nvidia-vfx
+
+
+# ---------------------------------------------------------------------------
+#  Shared / already in ComfyUI (listed for completeness, usually pre-installed)
+# ---------------------------------------------------------------------------
+safetensors
+huggingface-hub

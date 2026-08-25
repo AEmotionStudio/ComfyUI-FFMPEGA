@@ -100,12 +100,18 @@ app.registerExtension({
             const params4 = findW("effect_4_params");
             const effect5 = findW("effect_5");
             const params5 = findW("effect_5_params");
+            const useAsTextW = findW("use_as_text");
+            const usePromptAsTextW = findW("use_prompt_as_text");
             const rawFfmpeg = findW("raw_ffmpeg");
             const sam3Target = findW("sam3_target");
             const sam3Effect = findW("sam3_effect");
             const presetsJsonW = findW("_presets_json");
             const defaultsJsonW = findW("_defaults_json");
             const paramHelpJsonW = findW("_param_help_json");
+
+            // Raw FFmpeg placeholder texts
+            const RAW_FFMPEG_PLACEHOLDER = "Optional: raw FFmpeg filters\ne.g. boxblur=5,eq=brightness=0.1\nApplied after skill effects.";
+            const TEXT_INPUT_PLACEHOLDER = "Enter text for overlay...\nThis text will be used by text_overlay effects.";
 
             // --- Parse hidden data ---
             let presetData: Record<string, PresetConfig> = {};
@@ -310,6 +316,14 @@ app.registerExtension({
                 const hasSam3 = sam3Target?.value && (sam3Target.value as string).trim();
                 toggleWidget(sam3Effect, !!hasSam3);
 
+                // Toggle raw_ffmpeg placeholder based on use_as_text
+                const isTextMode = !!(useAsTextW?.value);
+                if (rawFfmpeg?.options) {
+                    rawFfmpeg.options.placeholder = isTextMode
+                        ? TEXT_INPUT_PLACEHOLDER
+                        : RAW_FFMPEG_PLACEHOLDER;
+                }
+
                 fitHeight();
             }
 
@@ -346,6 +360,24 @@ app.registerExtension({
                         updateVisibility();
                     };
                 }
+            }
+
+            // use_as_text toggle
+            if (useAsTextW) {
+                const origUat = useAsTextW.callback;
+                useAsTextW.callback = function (...args: any[]) {
+                    origUat?.apply(this, args);
+                    updateVisibility();
+                };
+            }
+
+            // use_prompt_as_text toggle
+            if (usePromptAsTextW) {
+                const origUpt = usePromptAsTextW.callback;
+                usePromptAsTextW.callback = function (...args: any[]) {
+                    origUpt?.apply(this, args);
+                    updateVisibility();
+                };
             }
 
             // SAM3 target
@@ -555,6 +587,10 @@ app.registerExtension({
                         for (const name of ["effect_1_params", "effect_2_params", "effect_3_params", "effect_4_params", "effect_5_params", "raw_ffmpeg", "sam3_target"]) {
                             const w = self.widgets?.find((ww: ComfyWidget) => ww.name === name);
                             if (w) w.value = "";
+                        }
+                        for (const name of ["use_as_text", "use_prompt_as_text"]) {
+                            const w = self.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                            if (w) w.value = false;
                         }
                         const sam3e = self.widgets?.find((ww: ComfyWidget) => ww.name === "sam3_effect");
                         if (sam3e) sam3e.value = "blur";

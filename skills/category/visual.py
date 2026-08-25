@@ -875,3 +875,167 @@ def register_skills(registry: SkillRegistry) -> None:
         ],
         tags=["sharpen", "unsharp", "luma", "chroma", "detail", "crisp", "soft"],
     ))
+
+    # Onion skin — video overlay compositing / temporal ghosting
+    registry.register(Skill(
+        name="onion_skin",
+        category=SkillCategory.VISUAL,
+        description="Overlay videos with adjustable opacity (onion skin compositing). "
+            "Composite mode blends two video inputs; temporal mode creates ghost trails from a single video.",
+        parameters=[
+            SkillParameter(
+                name="mode",
+                type=ParameterType.CHOICE,
+                description="Compositing mode: 'composite' (two-input blend) or 'temporal' (self-blend ghost trail)",
+                required=False,
+                default="composite",
+                choices=["composite", "temporal"],
+            ),
+            SkillParameter(
+                name="opacity",
+                type=ParameterType.FLOAT,
+                description="Foreground layer opacity (0.0 = invisible, 1.0 = fully opaque)",
+                required=False,
+                default=0.5,
+                min_value=0.0,
+                max_value=1.0,
+            ),
+            SkillParameter(
+                name="blend_mode",
+                type=ParameterType.CHOICE,
+                description="Blend mode for compositing",
+                required=False,
+                default="screen",
+                choices=[
+                    "normal", "screen", "addition", "difference",
+                    "multiply", "overlay", "softlight",
+                ],
+            ),
+            SkillParameter(
+                name="frame_offset",
+                type=ParameterType.INT,
+                description="Shift overlay video by N frames relative to base (composite mode only, 0 = aligned)",
+                required=False,
+                default=0,
+                min_value=-1000,
+                max_value=1000,
+            ),
+            SkillParameter(
+                name="layers",
+                type=ParameterType.INT,
+                description="Number of overlay layers (each gets progressively lower opacity)",
+                required=False,
+                default=1,
+                min_value=1,
+                max_value=4,
+            ),
+            SkillParameter(
+                name="decay",
+                type=ParameterType.FLOAT,
+                description="Temporal decay rate for ghost trail (temporal mode only, higher = longer trails)",
+                required=False,
+                default=0.97,
+                min_value=0.9,
+                max_value=0.999,
+            ),
+        ],
+        examples=[
+            "onion_skin - Overlay video_b onto video_a at 50% opacity (screen blend)",
+            "onion_skin:opacity=0.3,blend_mode=addition - Subtle additive overlay",
+            "onion_skin:mode=temporal,decay=0.95 - Short ghost trail effect",
+            "onion_skin:mode=temporal,decay=0.99 - Long persistent ghost trails",
+            "onion_skin:layers=3,opacity=0.6 - Three-layer composite with decaying opacity",
+            "onion_skin:blend_mode=difference,opacity=0.7 - Difference composite for motion visualization",
+        ],
+        tags=[
+            "onion", "skin", "overlay", "composite", "ghost", "trail",
+            "superimpose", "double_exposure", "blend", "layer", "opacity",
+            "transparency", "animation", "compositing",
+        ],
+    ))
+
+    # Comparison — A/B video comparison with multiple styles
+    registry.register(Skill(
+        name="comparison",
+        category=SkillCategory.VISUAL,
+        description="Create a comparison video from two inputs (before/after). "
+            "Supports animated swipe, static split, side-by-side, diagonal, circular reveal, and difference modes.",
+        parameters=[
+            SkillParameter(
+                name="style",
+                type=ParameterType.CHOICE,
+                description="Comparison style",
+                required=False,
+                default="swipe",
+                choices=["swipe", "split", "side_by_side", "diagonal", "circular_reveal", "difference"],
+            ),
+            SkillParameter(
+                name="labels",
+                type=ParameterType.BOOL,
+                description="Show Before/After text labels on the output",
+                required=False,
+                default=False,
+            ),
+            SkillParameter(
+                name="label_a",
+                type=ParameterType.STRING,
+                description="Label for video A (left / before)",
+                required=False,
+                default="Before",
+            ),
+            SkillParameter(
+                name="label_b",
+                type=ParameterType.STRING,
+                description="Label for video B (right / after)",
+                required=False,
+                default="After",
+            ),
+            SkillParameter(
+                name="label_size",
+                type=ParameterType.INT,
+                description="Font size for labels",
+                required=False,
+                default=36,
+                min_value=12,
+                max_value=120,
+            ),
+            SkillParameter(
+                name="direction",
+                type=ParameterType.CHOICE,
+                description="Layout direction for side_by_side mode",
+                required=False,
+                default="horizontal",
+                choices=["horizontal", "vertical"],
+            ),
+            SkillParameter(
+                name="line_width",
+                type=ParameterType.INT,
+                description="Divider line width in pixels (split mode)",
+                required=False,
+                default=2,
+                min_value=0,
+                max_value=10,
+            ),
+            SkillParameter(
+                name="line_color",
+                type=ParameterType.STRING,
+                description="Divider line color (split mode)",
+                required=False,
+                default="white",
+            ),
+        ],
+        examples=[
+            "comparison - Animated left-to-right swipe comparison",
+            "comparison:style=split,labels=true - Static 50/50 split with Before/After labels",
+            "comparison:style=side_by_side - Full frames side by side",
+            "comparison:style=diagonal - Diagonal split from top-left to bottom-right",
+            "comparison:style=circular_reveal - Expanding circle reveals the 'after' video",
+            "comparison:style=difference - Pixel difference visualization",
+            "comparison:style=swipe,labels=true,label_a=Original,label_b=Enhanced - Swipe with custom labels",
+        ],
+        tags=[
+            "comparison", "compare", "before", "after", "split", "swipe",
+            "side_by_side", "ab", "diff", "wipe", "reveal",
+        ],
+    ))
+

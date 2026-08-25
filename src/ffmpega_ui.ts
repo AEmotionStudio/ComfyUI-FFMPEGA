@@ -13,8 +13,11 @@ import { registerNodeStyling } from "@ffmpega/nodes/node_styling";
 import { registerAgentNode } from "@ffmpega/nodes/agent_node";
 import { registerFrameExtractNode } from "@ffmpega/nodes/frame_extract_node";
 import { registerLoadVideoNode } from "@ffmpega/nodes/load_video_node";
-import { registerSaveVideoNode } from "@ffmpega/nodes/save_video_node";
+import { registerLoadMaskVideoNode } from "@ffmpega/nodes/load_mask_video_node";
+import { registerSaveVideoNode, applySaveVideoOutputs } from "@ffmpega/nodes/save_video_node";
+import { registerSaveImageNode } from "@ffmpega/nodes/save_image_node";
 import { registerLoadImageNode } from "@ffmpega/nodes/load_image_node";
+import { registerLastFrameNodes } from "@ffmpega/nodes/last_frame_ui";
 import { registerTextInputNode } from "@ffmpega/nodes/text_input_node";
 import { registerPointSelectorHooks } from "@ffmpega/nodes/point_selector_hooks";
 import { registerCropSelectorHooks } from "@ffmpega/nodes/crop_selector_hooks";
@@ -30,6 +33,18 @@ app.registerExtension({
         initSidebar();
     },
 
+    /**
+     * Fires when ComfyUI swaps the whole `app.nodeOutputs` map, which is what
+     * happens on a workflow tab switch (`ChangeTracker.restore()`) and when a
+     * run is opened from the queue history. Save Video rebuilds its player from
+     * it — the same hook core's audio and 3D previews restore themselves in.
+     */
+    onNodeOutputsUpdated(nodeOutputs: Record<string, Record<string, unknown> | undefined>) {
+        // rootGraph, not graph: the map covers the whole workflow, but `graph`
+        // is only whatever the user currently has open.
+        applySaveVideoOutputs(app.rootGraph ?? app.graph, nodeOutputs);
+    },
+
     async beforeRegisterNodeDef(nodeType: import("@ffmpega/types/comfyui").ComfyNodeType, nodeData: import("@ffmpega/types/comfyui").ComfyNodeData, _app: unknown) {
         // Styling-only nodes (Preview, MediaBridge, BatchProcessor, VideoInfo)
         if (registerNodeStyling(nodeType, nodeData)) return;
@@ -38,8 +53,11 @@ app.registerExtension({
         registerAgentNode(nodeType, nodeData);
         registerFrameExtractNode(nodeType, nodeData);
         registerLoadVideoNode(nodeType, nodeData);
+        registerLoadMaskVideoNode(nodeType, nodeData);
         registerSaveVideoNode(nodeType, nodeData);
+        registerSaveImageNode(nodeType, nodeData);
         registerLoadImageNode(nodeType, nodeData);
+        registerLastFrameNodes(nodeType, nodeData);
         registerTextInputNode(nodeType, nodeData);
 
         // Point selector context menu hooks (LoadVideoPath, FrameExtract)

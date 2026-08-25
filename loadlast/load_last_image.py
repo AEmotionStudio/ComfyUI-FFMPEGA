@@ -1,60 +1,368 @@
 """
 Load Last Image node for ComfyUI.
 
-Automatically loads the most recently created image(s) from the current
-or previous workflow execution, with grid/side-by-side outputs, dedup,
-pin/lock, diff overlay, captions, and metadata passthrough.
+Automatically loads the most recently created image(s) from ComfyUI's
+output or temp directories, with an inline preview that loads immediately
+(no queue needed) and a browser strip showing recent images.
+
+Architecture mirrors LoadLastVideo:
+  - Python registers /loadlast/latest_image and /loadlast/image_list API routes
+  - JS polls those routes to show the latest image on the node
+  - On execution, images are loaded via FilesystemScanner
+  - Edit state (crop, resize, etc.) applied server-side via PIL
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
+import shutil
 import time
-from datetime import datetime
-from typing import Optional
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 
-from .discovery.filesystem import FilesystemScanner
+try:
+    import folder_paths
+except ImportError:
+    folder_paths = None  # type: ignore[assignment]
+
+from .discovery.filesystem import FilesystemScanner, SUPPORTED_EXTENSIONS
 from .discovery.execution_hook import ImageExecutionCache
-from .processing.captions import format_caption, render_caption, render_captions_on_grid
-from .processing.dedup import compute_pixel_hash, is_duplicate
-from .processing.diff import compose_diff
-from .processing.grid import compose_grid
-from .processing.metadata import extract_png_metadata
-from .processing.sidebyside import compose_side_by_side
+
+try:
+    from ..core.image_resize import resize_image_tensor, resize_input_types as _resize_input_types
+except ImportError:  # pragma: no cover - fallback for non-package import
+    from core.image_resize import resize_image_tensor, resize_input_types as _resize_input_types  # type: ignore
 
 logger = logging.getLogger(__name__)
 
+# Maximum file size (bytes) to copy into temp for preview (200 MB)
+_MAX_COPY_SIZE = 200 * 1024 * 1024
+
+# Maximum values for integer parameters
+BIGMAX = 2**31 - 1
+
+# ─── User Image Selections (server-side state) ──────────────────────────
+# Stores the user's explicit image selection from the browser strip,
+# keyed by node ID.  Set via POST /loadlast/select_image, consumed
+# (one-shot) by load().  Capped to prevent unbounded growth.
+_user_image_selections: dict[str, dict] = {}
+
+# ─── User Edit States (server-side state) ────────────────────────────
+# Stores the user's inline edit state (crop, resize, etc.) from the
+# Apply Edits button, keyed by node ID.  Consumed one-shot by load().
+_user_edit_states: dict[str, dict] = {}
+
+# Max entries for server-side state dicts
+_MAX_SERVER_STATE_ENTRIES = 100
+
+# TTL (seconds) for server-side state entries
+_SERVER_STATE_TTL = 300  # 5 minutes
+
+# Rate-limit TTL eviction scans
+_EVICTION_SCAN_INTERVAL = 30
+_last_eviction_scan_time: float = 0.0
+
+# Cleanup timestamps
+_last_preview_cleanup_time: float = 0.0
+_STALE_PREVIEW_TTL = 60
+
+
+def _capped_insert(d: dict, key: str, value: dict) -> None:
+    """Insert value under key, evicting oldest entry if at cap."""
+    if len(d) >= _MAX_SERVER_STATE_ENTRIES and key not in d:
+        oldest = next(iter(d))
+        d.pop(oldest, None)
+    d[key] = value
+
+
+# Allowed keys for image selection entries
+_ALLOWED_ENTRY_KEYS = {"filename", "subfolder", "type"}
+_ALLOWED_SEL_TYPES = {"output", "temp"}
+
+# Allowed keys for inline edit state entries
+_ALLOWED_EDIT_KEYS = {
+    "crop_rect", "resize", "rotation", "flip",
+    "padding", "brightness", "contrast", "saturation",
+    "captions", "overlays",
+}
+
+
+# ─── API Routes ─────────────────────────────────────────────────────────
+
+try:
+    from aiohttp import web
+    from server import PromptServer
+
+    @PromptServer.instance.routes.get("/loadlast/latest_image")
+    async def _api_latest_image(request):
+        """Find the most recently modified image in output/temp."""
+        source = request.query.get("source", "")
+        prefix = request.query.get("prefix", "")
+
+        scan_dirs = _resolve_scan_dirs(source)
+        result = _find_latest_image_info(scan_dirs, prefix)
+        if result is None:
+            return web.json_response({"found": False})
+
+        return web.json_response({"found": True, **result})
+
+    @PromptServer.instance.routes.get("/loadlast/image_list")
+    async def _api_image_list(request):
+        """Return list of all recent images, sorted newest first."""
+        source = request.query.get("source", "")
+        prefix = request.query.get("prefix", "")
+        try:
+            limit = min(int(request.query.get("limit", "20")), 50)
+        except (ValueError, TypeError):
+            limit = 20
+
+        scan_dirs = _resolve_scan_dirs(source)
+        images = _find_all_images(scan_dirs, prefix, limit)
+        return web.json_response({"images": images})
+
+    @PromptServer.instance.routes.post("/loadlast/select_image")
+    async def _api_select_image(request):
+        """Store the user's image selection for a specific node."""
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"error": "invalid JSON"}, status=400)
+
+        node_id = str(body.get("node_id", ""))
+        entry = body.get("entry")  # null to clear
+
+        if not node_id:
+            return web.json_response({"error": "node_id required"}, status=400)
+
+        if entry:
+            entry = {k: str(v) for k, v in entry.items() if k in _ALLOWED_ENTRY_KEYS}
+            if not entry.get("filename"):
+                return web.json_response({"error": "filename required"}, status=400)
+            _capped_insert(
+                _user_image_selections, node_id,
+                {"data": entry, "ts": time.time()},
+            )
+            logger.info(
+                "[LoadLastImage] Selection stored for node %s: %s",
+                node_id, entry.get("filename", "?"),
+            )
+        else:
+            _user_image_selections.pop(node_id, None)
+            logger.debug("[LoadLastImage] Selection cleared for node %s", node_id)
+
+        return web.json_response({"ok": True})
+
+    @PromptServer.instance.routes.post("/loadlast/apply_image_edits")
+    async def _api_apply_image_edits(request):
+        """Store the user's inline image edit state for a specific node."""
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"error": "invalid JSON"}, status=400)
+
+        node_id = str(body.get("node_id", ""))
+        if not node_id:
+            return web.json_response({"error": "node_id required"}, status=400)
+
+        edits = body.get("edits")  # null to clear
+        if edits:
+            edits = {k: v for k, v in edits.items() if k in _ALLOWED_EDIT_KEYS}
+            _capped_insert(
+                _user_edit_states, node_id,
+                {"data": edits, "ts": time.time()},
+            )
+            logger.info("[LoadLastImage] Edit state stored for node %s", node_id)
+        else:
+            _user_edit_states.pop(node_id, None)
+            logger.debug("[LoadLastImage] Edit state cleared for node %s", node_id)
+
+        return web.json_response({"ok": True})
+
+except (ImportError, AttributeError):
+    # Running outside ComfyUI (e.g. pytest) — skip route registration
+    pass
+
+
+# ─── Image Discovery Helpers ────────────────────────────────────────────
+
+def _resolve_scan_dirs(source: str) -> list[str]:
+    """Return scan directories for a user-supplied source path."""
+    from .discovery.path_utils import resolve_scan_dirs
+    return resolve_scan_dirs(source)
+
+
+def _is_path_sandboxed(path: str) -> bool:
+    """Check if a path is within ComfyUI's allowed directories."""
+    from .discovery.path_utils import is_path_sandboxed
+    return is_path_sandboxed(path)
+
+
+def _find_latest_image_info(directories: list[str], prefix: str = "") -> dict | None:
+    """Find latest image and return {filename, subfolder, type, mtime}."""
+    all_entries = _scan_image_entries(directories, prefix)
+    if not all_entries:
+        return None
+    all_entries.sort(key=lambda x: x[2], reverse=True)
+    info = _resolve_view_info(*all_entries[0][:2])
+    if info:
+        info["mtime"] = all_entries[0][2]
+    return info
+
+
+def _find_all_images(
+    directories: list[str], prefix: str = "", limit: int = 20,
+) -> list[dict]:
+    """Find all recent images, sorted newest first, up to limit."""
+    all_entries = _scan_image_entries(directories, prefix)
+    all_entries.sort(key=lambda x: x[2], reverse=True)
+    results = []
+    for full_path, parent_dir, mtime in all_entries[:limit]:
+        info = _resolve_view_info(full_path, parent_dir)
+        if info:
+            info["mtime"] = mtime
+            results.append(info)
+    return results
+
+
+def _scan_image_entries(
+    directories: list[str], prefix: str = "",
+) -> list[tuple]:
+    """Scan directories recursively for image files.
+
+    Returns [(full_path, parent_dir, mtime), ...].
+    """
+    entries: list[tuple] = []
+    for dir_path in directories:
+        if not os.path.isdir(dir_path):
+            continue
+        _scan_image_dir(dir_path, prefix, entries)
+    return entries
+
+
+def _scan_image_dir(
+    directory: str, prefix: str, entries: list[tuple], max_depth: int = 5,
+) -> None:
+    """Recursively collect image files from a directory."""
+    if max_depth <= 0:
+        return
+    try:
+        for entry in os.scandir(directory):
+            try:
+                if entry.is_file(follow_symlinks=False):
+                    ext = os.path.splitext(entry.name)[1].lower()
+                    if ext not in SUPPORTED_EXTENSIONS:
+                        continue
+                    if prefix and not entry.name.startswith(prefix):
+                        continue
+                    try:
+                        mtime = entry.stat().st_mtime
+                    except OSError:
+                        continue
+                    entries.append((os.path.realpath(entry.path), directory, mtime))
+                elif entry.is_dir(follow_symlinks=False):
+                    _scan_image_dir(entry.path, prefix, entries, max_depth - 1)
+            except (PermissionError, OSError):
+                continue
+    except PermissionError:
+        pass
+
+
+def _resolve_view_info(full_path: str, parent_dir: str) -> dict | None:
+    """Resolve an image file to {filename, subfolder, type} for /view."""
+    if folder_paths is None:
+        return None
+    output_dir = folder_paths.get_output_directory()
+    temp_dir = folder_paths.get_temp_directory()
+    filename = os.path.basename(full_path)
+
+    real_output = os.path.realpath(output_dir)
+    real_temp = os.path.realpath(temp_dir)
+    real_parent = os.path.realpath(parent_dir)
+
+    is_output = real_parent == real_output or real_parent.startswith(real_output + os.sep)
+    is_temp = real_parent == real_temp or real_parent.startswith(real_temp + os.sep)
+
+    if is_output:
+        subfolder = os.path.relpath(parent_dir, output_dir)
+        view_type = "output"
+    elif is_temp:
+        subfolder = os.path.relpath(parent_dir, temp_dir)
+        view_type = "temp"
+    else:
+        # Outside output/temp — copy to temp for preview
+        try:
+            file_size = os.path.getsize(full_path)
+        except OSError:
+            file_size = 0
+        if file_size > _MAX_COPY_SIZE:
+            logger.warning(
+                "[LoadLastImage] Skipping copy of %s (%.0f MB exceeds cap)",
+                filename, file_size / 1024 / 1024,
+            )
+            return None
+        preview_dir = os.path.join(temp_dir, "loadlast_img_previews")
+        os.makedirs(preview_dir, exist_ok=True)
+
+        # TTL-based cleanup of stale preview copies
+        global _last_preview_cleanup_time
+        now = time.time()
+        if now - _last_preview_cleanup_time > _STALE_PREVIEW_TTL:
+            _last_preview_cleanup_time = now
+            try:
+                with os.scandir(preview_dir) as it:
+                    for entry in it:
+                        try:
+                            if entry.stat().st_mtime < now - _STALE_PREVIEW_TTL:
+                                os.remove(entry.path)
+                        except OSError:
+                            pass
+            except OSError:
+                pass
+
+        path_hash = hashlib.sha256(full_path.encode()).hexdigest()[:12]
+        safe_name = f"{path_hash}_{filename}"
+        dest = os.path.join(preview_dir, safe_name)
+        if not os.path.exists(dest) or os.path.getmtime(full_path) > os.path.getmtime(dest):
+            tmp_dest = dest + ".tmp"
+            shutil.copy2(full_path, tmp_dest)
+            os.replace(tmp_dest, dest)
+        filename = safe_name
+        subfolder = "loadlast_img_previews"
+        view_type = "temp"
+
+    if subfolder == ".":
+        subfolder = ""
+
+    return {
+        "filename": filename,
+        "subfolder": subfolder,
+        "type": view_type,
+    }
+
+
+# ─── Node Class ─────────────────────────────────────────────────────────
 
 class LoadLastImage:
     """
     Automatically load the most recently generated image(s).
 
-    Discovers images via filesystem scanning (output/temp directories by mtime).
-    The execution hook (ImageExecutionCache) provides the iteration counter
-    for change detection, while actual image loading is mtime-based.
+    Scans ComfyUI's output and temp directories for the newest image files,
+    loads them as an IMAGE tensor batch, and outputs rich metadata. Shows
+    an inline preview that loads *immediately* when the node is placed
+    (no queue needed).
     """
 
     CATEGORY = "FFMPEGA"
     FUNCTION = "load"
-    OUTPUT_NODE = False
+    OUTPUT_NODE = True
 
-    RETURN_TYPES = (
-        "IMAGE", "MASK", "IMAGE", "IMAGE", "IMAGE",
-        "INT", "INT", "INT", "INT",
-        "STRING", "STRING", "STRING",
-        "BOOLEAN",
-    )
-    RETURN_NAMES = (
-        "IMAGE", "MASK", "GRID_IMAGE", "SIDE_BY_SIDE", "DIFF_IMAGE",
-        "width", "height", "batch_count", "iteration",
-        "metadata_prompt", "metadata_seed", "metadata_workflow",
-        "RING_BUFFER_FULL",
-    )
+    RETURN_TYPES = ("IMAGE", "MASK", "STRING", "INT", "INT", "INT")
+    RETURN_NAMES = ("images", "mask", "image_path", "width", "height", "image_count")
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -62,320 +370,466 @@ class LoadLastImage:
             "required": {
                 "refresh_mode": (["auto", "manual"], {
                     "default": "auto",
-                    "tooltip": "auto: reload on every queue. manual: only reload when triggered.",
+                    "tooltip": "auto: reload when latest image changes. manual: only on input change.",
                 }),
                 "batch_size": ("INT", {
                     "default": 1,
                     "min": 1,
-                    "max": 9999,
+                    "max": 64,
                     "step": 1,
-                    "tooltip": "Number of recent images to load as a batch. 1 = most recent only.",
-                }),
-                "grid_columns": ("INT", {
-                    "default": 2,
-                    "min": 1,
-                    "max": 8,
-                    "step": 1,
-                    "tooltip": "Number of columns in the grid output layout.",
-                }),
-                "grid_padding": ("INT", {
-                    "default": 4,
-                    "min": 0,
-                    "max": 32,
-                    "step": 1,
-                    "tooltip": "Pixel gap between grid cells and side-by-side images.",
-                }),
-                "skip_duplicates": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "Skip consecutive identical images to avoid wasting batch slots.",
+                    "tooltip": "Number of recent images to load as a batch.",
                 }),
                 "pin_index": ("INT", {
                     "default": 0,
                     "min": 0,
-                    "max": 9999,
+                    "max": BIGMAX,
                     "step": 1,
-                    "tooltip": "Pin a specific iteration as the output. 0 = disabled (auto-load latest).",
-                }),
-                "diff_mode": (["heatmap", "overlay", "side_by_side_diff"], {
-                    "default": "heatmap",
-                    "tooltip": "Diff visualization mode between most recent and previous image.",
-                }),
-                "diff_sensitivity": ("FLOAT", {
-                    "default": 1.0,
-                    "min": 0.1,
-                    "max": 5.0,
-                    "step": 0.1,
-                    "tooltip": "Multiplier on diff brightness. Higher = more visible subtle changes.",
-                }),
-                "show_captions": ("BOOLEAN", {
-                    "default": False,
-                    "tooltip": "Burn caption text onto grid and side-by-side outputs.",
-                }),
-                "caption_format": ("STRING", {
-                    "default": "#{iteration} | {timestamp} | seed:{seed}",
-                    "tooltip": "Caption template. Tokens: {iteration}, {timestamp}, {seed}, {index}, {filename}",
-                }),
-                "ring_buffer_size": ("INT", {
-                    "default": 0,
-                    "min": 0,
-                    "max": 64,
-                    "step": 1,
-                    "tooltip": "Ring buffer mode: fixed-size circular batch for AnimateDiff. 0 = disabled.",
+                    "tooltip": "Pin a specific iteration. 0 = disabled (auto-load latest).",
                 }),
             },
             "optional": {
                 "source_folder": ("STRING", {
                     "default": "",
-                    "tooltip": "Optional custom folder path to scan. Leave empty for default output/temp.",
+                    "tooltip": "Custom folder to scan. Empty = default output/temp directories.",
                 }),
                 "filename_filter": ("STRING", {
                     "default": "",
-                    "tooltip": "Optional prefix filter (e.g., 'ComfyUI_' to only match default outputs).",
+                    "tooltip": "Only load files starting with this prefix.",
                 }),
+                "mask": ("MASK", {
+                    "tooltip": (
+                        "Optional upstream MASK pass-through. When "
+                        "connected, this mask is forwarded instead of "
+                        "the auto-generated one."
+                    ),
+                }),
+                **_resize_input_types(),
             },
             "hidden": {
-                "prompt": "PROMPT",
-                "extra_pnginfo": "EXTRA_PNGINFO",
+                "unique_id": "UNIQUE_ID",
+                "_edit_state": ("STRING", {"default": "{}"}),
             },
         }
 
     @classmethod
     def IS_CHANGED(cls, refresh_mode="auto", **kwargs):
-        if refresh_mode == "auto":
-            cache = ImageExecutionCache.get_instance()
-            return f"{cache.iteration_counter}_{time.time()}"
-        return ""
+        """Content-aware change detection.
+
+        In auto mode, returns a hash based on the latest image's filename
+        and mtime so the node only re-runs when a new image appears.
+        In manual mode, returns a constant so it never auto-reruns —
+        unless the user has explicitly selected an image or applied edits.
+        """
+        uid = str(kwargs.get("unique_id", ""))
+
+        # Evict stale entries (TTL-based)
+        global _last_eviction_scan_time
+        now = time.time()
+        if now - _last_eviction_scan_time > _EVICTION_SCAN_INTERVAL:
+            _last_eviction_scan_time = now
+            for d in (_user_image_selections, _user_edit_states):
+                stale = [k for k, v in d.items() if now - v.get("ts", 0) > _SERVER_STATE_TTL]
+                for k in stale:
+                    d.pop(k, None)
+
+        # Force re-run if user selected an image or applied edits
+        if uid and uid in _user_image_selections:
+            return f"selected_{uid}_{time.time()}"
+        if uid and uid in _user_edit_states:
+            return f"edits_{uid}_{time.time()}"
+
+        if refresh_mode == "manual":
+            return ""
+
+        # Find the latest image and hash its identity
+        source = kwargs.get("source_folder", "")
+        prefix = kwargs.get("filename_filter", "")
+
+        scan_dirs = _resolve_scan_dirs(source)
+        info = _find_latest_image_info(scan_dirs, prefix)
+        if info is None:
+            return ""
+
+        m = hashlib.sha256()
+        m.update(info["filename"].encode())
+        m.update(str(info.get("mtime", 0)).encode())
+        m.update(str(kwargs.get("batch_size", 1)).encode())
+        m.update(str(kwargs.get("_edit_state", "{}")).encode())
+        return m.hexdigest()
 
     def load(
         self,
         refresh_mode: str = "auto",
         batch_size: int = 1,
-        grid_columns: int = 2,
-        grid_padding: int = 4,
-        skip_duplicates: bool = True,
         pin_index: int = 0,
-        diff_mode: str = "heatmap",
-        diff_sensitivity: float = 1.0,
-        show_captions: bool = False,
-        caption_format: str = "#{iteration} | {timestamp} | seed:{seed}",
-        ring_buffer_size: int = 0,
         source_folder: str = "",
         filename_filter: str = "",
-        prompt=None,
-        extra_pnginfo=None,
+        mask=None,
+        unique_id: str = "",
+        _edit_state: str = "{}",
+        enable_resize: bool = False,
+        resize_width: int = 512,
+        resize_height: int = 512,
+        upscale_method: str = "nearest-exact",
+        keep_proportion: str = "resize",
+        pad_color: str = "0, 0, 0",
+        crop_position: str = "center",
+        divisible_by: int = 2,
+        resize_device: str = "cpu",
     ):
         """Main execution function."""
-        cache = ImageExecutionCache.get_instance()
         scanner = FilesystemScanner()
+        cache = ImageExecutionCache.get_instance()
 
-        # --- Determine which directories to scan ---
-        # Uses resolve_scan_dirs() which handles sandboxing validation,
-        # realpath resolution, and fallback to defaults.
-        from .discovery.path_utils import resolve_scan_dirs
-        scan_dirs = resolve_scan_dirs(source_folder)
+        empty_image = torch.zeros(1, 512, 512, 3)
+        empty_mask = torch.ones(1, 512, 512)
+        empty_result = (empty_image, empty_mask, "", 512, 512, 0)
+
+        def _maybe_resize(img, msk, w, h):
+            """Resize the output image/mask when enabled; returns (img, msk, w, h)."""
+            if not enable_resize:
+                return img, msk, w, h
+            try:
+                img, msk, w, h = resize_image_tensor(
+                    img,
+                    width=resize_width,
+                    height=resize_height,
+                    keep_proportion=keep_proportion,
+                    upscale_method=upscale_method,
+                    divisible_by=divisible_by,
+                    pad_color=pad_color,
+                    crop_position=crop_position,
+                    device=resize_device,
+                    mask=msk,
+                )
+                logger.info("[LoadLastImage] resized image to %dx%d", w, h)
+            except Exception as exc:
+                logger.warning("[LoadLastImage] resize failed: %s", exc)
+            return img, msk, w, h
 
         # --- Handle pinned image ---
         if pin_index > 0:
             pinned = cache.get_pinned(pin_index)
             if pinned is not None:
-                return self._build_output(
-                    [pinned.tensor], cache.iteration_counter,
-                    grid_columns, grid_padding,
-                    diff_mode, diff_sensitivity,
-                    show_captions, caption_format,
-                    metadata={'prompt': '', 'seed': '', 'workflow': ''},
-                    file_paths=[],
-                    ring_buffer_full=False,
-                )
+                tensor = pinned.tensor
+                if tensor.ndim == 3:
+                    tensor = tensor.unsqueeze(0)
+                h, w = tensor.shape[1], tensor.shape[2]
+                mask = torch.ones(tensor.shape[0], h, w, dtype=torch.float32)
+                tensor, mask, w, h = _maybe_resize(tensor, mask, w, h)
+                return {
+                    "ui": {"images": []},
+                    "result": (tensor, mask, "", w, h, tensor.shape[0]),
+                }
             else:
                 logger.warning(
-                    "[LoadLast] Pinned iteration %d not in cache, falling back to latest",
-                    pin_index
+                    "[LoadLastImage] Pinned iteration %d not in cache, falling back",
+                    pin_index,
                 )
 
-        # --- Ring buffer mode overrides batch_size ---
-        effective_batch = batch_size
-        if ring_buffer_size > 0:
-            effective_batch = ring_buffer_size
+        # --- Resolve image source ---
+        resolved_path = None
+        info = None
 
-        # --- Discover images via filesystem ---
-        paths = scanner.scan(
-            scan_dirs,
-            n=effective_batch * 2 if skip_duplicates else effective_batch,
-            filename_filter=filename_filter,
-        )
+        # Check for user-selected image from browser strip
+        if unique_id:
+            sel_wrapper = _user_image_selections.pop(str(unique_id), None)
+            sel = sel_wrapper.get("data") if isinstance(sel_wrapper, dict) else None
+            if sel:
+                sel_filename = os.path.basename(sel.get("filename", ""))
+                sel_subfolder = sel.get("subfolder", "")
+                sel_type = sel.get("type", "output")
+                # Reject path-traversal
+                if ".." in sel_subfolder.replace("\\", "/").split("/"):
+                    logger.warning(
+                        "[LoadLastImage] Subfolder contains '..', rejecting for node %s",
+                        unique_id,
+                    )
+                    sel_filename = ""
+                if sel_type not in _ALLOWED_SEL_TYPES:
+                    sel_filename = ""
+                if sel_filename:
+                    if sel_type == "output":
+                        base = folder_paths.get_output_directory()
+                    else:
+                        base = folder_paths.get_temp_directory()
+                    candidate = (
+                        os.path.join(base, sel_subfolder, sel_filename)
+                        if sel_subfolder
+                        else os.path.join(base, sel_filename)
+                    )
+                    if _is_path_sandboxed(candidate) and os.path.isfile(candidate):
+                        resolved_path = candidate
+                        info = {
+                            "filename": sel_filename,
+                            "subfolder": sel_subfolder,
+                            "type": sel_type,
+                        }
+                        logger.info(
+                            "[LoadLastImage] Using user-selected image: %s",
+                            resolved_path,
+                        )
 
-        if not paths:
-            logger.warning("[LoadLast] No images found, returning black fallback")
-            return self._empty_output(cache.iteration_counter)
+        if resolved_path is None:
+            # Auto-discover latest images
+            scan_dirs = _resolve_scan_dirs(source_folder)
+            paths = scanner.scan(
+                scan_dirs,
+                n=batch_size,
+                filename_filter=filename_filter,
+            )
+            if not paths:
+                logger.warning("[LoadLastImage] No images found")
+                return {"ui": {"images": []}, "result": empty_result}
 
-        # --- Load images ---
-        images: list[torch.Tensor] = []
-        hashes: set[int] = set()
-        first_metadata = {'prompt': '', 'seed': '', 'workflow': ''}
-        first_path = None
-        loaded_paths: list[str] = []
+            resolved_path = paths[0]
+            parent = os.path.dirname(resolved_path)
+            info = _resolve_view_info(resolved_path, parent)
 
-        for path in paths:
-            if len(images) >= effective_batch:
-                break
-
-            try:
-                tensor, meta = scanner.load_image(path)
-            except Exception:
-                logger.warning("[LoadLast] Skipping corrupted file: %s", path)
-                continue
-
-            # Skip duplicates
-            if skip_duplicates:
-                h = compute_pixel_hash(tensor)
-                if h in hashes:
+            # Load batch
+            images: list[torch.Tensor] = []
+            for path in paths:
+                try:
+                    tensor, _meta = scanner.load_image(path)
+                    images.append(tensor)
+                except Exception:
+                    logger.warning("[LoadLastImage] Skipping corrupted: %s", path)
                     continue
-                hashes.add(h)
 
-            images.append(tensor)
-            loaded_paths.append(path)
+            if not images:
+                logger.warning("[LoadLastImage] All images corrupted")
+                return {"ui": {"images": []}, "result": empty_result}
 
-            # Capture metadata from the first (most recent) image
-            if first_path is None:
-                first_path = path
-                first_metadata = extract_png_metadata(path)
+            # Ensure all images match first image's dimensions
+            target_h, target_w = images[0].shape[0], images[0].shape[1]
+            resized = []
+            for img in images:
+                if img.shape[0] != target_h or img.shape[1] != target_w:
+                    img_nchw = img.permute(2, 0, 1).unsqueeze(0)
+                    img_nchw = F.interpolate(
+                        img_nchw, size=(target_h, target_w),
+                        mode='bilinear', align_corners=False,
+                    )
+                    img = img_nchw.squeeze(0).permute(1, 2, 0)
+                resized.append(img)
 
-        if not images:
-            logger.warning("[LoadLast] All images were duplicates or corrupted")
-            return self._empty_output(cache.iteration_counter)
+            batch_tensor = torch.stack(resized, dim=0)
+            batch_count = len(resized)
+            mask = torch.ones(batch_count, target_h, target_w, dtype=torch.float32)
 
-        ring_buffer_full = (ring_buffer_size > 0 and len(images) >= ring_buffer_size)
+            # --- Apply edits if present ---
+            # Server-side edits take precedence
+            if unique_id and str(unique_id) in _user_edit_states:
+                edits_wrapper = _user_edit_states.pop(str(unique_id))
+                edits = edits_wrapper.get("data", {}) if isinstance(edits_wrapper, dict) else {}
+                if edits:
+                    batch_tensor, mask = self._apply_edits(batch_tensor, mask, edits)
+                    target_h, target_w = batch_tensor.shape[1], batch_tensor.shape[2]
+            elif _edit_state and _edit_state != "{}":
+                try:
+                    edits = json.loads(_edit_state)
+                    if edits:
+                        batch_tensor, mask = self._apply_edits(batch_tensor, mask, edits)
+                        target_h, target_w = batch_tensor.shape[1], batch_tensor.shape[2]
+                except (json.JSONDecodeError, TypeError):
+                    pass
 
-        return self._build_output(
-            images, cache.iteration_counter,
-            grid_columns, grid_padding,
-            diff_mode, diff_sensitivity,
-            show_captions, caption_format,
-            metadata=first_metadata,
-            file_paths=loaded_paths,
-            ring_buffer_full=ring_buffer_full,
-        )
-
-    def _build_output(
-        self,
-        images: list[torch.Tensor],
-        iteration: int,
-        grid_columns: int,
-        grid_padding: int,
-        diff_mode: str,
-        diff_sensitivity: float,
-        show_captions: bool,
-        caption_format: str,
-        metadata: dict,
-        file_paths: list[str],
-        ring_buffer_full: bool = False,
-    ):
-        """Construct all output tensors from a list of loaded images."""
-        # Ensure all images match the first image's dimensions
-        target_h, target_w = images[0].shape[0], images[0].shape[1]
-        resized = []
-        for img in images:
-            if img.shape[0] != target_h or img.shape[1] != target_w:
-                img_nchw = img.permute(2, 0, 1).unsqueeze(0)
-                img_nchw = F.interpolate(
-                    img_nchw, size=(target_h, target_w),
-                    mode='bilinear', align_corners=False
-                )
-                img = img_nchw.squeeze(0).permute(1, 2, 0)
-            resized.append(img)
-
-        # Stack into batch tensor [B, H, W, 3]
-        batch_tensor = torch.stack(resized, dim=0)
-        batch_count = len(resized)
-
-        # Create mask (solid white)
-        mask = torch.ones(batch_count, target_h, target_w, dtype=torch.float32)
-
-        # --- Build captions if enabled ---
-        captions = []
-        if show_captions:
-            timestamp = datetime.now().strftime("%H:%M:%S")
-            seed = metadata.get('seed', '')
-            for idx in range(len(resized)):
-                filename = os.path.basename(file_paths[idx]) if idx < len(file_paths) else ""
-                caption = format_caption(
-                    caption_format,
-                    iteration=iteration,
-                    timestamp=timestamp,
-                    seed=seed,
-                    index=idx,
-                    filename=filename,
-                )
-                captions.append(caption)
-
-        # Grid output
-        grid_image = compose_grid(
-            resized, columns=grid_columns, padding=grid_padding
-        )
-
-        # Apply captions to grid
-        if show_captions and captions:
-            grid_image = render_captions_on_grid(
-                grid_image, captions,
-                cell_width=target_w, cell_height=target_h,
-                columns=grid_columns, padding=grid_padding,
+            logger.info(
+                "[LoadLastImage] Loaded %d image(s) | %dx%d | %s",
+                batch_count, target_w, target_h, resolved_path,
             )
 
-        # Side-by-side output
-        img_a = resized[0]
-        img_b = resized[1] if len(resized) > 1 else None
-        side_by_side = compose_side_by_side(img_a, img_b, padding=grid_padding)
+            # Build preview metadata
+            preview = []
+            if info:
+                preview = [info]
 
-        # Apply captions to side-by-side
-        if show_captions and len(captions) >= 1:
-            sbs_squeezed = side_by_side.squeeze(0)
-            sbs_squeezed = render_caption(sbs_squeezed, captions[0])
-            side_by_side = sbs_squeezed.unsqueeze(0)
+            batch_tensor, mask, target_w, target_h = _maybe_resize(
+                batch_tensor, mask, target_w, target_h
+            )
 
-        # --- Diff output ---
-        diff_image = compose_diff(
-            img_a, img_b,
-            mode=diff_mode,
-            sensitivity=diff_sensitivity,
-        )
+            return {
+                "ui": {"images": preview},
+                "result": (
+                    batch_tensor,
+                    mask,
+                    resolved_path,
+                    target_w,
+                    target_h,
+                    batch_count,
+                ),
+            }
 
-        return (
-            batch_tensor,           # IMAGE
-            mask,                   # MASK
-            grid_image,             # GRID_IMAGE
-            side_by_side,           # SIDE_BY_SIDE
-            diff_image,             # DIFF_IMAGE
-            target_w,               # width
-            target_h,               # height
-            batch_count,            # batch_count
-            iteration,              # iteration
-            metadata.get('prompt', ''),     # metadata_prompt
-            metadata.get('seed', ''),       # metadata_seed
-            metadata.get('workflow', ''),   # metadata_workflow
-            ring_buffer_full,       # RING_BUFFER_FULL
-        )
+        # --- Single selected image path ---
+        try:
+            tensor, _meta = scanner.load_image(resolved_path)
+        except Exception as e:
+            logger.warning("[LoadLastImage] Failed to load: %s — %s", resolved_path, e)
+            return {"ui": {"images": []}, "result": empty_result}
 
-    def _empty_output(self, iteration: int):
-        """Return a black 512x512 fallback image with empty metadata."""
-        black = torch.zeros(1, 512, 512, 3)
-        mask = torch.ones(1, 512, 512)
-        grid = torch.zeros(1, 512, 512, 3)
-        sbs = torch.zeros(1, 512, 512 * 2 + 4, 3)
-        diff = torch.zeros(1, 512, 512, 3)
+        if tensor.ndim == 3:
+            tensor = tensor.unsqueeze(0)
+        h, w = tensor.shape[1], tensor.shape[2]
+        mask = torch.ones(tensor.shape[0], h, w, dtype=torch.float32)
 
-        return (
-            black,        # IMAGE
-            mask,         # MASK
-            grid,         # GRID_IMAGE
-            sbs,          # SIDE_BY_SIDE
-            diff,         # DIFF_IMAGE
-            512,          # width
-            512,          # height
-            0,            # batch_count
-            iteration,    # iteration
-            '',           # metadata_prompt
-            '',           # metadata_seed
-            '',           # metadata_workflow
-            False,        # RING_BUFFER_FULL
-        )
+        # Apply edits
+        if unique_id and str(unique_id) in _user_edit_states:
+            edits_wrapper = _user_edit_states.pop(str(unique_id))
+            edits = edits_wrapper.get("data", {}) if isinstance(edits_wrapper, dict) else {}
+            if edits:
+                tensor, mask = self._apply_edits(tensor, mask, edits)
+                h, w = tensor.shape[1], tensor.shape[2]
+        elif _edit_state and _edit_state != "{}":
+            try:
+                edits = json.loads(_edit_state)
+                if edits:
+                    tensor, mask = self._apply_edits(tensor, mask, edits)
+                    h, w = tensor.shape[1], tensor.shape[2]
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        tensor, mask, w, h = _maybe_resize(tensor, mask, w, h)
+
+        return {
+            "ui": {"images": []},  # Custom DOM preview — suppress default output preview
+            "result": (tensor, mask, resolved_path, w, h, tensor.shape[0]),
+        }
+
+    def _apply_edits(
+        self,
+        images: torch.Tensor,
+        mask: torch.Tensor,
+        edits: dict,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Apply image edits (crop, resize, rotation, etc.) via PIL.
+
+        Processes each image in the batch and returns updated tensors.
+        Edit operations are applied in a fixed order:
+        rotation → flip → crop → resize → padding → color → captions → overlays
+        """
+        from PIL import Image, ImageEnhance
+
+        if not edits:
+            return images, mask
+
+        results = []
+        for i in range(images.shape[0]):
+            arr = (images[i].cpu().numpy() * 255).astype(np.uint8)
+            img = Image.fromarray(arr)
+
+            # Rotation
+            rotation = edits.get("rotation")
+            if rotation:
+                try:
+                    angle = int(rotation)
+                    if angle in (90, 180, 270):
+                        img = img.rotate(-angle, expand=True)
+                except (ValueError, TypeError):
+                    pass
+
+            # Flip
+            flip = edits.get("flip")
+            if flip:
+                if flip == "horizontal":
+                    img = img.transpose(Image.FLIP_LEFT_RIGHT)
+                elif flip == "vertical":
+                    img = img.transpose(Image.FLIP_TOP_BOTTOM)
+
+            # Crop
+            crop_rect = edits.get("crop_rect")
+            if crop_rect:
+                try:
+                    if isinstance(crop_rect, str):
+                        crop_rect = json.loads(crop_rect)
+                    x, y, w, h = (
+                        int(crop_rect["x"]), int(crop_rect["y"]),
+                        int(crop_rect["w"]), int(crop_rect["h"]),
+                    )
+                    if w > 0 and h > 0:
+                        img = img.crop((x, y, x + w, y + h))
+                except (KeyError, ValueError, TypeError, json.JSONDecodeError):
+                    pass
+
+            # Resize
+            resize = edits.get("resize")
+            if resize:
+                try:
+                    if isinstance(resize, str):
+                        resize = json.loads(resize)
+                    rw, rh = int(resize["w"]), int(resize["h"])
+                    if rw > 0 and rh > 0:
+                        img = img.resize((rw, rh), Image.LANCZOS)
+                except (KeyError, ValueError, TypeError, json.JSONDecodeError):
+                    pass
+
+            # Padding
+            padding = edits.get("padding")
+            if padding:
+                try:
+                    if isinstance(padding, str):
+                        padding = json.loads(padding)
+                    pt = int(padding.get("top", 0))
+                    pr = int(padding.get("right", 0))
+                    pb = int(padding.get("bottom", 0))
+                    pl = int(padding.get("left", 0))
+                    color = padding.get("color", "#000000")
+                    if any(v > 0 for v in (pt, pr, pb, pl)):
+                        new_w = img.width + pl + pr
+                        new_h = img.height + pt + pb
+                        padded = Image.new("RGB", (new_w, new_h), color)
+                        padded.paste(img, (pl, pt))
+                        img = padded
+                except (ValueError, TypeError, json.JSONDecodeError):
+                    pass
+
+            # Color adjustments
+            brightness = edits.get("brightness")
+            if brightness is not None:
+                try:
+                    val = float(brightness)
+                    if val != 1.0:
+                        img = ImageEnhance.Brightness(img).enhance(val)
+                except (ValueError, TypeError):
+                    pass
+
+            contrast = edits.get("contrast")
+            if contrast is not None:
+                try:
+                    val = float(contrast)
+                    if val != 1.0:
+                        img = ImageEnhance.Contrast(img).enhance(val)
+                except (ValueError, TypeError):
+                    pass
+
+            saturation = edits.get("saturation")
+            if saturation is not None:
+                try:
+                    val = float(saturation)
+                    if val != 1.0:
+                        img = ImageEnhance.Color(img).enhance(val)
+                except (ValueError, TypeError):
+                    pass
+
+            # Convert back to tensor
+            arr = np.array(img).astype(np.float32) / 255.0
+            results.append(torch.from_numpy(arr))
+
+        # Stack results, ensuring consistent dimensions
+        if results:
+            target_h, target_w = results[0].shape[0], results[0].shape[1]
+            aligned = []
+            for r in results:
+                if r.shape[0] != target_h or r.shape[1] != target_w:
+                    r_nchw = r.permute(2, 0, 1).unsqueeze(0)
+                    r_nchw = F.interpolate(
+                        r_nchw, size=(target_h, target_w),
+                        mode='bilinear', align_corners=False,
+                    )
+                    r = r_nchw.squeeze(0).permute(1, 2, 0)
+                aligned.append(r)
+            images = torch.stack(aligned, dim=0)
+            mask = torch.ones(
+                images.shape[0], target_h, target_w, dtype=torch.float32,
+            )
+
+        return images, mask

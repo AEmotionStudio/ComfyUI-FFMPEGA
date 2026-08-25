@@ -1,8 +1,9 @@
 # coding: utf-8
 """Handler for the ai_upscale skill (AI Super-Resolution).
 
-Upscales images and videos using Real-ESRGAN, HAT, DAT, or SwinIR
-via the spandrel universal model loader.
+Upscales images and videos using Real-ESRGAN, HAT, DAT, SwinIR
+via the spandrel universal model loader, or SeedVR2 diffusion-based
+upscaler for higher quality with temporal consistency.
 """
 
 import logging
@@ -10,10 +11,17 @@ import os
 
 log = logging.getLogger("ffmpega")
 
-_VALID_MODELS = {
+_GAN_MODELS = {
     "realesrgan_x4plus", "realesrgan_x4_anime",
     "hat_x4", "dat_x4", "swinir_x4",
 }
+_SEEDVR_MODELS = {
+    "seedvr2_3b_int8", "seedvr2_7b_int8",
+    "seedvr2_3b_fp8", "seedvr2_3b_gguf",
+    "seedvr2_7b_fp8", "seedvr2_7b_fp8_mixed", "seedvr2_7b_gguf",
+}
+_FLASHVSR_MODELS = {"flashvsr_full", "flashvsr_tiny", "flashvsr_tiny_long"}
+_VALID_MODELS = _GAN_MODELS | _SEEDVR_MODELS | _FLASHVSR_MODELS
 _VALID_SCALES = {2, 4}
 _VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv"}
 
@@ -42,6 +50,75 @@ def _f_ai_upscale(params: dict) -> dict:
                      f"Must be one of: {sorted(_VALID_MODELS)}"
         }
 
+    # Determine if input is video or image
+    ext = os.path.splitext(input_path)[1].lower()
+    is_video = ext in _VIDEO_EXTS
+
+    # ── FlashVSR one-step diffusion upscaler ─────────────────────────
+    if model in _FLASHVSR_MODELS:
+        try:
+            try:
+                from core.flashvsr_synthesizer import upscale_image, upscale_video
+            except ImportError:
+                from ...core.flashvsr_synthesizer import upscale_image, upscale_video
+        except ImportError:
+            return {
+                "error": "FlashVSR upscaler is not available. "
+                         "Ensure core/flashvsr_synthesizer.py exists."
+            }
+
+        scale_factor = int(params.get("scale_factor", 4))
+        try:
+            if is_video:
+                output_path = upscale_video(
+                    input_path=input_path,
+                    model_name=model,
+                    scale=scale_factor,
+                )
+                return {"movie": output_path}
+            else:
+                output_path = upscale_image(
+                    input_path=input_path,
+                    model_name=model,
+                    scale=scale_factor,
+                )
+                return {"image": output_path}
+        except Exception as exc:
+            log.error("ai_upscale (FlashVSR) handler failed: %s", exc)
+            return {"error": f"FlashVSR upscaling failed: {exc}"}
+
+    # ── SeedVR2 diffusion upscaler ────────────────────────────────────
+    if model in _SEEDVR_MODELS:
+        try:
+            try:
+                from core.seedvr_synthesizer import upscale_image, upscale_video
+            except ImportError:
+                from ...core.seedvr_synthesizer import upscale_image, upscale_video
+        except ImportError:
+            return {
+                "error": "SeedVR2 upscaler is not available. "
+                         "Ensure core/seedvr_synthesizer.py exists and "
+                         "diffusers is installed."
+            }
+
+        try:
+            if is_video:
+                output_path = upscale_video(
+                    input_path=input_path,
+                    model_name=model,
+                )
+                return {"movie": output_path}
+            else:
+                output_path = upscale_image(
+                    input_path=input_path,
+                    model_name=model,
+                )
+                return {"image": output_path}
+        except Exception as exc:
+            log.error("ai_upscale (SeedVR2) handler failed: %s", exc)
+            return {"error": f"SeedVR2 upscaling failed: {exc}"}
+
+    # ── GAN upscaler (spandrel) ───────────────────────────────────────
     scale_factor = int(params.get("scale_factor", 4))
     if scale_factor not in _VALID_SCALES:
         return {
@@ -52,7 +129,6 @@ def _f_ai_upscale(params: dict) -> dict:
     tile_size = int(params.get("tile_size", 512))
     tile_size = max(256, min(1024, tile_size))
 
-    # Import synthesizer
     try:
         try:
             from core.upscaler import upscale_image, upscale_video
@@ -63,10 +139,6 @@ def _f_ai_upscale(params: dict) -> dict:
             "error": "AI Upscaler is not available. "
                      "Ensure core/upscaler.py exists and spandrel is installed."
         }
-
-    # Determine if input is video or image
-    ext = os.path.splitext(input_path)[1].lower()
-    is_video = ext in _VIDEO_EXTS
 
     try:
         if is_video:

@@ -47,8 +47,8 @@ interface DynamicPrefixConfig {
 const DYNAMIC_PREFIXES: DynamicPrefixConfig[] = [
     { prefix: "images_", type: "IMAGE", excludes: [] },
     { prefix: "image_", type: "IMAGE", excludes: ["images_", "image_path_"] },
-    { prefix: "audio_", type: "AUDIO", excludes: [] },
-    { prefix: "video_", type: "STRING", excludes: ["video_path", "video_folder"] },
+    { prefix: "audio_", type: "AUDIO", excludes: ["audio_output_mode", "audio_resample_rate"] },
+    { prefix: "video_", type: "STRING", excludes: ["video_path", "video_folder", "video_depth_encoder", "video_depth_colormap"] },
     { prefix: "image_path_", type: "STRING", excludes: [] },
     { prefix: "text_", type: "STRING", excludes: [] },
 ];
@@ -368,6 +368,11 @@ export function registerAgentNode(
                 if (verifyWidget) toggleWidget(verifyWidget, !isNone);
                 if (visionWidget) toggleWidget(visionWidget, !isNone);
                 if (ptcWidget) toggleWidget(ptcWidget, !isNone);
+                // track_tokens and log_usage only relevant with an LLM
+                const ttWidget = node.widgets?.find((w: ComfyWidget) => w.name === "track_tokens");
+                const luWidget = node.widgets?.find((w: ComfyWidget) => w.name === "log_usage");
+                if (ttWidget) toggleWidget(ttWidget, !isNone);
+                if (luWidget) toggleWidget(luWidget, !isNone);
                 const noLlmModeWidget = node.widgets?.find((w: ComfyWidget) => w.name === "no_llm_mode");
                 if (noLlmModeWidget) {
                     toggleWidget(noLlmModeWidget, isNone);
@@ -384,6 +389,18 @@ export function registerAgentNode(
                 }
                 updateNoLlmModeVisibility();
                 fitHeight();
+
+                // Hook f1_style_transfer so noise_level toggles dynamically
+                const f1StyleTransferWidget = node.widgets?.find((w: ComfyWidget) => w.name === "f1_style_transfer");
+                if (f1StyleTransferWidget && !f1StyleTransferWidget._cbHooked) {
+                    f1StyleTransferWidget._cbHooked = true;
+                    const origF1Cb = f1StyleTransferWidget.callback;
+                    f1StyleTransferWidget.callback = function (...args: unknown[]) {
+                        origF1Cb?.apply(this, args);
+                        updateNoLlmModeVisibility();
+                        fitHeight();
+                    };
+                }
             }
 
             updateLlmVisibility = doUpdateLlmVisibility;
@@ -395,28 +412,19 @@ export function registerAgentNode(
             };
         }
 
-        // --- save_output → output_path visibility ---
-        const saveWidget = this.widgets?.find((w: ComfyWidget) => w.name === "save_output");
-        const outputPathWidget = this.widgets?.find((w: ComfyWidget) => w.name === "output_path");
-        if (saveWidget && outputPathWidget) {
-            function updateSaveVisibility(): void {
-                toggleWidget(outputPathWidget, Boolean(saveWidget!.value));
-                fitHeight();
-            }
-
-            updateSaveVisibility();
-            const origSaveCb = saveWidget.callback;
-            saveWidget.callback = function (...args: unknown[]) {
-                origSaveCb?.apply(this, args);
-                updateSaveVisibility();
-            };
+        // --- Always-hidden widgets (functional but not shown) ---
+        const alwaysHidden = [
+            "video_path", "save_output", "output_path",
+            "preview_mode", "crf", "encoding_preset",
+            "batch_mode", "video_folder", "file_pattern", "max_concurrent",
+        ];
+        for (const name of alwaysHidden) {
+            const w = this.widgets?.find((ww: ComfyWidget) => ww.name === name);
+            if (w) toggleWidget(w, false);
         }
 
         // --- advanced_options toggle → all advanced widgets visibility ---
         const advancedWidget = this.widgets?.find((w: ComfyWidget) => w.name === "advanced_options");
-        const previewWidget = this.widgets?.find((w: ComfyWidget) => w.name === "preview_mode");
-        const crfWidget = this.widgets?.find((w: ComfyWidget) => w.name === "crf");
-        const encodingWidget = this.widgets?.find((w: ComfyWidget) => w.name === "encoding_preset");
         const subtitleWidget = this.widgets?.find((w: ComfyWidget) => w.name === "subtitle_path");
         const advVisionWidget = this.widgets?.find((w: ComfyWidget) => w.name === "use_vision");
         const advVerifyWidget = this.widgets?.find((w: ComfyWidget) => w.name === "verify_output");
@@ -433,12 +441,12 @@ export function registerAgentNode(
         const logUsageWidget = this.widgets?.find((w: ComfyWidget) => w.name === "log_usage");
         const allowDownloadsWidget = this.widgets?.find((w: ComfyWidget) => w.name === "allow_model_downloads");
         const fluxSmoothingWidget = this.widgets?.find((w: ComfyWidget) => w.name === "flux_smoothing");
-        const mmaudioModeWidget = this.widgets?.find((w: ComfyWidget) => w.name === "mmaudio_mode");
+        const audioOutputModeWidget = this.widgets?.find((w: ComfyWidget) => w.name === "audio_output_mode");
         const marigoldOutputWidget = this.widgets?.find((w: ComfyWidget) => w.name === "marigold_output_type");
         const vdaEncoderWidget = this.widgets?.find((w: ComfyWidget) => w.name === "video_depth_encoder");
         const vdaColormapWidget = this.widgets?.find((w: ComfyWidget) => w.name === "video_depth_colormap");
 
-        /** Show/hide marigold, VDA, and upscale widgets based on no_llm_mode value */
+        /** Show/hide mode-specific widgets based on no_llm_mode value */
         function updateNoLlmModeVisibility(): void {
             // Use dynamic lookups to avoid temporal dead zone issues
             const adv = node.widgets?.find((w: ComfyWidget) => w.name === "advanced_options");
@@ -446,55 +454,382 @@ export function registerAgentNode(
             const llm = node.widgets?.find((w: ComfyWidget) => w.name === "llm_model");
             const isNone = llm?.value === "none";
             const noLlmMode = node.widgets?.find((w: ComfyWidget) => w.name === "no_llm_mode");
-            const mode = isNone ? String(noLlmMode?.value ?? "manual") : "";
+            // Strip the cosmetic " (Model)" suffix from the dropdown value so the
+            // bare-name comparisons below (and the _AUDIO_MODES set) keep matching.
+            const rawMode = isNone ? String(noLlmMode?.value ?? "manual") : "";
+            const mode = rawMode.replace(/\s*\([^)]*\)\s*$/, "");
+
+            // --- Mode-specific sub-widgets (only show for matching mode) ---
 
             const showMarigold = showAdvanced && mode === "marigold";
             const showVda = showAdvanced && mode === "video_depth";
             const showUpscale = showAdvanced && mode === "ai_upscale";
             const showRembg = showAdvanced && mode === "rembg";
             const showWhisper = showAdvanced && (mode === "transcribe" || mode === "karaoke_subtitles");
+            const showAceStep = showAdvanced && mode === "ace_step";
+            const showOnionSkin = showAdvanced && mode === "onion_skin";
+            const showComparison = showAdvanced && mode === "comparison";
+            const showSamAudio = showAdvanced && mode === "audio_separate";
+            const showNormalcrafter = showAdvanced && mode === "normalcrafter";
+            const showFluxKleinMode = showAdvanced && mode === "flux_klein";
+            const showKiwiEdit = showAdvanced && mode === "kiwi_edit";
+            const showDreamidOmni = showAdvanced && mode === "dreamid_omni";
+            const showScail2 = showAdvanced && mode === "scail2";
+            const showFoundation1 = showAdvanced && mode === "foundation1";
+            const showFishSpeech = showAdvanced && mode === "fish_speech";
+            const showSharp = showAdvanced && mode === "sharp";
+            const showWanAnimate = showAdvanced && mode === "wan_animate";
+            const showSapiens2 = showAdvanced && mode === "sapiens2";
 
+            // Marigold
             const mw = node.widgets?.find((w: ComfyWidget) => w.name === "marigold_output_type");
+            const mc = node.widgets?.find((w: ComfyWidget) => w.name === "marigold_colormap");
+            if (mw) toggleWidget(mw, showMarigold);
+            if (mc) toggleWidget(mc, showMarigold && String(mw?.value) === "depth");
+
+            // Video Depth Anything
             const ve = node.widgets?.find((w: ComfyWidget) => w.name === "video_depth_encoder");
             const vc = node.widgets?.find((w: ComfyWidget) => w.name === "video_depth_colormap");
-            const um = node.widgets?.find((w: ComfyWidget) => w.name === "upscale_model");
-            const us = node.widgets?.find((w: ComfyWidget) => w.name === "upscale_scale");
-            const rm = node.widgets?.find((w: ComfyWidget) => w.name === "rembg_model");
-            const rb = node.widgets?.find((w: ComfyWidget) => w.name === "rembg_background");
-            const wd = node.widgets?.find((w: ComfyWidget) => w.name === "whisper_device");
-            const wm = node.widgets?.find((w: ComfyWidget) => w.name === "whisper_model");
-            if (mw) toggleWidget(mw, showMarigold);
             if (ve) toggleWidget(ve, showVda);
             if (vc) toggleWidget(vc, showVda);
+
+            // AI Upscale
+            const um = node.widgets?.find((w: ComfyWidget) => w.name === "upscale_model");
+            const us = node.widgets?.find((w: ComfyWidget) => w.name === "upscale_scale");
+            const sr = node.widgets?.find((w: ComfyWidget) => w.name === "seedvr_resolution");
+            const bb = node.widgets?.find((w: ComfyWidget) => w.name === "blockswap_blocks");
+            const fp = node.widgets?.find((w: ComfyWidget) => w.name === "flashvsr_processing");
+            const fw = node.widgets?.find((w: ComfyWidget) => w.name === "flashvsr_frame_window");
+            const fcf = node.widgets?.find((w: ComfyWidget) => w.name === "flashvsr_color_fix");
+            const fdt = node.widgets?.find((w: ComfyWidget) => w.name === "flashvsr_decode_tile");
+            const rq = node.widgets?.find((w: ComfyWidget) => w.name === "rtx_quality");
             if (um) toggleWidget(um, showUpscale);
-            if (us) toggleWidget(us, showUpscale);
+            // Model-specific widget visibility
+            const modelVal = String(um?.value ?? "");
+            const isSeedvr = showUpscale && modelVal.startsWith("seedvr2");
+            const isRtxVsr = showUpscale && modelVal === "rtx_vsr";
+            const isFlashvsr = showUpscale && modelVal.startsWith("flashvsr");
+            const isGanModel = showUpscale && !isSeedvr && !isRtxVsr;
+            if (us) toggleWidget(us, isGanModel || isRtxVsr || isFlashvsr);  // scale for GAN + RTX + FlashVSR
+            if (sr) toggleWidget(sr, isSeedvr);                 // resolution for SeedVR2
+            if (bb) toggleWidget(bb, isSeedvr || isFlashvsr);   // blockswap for SeedVR2 + FlashVSR
+            if (fp) toggleWidget(fp, isFlashvsr);               // processing strategy for FlashVSR
+            if (fw) toggleWidget(fw, isFlashvsr && String(fp?.value) === "temporal");  // frame window when temporal
+            if (fcf) toggleWidget(fcf, isFlashvsr);             // color fix for FlashVSR
+            if (fdt) toggleWidget(fdt, isFlashvsr);             // decoder tile for FlashVSR
+            if (rq) toggleWidget(rq, isRtxVsr);                 // quality for RTX VSR
+            // VAE tiling: only for diffusion upscalers (SeedVR2 / FlashVSR)
+            const isDiffusionUpscaler = isSeedvr || isFlashvsr;
+            const vt = node.widgets?.find((w: ComfyWidget) => w.name === "vae_tiling");
+            const vtp = node.widgets?.find((w: ComfyWidget) => w.name === "vae_tile_preset");
+            const vts = node.widgets?.find((w: ComfyWidget) => w.name === "vae_tile_size");
+            const vto = node.widgets?.find((w: ComfyWidget) => w.name === "vae_tile_overlap");
+            if (vt) toggleWidget(vt, isDiffusionUpscaler);
+            if (vtp) toggleWidget(vtp, isDiffusionUpscaler && Boolean(vt?.value));
+            const showCustomTile = isDiffusionUpscaler && Boolean(vt?.value) && String(vtp?.value) === "custom";
+            if (vts) toggleWidget(vts, showCustomTile);
+            if (vto) toggleWidget(vto, showCustomTile);
+
+            // Rembg
+            const rm = node.widgets?.find((w: ComfyWidget) => w.name === "rembg_model");
+            const rb = node.widgets?.find((w: ComfyWidget) => w.name === "rembg_background");
             if (rm) toggleWidget(rm, showRembg);
             if (rb) toggleWidget(rb, showRembg);
+
+            // Whisper (transcribe / karaoke)
+            const wd = node.widgets?.find((w: ComfyWidget) => w.name === "whisper_device");
+            const wm = node.widgets?.find((w: ComfyWidget) => w.name === "whisper_model");
             if (wd) toggleWidget(wd, showWhisper);
             if (wm) toggleWidget(wm, showWhisper);
+
+            // SAM-Audio
+            const sam = node.widgets?.find((w: ComfyWidget) => w.name === "sam_audio_model");
+            if (sam) toggleWidget(sam, showSamAudio);
+
+            // NormalCrafter
+            const nc = node.widgets?.find((w: ComfyWidget) => w.name === "normalcrafter_max_res");
+            if (nc) toggleWidget(nc, showNormalcrafter);
+
+            // FLUX Klein widgets
+            const fluxKleinWidgetNames = [
+                "flux_image_source", "flux_klein_steps", "flux_klein_guidance",
+                "flux_klein_seed", "flux_klein_width", "flux_klein_height",
+            ];
+            for (const wn of fluxKleinWidgetNames) {
+                const w = node.widgets?.find((w: ComfyWidget) => w.name === wn);
+                if (w) toggleWidget(w, showFluxKleinMode);
+            }
+
+            // Kiwi-Edit widgets
+            const kiwiWidgetNames = [
+                "kiwi_model", "kiwi_precision", "kiwi_resolution",
+                "kiwi_max_frames",
+                "kiwi_steps", "kiwi_guidance", "kiwi_block_swap",
+                "kiwi_long_video", "kiwi_seed", "kiwi_flow_shift",
+                "kiwi_task_type", "kiwi_scheduler",
+            ];
+            for (const name of kiwiWidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showKiwiEdit);
+            }
+            // kiwi_width / kiwi_height only visible when kiwi_resolution = "custom"
+            const kiwiRes = node.widgets?.find((ww: ComfyWidget) => ww.name === "kiwi_resolution");
+            const showKiwiCustom = showKiwiEdit && String(kiwiRes?.value) === "custom";
+            const kw = node.widgets?.find((ww: ComfyWidget) => ww.name === "kiwi_width");
+            const kh = node.widgets?.find((ww: ComfyWidget) => ww.name === "kiwi_height");
+            if (kw) toggleWidget(kw, showKiwiCustom);
+            if (kh) toggleWidget(kh, showKiwiCustom);
+
+            // DreamID-Omni widgets
+            const dreamidWidgetNames = [
+                "dreamid_precision", "dreamid_resolution", "dreamid_steps", "dreamid_seed",
+                "dreamid_solver", "dreamid_video_cfg", "dreamid_video_ref_cfg",
+                "dreamid_audio_cfg", "dreamid_audio_ref_cfg",
+            ];
+            for (const name of dreamidWidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showDreamidOmni);
+            }
+
+            // SCAIL-2 pose-driven animation widgets
+            const scail2WidgetNames = [
+                "scail2_width", "scail2_height", "scail2_length", "scail2_pose_extend",
+                "scail2_steps", "scail2_cfg", "scail2_shift", "scail2_seed",
+                "scail2_sampler", "scail2_scheduler", "scail2_denoise",
+                "scail2_replacement_mode", "scail2_sort_by", "scail2_object_indices",
+                "scail2_subject", "scail2_max_objects",
+                "scail2_detection_threshold", "scail2_detect_interval",
+                "scail2_point_src_width", "scail2_point_src_height",
+                "scail2_composite_direction", "scail2_main_reference",
+                "scail2_color_match",
+                "scail2_blockswap_blocks", "scail2_tiled_vae",
+            ];
+            for (const name of scail2WidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showScail2);
+            }
+            // Dynamic LoRA slots: a always visible, b when a≠none, c when b≠none, d when c≠none
+            let showNextScail2Lora = showScail2;
+            for (const slot of ["a", "b", "c", "d"]) {
+                const loraW = node.widgets?.find((ww: ComfyWidget) => ww.name === `scail2_lora_${slot}`);
+                const strW = node.widgets?.find((ww: ComfyWidget) => ww.name === `scail2_lora_strength_${slot}`);
+                if (loraW) toggleWidget(loraW, showNextScail2Lora);
+                if (strW) toggleWidget(strW, showNextScail2Lora && String(loraW?.value ?? "none") !== "none");
+                showNextScail2Lora = showNextScail2Lora && String(loraW?.value ?? "none") !== "none";
+            }
+
+            // SVI 2.0 Pro (Stable Video Infinity) widgets
+            const showSvi = showAdvanced && mode === "svi";
+            const sviWidgetNames = [
+                "svi_num_clips", "svi_height", "svi_width", "svi_fps",
+                "svi_cfg_scale", "svi_overlap_frames", "svi_seed_multiplier",
+                "svi_steps", "svi_high_model_ratio", "svi_frames_per_clip",
+                "svi_variant", "svi_model_high", "svi_model_low",
+                "svi_lora_high", "svi_lora_low",
+                "svi_extra_lora_high", "svi_extra_lora_low",
+                "svi_vae", "svi_text_encoder", "svi_sampler", "svi_scheduler",
+                "svi_blockswap_blocks", "svi_tiled_vae",
+            ];
+            for (const name of sviWidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showSvi);
+            }
+
+            // SHARP (3D Gaussian View Synthesis) widgets
+            const sharpWidgetNames = [
+                "sharp_trajectory", "sharp_num_frames", "sharp_max_disparity",
+                "sharp_max_zoom", "sharp_save_ply", "sharp_device",
+            ];
+            for (const name of sharpWidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showSharp);
+            }
+
+            // Wan-Animate (motion-driven character animation) widgets
+            const wanAnimateWidgetNames = [
+                "wan_animate_mode", "wan_animate_steps", "wan_animate_guidance",
+                "wan_animate_seed", "wan_animate_num_frames",
+                "wan_animate_height", "wan_animate_width",
+                "wan_animate_pose_strength", "wan_animate_face_strength",
+            ];
+            for (const name of wanAnimateWidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showWanAnimate);
+            }
+            // Dynamic LoRA slots: a always visible, b when a≠none, c when b≠none, d when c≠none
+            const wanLoraSlots = ["a", "b", "c", "d"];
+            let showNextLora = showWanAnimate;
+            for (const slot of wanLoraSlots) {
+                const loraW = node.widgets?.find((ww: ComfyWidget) => ww.name === `wan_animate_lora_${slot}`);
+                const strW = node.widgets?.find((ww: ComfyWidget) => ww.name === `wan_animate_lora_strength_${slot}`);
+                if (loraW) toggleWidget(loraW, showNextLora);
+                if (strW) toggleWidget(strW, showNextLora && String(loraW?.value ?? "none") !== "none");
+                showNextLora = showNextLora && String(loraW?.value ?? "none") !== "none";
+            }
+
+            // ACE-Step widgets
+            const aceWidgetNames = [
+                "ace_negative_prompt", "ace_cover_strength", "ace_steps",
+                "ace_cfg_scale", "ace_bpm", "ace_key", "ace_time_sig",
+            ];
+            for (const name of aceWidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showAceStep);
+            }
+
+            // Foundation-1 widgets
+            const f1WidgetNames = [
+                "f1_preset", "f1_instrument", "f1_fx", "f1_structure",
+                "f1_negative_prompt", "f1_bpm", "f1_bars",
+                "f1_key", "f1_duration", "f1_steps", "f1_cfg_scale",
+                "f1_style_transfer",
+            ];
+            for (const name of f1WidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showFoundation1);
+            }
+            // noise_level only visible when style_transfer is on
+            const f1StyleWidget = node.widgets?.find((w: ComfyWidget) => w.name === "f1_style_transfer");
+            const f1NoiseWidget = node.widgets?.find((w: ComfyWidget) => w.name === "f1_noise_level");
+            if (f1NoiseWidget) toggleWidget(f1NoiseWidget, showFoundation1 && Boolean(f1StyleWidget?.value));
+
+            // Fish Speech TTS widgets
+            const fishWidgetNames = [
+                "fish_model_variant", "fish_voice", "fish_emotion",
+                "fish_temperature", "fish_top_p", "fish_repetition_penalty",
+            ];
+            for (const name of fishWidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showFishSpeech);
+            }
+
+            // Onion Skin widgets
+            const onionWidgetNames = ["onion_blend_mode", "onion_opacity", "onion_decay"];
+            for (const name of onionWidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showOnionSkin);
+            }
+
+            // Comparison widgets
+            const comparisonWidgetNames = [
+                "comparison_style", "comparison_labels",
+                "comparison_label_a", "comparison_label_b",
+            ];
+            for (const name of comparisonWidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showComparison);
+            }
+
+            // PhyFPS (Visual Chronometer) widgets
+            const showPhyfps = showAdvanced && mode === "phyfps";
+            const phyfpsActionW = node.widgets?.find((w: ComfyWidget) => w.name === "phyfps_action");
+            if (phyfpsActionW) toggleWidget(phyfpsActionW, showPhyfps);
+
+            // Video Matting widgets
+            const showMatting = showAdvanced && mode === "video_matting";
+            const mattingWidgetNames = [
+                "matting_output", "matting_background", "matting_max_size",
+            ];
+            for (const name of mattingWidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showMatting);
+            }
+
+            // LivePortrait expression controls (animate_portrait mode)
+            const showLivePortrait = showAdvanced && mode === "animate_portrait";
+            const lpWidgetNames = [
+                "lp_rotate_pitch", "lp_rotate_yaw", "lp_rotate_roll",
+                "lp_blink", "lp_eyebrow", "lp_wink",
+                "lp_pupil_x", "lp_pupil_y",
+                "lp_aaa", "lp_eee", "lp_woo", "lp_smile",
+                "lp_retargeting_eyes", "lp_retargeting_mouth",
+                "lp_crop_factor",
+                "lp_expression_preset", "lp_save_expression",
+                "lp_sample_image", "lp_sample_ratio", "lp_sample_parts",
+            ];
+            for (const name of lpWidgetNames) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, showLivePortrait);
+            }
+
+            // Sapiens2 widgets
+            const sapiens2TaskWidget = node.widgets?.find((w: ComfyWidget) => w.name === "sapiens2_task");
+            const sapiens2SizeWidget = node.widgets?.find((w: ComfyWidget) => w.name === "sapiens2_size");
+            if (sapiens2TaskWidget) toggleWidget(sapiens2TaskWidget, showSapiens2);
+            if (sapiens2SizeWidget) toggleWidget(sapiens2SizeWidget, showSapiens2);
+            const sapiens2Task = String(sapiens2TaskWidget?.value ?? "pose");
+            // Precision (incl. fp8) is folded into the size dropdown, so there
+            // is no separate precision widget to toggle.
+            const showSapiensSegAlpha = showSapiens2 && sapiens2Task === "seg";
+            const showSapiensPose = showSapiens2 && sapiens2Task === "pose";
+            const segAlpha = node.widgets?.find((w: ComfyWidget) => w.name === "sapiens2_seg_alpha");
+            if (segAlpha) toggleWidget(segAlpha, showSapiensSegAlpha);
+            for (const wName of ["sapiens2_pose_kpt_thr", "sapiens2_pose_radius", "sapiens2_pose_thickness"]) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === wName);
+                if (w) toggleWidget(w, showSapiensPose);
+            }
+
+            // --- Widgets that are relevant to LLM mode or specific no-LLM modes ---
+            // These should hide when a no-LLM mode doesn't use them.
+
+            // use_sam3 toggle: shown for eligible no-LLM modes
+            const sam3EligibleModes = new Set([
+                "lip_sync", "animate_portrait", "marigold", "normalcrafter",
+                "video_depth", "flux_klein", "kiwi_edit", "minimax_remover", "ai_upscale",
+                "rembg", "onion_skin", "comparison",
+            ]);
+            const showUseSam3 = showAdvanced && sam3EligibleModes.has(mode);
+            const useSam3Widget = node.widgets?.find((w: ComfyWidget) => w.name === "use_sam3");
+            if (useSam3Widget) toggleWidget(useSam3Widget, showUseSam3);
+            const useSam3On = showUseSam3 && Boolean(useSam3Widget?.value);
+
+            // SAM3 config widgets: show for sam3_masking mode, LLM mode, OR when use_sam3 is on
+            const showSam3 = showAdvanced && (!isNone || mode === "sam3_masking" || useSam3On);
+            for (const wName of ["sam3_max_objects", "sam3_det_threshold", "mask_output_type"]) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === wName);
+                if (w) toggleWidget(w, showSam3);
+            }
+
+            // use_flux_klein / use_kiwi_edit / use_minimax_remover: only relevant for LLM mode
+            const showLlmToggles = showAdvanced && !isNone;
+            for (const wName of ["use_flux_klein", "use_kiwi_edit", "use_minimax_remover", "use_dreamid_omni"]) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === wName);
+                if (w) toggleWidget(w, showLlmToggles);
+            }
+            // flux_smoothing depends on use_flux_klein being on AND visible
+            const fluxKleinWidget = node.widgets?.find((w: ComfyWidget) => w.name === "use_flux_klein");
+            const fsw = node.widgets?.find((w: ComfyWidget) => w.name === "flux_smoothing");
+            if (fsw) toggleWidget(fsw, showLlmToggles && Boolean(fluxKleinWidget?.value));
+
+            // flux_klein_model: shown in flux_klein no-LLM mode, OR LLM mode when use_flux_klein is on
+            const fkm = node.widgets?.find((w: ComfyWidget) => w.name === "flux_klein_model");
+            if (fkm) toggleWidget(fkm, showFluxKleinMode || (showLlmToggles && Boolean(fluxKleinWidget?.value)));
+
+            // audio_output_mode: for all audio-related modes + LLM mode
+            const _AUDIO_MODES = new Set(["generate_audio", "generate_music", "foundation1", "fish_speech", "audio_inpaint", "audio_separate", "ace_step"]);
+            const showAudioMode = showAdvanced && (!isNone || _AUDIO_MODES.has(mode));
+            const mmw = node.widgets?.find((w: ComfyWidget) => w.name === "audio_output_mode");
+            if (mmw) toggleWidget(mmw, showAudioMode);
+
+            // audio_resample_rate: only for manual (effects builder) mode
+            const showResample = showAdvanced && mode === "manual";
+            const arw = node.widgets?.find((w: ComfyWidget) => w.name === "audio_resample_rate");
+            if (arw) toggleWidget(arw, showResample);
+
+            // subtitle_path: relevant for transcribe, karaoke, manual, AND LLM mode
+            const showSubtitle = showAdvanced && (!isNone || mode === "manual" || mode === "transcribe" || mode === "karaoke_subtitles");
+            const sw = node.widgets?.find((w: ComfyWidget) => w.name === "subtitle_path");
+            if (sw) toggleWidget(sw, showSubtitle);
         }
 
         function updateAdvancedVisibility(): void {
             const show = Boolean(advancedWidget?.value);
-            if (previewWidget) toggleWidget(previewWidget, show);
-            if (subtitleWidget) toggleWidget(subtitleWidget, show);
-            if (crfWidget) toggleWidget(crfWidget, show);
-            if (encodingWidget) toggleWidget(encodingWidget, show);
-            if (sam3MaxObjWidget) toggleWidget(sam3MaxObjWidget, show);
-            if (sam3ThreshWidget) toggleWidget(sam3ThreshWidget, show);
-            if (maskTypeWidget) toggleWidget(maskTypeWidget, show);
-            const fluxKleinWidget = node.widgets?.find((w: ComfyWidget) => w.name === "use_flux_klein");
-            const showFlux = show && Boolean(fluxKleinWidget?.value);
-            if (fluxSmoothingWidget) toggleWidget(fluxSmoothingWidget, showFlux);
-            if (mmaudioModeWidget) toggleWidget(mmaudioModeWidget, show);
-            if (batchWidget) toggleWidget(batchWidget, show);
-            const showBatch = show && Boolean(batchWidget?.value);
-            if (folderWidget) toggleWidget(folderWidget, showBatch);
-            if (patternWidget) toggleWidget(patternWidget, showBatch);
-            if (concurrentWidget) toggleWidget(concurrentWidget, showBatch);
-            if (trackTokensWidget) toggleWidget(trackTokensWidget, show);
-            if (logUsageWidget) toggleWidget(logUsageWidget, show);
+            const llm = node.widgets?.find((w: ComfyWidget) => w.name === "llm_model");
+            const isNone = llm?.value === "none";
+            if (trackTokensWidget) toggleWidget(trackTokensWidget, show && !isNone);
+            if (logUsageWidget) toggleWidget(logUsageWidget, show && !isNone);
             if (allowDownloadsWidget) toggleWidget(allowDownloadsWidget, show);
+            // Mode-specific widgets are handled inside updateNoLlmModeVisibility
             updateNoLlmModeVisibility();
             fitHeight();
         }
@@ -518,24 +853,95 @@ export function registerAgentNode(
             };
         }
 
-        // --- batch_mode → sub-widget visibility ---
-        if (batchWidget) {
-            function updateBatchVisibility(): void {
-                const showAdvanced = Boolean(advancedWidget?.value ?? true);
-                const show = Boolean(batchWidget!.value) && showAdvanced;
-                if (folderWidget) toggleWidget(folderWidget, show);
-                if (patternWidget) toggleWidget(patternWidget, show);
-                if (concurrentWidget) toggleWidget(concurrentWidget, show);
-                fitHeight();
-            }
-
-            updateBatchVisibility();
-            const origBatchCb = batchWidget.callback;
-            batchWidget.callback = function (...args: unknown[]) {
-                origBatchCb?.apply(this, args);
-                updateBatchVisibility();
+        // --- use_sam3 → SAM3 sub-widget visibility ---
+        const useSam3Toggle = this.widgets?.find((w: ComfyWidget) => w.name === "use_sam3");
+        if (useSam3Toggle) {
+            const origSam3Cb = useSam3Toggle.callback;
+            useSam3Toggle.callback = function (...args: unknown[]) {
+                origSam3Cb?.apply(this, args);
+                updateAdvancedVisibility();
             };
         }
+
+        // --- upscale_model → blockswap_blocks visibility ---
+        const upscaleModelToggle = this.widgets?.find((w: ComfyWidget) => w.name === "upscale_model");
+        if (upscaleModelToggle) {
+            const origUpscaleCb = upscaleModelToggle.callback;
+            upscaleModelToggle.callback = function (...args: unknown[]) {
+                origUpscaleCb?.apply(this, args);
+                updateAdvancedVisibility();
+            };
+        }
+
+        // --- flashvsr_processing → flashvsr_frame_window visibility ---
+        const flashvsrProcToggle = this.widgets?.find((w: ComfyWidget) => w.name === "flashvsr_processing");
+        if (flashvsrProcToggle) {
+            const origFvCb = flashvsrProcToggle.callback;
+            flashvsrProcToggle.callback = function (...args: unknown[]) {
+                origFvCb?.apply(this, args);
+                updateAdvancedVisibility();
+            };
+        }
+
+        // --- vae_tiling / vae_tile_preset → VAE tile sub-widget visibility ---
+        for (const wName of ["vae_tiling", "vae_tile_preset"]) {
+            const vaeTileW = this.widgets?.find((w: ComfyWidget) => w.name === wName);
+            if (vaeTileW) {
+                const origVaeCb = vaeTileW.callback;
+                vaeTileW.callback = function (...args: unknown[]) {
+                    origVaeCb?.apply(this, args);
+                    updateAdvancedVisibility();
+                };
+            }
+        }
+
+        // --- kiwi_resolution → kiwi_width / kiwi_height visibility ---
+        const kiwiResolutionToggle = this.widgets?.find((w: ComfyWidget) => w.name === "kiwi_resolution");
+        if (kiwiResolutionToggle) {
+            const origKiwiResCb = kiwiResolutionToggle.callback;
+            kiwiResolutionToggle.callback = function (...args: unknown[]) {
+                origKiwiResCb?.apply(this, args);
+                updateAdvancedVisibility();
+            };
+        }
+
+
+
+        // --- wan_animate_lora_* → cascade next LoRA slot visibility ---
+        for (const slot of ["a", "b", "c", "d"]) {
+            const wanLoraSlotW = this.widgets?.find((w: ComfyWidget) => w.name === `wan_animate_lora_${slot}`);
+            if (wanLoraSlotW) {
+                const origCb = wanLoraSlotW.callback;
+                wanLoraSlotW.callback = function (...args: unknown[]) {
+                    origCb?.apply(this, args);
+                    updateAdvancedVisibility();
+                };
+            }
+        }
+
+        // --- scail2_lora_* → cascade next LoRA slot visibility ---
+        for (const slot of ["a", "b", "c", "d"]) {
+            const scail2LoraSlotW = this.widgets?.find((w: ComfyWidget) => w.name === `scail2_lora_${slot}`);
+            if (scail2LoraSlotW) {
+                const origCb = scail2LoraSlotW.callback;
+                scail2LoraSlotW.callback = function (...args: unknown[]) {
+                    origCb?.apply(this, args);
+                    updateAdvancedVisibility();
+                };
+            }
+        }
+
+        // --- marigold_output_type → colormap visibility ---
+        const marigoldTypeWidget = this.widgets?.find((w: ComfyWidget) => w.name === "marigold_output_type");
+        if (marigoldTypeWidget) {
+            const origMtCb = marigoldTypeWidget.callback;
+            marigoldTypeWidget.callback = function (...args: unknown[]) {
+                origMtCb?.apply(this, args);
+                updateAdvancedVisibility();
+            };
+        }
+
+        // batch_mode and sub-widgets are permanently hidden (see alwaysHidden)
 
         // --- Dynamic input slots (auto-expand) ---
         const origOnConnectionsChange = this.onConnectionsChange;

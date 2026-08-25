@@ -9,14 +9,15 @@ from __future__ import annotations
 import subprocess
 import time
 
-import numpy as np
 import torch
 
 from .bin_paths import get_ffmpeg_bin
+from .video import encode_opts as eo
 
 
 def images_to_video(
     images: torch.Tensor, output_path: str, fps: int = 24,
+    color: str = eo.DEFAULT_COLOR_POLICY,
 ) -> None:
     """Convert an IMAGE tensor batch [N, H, W, C] to a video file.
 
@@ -31,6 +32,10 @@ def images_to_video(
         Destination file path (usually ``.mp4``).
     fps:
         Output framerate.
+    color:
+        Colour policy key from :mod:`core.video.encode_opts`.  Defaults to
+        the same sRGB handling every other FFMPEGA encoder uses; previously
+        this path wrote untagged BT.601, disagreeing with the rest.
     """
     ffmpeg = get_ffmpeg_bin()
 
@@ -39,16 +44,18 @@ def images_to_video(
     if c != 3:
         images = images[..., :3]
 
-    cmd = [
-        ffmpeg, "-y",
-        "-f", "rawvideo", "-pix_fmt", "rgb24",
-        "-s", f"{w}x{h}", "-r", str(fps),
-        "-i", "pipe:0",
-        "-c:v", "libx264", "-preset", "ultrafast",
-        "-pix_fmt", "yuv420p",
-        "-v", "quiet",
-        output_path,
-    ]
+    spec = eo.EncodeSpec(
+        format="h264-mp4", crf=18, preset="ultrafast",
+        color=color, faststart=False,
+    )
+    cmd = [ffmpeg, "-y", "-v", "quiet"]
+    cmd += eo.raw_input_args(w, h, fps, spec.bit_depth)
+    vf = eo.video_filter(spec)
+    if vf:
+        cmd += ["-vf", vf]
+    cmd += eo.video_output_args(spec)
+    cmd.append(output_path)
+
     proc = subprocess.Popen(
         cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -62,7 +69,9 @@ def images_to_video(
                 raise RuntimeError("ffmpeg exited unexpectedly during encoding")
             if time.monotonic() > deadline:
                 raise RuntimeError("ffmpeg encode timed out during frame writes")
-            frame_bytes = (images[i].cpu().numpy() * 255).astype(np.uint8).tobytes()
+            # frames_to_bytes clamps; the old `* 255` cast here wrapped
+            # out-of-gamut values around to black.
+            frame_bytes = eo.frames_to_bytes(images[i:i + 1], spec.bit_depth).tobytes()
             proc.stdin.write(frame_bytes)
         proc.stdin.close()
         remaining = max(1, deadline - time.monotonic())

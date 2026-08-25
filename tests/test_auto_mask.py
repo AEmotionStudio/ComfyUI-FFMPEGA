@@ -81,7 +81,7 @@ class TestAutoMaskRegistration:
         effect_param = next(p for p in skill.parameters if p.name == "effect")
         assert set(effect_param.choices) == {
             "blur", "pixelate", "remove", "edit", "grayscale", "highlight",
-            "greenscreen", "transparent", "thermal",
+            "greenscreen", "transparent", "thermal", "shader",
         }
 
     def test_skill_has_tags(self, registry):
@@ -225,36 +225,72 @@ class TestAutoMaskComposer:
 # --- SAM3 Masker Module Tests -------------------------------------------------
 
 class TestSAM3MaskerUnit:
-    """Test the SAM3 masker module without requiring SAM3 installed."""
+    """Test the SAM3 / SAM 3.1 masker module without requiring SAM installed."""
 
     def test_hf_repo_constant(self):
-        """_HF_REPO should point to AEmotionStudio."""
+        """Back-compat _HF_REPO should still point to AEmotionStudio/sam3."""
         from core.sam3_masker import _HF_REPO
         assert _HF_REPO == "AEmotionStudio/sam3"
 
     def test_checkpoint_names(self):
-        """Checkpoint names should be correct."""
+        """SAM 3 checkpoint name back-compat constants."""
         from core.sam3_masker import _SAFETENSORS_NAME, _PT_NAME
         assert _SAFETENSORS_NAME == "sam3.safetensors"
         assert _PT_NAME == "sam3.pt"
 
-    def test_model_dir_contains_sam3(self):
-        """_get_model_dir should return a path ending in SAM3."""
+    def test_model_spec_versions(self):
+        """_MODEL_SPEC must register both SAM 3 and SAM 3.1."""
+        from core.sam3_masker import _MODEL_SPEC, DEFAULT_SAM_VERSION
+        assert set(_MODEL_SPEC) >= {"sam3", "sam3.1"}
+        assert DEFAULT_SAM_VERSION == "sam3.1"
+        s31 = _MODEL_SPEC["sam3.1"]
+        assert s31["hf_repo_upstream"] == "facebook/sam3.1"
+        assert s31["pt"] == "sam3.1_multiplex.pt"
+        assert s31["dir_name"] == "SAM3.1"
+        assert s31["env_var"] == "FFMPEGA_SAM3_1_MODEL_DIR"
+        assert s31["model_key"] == "sam3_1"
+
+    def test_normalize_version_aliases(self):
+        """_normalize_version maps common aliases to canonical keys."""
+        from core.sam3_masker import _normalize_version
+        assert _normalize_version("sam3.1") == "sam3.1"
+        assert _normalize_version("sam3_1") == "sam3.1"
+        assert _normalize_version("3.1") == "sam3.1"
+        assert _normalize_version("sam3") == "sam3"
+        assert _normalize_version("") == "sam3.1"
+        assert _normalize_version(None) == "sam3.1"
+
+    @pytest.mark.parametrize("version,dir_suffix", [
+        ("sam3", "SAM3"),
+        ("sam3.1", "SAM3.1"),
+    ])
+    def test_model_dir_per_version(self, version, dir_suffix):
+        """_get_model_dir returns the right dir for each version."""
         from core.sam3_masker import _get_model_dir
-        d = _get_model_dir()
-        assert str(d).endswith("SAM3")
+        d = _get_model_dir(version)
+        assert str(d).endswith(dir_suffix)
+
+    def test_sam3_1_registered_in_model_manager(self):
+        """The sam3_1 entry must exist in core.model_manager._MODEL_INFO."""
+        from core.model_manager import _MODEL_INFO
+        assert "sam3_1" in _MODEL_INFO
+        entry = _MODEL_INFO["sam3_1"]
+        assert entry["mirror_repo"] == "AEmotionStudio/sam3.1"
 
     @pytest.mark.skipif(not _has_torch, reason="PyTorch not available")
-    def test_cleanup(self):
-        """Cleanup should reset all cached models."""
+    def test_cleanup_clears_both_versions(self):
+        """Cleanup should clear cached models for every registered version."""
         import core.sam3_masker as sm
-        sm._image_model = "fake"
-        sm._image_processor = "fake"
-        sm._video_model = "fake"
+        sm._image_models["sam3"] = "fake-img-3"
+        sm._image_models["sam3.1"] = "fake-img-3.1"
+        sm._image_processors["sam3"] = "fake-proc-3"
+        sm._image_processors["sam3.1"] = "fake-proc-3.1"
+        sm._video_models["sam3"] = "fake-vid-3"
+        sm._video_models["sam3.1"] = "fake-vid-3.1"
         sm.cleanup()
-        assert sm._image_model is None
-        assert sm._image_processor is None
-        assert sm._video_model is None
+        assert sm._image_models == {}
+        assert sm._image_processors == {}
+        assert sm._video_models == {}
 
 
 # --- FLUX Klein Toggle Tests -------------------------------------------------

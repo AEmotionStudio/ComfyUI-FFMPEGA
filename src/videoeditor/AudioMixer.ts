@@ -12,6 +12,8 @@ export interface AudioMixerCallbacks {
     onFadeInChanged?: (seconds: number) => void;
     onFadeOutChanged?: (seconds: number) => void;
     onEQChanged?: (preset: EQPreset) => void;
+    onAceRepaintChanged?: (active: boolean) => void;
+    onAceRepaintStrengthChanged?: (strength: number) => void;
 }
 
 export class AudioMixer {
@@ -31,6 +33,10 @@ export class AudioMixer {
     private _masterVolume: number = 1.0;
     private segmentHeader: HTMLDivElement;
     private _selectedSegIndex: number = -1;
+    private aceRepaintBtn: HTMLButtonElement;
+    private aceStrengthSlider: HTMLInputElement;
+    private aceStrengthLabel: HTMLSpanElement;
+    private _aceRepaintActive: boolean = false;
 
     constructor(callbacks: AudioMixerCallbacks) {
         this.callbacks = callbacks;
@@ -182,6 +188,54 @@ export class AudioMixer {
         eqRow.append(eqIcon, this.eqSelect);
         eqSection.appendChild(eqRow);
 
+        // ── ACE-Step Repaint Section ──
+        const aceSection = this._makeSection('ACE-Step Repaint');
+        aceSection.setAttribute('data-tool-id', 'veditor-ace-repaint-section');
+        aceSection.title = 'Mark this audio segment for ACE-Step quality enhancement';
+
+        const aceRow = document.createElement('div');
+        aceRow.className = 'veditor-control-row';
+
+        this.aceRepaintBtn = document.createElement('button');
+        this.aceRepaintBtn.className = 'veditor-btn veditor-toggle-btn';
+        this.aceRepaintBtn.textContent = '🎵 Repaint Off';
+        this.aceRepaintBtn.title = 'Toggle ACE-Step repaint for this segment';
+        this.aceRepaintBtn.setAttribute('data-tool-id', 'veditor-ace-repaint-toggle');
+        this.aceRepaintBtn.setAttribute('aria-label', 'Toggle ACE-Step audio repaint');
+        this.aceRepaintBtn.addEventListener('click', () => {
+            this._aceRepaintActive = !this._aceRepaintActive;
+            this._updateAceRepaintBtn();
+            this.callbacks.onAceRepaintChanged?.(this._aceRepaintActive);
+        });
+        aceRow.appendChild(this.aceRepaintBtn);
+        aceSection.appendChild(aceRow);
+
+        const aceStrengthRow = document.createElement('div');
+        aceStrengthRow.className = 'veditor-control-row';
+
+        this.aceStrengthSlider = document.createElement('input');
+        this.aceStrengthSlider.type = 'range';
+        this.aceStrengthSlider.min = '0';
+        this.aceStrengthSlider.max = '1';
+        this.aceStrengthSlider.step = '0.05';
+        this.aceStrengthSlider.value = '0.5';
+        this.aceStrengthSlider.className = 'veditor-fade-slider';
+        this.aceStrengthSlider.setAttribute('data-tool-id', 'veditor-ace-strength-slider');
+        this.aceStrengthSlider.setAttribute('aria-label', 'ACE-Step repaint strength (0 to 1)');
+        this.aceStrengthSlider.addEventListener('input', () => {
+            const val = parseFloat(this.aceStrengthSlider.value);
+            this.aceStrengthLabel.textContent = `${Math.round(val * 100)}%`;
+            this.callbacks.onAceRepaintStrengthChanged?.(val);
+        });
+
+        this.aceStrengthLabel = document.createElement('span');
+        this.aceStrengthLabel.className = 'veditor-fade-label';
+        this.aceStrengthLabel.textContent = '50%';
+        this.aceStrengthLabel.setAttribute('data-tool-id', 'veditor-ace-strength-label');
+
+        aceStrengthRow.append(this.aceStrengthSlider, this.aceStrengthLabel);
+        aceSection.appendChild(aceStrengthRow);
+
         // ── Reset Section ──
         const resetRow = document.createElement('div');
         resetRow.className = 'veditor-control-row';
@@ -201,11 +255,13 @@ export class AudioMixer {
             this.callbacks.onFadeInChanged?.(0);
             this.callbacks.onFadeOutChanged?.(0);
             this.callbacks.onEQChanged?.('flat');
+            this.callbacks.onAceRepaintChanged?.(false);
+            this.callbacks.onAceRepaintStrengthChanged?.(0.5);
             this.reset();
         });
         resetRow.appendChild(resetBtn);
 
-        this.container.append(volSection, fadeInSection, fadeOutSection, eqSection, resetRow);
+        this.container.append(volSection, fadeInSection, fadeOutSection, eqSection, aceSection, resetRow);
     }
 
     get element(): HTMLDivElement {
@@ -255,6 +311,12 @@ export class AudioMixer {
         this.eqSelect.value = seg.eq;
         this.isMuted = seg.muted;
         this.muteBtn.innerHTML = seg.muted ? iconMuted : iconVolume;
+
+        // ACE-Step Repaint
+        this._aceRepaintActive = seg.aceRepaint;
+        this._updateAceRepaintBtn();
+        this.aceStrengthSlider.value = String(seg.aceRepaintStrength);
+        this.aceStrengthLabel.textContent = `${Math.round(seg.aceRepaintStrength * 100)}%`;
     }
 
     /** Clear segment selection, restore master volume to slider, and show master label */
@@ -267,13 +329,15 @@ export class AudioMixer {
     }
 
     /** Get current control values for saving to a segment */
-    getSegmentProps(): { volume: number; fadeIn: number; fadeOut: number; eq: EQPreset; muted: boolean } {
+    getSegmentProps(): { volume: number; fadeIn: number; fadeOut: number; eq: EQPreset; muted: boolean; aceRepaint: boolean; aceRepaintStrength: number } {
         return {
             volume: parseFloat(this.slider.value),
             fadeIn: parseFloat(this.fadeInSlider.value),
             fadeOut: parseFloat(this.fadeOutSlider.value),
             eq: this.eqSelect.value as EQPreset,
             muted: this.isMuted,
+            aceRepaint: this._aceRepaintActive,
+            aceRepaintStrength: parseFloat(this.aceStrengthSlider.value),
         };
     }
 
@@ -304,6 +368,10 @@ export class AudioMixer {
         this.eqSelect.value = 'flat';
         this.isMuted = false;
         this.muteBtn.innerHTML = iconVolume;
+        this._aceRepaintActive = false;
+        this._updateAceRepaintBtn();
+        this.aceStrengthSlider.value = '0.5';
+        this.aceStrengthLabel.textContent = '50%';
         this.clearSegmentSelection();
     }
 
@@ -337,5 +405,17 @@ export class AudioMixer {
         label.textContent = title;
         section.appendChild(label);
         return section;
+    }
+
+    private _updateAceRepaintBtn(): void {
+        if (this._aceRepaintActive) {
+            this.aceRepaintBtn.textContent = '🎵 Repaint On';
+            this.aceRepaintBtn.style.background = 'var(--ve-success, #22c55e)';
+            this.aceRepaintBtn.style.color = '#000';
+        } else {
+            this.aceRepaintBtn.textContent = '🎵 Repaint Off';
+            this.aceRepaintBtn.style.background = '';
+            this.aceRepaintBtn.style.color = '';
+        }
     }
 }

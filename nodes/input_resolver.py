@@ -14,6 +14,46 @@ from typing import Optional
 
 logger = logging.getLogger("ffmpega")
 
+# Used when frames arrive with no source video to take a rate from. An IMAGE
+# batch genuinely has no frame rate, so this is a display convention, not a
+# measurement — the downstream Save Video node's fps widget is what decides
+# the rate of anything the user actually keeps.
+DEFAULT_IMAGE_SEQUENCE_FPS = 24.0
+
+
+def _source_fps(video_path: str, extra_video_paths: list) -> float:
+    """Frame rate of the first readable source video, or the default.
+
+    Frames connected alongside a source video (the usual Load Video Path →
+    Agent wiring) should keep that video's rate rather than silently becoming
+    24 fps.
+    """
+    candidates = []
+    if video_path and str(video_path).strip():
+        candidates.append(str(video_path).strip())
+    candidates.extend(extra_video_paths or [])
+
+    try:
+        from ..core.last_frame import probe_video_stats
+    except ImportError:
+        from core.last_frame import probe_video_stats  # type: ignore
+
+    for candidate in candidates:
+        if not candidate or not os.path.isfile(candidate):
+            continue
+        try:
+            fps, _duration, _frames = probe_video_stats(candidate)
+        except Exception:
+            continue
+        if fps and fps > 0:
+            logger.info(
+                "resolve_inputs: images have no frame rate; using %.3f fps "
+                "from %s", fps, os.path.basename(candidate),
+            )
+            return float(fps)
+
+    return DEFAULT_IMAGE_SEQUENCE_FPS
+
 
 def resolve_inputs(
     media_converter,
@@ -98,12 +138,23 @@ def resolve_inputs(
         image_a is not None
         or any(k.startswith("image_") and not k.startswith("image_path_") and kwargs.get(k) is not None for k in kwargs)
         or len(_all_video_paths) > 0
-        or len(_all_image_paths) > 0
+        # NOTE: _all_image_paths intentionally excluded — image_path_a/b/c
+        # are reference images or masks for specific modes, not video content.
+        # Including them here incorrectly triggers dummy video creation when
+        # the only connection is e.g. a mask path for video matting.
     )
 
     if images_a is not None:
         _images_a_shape = images_a.shape
-        temp_video_from_images = media_converter.images_to_video(images_a)
+        # Frames alone carry no frame rate, so the intermediate would be
+        # stamped with images_to_video's 24 fps default. Frame *count* is
+        # preserved either way, but the agent's video_path output inherits
+        # this rate — wrong for 30/60 fps footage. Take the real rate from a
+        # connected source video when there is one.
+        _src_fps = _source_fps(video_path, _all_video_paths)
+        temp_video_from_images = media_converter.images_to_video(
+            images_a, fps=_src_fps,
+        )
         effective_video_path = temp_video_from_images
         del images_a
         gc.collect()
@@ -117,6 +168,12 @@ def resolve_inputs(
         effective_video_path = video_path
     elif _all_video_paths:
         effective_video_path = _all_video_paths.pop(0)
+    elif _all_image_paths:
+        # No video / images tensor connected — a still image is the primary
+        # source (e.g. image_path_a -> ai_upscale / rembg / image edit). Pop it
+        # so it is not also re-used as a reference/overlay downstream.
+        effective_video_path = _all_image_paths.pop(0)
+        logger.info("No video input — using image_path as primary source: %s", effective_video_path)
     elif has_extra_images:
         dummy = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
         dummy.close()
@@ -130,7 +187,35 @@ def resolve_inputs(
         temp_video_from_images = dummy.name
         effective_video_path = dummy.name
     else:
-        effective_video_path = video_path
+        # No video, images, or extra media — generate a minimal black video
+        # so audio-only modes (generate_sample, ace_step, etc.) still work.
+        if not video_path or not video_path.strip():
+            # Calculate duration from audio_a if available, otherwise default to 1s
+            dummy_dur = 1
+            if audio_a is not None and isinstance(audio_a, dict):
+                try:
+                    wf = audio_a.get("waveform")
+                    sr = audio_a.get("sample_rate", 44100)
+                    if wf is not None and sr:
+                        # Audio duration + 10s safety buffer for effects that
+                        # lengthen audio (e.g. reverb tails, loudnorm padding)
+                        dummy_dur = max(1, int(wf.shape[-1] / sr) + 10)
+                except Exception:
+                    pass
+            dummy = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+            dummy.close()
+            import subprocess
+            subprocess.run(
+                ["ffmpeg", "-y", "-f", "lavfi", "-i",
+                 f"color=c=black:s=1920x1080:d={dummy_dur}:r=25",
+                 "-c:v", "libx264", "-t", str(dummy_dur), dummy.name],
+                capture_output=True,
+            )
+            temp_video_from_images = dummy.name
+            effective_video_path = dummy.name
+            logger.info("No video input — created dummy black video for audio-only mode (%ds)", dummy_dur)
+        else:
+            effective_video_path = video_path
 
     try:
         from ..core.sanitize import validate_video_path  # type: ignore[import-not-found]

@@ -42,7 +42,7 @@ _MAX_COPY_SIZE = 500 * 1024 * 1024
 
 # Auto-select mode options
 FRAME_SELECT_MODES = [
-    "manual", "uniform_5", "uniform_10", "first_last",
+    "manual", "uniform_5", "uniform_10", "first_last", "last",
     "every_2nd", "every_5th", "timestamps",
 ]
 
@@ -505,8 +505,8 @@ class LoadLastVideo:
     FUNCTION = "load"
     OUTPUT_NODE = True
 
-    RETURN_TYPES = ("IMAGE", "IMAGE", "AUDIO", "STRING", "STRING", "INT", "FLOAT", "FLOAT")
-    RETURN_NAMES = ("images", "selected_frames", "audio", "video_path", "image_paths", "frame_count", "fps", "duration")
+    RETURN_TYPES = ("IMAGE", "IMAGE", "AUDIO", "STRING", "STRING", "MASK")
+    RETURN_NAMES = ("images", "selected_frames", "audio", "video_path", "image_paths", "mask")
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -520,7 +520,9 @@ class LoadLastVideo:
                     "default": "manual",
                     "tooltip": (
                         "How to select frames. 'manual' = user clicks in preview. "
-                        "Other modes auto-select frames based on the chosen strategy."
+                        "'last' = the final frame only, for continuing a scene. "
+                        "Other modes auto-select frames based on the chosen strategy. "
+                        "Auto-selected frames are merged with any manual clicks."
                     ),
                 }),
                 "auto_timestamps": ("STRING", {
@@ -567,6 +569,12 @@ class LoadLastVideo:
                     "default": "",
                     "forceInput": True,
                     "tooltip": "Override: path to a video file. Overrides auto-discovery.",
+                }),
+                "mask": ("MASK", {
+                    "tooltip": (
+                        "Optional upstream MASK pass-through. "
+                        "Forwarded as-is to the mask output."
+                    ),
                 }),
             },
             "hidden": {
@@ -648,6 +656,7 @@ class LoadLastVideo:
         images=None,
         audio=None,
         video_path: str = "",
+        mask=None,
         frame_select_mode: str = "manual",
         auto_timestamps: str = "",
         pause_for_selection: bool = False,
@@ -663,7 +672,8 @@ class LoadLastVideo:
 
         empty_frames = torch.zeros(1, 512, 512, 3)
         silent_audio = {"waveform": torch.zeros(1, 1, 1), "sample_rate": 44100}
-        empty_result = (empty_frames, empty_frames, silent_audio, "", "", 0, 0.0, 0.0)
+        empty_mask = mask if mask is not None else torch.zeros(1, 512, 512, dtype=torch.float32)
+        empty_result = (empty_frames, empty_frames, silent_audio, "", "", empty_mask)
 
         # --- Resolve video source (priority: images > video_path > auto) ---
         resolved_path = None
@@ -817,14 +827,14 @@ class LoadLastVideo:
             logger.warning("[LoadLast] Failed to decode video: %s — %s", resolved_path, e)
             return {
                 "ui": {"video": [], "gifs": []},
-                "result": (empty_frames, empty_frames, silent_audio, resolved_path, "", 0, 0.0, 0.0),
+                "result": (empty_frames, empty_frames, silent_audio, resolved_path, "", empty_mask),
             }
 
         if frames is None or frames.shape[0] == 0:
             logger.warning("[LoadLast] No frames decoded from: %s", resolved_path)
             return {
                 "ui": {"video": [], "gifs": []},
-                "result": (empty_frames, empty_frames, silent_audio, resolved_path, "", 0, 0.0, 0.0),
+                "result": (empty_frames, empty_frames, silent_audio, resolved_path, "", empty_mask),
             }
 
         # --- Extract audio (input override wins) ---
@@ -865,7 +875,7 @@ class LoadLastVideo:
                 logger.info("[LoadLast] Paused — waiting for frame selection")
                 return {
                     "ui": {"video": [preview], "gifs": [preview]},
-                    "result": tuple(blocked for _ in range(8)),
+                    "result": tuple(blocked for _ in range(6)),
                 }
             except ImportError:
                 logger.warning(
@@ -904,7 +914,7 @@ class LoadLastVideo:
             "result": (
                 frames, selected_frames, audio,
                 resolved_path, image_paths_str,
-                frame_count, fps, duration,
+                empty_mask,
             ),
         }
 
@@ -1006,6 +1016,13 @@ class LoadLastVideo:
             auto = [min(duration * i / 9, duration - 0.01) for i in range(10)]
         elif mode == "first_last" and duration > 0:
             auto = [0.0, max(0.0, duration - 0.01)]
+        elif mode == "last" and duration > 0:
+            # Land inside the final frame rather than on its boundary. The
+            # fixed 0.01s back-off used by first_last is a third of a frame
+            # at 24fps but a full frame period at 100fps, where it would
+            # select the second-to-last frame instead.
+            back_off = (0.5 / fps) if fps > 0 else 0.01
+            auto = [max(0.0, duration - back_off)]
         elif mode == "every_2nd" and fps > 0 and duration > 0:
             step = 2.0 / fps
             cap = min(int(duration / step) + 1, _MAX_AUTO_TIMESTAMPS + 1)

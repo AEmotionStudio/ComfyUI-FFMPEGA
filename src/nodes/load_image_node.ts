@@ -4,7 +4,7 @@
  * Features:
  * - Dynamic output slot (images) — hidden until input connected
  * - Upstream image preview on execution
- * - Point selector context menu
+ * - Point selector context menu (resolves image path for SAM3)
  */
 
 import { api } from "comfyui/api";
@@ -33,6 +33,32 @@ interface LoadImageExecutionData {
     images?: Array<{ filename: string; subfolder?: string; type?: string }>;
 }
 
+/** Resize sub-widgets gated behind the enable_resize toggle. */
+const RESIZE_WIDGETS = [
+    "resize_width", "resize_height", "upscale_method", "keep_proportion",
+    "pad_color", "crop_position", "divisible_by", "resize_device",
+] as const;
+
+/** VHS-style widget show/hide (mirrors the helper in agent_node.ts). */
+function toggleWidget(widget: ComfyWidget | undefined, show: boolean): void {
+    if (!widget) return;
+    if (!widget._origType) {
+        widget._origType = widget.type;
+        widget._origComputeSize = widget.computeSize;
+    }
+    if (show) {
+        widget.type = widget._origType;
+        widget.computeSize = widget._origComputeSize;
+        widget.hidden = false;
+        if (widget.element) widget.element.hidden = false;
+    } else {
+        widget.type = "hidden";
+        widget.computeSize = () => [0, -4] as [number, number];
+        widget.hidden = true;
+        if (widget.element) widget.element.hidden = true;
+    }
+}
+
 /**
  * Register FFMPEGALoadImagePath node UI.
  */
@@ -49,50 +75,41 @@ export function registerLoadImageNode(
         this.color = "#3a5a5a";
         this.bgcolor = "#2a4a4a";
 
-        // --- Dynamic output: hide "images" output until input connected ---
-        const _syncImagesOutput = (): void => {
-            const imagesIn = node.findInputSlot("images");
-            const connected = imagesIn >= 0
-                && node.inputs[imagesIn].link != null;
-            const imagesOut = node.findOutputSlot("images");
-            const hasOutput = imagesOut >= 0;
-
-            if (connected && !hasOutput) {
-                node.addOutput("images", "IMAGE");
-            } else if (!connected && hasOutput) {
-                const idx = node.findOutputSlot("images");
-                if (idx >= 0) node.removeOutput(idx);
-            }
-            node.setDirtyCanvas(true, true);
+        // --- enable_resize toggle → resize sub-widget visibility ---
+        const fitHeight = (): void => {
+            node.setSize([
+                node.size[0],
+                node.computeSize([node.size[0], node.size[1]])[1],
+            ]);
+            node?.graph?.setDirtyCanvas(true);
         };
 
-        // Remove on creation
-        requestAnimationFrame(() => {
-            const idx = node.findOutputSlot("images");
-            if (idx >= 0) node.removeOutput(idx);
-            node.setDirtyCanvas(true, true);
-        });
-
-        // React to connection changes
-        const origOnCCImg = this.onConnectionsChange;
-        this.onConnectionsChange = function (
-            type: number, slotIndex: number,
-            isConnected: boolean, link: unknown, ioSlot: unknown,
-        ): void {
-            origOnCCImg?.apply(this, arguments as unknown as [number, number, boolean, unknown, unknown]);
-            if (type === LiteGraph.INPUT) {
-                const name = this.inputs?.[slotIndex]?.name;
-                if (name === "images") {
-                    _syncImagesOutput();
-                }
+        const updateResizeVisibility = (): void => {
+            const enableResize = node.widgets?.find((w: ComfyWidget) => w.name === "enable_resize");
+            const show = Boolean(enableResize?.value);
+            for (const name of RESIZE_WIDGETS) {
+                const w = node.widgets?.find((ww: ComfyWidget) => ww.name === name);
+                if (w) toggleWidget(w, show);
             }
+            fitHeight();
         };
+
+        const enableResizeWidget = this.widgets?.find((w: ComfyWidget) => w.name === "enable_resize");
+        if (enableResizeWidget) {
+            updateResizeVisibility();
+            const origResizeCb = enableResizeWidget.callback;
+            enableResizeWidget.callback = function (...args: unknown[]) {
+                origResizeCb?.apply(this, args);
+                updateResizeVisibility();
+            };
+        }
 
         // Restore on workflow load
         const origConfigureImg = this.onConfigure;
         this.onConfigure = function (data: unknown): void {
             origConfigureImg?.apply(this, arguments as unknown as [unknown]);
-            requestAnimationFrame(_syncImagesOutput);
+            // Re-apply visibility after saved widget values are restored
+            updateResizeVisibility();
         };
 
         // Handle execution results — update preview from upstream
@@ -146,11 +163,50 @@ export function registerLoadImageNode(
                     flashNode(self, "#7a4a4a");
                     return;
                 }
+
+                // Parse subfolder if present (ComfyUI sends "subfolder/file.png")
+                let resolvedFilename = filename;
+                let subfolder = "";
+                if (filename.includes("/") || filename.includes("\\")) {
+                    const sep = filename.includes("/") ? "/" : "\\";
+                    const parts = filename.split(sep);
+                    resolvedFilename = parts.pop()!;
+                    subfolder = parts.join(sep);
+                }
+
                 const params = new URLSearchParams({
-                    filename, type: "input",
+                    filename: resolvedFilename, type: "input",
+                    ...(subfolder ? { subfolder } : {}),
                 });
-                const src = api.apiURL("/view?" + params.toString());
-                openPointSelector(self, src);
+                const imgSrc = api.apiURL("/view?" + params.toString());
+
+                // Resolve the on-disk absolute path for SAM3 via server
+                fetch("/ffmpega/resolve_image_path", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        filename: resolvedFilename,
+                        subfolder,
+                    }),
+                })
+                    .then(r => r.json())
+                    .then((data: { image_path?: string }) => {
+                        openPointSelector(self, imgSrc, undefined, data.image_path || "");
+                    })
+                    .catch(() => {
+                        // Fallback: open without SAM3 path (draw mode still works)
+                        openPointSelector(self, imgSrc);
+                    });
+            },
+        }, {
+            content: "🧹 Clear Mask",
+            callback: () => {
+                const mpWidget = self.widgets?.find((w: ComfyWidget) => w.name === "mask_points_data");
+                if (mpWidget) {
+                    mpWidget.value = "";
+                }
+                self.setDirtyCanvas?.(true, true);
+                flashNode(self, "#4a7a4a");
             },
         }, null);
     };

@@ -19,6 +19,8 @@ export interface AudioSegment {
     fadeOut: number;         // seconds
     eq: EQPreset;
     muted: boolean;
+    aceRepaint: boolean;           // mark segment for ACE-Step repaint
+    aceRepaintStrength: number;    // 0.0–1.0 repaint strength
 }
 
 let _nextAudioId = 0;
@@ -43,6 +45,8 @@ export class AudioEditManager {
             fadeOut: 0,
             eq: 'flat',
             muted: false,
+            aceRepaint: false,
+            aceRepaintStrength: 0.5,
         }];
     }
 
@@ -50,7 +54,7 @@ export class AudioEditManager {
     createSegment(
         start: number,
         end: number,
-        overrides?: Partial<Pick<AudioSegment, 'volume' | 'fadeIn' | 'fadeOut' | 'eq' | 'muted'>>,
+        overrides?: Partial<Pick<AudioSegment, 'volume' | 'fadeIn' | 'fadeOut' | 'eq' | 'muted' | 'aceRepaint' | 'aceRepaintStrength'>>,
     ): AudioSegment {
         return {
             id: genAudioId(),
@@ -61,6 +65,8 @@ export class AudioEditManager {
             fadeOut: 0,
             eq: 'flat',
             muted: false,
+            aceRepaint: false,
+            aceRepaintStrength: 0.5,
             ...overrides,
         };
     }
@@ -122,7 +128,7 @@ export class AudioEditManager {
     /** Update audio properties of a segment */
     updateSegmentAudio(
         id: string,
-        props: Partial<Pick<AudioSegment, 'volume' | 'fadeIn' | 'fadeOut' | 'eq' | 'muted'>>,
+        props: Partial<Pick<AudioSegment, 'volume' | 'fadeIn' | 'fadeOut' | 'eq' | 'muted' | 'aceRepaint' | 'aceRepaintStrength'>>,
     ): boolean {
         const seg = this.segments.find(s => s.id === id);
         if (!seg) return false;
@@ -197,7 +203,8 @@ export class AudioEditManager {
             s.fadeIn > 0 ||
             s.fadeOut > 0 ||
             s.eq !== 'flat' ||
-            s.muted
+            s.muted ||
+            s.aceRepaint
         );
     }
 
@@ -211,6 +218,8 @@ export class AudioEditManager {
             fadeOut: s.fadeOut,
             eq: s.eq,
             muted: s.muted,
+            aceRepaint: s.aceRepaint,
+            aceRepaintStrength: s.aceRepaintStrength,
         }));
     }
 
@@ -225,6 +234,8 @@ export class AudioEditManager {
             fadeOut: d.fadeOut ?? 0,
             eq: d.eq ?? 'flat',
             muted: d.muted ?? false,
+            aceRepaint: d.aceRepaint ?? false,
+            aceRepaintStrength: d.aceRepaintStrength ?? 0.5,
         }));
     }
 }

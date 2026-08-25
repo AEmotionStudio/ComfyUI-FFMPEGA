@@ -11,7 +11,7 @@
     flex-direction: column;
     background: #0d0d0d;
     border-radius: 8px;
-    overflow: hidden;
+    overflow: hidden auto;
     min-height: 60px;
     position: relative;
 }
@@ -296,6 +296,136 @@
     display: flex;
     flex-direction: column;
     background: #0d0d0d;
+}
+
+/* ─── Image Edit Mode ────────────────────────────────── */
+.ll_edit_area {
+    position: relative;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.ll_edit_area .ll_img_preview {
+    width: 100%;
+    display: block;
+    transition: transform 0.2s, filter 0.2s;
+}
+
+.ll_edit_toolbar_row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px;
+    background: #111;
+    border-top: 1px solid #222;
+}
+
+.ll_edit_tool_btn {
+    border: 1px solid #444;
+    background: #1a1a1a;
+    color: #aaa;
+    font: 11px/1.3 monospace;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.ll_edit_tool_btn:hover {
+    background: #2a2a2a;
+    color: #ddd;
+    border-color: #666;
+}
+
+.ll_edit_tool_btn.active {
+    background: #2d4a2d;
+    color: #6f6;
+    border-color: #4a4;
+}
+
+.ll_edit_apply_btn {
+    margin-left: auto;
+    border: 1px solid #3a7a3a;
+    background: #1a2e1a;
+    color: #4ade80;
+    font: bold 11px/1.3 monospace;
+    padding: 5px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.18s;
+}
+
+.ll_edit_apply_btn:hover {
+    background: #2a4e2a;
+    border-color: #4ade80;
+}
+
+.ll_edit_panel {
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    background: #0f0f0f;
+    border-top: 1px solid #222;
+}
+
+.ll_edit_panel.visible {
+    display: flex;
+}
+
+.ll_edit_panel_row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.ll_edit_panel_label {
+    color: #888;
+    font: 11px/1.3 monospace;
+    min-width: 55px;
+    flex-shrink: 0;
+}
+
+.ll_edit_panel_input {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    color: #ccc;
+    font: 12px monospace;
+    padding: 3px 6px;
+    border-radius: 3px;
+    width: 70px;
+}
+
+.ll_edit_panel_input:focus {
+    border-color: #555;
+    outline: none;
+}
+
+.ll_edit_slider_row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 0;
+}
+
+.ll_edit_slider {
+    flex: 1;
+    height: 4px;
+    accent-color: #4ade80;
+    cursor: pointer;
+}
+
+.ll_edit_slider_val {
+    color: #888;
+    font: 11px monospace;
+    min-width: 35px;
+    text-align: right;
 }
 
 .ll_edit_wrapper .ll_video {

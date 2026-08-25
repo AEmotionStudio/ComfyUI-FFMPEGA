@@ -25,12 +25,16 @@ app.registerExtension({
       const params4 = findW("effect_4_params");
       const effect5 = findW("effect_5");
       const params5 = findW("effect_5_params");
+      const useAsTextW = findW("use_as_text");
+      const usePromptAsTextW = findW("use_prompt_as_text");
       const rawFfmpeg = findW("raw_ffmpeg");
       const sam3Target = findW("sam3_target");
       const sam3Effect = findW("sam3_effect");
       const presetsJsonW = findW("_presets_json");
       const defaultsJsonW = findW("_defaults_json");
       const paramHelpJsonW = findW("_param_help_json");
+      const RAW_FFMPEG_PLACEHOLDER = "Optional: raw FFmpeg filters\ne.g. boxblur=5,eq=brightness=0.1\nApplied after skill effects.";
+      const TEXT_INPUT_PLACEHOLDER = "Enter text for overlay...\nThis text will be used by text_overlay effects.";
       let presetData = {};
       let defaultsData = {};
       let paramHelpData = {};
@@ -199,6 +203,10 @@ app.registerExtension({
         updateParamPlaceholder(effect5, params5);
         const hasSam3 = (sam3Target == null ? void 0 : sam3Target.value) && sam3Target.value.trim();
         toggleWidget(sam3Effect, !!hasSam3);
+        const isTextMode = !!(useAsTextW == null ? void 0 : useAsTextW.value);
+        if (rawFfmpeg == null ? void 0 : rawFfmpeg.options) {
+          rawFfmpeg.options.placeholder = isTextMode ? TEXT_INPUT_PLACEHOLDER : RAW_FFMPEG_PLACEHOLDER;
+        }
         fitHeight();
       }
       updateVisibility();
@@ -230,6 +238,20 @@ app.registerExtension({
             updateVisibility();
           };
         }
+      }
+      if (useAsTextW) {
+        const origUat = useAsTextW.callback;
+        useAsTextW.callback = function(...args) {
+          origUat == null ? void 0 : origUat.apply(this, args);
+          updateVisibility();
+        };
+      }
+      if (usePromptAsTextW) {
+        const origUpt = usePromptAsTextW.callback;
+        usePromptAsTextW.callback = function(...args) {
+          origUpt == null ? void 0 : origUpt.apply(this, args);
+          updateVisibility();
+        };
       }
       if (sam3Target) {
         const origDraw = sam3Target.draw;
@@ -405,7 +427,7 @@ app.registerExtension({
         {
           content: "🧹 Clear All Effects",
           callback: () => {
-            var _a2, _b2, _c, _d, _e;
+            var _a2, _b2, _c, _d, _e, _f;
             for (const name of ["effect_1", "effect_2", "effect_3", "effect_4", "effect_5"]) {
               const w = (_a2 = self.widgets) == null ? void 0 : _a2.find((ww) => ww.name === name);
               if (w) w.value = "none";
@@ -414,12 +436,16 @@ app.registerExtension({
               const w = (_b2 = self.widgets) == null ? void 0 : _b2.find((ww) => ww.name === name);
               if (w) w.value = "";
             }
-            const sam3e = (_c = self.widgets) == null ? void 0 : _c.find((ww) => ww.name === "sam3_effect");
+            for (const name of ["use_as_text", "use_prompt_as_text"]) {
+              const w = (_c = self.widgets) == null ? void 0 : _c.find((ww) => ww.name === name);
+              if (w) w.value = false;
+            }
+            const sam3e = (_d = self.widgets) == null ? void 0 : _d.find((ww) => ww.name === "sam3_effect");
             if (sam3e) sam3e.value = "blur";
-            const pw = (_d = self.widgets) == null ? void 0 : _d.find((ww) => ww.name === "preset");
+            const pw = (_e = self.widgets) == null ? void 0 : _e.find((ww) => ww.name === "preset");
             if (pw) pw.value = "none";
             for (const name of ["effect_1", "effect_2", "effect_3", "effect_4", "effect_5"]) {
-              const w = (_e = self.widgets) == null ? void 0 : _e.find((ww) => ww.name === name);
+              const w = (_f = self.widgets) == null ? void 0 : _f.find((ww) => ww.name === name);
               if (w == null ? void 0 : w.callback) w.callback(w.value);
             }
             flashNode(self, "#4a7a4a");

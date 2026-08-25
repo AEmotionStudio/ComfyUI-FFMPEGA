@@ -25,20 +25,23 @@ except (ImportError, RuntimeError):
 class TestFluxKleinConstants:
     """Test that module constants are correctly defined."""
 
-    def test_hf_repo(self):
-        """_HF_REPO should point to BFL's official repo."""
-        from core.flux_klein_editor import _HF_REPO
-        assert _HF_REPO == "black-forest-labs/FLUX.2-klein-4B"
+    def test_hf_repos(self):
+        """_HF_REPOS should point to BFL's official 4B and 9B repos."""
+        from core.flux_klein_editor import _HF_REPOS
+        assert _HF_REPOS["4b"] == "black-forest-labs/FLUX.2-klein-4B"
+        assert _HF_REPOS["9b"] == "black-forest-labs/FLUX.2-klein-9B"
 
-    def test_mirror_repo(self):
-        """_MIRROR_REPO should point to AEmotionStudio mirror."""
-        from core.flux_klein_editor import _MIRROR_REPO
-        assert _MIRROR_REPO == "AEmotionStudio/flux-klein"
+    def test_mirror_repos(self):
+        """_MIRROR_REPOS should point to AEmotionStudio mirrors."""
+        from core.flux_klein_editor import _MIRROR_REPOS
+        assert _MIRROR_REPOS["4b"] == "AEmotionStudio/flux-klein"
+        assert _MIRROR_REPOS["9b"] == "AEmotionStudio/flux-klein-9b"
 
-    def test_model_dir_name(self):
-        """_MODEL_DIR_NAME should be flux_klein."""
-        from core.flux_klein_editor import _MODEL_DIR_NAME
-        assert _MODEL_DIR_NAME == "flux_klein"
+    def test_model_dir_names(self):
+        """_MODEL_DIR_NAMES should map variants to their dirs."""
+        from core.flux_klein_editor import _MODEL_DIR_NAMES
+        assert _MODEL_DIR_NAMES["4b"] == "flux_klein"
+        assert _MODEL_DIR_NAMES["9b"] == "flux_klein_9b"
 
     def test_removal_prompt_is_descriptive(self):
         """_REMOVAL_PROMPT should be a meaningful prompt, not empty."""
@@ -103,15 +106,22 @@ class TestFluxKleinModelManager:
         assert "manual" in info
 
     def test_mirror_repo_matches(self):
-        """Mirror repo in model_manager should match flux_klein_editor."""
+        """Mirror repos in model_manager should match flux_klein_editor."""
         from core.model_manager import _MODEL_INFO
-        from core.flux_klein_editor import _MIRROR_REPO
-        assert _MODEL_INFO["flux_klein"]["mirror_repo"] == _MIRROR_REPO
+        from core.flux_klein_editor import _MIRROR_REPOS, _MM_KEYS
+        for variant, mm_key in _MM_KEYS.items():
+            assert _MODEL_INFO[mm_key]["mirror_repo"] == _MIRROR_REPOS[variant]
+
+    def test_flux_klein_9b_in_model_info(self):
+        """flux_klein_9b should be registered in _MODEL_INFO."""
+        from core.model_manager import _MODEL_INFO
+        assert "flux_klein_9b" in _MODEL_INFO
 
     def test_license_is_apache(self):
-        """FLUX Klein should be Apache 2.0 licensed."""
+        """FLUX Klein (both variants) should be Apache 2.0 licensed."""
         from core.model_manager import _MODEL_INFO
         assert "Apache" in _MODEL_INFO["flux_klein"].get("license", "")
+        assert "Apache" in _MODEL_INFO["flux_klein_9b"].get("license", "")
 
 
 # --- Skill Registration Tests --------------------------------------------------
@@ -179,6 +189,7 @@ class TestFluxKleinOOMCleanup:
 
         # Set up a fake pipeline so load_pipeline returns it
         fk._pipeline = MagicMock()
+        fk._pipeline_variant = "4b"  # match cache key so load_pipeline returns the mock
 
         with (
             patch.object(fk, "_load_video_frames") as mock_load,
@@ -261,6 +272,7 @@ class TestFluxKleinNoLLMMode:
         import numpy as np
 
         fk._pipeline = MagicMock()
+        fk._pipeline_variant = "4b"  # match cache key so load_pipeline returns the mock
 
         dummy = Image.fromarray(np.zeros((64, 64, 3), dtype=np.uint8))
 
@@ -294,6 +306,7 @@ class TestFluxKleinNoLLMMode:
         import numpy as np
 
         fk._pipeline = MagicMock()
+        fk._pipeline_variant = "4b"  # match cache key so load_pipeline returns the mock
         dummy = Image.fromarray(np.zeros((64, 64, 3), dtype=np.uint8))
 
         with (
@@ -359,6 +372,7 @@ class TestFluxKleinNoLLMMode:
         import numpy as np
 
         fk._pipeline = MagicMock()
+        fk._pipeline_variant = "4b"  # match cache key so load_pipeline returns the mock
         dummy = Image.fromarray(np.zeros((64, 64, 3), dtype=np.uint8))
         ref = Image.fromarray(np.ones((64, 64, 3), dtype=np.uint8) * 200)
 
@@ -383,3 +397,71 @@ class TestFluxKleinNoLLMMode:
             # Verify reference_images was passed to _edit_frame
             _, call_kwargs = mock_edit.call_args
             assert call_kwargs.get("reference_images") == [ref]
+
+
+# --- Image Path Output Tests --------------------------------------------------
+
+class TestImagePathOutput:
+    """Test the image_path output slot on the agent node."""
+
+    def test_return_types_has_9_elements(self):
+        """RETURN_TYPES should have 9 elements after adding image_path."""
+        pytest.importorskip("torch")
+        from nodes.agent_node import FFMPEGAgentNode
+        assert len(FFMPEGAgentNode.RETURN_TYPES) == 9
+
+    def test_return_names_includes_image_path(self):
+        """'image_path' should be in RETURN_NAMES."""
+        pytest.importorskip("torch")
+        from nodes.agent_node import FFMPEGAgentNode
+        assert "image_path" in FFMPEGAgentNode.RETURN_NAMES
+
+    def test_image_path_position(self):
+        """image_path should be at index 7 (after mask_points, before mask)."""
+        pytest.importorskip("torch")
+        from nodes.agent_node import FFMPEGAgentNode
+        names = FFMPEGAgentNode.RETURN_NAMES
+        assert names.index("image_path") == 7
+        assert names.index("mask_points") == 6
+        assert names.index("mask") == 8
+
+    def test_image_path_type_is_string(self):
+        """image_path output should be STRING type."""
+        pytest.importorskip("torch")
+        from nodes.agent_node import FFMPEGAgentNode
+        idx = FFMPEGAgentNode.RETURN_NAMES.index("image_path")
+        assert FFMPEGAgentNode.RETURN_TYPES[idx] == "STRING"
+
+    def test_image_path_from_result6_with_png(self):
+        """Helper should return path for .png outputs."""
+        from nodes.agent_node import _image_path_from_result6
+        result6 = ("img", "audio", "/tmp/out.png", "log", "analysis", "")
+        assert _image_path_from_result6(result6) == "/tmp/out.png"
+
+    def test_image_path_from_result6_with_mp4(self):
+        """Helper should return empty string for .mp4 outputs."""
+        from nodes.agent_node import _image_path_from_result6
+        result6 = ("img", "audio", "/tmp/out.mp4", "log", "analysis", "")
+        assert _image_path_from_result6(result6) == ""
+
+    def test_image_path_from_result6_with_jpg(self):
+        """Helper should return path for .jpg outputs."""
+        from nodes.agent_node import _image_path_from_result6
+        result6 = ("img", "audio", "/tmp/edited.jpg", "log", "analysis", "")
+        assert _image_path_from_result6(result6) == "/tmp/edited.jpg"
+
+    def test_flux_image_source_widget_exists(self):
+        """flux_image_source should be in INPUT_TYPES."""
+        pytest.importorskip("torch")
+        from nodes.agent_node import FFMPEGAgentNode
+        input_types = FFMPEGAgentNode.INPUT_TYPES()
+        assert "flux_image_source" in input_types["optional"]
+
+    def test_flux_image_source_is_boolean(self):
+        """flux_image_source should be a BOOLEAN widget."""
+        pytest.importorskip("torch")
+        from nodes.agent_node import FFMPEGAgentNode
+        input_types = FFMPEGAgentNode.INPUT_TYPES()
+        widget = input_types["optional"]["flux_image_source"]
+        assert widget[0] == "BOOLEAN"
+

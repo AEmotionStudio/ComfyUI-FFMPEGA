@@ -28,8 +28,10 @@ import torch
 import folder_paths
 try:
     from ..core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin
+    from ..core.media_converter import MediaConverter, decode_video_frames
 except ImportError:
     from core.bin_paths import get_ffmpeg_bin, get_ffprobe_bin  # type: ignore
+    from core.media_converter import MediaConverter, decode_video_frames  # type: ignore
 
 logger = logging.getLogger("FFMPEGA")
 
@@ -115,6 +117,47 @@ def _probe_video(video_path: str) -> dict:
         return defaults
 
 
+def _postprocess_mask(
+    mask_np,
+    expand: int = 0,
+    feather: int = 0,
+    invert: bool = False,
+):
+    """Apply grow/shrink, feather, and invert to a uint8 mask (0/255).
+
+    Args:
+        mask_np: numpy array (H, W) with values 0–255.
+        expand: Positive = dilate (grow), negative = erode (shrink).
+        feather: Gaussian blur kernel radius for soft edges.
+        invert: If True, flip white↔black.
+
+    Returns:
+        Processed mask as uint8 numpy array.
+    """
+    import cv2
+    import numpy as np
+
+    if invert:
+        mask_np = (255 - mask_np).astype(np.uint8)
+
+    if expand > 0:
+        kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (expand * 2 + 1, expand * 2 + 1),
+        )
+        mask_np = cv2.dilate(mask_np, kernel, iterations=1)
+    elif expand < 0:
+        kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (abs(expand) * 2 + 1, abs(expand) * 2 + 1),
+        )
+        mask_np = cv2.erode(mask_np, kernel, iterations=1)
+
+    if feather > 0:
+        k = feather * 2 + 1  # kernel must be odd
+        mask_np = cv2.GaussianBlur(mask_np, (k, k), 0)
+
+    return mask_np
+
+
 class LoadVideoPathNode:
     """Pick a video file and output its path + metadata — zero memory cost."""
 
@@ -191,6 +234,75 @@ class LoadVideoPathNode:
                         "mask points."
                     ),
                 }),
+                "mask": ("MASK", {
+                    "tooltip": (
+                        "Optional upstream MASK pass-through. When "
+                        "connected, bypasses SAM3 mask generation "
+                        "and forwards this mask directly."
+                    ),
+                }),
+                "enable_mask": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": (
+                        "Enable SAM3 masking. When off, the mask options "
+                        "are hidden and no mask is generated from mask "
+                        "points. An upstream MASK connection still passes "
+                        "through."
+                    ),
+                }),
+                "mask_mode": (["none", "single_frame", "all_frames"], {
+                    "default": "none",
+                    "tooltip": (
+                        "Controls mask output shape. 'none' disables mask "
+                        "generation. 'single_frame' outputs a single mask "
+                        "(1,H,W) from the first frame. 'all_frames' runs "
+                        "SAM3 video tracking across all frames for per-frame "
+                        "masks (N,H,W)."
+                    ),
+                }),
+                "mask_output_type": (["none", "colored_overlay", "black_white"], {
+                    "default": "none",
+                    "tooltip": (
+                        "Mask preview output format for 'mask_overlay_path'. "
+                        "'none' disables mask output. "
+                        "'black_white' outputs a raw B&W mask (white = detected "
+                        "object) for VFX compositing. 'colored_overlay' composites "
+                        "SAM3-style colored regions + contours onto the video."
+                    ),
+                }),
+                "sam_version": (["sam3.1", "sam3"], {
+                    "default": "sam3.1",
+                    "tooltip": (
+                        "Which SAM tracker to use. sam3.1 is the newer "
+                        "multiplex tracker — ~7× faster on multi-object "
+                        "video and ~½ VRAM. Used for video tracking. "
+                        "Single-image point prompts still fall back to "
+                        "sam3 (image-model interactive head not yet "
+                        "wired for sam3.1)."
+                    ),
+                }),
+                "show_mask_preview": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": (
+                        "Show a visual mask overlay on the node's video preview. "
+                        "Darkens unmasked areas so the masked region stands out. "
+                        "Visible on first frame when paused, hides during playback."
+                    ),
+                }),
+                "custom_width": ("INT", {
+                    "default": 0, "min": 0, "max": 8192, "step": 8,
+                    "tooltip": (
+                        "Custom output width in pixels. 0 = use source video width. "
+                        "Useful for standardizing resolution across multiple inputs."
+                    ),
+                }),
+                "custom_height": ("INT", {
+                    "default": 0, "min": 0, "max": 8192, "step": 8,
+                    "tooltip": (
+                        "Custom output height in pixels. 0 = use source video height. "
+                        "Useful for standardizing resolution across multiple inputs."
+                    ),
+                }),
             },
             "hidden": {
                 "mask_points_data": "STRING",
@@ -198,20 +310,27 @@ class LoadVideoPathNode:
             },
         }
 
-    RETURN_TYPES = ("STRING", "INT", "FLOAT", "FLOAT", "STRING", "IMAGE", "AUDIO", "STRING")
-    RETURN_NAMES = ("video_path", "frame_count", "fps", "duration", "mask_points", "images", "audio", "crop_data")
+    RETURN_TYPES = ("IMAGE", "AUDIO", "STRING", "STRING", "STRING", "STRING", "MASK", "INT", "FLOAT")
+    RETURN_NAMES = ("images", "audio", "video_path", "mask_overlay_path", "mask_points", "crop_data", "mask", "frame_count", "fps")
     OUTPUT_TOOLTIPS = (
-        "Validated video file path — connect to FFMPEGA Agent's "
-        "video_a / video_b / video_c input slots.",
-        "Total usable frames after applying trim parameters.",
-        "Effective FPS (source FPS or force_rate override).",
-        "Effective duration in seconds after applying trim parameters.",
-        "JSON-encoded point selection data from the Point Selector. "
-        "Connect to FFMPEGA Agent's mask_points input for guided masking.",
         "Upstream IMAGE pass-through (or empty tensor if not connected).",
         "Upstream AUDIO pass-through (or silence if not connected).",
+        "Validated video file path — connect to FFMPEGA Agent's "
+        "video_a / video_b / video_c input slots.",
+        "Path to a mask overlay preview image with SAM3-style colored contours. "
+        "Connect to Save Video (FFMPEGA) video_path input to view/save the mask visualization. "
+        "Empty string when no mask is generated.",
+        "JSON-encoded point selection data from the Point Selector. "
+        "Connect to FFMPEGA Agent's mask_points input for guided masking.",
         "JSON-encoded crop rectangle from the Crop Selector. "
         "Format: {\"x\":N, \"y\":N, \"w\":N, \"h\":N}.",
+        "SAM3 segmentation mask from Point Selector clicks. "
+        "Connect to any node accepting MASK input (MatAnyone2, compositing, etc.). "
+        "Empty mask when no points are set.",
+        "Effective frame count after applying trim parameters "
+        "(skip, cap, select every Nth).",
+        "Effective frame rate (fps) of the video, honoring the force_rate "
+        "override. Connect to nodes accepting a FLOAT fps input (e.g. Frame Picker).",
     )
     FUNCTION = "load_path"
     CATEGORY = "FFMPEGA"
@@ -265,6 +384,14 @@ class LoadVideoPathNode:
         audio=None,
         video_path=None,
         mask_points=None,
+        mask=None,
+        enable_mask: bool = False,
+        mask_mode: str = "none",
+        mask_output_type: str = "none",
+        show_mask_preview: bool = False,
+        custom_width: int = 0,
+        custom_height: int = 0,
+        sam_version: str = "sam3.1",
     ) -> dict:
         """Resolve path, probe metadata, compute effective values.
 
@@ -274,6 +401,14 @@ class LoadVideoPathNode:
         the file-picker combo.  ``images`` and ``audio`` are passed
         through to the new output slots.
         """
+        # Defensive coercion: ComfyUI may send '' when fields are cleared
+        custom_width = int(custom_width) if custom_width not in (None, "") else 0
+        custom_height = int(custom_height) if custom_height not in (None, "") else 0
+        # The enable_mask toggle gates every SAM3 path, all of which already
+        # branch on mask_mode != "none".  An upstream MASK connection is a
+        # separate passthrough and is intentionally left alone.
+        if not enable_mask:
+            mask_mode = "none"
         # --- Determine the actual video path ---
         upstream = False
         if video_path and isinstance(video_path, str) and video_path.strip():
@@ -431,15 +566,362 @@ class LoadVideoPathNode:
             "effective_fps": effective_fps,
             "effective_frames": available_frames,
             "effective_duration": effective_duration,
+            "custom_width": custom_width if custom_width > 0 else meta["width"],
+            "custom_height": custom_height if custom_height > 0 else meta["height"],
         }
 
-        # --- Pass-through upstream IMAGE / AUDIO ---
-        images_out = images if images is not None else torch.zeros(
-            1, 64, 64, 3, dtype=torch.float32,
-        )
-        audio_out = audio if audio is not None else {
-            "waveform": torch.zeros(1, 1, 1), "sample_rate": 44100,
-        }
+        # --- Pass-through upstream IMAGE / AUDIO, or extract from video ---
+        if images is not None:
+            images_out = images
+        else:
+            # Decode every frame. The trim widgets (skip_first_frames,
+            # frame_load_cap, select_every_nth, force_rate) are the only things
+            # that may reduce the count, and they have already been applied to
+            # resolved_path above. Never pass a limit here: sampling would be
+            # evenly spaced across the clip, which speeds the video up rather
+            # than shortening it.
+            images_out = decode_video_frames(resolved_path)
+
+        # Report what was actually produced. available_frames is predicted from
+        # ffprobe metadata before decoding, and container frame counts are not
+        # always truthful, so the images tensor is the authority. Keeping these
+        # in sync matters: downstream nodes size their work off frame_count.
+        decoded_frames = int(images_out.shape[0]) if hasattr(images_out, "shape") else 0
+        if decoded_frames and decoded_frames != available_frames:
+            logger.info(
+                "LoadVideoPath: decoded %d frames (metadata predicted %d) — "
+                "reporting the decoded count",
+                decoded_frames, available_frames,
+            )
+            available_frames = decoded_frames
+            if effective_fps > 0:
+                effective_duration = round(available_frames / effective_fps, 3)
+            video_info["effective_frames"] = available_frames
+            video_info["effective_duration"] = effective_duration
+
+        if audio is not None:
+            audio_out = audio
+        else:
+            try:
+                audio_out = MediaConverter().extract_audio(resolved_path)
+            except Exception as e:
+                logger.warning("LoadVideoPath: audio extraction failed: %s", e)
+                audio_out = {"waveform": torch.zeros(1, 1, 1), "sample_rate": 44100}
+
+        # --- Generate MASK output ---
+        # Priority: upstream mask > SAM3 from points > empty
+        mask_overlay_path = ""  # will be set if SAM3 generates a mask
+        if mask is not None:
+            mask_out = mask
+            logger.info("LoadVideoPath: using upstream MASK (%s)", list(mask.shape))
+        else:
+            mask_out = torch.zeros(1, meta["height"], meta["width"], dtype=torch.float32)
+            if mask_points_data and mask_points_data.strip():
+                try:
+                    import json as _json
+                    import cv2
+                    import numpy as np
+                    pt_data = _json.loads(mask_points_data)
+                    if isinstance(pt_data, dict):
+                        pt_mode = pt_data.get("mode", "points")
+
+                        # Extract mask post-processing settings from modal
+                        mask_expand = int(pt_data.get("mask_expand", 0))
+                        mask_feather = int(pt_data.get("mask_feather", 0))
+                        mask_invert = bool(pt_data.get("mask_invert", False))
+                        mask_threshold = float(pt_data.get("mask_threshold", 0.5))
+                        mask_multi_object = bool(pt_data.get("mask_multi_object", False))
+                        mask_edge_refine = bool(pt_data.get("mask_edge_refine", False))
+                        mask_box = pt_data.get("box", None)  # [x1,y1,x2,y2]
+
+                        # ── Draw mode: user painted a mask directly ──
+                        if pt_mode == "draw" and pt_data.get("mask_data"):
+                            import base64
+                            from io import BytesIO
+                            from PIL import Image as PILImage
+
+                            mask_b64 = pt_data["mask_data"]
+                            mask_bytes = base64.b64decode(mask_b64)
+                            mask_pil = PILImage.open(BytesIO(mask_bytes)).convert("L")
+
+                            # Resize to video resolution if needed
+                            vid_h, vid_w = meta["height"], meta["width"]
+                            if mask_pil.size != (vid_w, vid_h):
+                                mask_pil = mask_pil.resize((vid_w, vid_h), PILImage.NEAREST)
+
+                            mask_np = np.array(mask_pil)
+                            logger.info(
+                                "LoadVideoPath: using DRAWN mask (%dx%d, coverage=%.1f%%)",
+                                vid_w, vid_h,
+                                (mask_np > 128).sum() / mask_np.size * 100,
+                            )
+
+                            # Post-process: grow/shrink, feather, invert
+                            mask_np = _postprocess_mask(
+                                mask_np, mask_expand, mask_feather, mask_invert,
+                            )
+
+                            # Convert to ComfyUI mask tensor
+                            mask_float = mask_np.astype(np.float32) / 255.0
+                            mask_out = torch.from_numpy(mask_float).unsqueeze(0)
+
+                            # Generate mask overlay output
+                            # Draw mode ALWAYS outputs B&W mask — the drawn
+                            # mask IS the mask itself.  Downstream consumers
+                            # (MatAnyone2, etc.) need white=foreground, not
+                            # a colored frame overlay.
+                            bw_tmp = os.path.join(
+                                folder_paths.get_temp_directory(),
+                                f"ffmpega_mask_bw_{os.getpid()}.png",
+                            )
+                            cv2.imwrite(bw_tmp, mask_np)
+                            mask_overlay_path = bw_tmp
+                            logger.info("LoadVideoPath: drawn B&W mask: %s", bw_tmp)
+
+                        # ── Point mode: SAM3-based masking ──
+                        elif pt_mode == "points":
+                            pt_coords = pt_data.get("points")
+                            pt_labels = pt_data.get("labels")
+                            pt_w = int(pt_data.get("image_width", 0))
+                            pt_h = int(pt_data.get("image_height", 0))
+                            if pt_coords and pt_labels and mask_mode != "none":
+
+                                if mask_mode == "all_frames":
+                                    # ── Full video segmentation via SAM3 ──
+                                    # Track the selected object across ALL frames.
+                                    # SAM 3.1 runs in-process under ComfyUI's VRAM
+                                    # management; older paths use a subprocess for
+                                    # VRAM isolation (same approach as the FFMPEG Agent).
+                                    try:
+                                        try:
+                                            from ..core.sam3_masker import (
+                                                mask_video_subprocess,
+                                                cleanup as _sam3_cleanup,
+                                                _use_native_sam3_video,
+                                            )
+                                        except ImportError:
+                                            from core.sam3_masker import (  # type: ignore
+                                                mask_video_subprocess,
+                                                cleanup as _sam3_cleanup,
+                                                _use_native_sam3_video,
+                                            )
+                                        if not _use_native_sam3_video(sam_version or "sam3.1"):
+                                            # Legacy subprocess path: free our cached SAM3
+                                            # image model and offload ALL ComfyUI-managed
+                                            # models (DWPose, checkpoints, etc.) so the
+                                            # child process has enough VRAM for tracking.
+                                            _sam3_cleanup()
+                                            try:
+                                                import comfy.model_management as _mm
+                                                _mm.unload_all_models()
+                                                _mm.soft_empty_cache()
+                                                _free_gb = torch.cuda.memory_allocated() / (1024**3)
+                                                logger.info(
+                                                    "LoadVideoPath: GPU freed for SAM3 subprocess "
+                                                    "(%.2f GiB still allocated)", _free_gb,
+                                                )
+                                            except Exception as _vram_err:
+                                                logger.warning(
+                                                    "LoadVideoPath: model offload failed: %s", _vram_err,
+                                                )
+                                        # else: native in-process path — ComfyUI's
+                                        # load_model_gpu offloads only what it needs to fit
+                                        # SAM 3.1 (~3 GB), so no manual unload required.
+                                        logger.info(
+                                            "LoadVideoPath: running SAM3 video tracking "
+                                            "(%d points, all_frames subprocess mode)",
+                                            len(pt_coords),
+                                        )
+                                        mask_video_path = mask_video_subprocess(
+                                            video_path=resolved_path,
+                                            prompt="",  # point-based, no text prompt
+                                            device="gpu",
+                                            points=pt_coords,
+                                            labels=pt_labels,
+                                            point_src_width=pt_w,
+                                            point_src_height=pt_h,
+                                            det_threshold=mask_threshold,
+                                            version=sam_version or "sam3.1",
+                                        )
+                                        if mask_video_path and os.path.isfile(mask_video_path):
+                                            # Decode the mask video into a multi-frame tensor
+                                            cap = cv2.VideoCapture(mask_video_path)
+                                            mask_frames = []
+                                            while True:
+                                                ret, frame = cap.read()
+                                                if not ret:
+                                                    break
+                                                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if frame.ndim == 3 else frame
+                                                # Post-process each frame's mask
+                                                gray = _postprocess_mask(
+                                                    gray, mask_expand, mask_feather, mask_invert,
+                                                )
+                                                mask_frames.append(
+                                                    torch.from_numpy(gray.astype(np.float32) / 255.0)
+                                                )
+                                            cap.release()
+                                            if mask_frames:
+                                                mask_out = torch.stack(mask_frames, dim=0)
+                                                logger.info(
+                                                    "LoadVideoPath: SAM3 video mask generated "
+                                                    "(%d frames, shape %s)",
+                                                    mask_out.shape[0], list(mask_out.shape),
+                                                )
+
+                                            # Generate mask overlay path based on output type
+                                            if mask_output_type == "none":
+                                                pass  # No overlay output
+                                            elif mask_output_type == "black_white":
+                                                # Raw B&W mask video — use directly
+                                                mask_overlay_path = mask_video_path
+                                                logger.info(
+                                                    "LoadVideoPath: B&W mask video: %s",
+                                                    mask_video_path,
+                                                )
+                                            else:
+                                                # Colored overlay — composite onto source
+                                                try:
+                                                    try:
+                                                        from ..core.sam3_masker import generate_mask_overlay
+                                                    except ImportError:
+                                                        from core.sam3_masker import generate_mask_overlay  # type: ignore
+                                                    overlay_path = generate_mask_overlay(
+                                                        video_path=resolved_path,
+                                                        mask_video_path=mask_video_path,
+                                                    )
+                                                    if overlay_path and os.path.isfile(overlay_path):
+                                                        mask_overlay_path = overlay_path
+                                                        logger.info(
+                                                            "LoadVideoPath: colored overlay video: %s",
+                                                            overlay_path,
+                                                        )
+                                                except Exception as oe:
+                                                    logger.warning(
+                                                        "LoadVideoPath: mask overlay failed: %s", oe,
+                                                    )
+                                        else:
+                                            logger.warning("LoadVideoPath: mask_video returned no output")
+                                    except Exception as e:
+                                        logger.warning("LoadVideoPath: SAM3 video mask failed: %s", e)
+
+                                else:
+                                    # ── Single-frame mask (fast preview) ──
+                                    cap = cv2.VideoCapture(resolved_path)
+                                    ret, first_frame = cap.read()
+                                    cap.release()
+                                    if ret:
+                                        from PIL import Image as PILImage
+                                        first_rgb = cv2.cvtColor(first_frame, cv2.COLOR_BGR2RGB)
+                                        frame_tmp = os.path.join(
+                                            folder_paths.get_temp_directory(),
+                                            f"ffmpega_mask_frame_{os.getpid()}.png",
+                                        )
+                                        os.makedirs(os.path.dirname(frame_tmp), exist_ok=True)
+                                        PILImage.fromarray(first_rgb).save(frame_tmp)
+                                        try:
+                                            try:
+                                                from ..core.sam3_masker import mask_image_with_points
+                                            except ImportError:
+                                                from core.sam3_masker import mask_image_with_points  # type: ignore
+                                            mask_result = mask_image_with_points(
+                                                frame_tmp, pt_coords, pt_labels,
+                                                pt_w, pt_h, device="gpu",
+                                                min_score=mask_threshold,
+                                                multi_object=mask_multi_object,
+                                                box=mask_box,
+                                                version=sam_version or "sam3.1",
+                                            )
+                                            # Handle tuple return for multi-object
+                                            per_obj_masks = None
+                                            if isinstance(mask_result, tuple):
+                                                mask_np, per_obj_masks = mask_result
+                                            else:
+                                                mask_np = mask_result
+                                            # Apply GrabCut edge refinement if enabled
+                                            if mask_edge_refine:
+                                                try:
+                                                    try:
+                                                        from ..core.sam3_masker import refine_mask_grabcut
+                                                    except ImportError:
+                                                        from core.sam3_masker import refine_mask_grabcut  # type: ignore
+                                                    mask_np = refine_mask_grabcut(frame_tmp, mask_np)
+                                                    if per_obj_masks:
+                                                        per_obj_masks = [
+                                                            refine_mask_grabcut(frame_tmp, m)
+                                                            for m in per_obj_masks
+                                                        ]
+                                                except Exception as re:
+                                                    logger.warning("LoadVideoPath: GrabCut refine failed: %s", re)
+                                            # Post-process: grow/shrink, feather, invert
+                                            mask_np = _postprocess_mask(
+                                                mask_np, mask_expand, mask_feather, mask_invert,
+                                            )
+                                            mask_out = torch.from_numpy(
+                                                mask_np.astype(np.float32) / 255.0
+                                            ).unsqueeze(0)
+                                            logger.info(
+                                                "LoadVideoPath: generated single-frame MASK "
+                                                "from %d points",
+                                                len(pt_coords),
+                                            )
+
+                                            # Generate mask overlay based on output type
+                                            if mask_output_type == "none":
+                                                pass  # No overlay output
+                                            elif mask_output_type == "black_white":
+                                                # Raw B&W mask image
+                                                bw_tmp = os.path.join(
+                                                    folder_paths.get_temp_directory(),
+                                                    f"ffmpega_mask_bw_{os.getpid()}.png",
+                                                )
+                                                cv2.imwrite(bw_tmp, mask_np)
+                                                mask_overlay_path = bw_tmp
+                                                logger.info(
+                                                    "LoadVideoPath: B&W mask image: %s",
+                                                    bw_tmp,
+                                                )
+                                            else:
+                                                # Colored overlay preview image
+                                                try:
+                                                    try:
+                                                        from ..core.sam3_masker import _draw_masks_to_frame
+                                                    except ImportError:
+                                                        from core.sam3_masker import _draw_masks_to_frame  # type: ignore
+                                                    if per_obj_masks and len(per_obj_masks) > 1:
+                                                        # Multi-object: per-object colored overlay
+                                                        masks_arr = np.array([
+                                                            (m > 127).astype(np.uint8)
+                                                            for m in per_obj_masks
+                                                        ])
+                                                        obj_ids = list(range(len(per_obj_masks)))
+                                                    else:
+                                                        # Single object: standard overlay
+                                                        masks_arr = np.array([(mask_np > 127).astype(np.uint8)])
+                                                        obj_ids = [0]
+                                                    overlay = _draw_masks_to_frame(
+                                                        first_frame,
+                                                        masks_arr,
+                                                        obj_ids,
+                                                    )
+                                                    overlay_tmp = os.path.join(
+                                                        folder_paths.get_temp_directory(),
+                                                        f"ffmpega_mask_overlay_{os.getpid()}.png",
+                                                    )
+                                                    cv2.imwrite(overlay_tmp, overlay)
+                                                    mask_overlay_path = overlay_tmp
+                                                    logger.info(
+                                                        "LoadVideoPath: colored overlay: %s",
+                                                        overlay_tmp,
+                                                    )
+                                                except Exception as oe:
+                                                    logger.warning(
+                                                        "LoadVideoPath: mask overlay failed: %s", oe,
+                                                    )
+
+                                        except Exception as e:
+                                            logger.warning("LoadVideoPath: SAM3 mask failed: %s", e)
+                except Exception as e:
+                    logger.warning("LoadVideoPath: mask_points parse error: %s", e)
 
         # --- Build UI data ---
         # For upstream paths, copy to temp so /view can serve it
@@ -466,10 +948,11 @@ class LoadVideoPathNode:
             }]
 
         return {
-            "result": (resolved_path, available_frames, effective_fps,
-                       effective_duration, mask_points_data or "",
-                       images_out, audio_out,
-                       crop_data or ""),
+            "result": (images_out, audio_out,
+                       resolved_path, mask_overlay_path,
+                       mask_points_data or "",
+                       crop_data or "", mask_out,
+                       available_frames, effective_fps),
             "ui": {
                 "video": ui_video,
                 "video_info": [video_info],

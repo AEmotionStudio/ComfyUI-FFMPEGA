@@ -18,6 +18,18 @@ type NodeWithWidgets = ComfyNode & {
 };
 
 /**
+ * Helper: read skip_first_frames & force_rate from a node, compute seek time.
+ */
+function getSkipTimeSec(node: NodeWithWidgets): number {
+    const skipWidget = node.widgets?.find((w: ComfyWidget) => w.name === "skip_first_frames");
+    const rateWidget = node.widgets?.find((w: ComfyWidget) => w.name === "force_rate");
+    const skipFrames = Number(skipWidget?.value) || 0;
+    const fps = Number(rateWidget?.value) || 0;
+    if (skipFrames <= 0) return 0;
+    return skipFrames / (fps > 0 ? fps : 30);
+}
+
+/**
  * Try to restore the CSS crop preview on a node's video element.
  * Called after video metadata loads or after execution results arrive.
  */
@@ -96,7 +108,18 @@ export function registerCropSelectorHooks(
                     }
                     const params = new URLSearchParams({ filename, type: "input" });
                     const src = api.apiURL("/view?" + params.toString());
-                    openCropSelector(self, src);
+                    openCropSelector(self, src, getSkipTimeSec(self));
+                },
+            }, {
+                content: "🧹 Clear Crop",
+                callback: () => {
+                    const cdWidget = self.widgets?.find((w: ComfyWidget) => w.name === "crop_data");
+                    if (cdWidget) {
+                        cdWidget.value = "";
+                    }
+                    applyCropPreview(self, null);
+                    self.setDirtyCanvas?.(true, true);
+                    flashNode(self, "#4a7a4a");
                 },
             }, null);
         };
