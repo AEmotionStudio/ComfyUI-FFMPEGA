@@ -96,6 +96,22 @@ class TestDepthShaderBridge:
         sig = inspect.signature(unpack_sbs)
         assert "panel_count" in sig.parameters
 
+    def test_unpack_sbs_noop_for_single_panel(self):
+        """unpack_sbs should not crop when there is only one panel.
+
+        Cropping a non-SBS video to iw/1 is pointless, and any panel_count
+        below 1 would destroy the frame. Guards against the regression where
+        a plain shader run cropped its output to half width.
+        """
+        from unittest.mock import patch
+        from core import depth_shader_bridge
+
+        with patch.object(depth_shader_bridge.subprocess, "run") as mock_run:
+            result = depth_shader_bridge.unpack_sbs("/tmp/not_sbs.mp4", panel_count=1)
+
+        assert result == "/tmp/not_sbs.mp4"
+        assert not mock_run.called
+
 
 class TestShaderOverlayDepthInputs:
     """Tests that ShaderOverlayNode has the new AI toggle inputs."""
@@ -155,6 +171,71 @@ class TestShaderOverlayDepthInputs:
         from nodes.shader_overlay_node import ShaderOverlayNode
         assert hasattr(ShaderOverlayNode, '_apply_depth_masked')
         assert callable(ShaderOverlayNode._apply_depth_masked)
+
+
+class TestShaderOverlayPreservesResolution:
+    """Regression tests: a plain shader run must not SBS-crop its output.
+
+    `_panel_count` used to default to 2, so every shader run with no depth or
+    normals pass cropped the result to `iw/2` — a 1080x1920 source came back
+    as 540x1920.
+    """
+
+    @staticmethod
+    def _make_video(path, width=1080, height=1920):
+        """Render a short test clip, or return None if FFmpeg can't."""
+        import subprocess
+        from core.bin_paths import get_ffmpeg_bin
+        ffmpeg = get_ffmpeg_bin()
+        if not ffmpeg:
+            return None
+        cmd = [
+            ffmpeg, "-y",
+            "-f", "lavfi",
+            "-i", f"testsrc2=size={width}x{height}:rate=24:duration=1",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            str(path),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        return str(path) if result.returncode == 0 else None
+
+    def test_plain_shader_does_not_unpack(self, tmp_path):
+        """With no AI passes enabled, unpack_sbs must never be called."""
+        from unittest.mock import patch
+        from nodes.shader_overlay_node import ShaderOverlayNode
+
+        src = self._make_video(tmp_path / "src.mp4")
+        if not src:
+            pytest.skip("FFmpeg unavailable")
+
+        with patch("core.depth_shader_bridge.unpack_sbs") as mock_unpack:
+            ShaderOverlayNode().process(
+                preset="crt",
+                video_path=src,
+                enable_vda=False,
+                enable_normals=False,
+            )
+
+        assert not mock_unpack.called
+
+    def test_plain_shader_keeps_source_resolution(self, tmp_path):
+        """A 1080x1920 source must come back as 1080x1920, not 540x1920."""
+        from nodes.shader_overlay_node import ShaderOverlayNode
+
+        src = self._make_video(tmp_path / "src.mp4")
+        if not src:
+            pytest.skip("FFmpeg unavailable")
+
+        frames, out_path, _ = ShaderOverlayNode().process(
+            preset="crt",
+            video_path=src,
+            enable_vda=False,
+            enable_normals=False,
+        )
+
+        # frames is (N, H, W, C)
+        assert frames.shape[1] == 1920
+        assert frames.shape[2] == 1080
 
 
 class TestVideoEditorShaderDepth:

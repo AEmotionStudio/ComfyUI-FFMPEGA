@@ -416,20 +416,29 @@ class VideoDecoder:
 
         # Use ffmpeg to decode frame range to raw RGB
         # -noautorotate: output coded dimensions, consistent with _seek_frame_ffmpeg
-        cmd = [
-            "ffmpeg", "-noautorotate", "-v", "error",
-            "-i", path,
-            "-vf", f"select='between(n\\,{min_idx}\\,{max_idx})',setpts=N/FRAME_RATE/TB",
-            "-vsync", "vfr",
-            "-pix_fmt", "rgb24",
-            "-f", "rawvideo",
-            "-"
-        ]
+        def _cmd(vsync_flag: list[str]) -> list[str]:
+            return [
+                "ffmpeg", "-noautorotate", "-v", "error",
+                "-i", path,
+                "-vf", f"select='between(n\\,{min_idx}\\,{max_idx})',setpts=N/FRAME_RATE/TB",
+                *vsync_flag,
+                "-pix_fmt", "rgb24",
+                "-f", "rawvideo",
+                "-"
+            ]
 
         try:
             result = subprocess.run(
-                cmd, capture_output=True, timeout=120
+                _cmd(["-fps_mode", "vfr"]), capture_output=True, timeout=120
             )
+            # -fps_mode replaced -vsync in ffmpeg 5.1, and -vsync was removed
+            # outright in ffmpeg 8; retry with the old flag for older installs.
+            if result.returncode != 0:
+                stderr = result.stderr.decode("utf-8", errors="replace")
+                if "Unrecognized option" in stderr or "Option not found" in stderr:
+                    result = subprocess.run(
+                        _cmd(["-vsync", "vfr"]), capture_output=True, timeout=120
+                    )
         except subprocess.TimeoutExpired:
             raise RuntimeError(f"ffmpeg decode timed out for {path}")
 

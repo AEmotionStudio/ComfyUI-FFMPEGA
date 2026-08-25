@@ -488,7 +488,7 @@ class ShaderOverlayNode:
         # passes and pack into SBS (2W or 3W) before shader execution.
         _is_depth_native = False
         _original_resolved = resolved_path
-        _panel_count = 2  # default for 2-panel SBS
+        _panel_count = 1  # 1 = no SBS packing; set to 2/3 by the SBS pipeline below
 
         try:
             try:

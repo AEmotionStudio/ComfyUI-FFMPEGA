@@ -158,6 +158,13 @@ def unpack_sbs(
     Returns:
         Path to the cropped W×H result, or None on failure.
     """
+    if panel_count <= 1:
+        log.warning(
+            "[DepthBridge] unpack_sbs called with panel_count=%d — nothing to crop",
+            panel_count,
+        )
+        return sbs_path
+
     ffmpeg = _get_ffmpeg()
     temp_dir = tempfile.mkdtemp(prefix="ffmpega_sbs_unpack_")
     unpacked_path = os.path.join(temp_dir, "sbs_unpacked.mp4")
