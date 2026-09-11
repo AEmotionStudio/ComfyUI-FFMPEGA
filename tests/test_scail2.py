@@ -7,9 +7,17 @@ Tests cover:
 
 import pytest
 
+# PyTorch guard — core.scail2_synthesizer imports torch at module level
+try:
+    import torch  # noqa: F401
+    _has_torch = True
+except (ImportError, RuntimeError):
+    _has_torch = False
+
 
 # --- Block Swap / VRAM Option Tests ---------------------------------------------
 
+@pytest.mark.skipif(not _has_torch, reason="PyTorch not available")
 class TestScail2BlockSwap:
     """Test the scail2_blockswap_blocks VRAM option.
 
@@ -172,6 +180,7 @@ class TestScail2VramWidgets:
         assert spec[0] == "BOOLEAN"
         assert spec[1]["default"] is False
 
+    @pytest.mark.skipif(not _has_torch, reason="PyTorch not available")
     def test_generate_video_accepts_vram_params(self):
         """generate_video must accept blockswap_blocks / tiled_vae as kwargs."""
         import inspect
