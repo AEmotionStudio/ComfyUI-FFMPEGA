@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.20.0] - 2026-09-11
 
 ### Added
 - **SeedVR2 INT8 ConvRot Upscale Models**: New `seedvr2_3b_int8` and `seedvr2_7b_int8` entries for `upscale_model`, loading checkpoints saved in ComfyUI's `int8_tensorwise` layout with the block-Hadamard ("ConvRot") rotation. Smaller and faster than the FP8 variants, and — unlike ComfyUI's native SeedVR2 nodes — they run through this pack's BlockSwap, so the 7B fits on cards that OOM natively. Measured on a 11.6 GB card at 720p: 3B without BlockSwap peaks at 5.0 GB; the 7B peaks at 6.9 / 5.2 / 5.0 GB with `blockswap_blocks` of 8 / 16 / 24. *(`core/seedvr/optimization/int8_ops.py`, `core/seedvr/core/model_loader.py`)*
@@ -86,9 +86,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Shared UI Helpers**: `toggleWidget()` and `fitHeight()` are now imported from `src/shared/ui_helpers.ts` by the Load Video Path node instead of being re-declared locally.
 
 ### Removed
+- **Cloud LLM API providers**: The FFMPEG Agent no longer calls the OpenAI, Anthropic, Gemini API or Qwen/DashScope HTTP APIs. Their model names and endpoints change too often to keep a working list current. Use the CLI tools (`gemini-cli`, `claude-cli`, `cursor-agent`, `qwen-cli`) or Ollama instead; both are unchanged. *(`core/llm/api.py`, `core/pipeline_generator.py`, `nodes/agent_node.py`)*
+  - **Removed with them**: the `api_key` input, `config/models.yaml` and its opt-in live model fetch (`core/model_config.py`), the Anthropic image-block helpers in `mcp/vision.py`, and the `api_key` metadata scrubbing that only existed to protect that input.
+  - **`custom` now means Ollama**: Any name typed into `custom_model` goes to Ollama. There is no longer any provider detection by name prefix.
+  - **Saved workflows**: ComfyUI restores widget values by position, so removing `api_key` would have slid every later value onto the wrong widget. The Agent node now splices the old `api_key` slot out of a workflow before its values are restored — by name where the workflow saved names, otherwise by recognising the old layout — so older workflows load with their settings intact. Any key stored in such a workflow is dropped on load and is not saved again. *(`src/nodes/agent_node.ts`)*
+  - A workflow that selected a cloud model in `llm_model` now fails ComfyUI's "value not in list" check at queue time; pick a CLI or Ollama model.
 - **SCAIL v1 Pipeline**: Deleted the vendored `core/scail/` (attention, configs, fm_solvers, lora, model_scail, pipeline, scail_utils, vae), `core/scail_pose/` (align3d, draw_pose_utils, draw_utils, nlf_render, render_torch) and `core/scail_synthesizer.py` — roughly 4,100 lines superseded by the ComfyUI-native SCAIL-2 synthesizer above.
 
 ### Fixed
+- **Ollama `gpt-oss` models were sent to OpenAI**: Connector routing sent any model name starting with `gpt` to the OpenAI API, so Ollama's own `gpt-oss:*` models never reached Ollama. With the cloud providers gone, every non-CLI name goes to Ollama. *(`core/pipeline_generator.py`)*
+- **CLI models sat one slot too early in the `llm_model` dropdown**: They were inserted before the last Ollama model instead of after it. *(`nodes/agent_node.py`)*
 - **`allow_model_downloads=False` blocked SeedVR2 even with every weight already on disk**: `_load_model` called `require_downloads_allowed("seedvr2")` unconditionally at the top, before checking whether anything actually needed fetching — so the toggle refused a download that was never required. The toggle governs downloading, not using what you already have. The gate now runs only against files that are genuinely absent, via the new `require_downloads_allowed_for_missing()` helper, and logs which weights it intends to fetch when some are missing. *(`core/seedvr_synthesizer.py`, `core/model_manager.py`)*
   - The same check-permission-before-checking-disk pattern exists at roughly 30 other call sites across the synthesizers; the new helper is there for them, but only SeedVR2 has been converted.
 - **Load Video Path silently sped up every clip over 64 frames**: The node borrowed `SaveVideoNode._extract_frames` without passing a `mode`, so it inherited that method's `"preview (64)"` default and sampled each video down to 64 frames with `np.linspace`. Because the sample is spread *evenly across the whole clip* rather than truncated, the full action survived with fewer frames — so anything re-encoding those frames played faster than the source. A 121-frame / 24 fps / 5.04 s clip came out at 64 frames / 2.67 s, near enough double speed. The loader now decodes every frame; `skip_first_frames`, `frame_load_cap` and `select_every_nth` remain the only things that reduce the count. *(`nodes/load_video_path_node.py`)*

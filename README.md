@@ -5,12 +5,9 @@
 **The ultimate video editing suite for ComfyUI — edit with natural language or hands-on manual controls.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-2.19.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-2.20.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
-[![Dependencies](https://img.shields.io/badge/dependencies-2-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
-[![Downloads](https://img.shields.io/badge/dynamic/json?color=blueviolet&label=Downloads&query=downloads.smart_count&url=https://raw.githubusercontent.com/AEmotionStudio/ComfyUI-FFMPEGA/refs/heads/badges/traffic_stats.json&style=for-the-badge&logo=github)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
-![Visitors](https://img.shields.io/badge/dynamic/json?color=blue&label=Visitors&query=views.uniques&url=https://raw.githubusercontent.com/AEmotionStudio/ComfyUI-FFMPEGA/refs/heads/badges/traffic_stats.json&style=for-the-badge&logo=github)
-[![Clones](https://img.shields.io/badge/dynamic/json?color=success&label=Clones&query=clones.uniques&url=https://raw.githubusercontent.com/AEmotionStudio/ComfyUI-FFMPEGA/refs/heads/badges/traffic_stats.json&style=for-the-badge&logo=github)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/graphs/traffic)
+[![Dependencies](https://img.shields.io/badge/dependencies-3-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 [![Last Commit](https://img.shields.io/github/last-commit/AEmotionStudio/ComfyUI-FFMPEGA?style=for-the-badge&label=Last%20Update&color=orange)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/commits)
 [![Activity](https://img.shields.io/github/commit-activity/m/AEmotionStudio/ComfyUI-FFMPEGA?style=for-the-badge&label=Activity&color=yellow)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/commits)
 
@@ -24,9 +21,9 @@
 
 ---
 
-## 🚧 In Development (Unreleased)
+## 🚀 What's New in v2.20.0
 
-*Landed on the development branch since v2.19.0 — not yet in a tagged release. See [CHANGELOG.md](CHANGELOG.md#unreleased) for the full detail.*
+*See [CHANGELOG.md](CHANGELOG.md#2200---2026-09-11) for the full detail.*
 
 *   🕺 **SCAIL-2** — pose-driven character animation, rebuilt ComfyUI-native and in-process (no subprocess). Native SAM 3.1 identity tracking, colored per-identity pose masks, 25 advanced widgets. Replaces the vendored SCAIL v1 pipeline
 *   ⚡ **FlashVSR** — one-step video super-resolution with `full` / `tiny` / `tiny_long` pipelines, DiT block swap, and near-lossless spatial decode tiling
@@ -41,23 +38,11 @@
 *   🌈 **Selectable Colour Policy** — one shared, measured colour path across every encoder, with a truthful sRGB default and an exact "match ComfyUI native" mode for A/B comparison
 
 <details>
-<summary><b>🚀 What's New in v2.19.0</b></summary>
-
-
-*   🗣️ **DreamID-Omni (WIP)** — identity-preserving talking-head video generation. Face image + audio + text prompt → video with preserved identity and voice. FP8 native matmul, sequential layer offloading, streaming VAE decode for 12 GB GPUs
-*   📹 **FaceCam Node** — portrait video camera control via [FaceCam](https://github.com/weijielyu/FaceCam) (CVPR 2026). Camera orbit, zoom, tilt presets with KSampler Advanced chaining support
-*   🎙️ **Fish Speech TTS** — Fish Audio S2 Pro text-to-speech with 80+ languages, voice cloning, emotion tags, and multi-speaker support. FP8 for ~12 GB VRAM
-*   🎵 **Foundation-1 Music Samples** — production-ready musical loop generation with tempo-sync, key awareness, and style transfer
-*   🖼️ **Frame Picker Node** — interactive frame selection and reordering with contact-sheet grid, drag-and-drop, and bulk tools
-*   🎨 **15 New GLSL Shaders** — anime_glow, comic_book, depth_fog, focus_pull, pop_art, toon_3d, watercolor, and more. **70 shaders** total
-
-</details>
-
-<details>
 <summary><b>📋 Previous Releases</b></summary>
 
 | Version | Highlights |
 | :--- | :--- |
+| **v2.19.0** | DreamID-Omni talking-head generation, FaceCam camera control, Fish Speech TTS, Foundation-1 music samples, Frame Picker node, 15 new GLSL shaders (70 total) |
 | **v2.18.0** | Kiwi-Edit AI video editing, SAM3 + Kiwi-Edit, RTX Video Super Resolution, SeedVR AI Upscaling, FacePoke expression presets |
 | **v2.17.0** | FacePoke interactive face editor, driving video reference, shader effects system, Flux Klein FP8, onion skin compositing, unified audio output mode |
 | **v2.16.0** | ACE-Step AI music generation, SAM-Audio source separation, Video Editor v2 (10 panels), AudioX vocal enhancement, NormalCrafter, Video Depth Anything |
@@ -109,7 +94,7 @@ Use the **Effects Builder** to visually compose up to 5 effects with parameters.
 <td width="50%">
 
 ### 🤖 Multi-LLM Support
-Works with **Ollama** (local, free), **OpenAI**, **Anthropic**, **Google Gemini**, and **CLI tools** (Gemini CLI, Claude Code, Cursor Agent, Qwen Code). Use any local model — Llama 3.1, Qwen3, Mistral, and more. Or skip the LLM entirely.
+Works with **Ollama** (local, free) and **CLI tools** (Gemini CLI, Claude Code, Cursor Agent, Qwen Code). Use any local model — Llama 3.1, Qwen3, Mistral, and more. Or skip the LLM entirely.
 
 </td>
 <td width="50%">
@@ -582,7 +567,7 @@ FFMPEGA provides **14 nodes** that work together:
 | :--- | :--- | :--- |
 | `video_path` | STRING | Absolute path to source video. Used as ffmpeg input unless `images_a` is connected. |
 | `prompt` | STRING | Natural language editing instruction (e.g. *"Add cinematic letterbox"*, *"Speed up 2x"*). Not required in `manual` mode. |
-| `llm_model` | DROPDOWN | AI model selection — local Ollama models, CLI tools, or cloud APIs. Select `none` for no-LLM mode. |
+| `llm_model` | DROPDOWN | AI model selection — local Ollama models or CLI tools. Select `none` for no-LLM mode. |
 | `no_llm_mode` | DROPDOWN | Mode when `llm_model` is `none` — **31 modes**: `manual` (Effects Builder, default), `sam3_masking`, `transcribe`, `karaoke_subtitles`, `generate_audio`, `generate_music`, `foundation1`, `fish_speech`, `audio_inpaint`, `audio_separate`, `ace_step`, `lip_sync`, `animate_portrait`, `marigold`, `normalcrafter`, `video_depth`, `sapiens2`, `flux_klein`, `kiwi_edit`, `minimax_remover`, `dreamid_omni`, `svi`, `sharp`, `wan_animate`, `scail2`, `ai_upscale`, `rembg`, `video_matting`, `onion_skin`, `comparison`, `phyfps`. |
 | `quality_preset` | DROPDOWN | Output quality: `draft`, `standard`, `high`, `lossless`. |
 | `seed` | INT | Change to force re-execution with the same prompt. Supports randomize control. |
@@ -607,8 +592,7 @@ FFMPEGA provides **14 nodes** that work together:
 | `save_output` | BOOLEAN | Save video + workflow PNG to output folder. |
 | `output_path` | STRING | Custom output file/folder path. Empty = ComfyUI default. |
 | `ollama_url` | STRING | Ollama server URL (default: `http://localhost:11434`). |
-| `api_key` | STRING | API key for cloud models (GPT, Claude, Gemini). Auto-redacted from outputs. |
-| `custom_model` | STRING | Exact model name when `llm_model` is set to `custom`. |
+| `custom_model` | STRING | Exact Ollama model name when `llm_model` is set to `custom`. |
 | `crf` | INT | Override CRF (0 = lossless, 23 = default, 51 = worst). -1 uses `quality_preset`. |
 | `encoding_preset` | DROPDOWN | Override x264/x265 speed preset (`ultrafast` → `veryslow`). `auto` follows `quality_preset`. |
 | `use_vision` | BOOLEAN | Embed video frames as images for vision-capable LLMs. Off = numeric color analysis only. |
@@ -1576,18 +1560,6 @@ ollama pull qwen3:8b
 
 > **Tip:** On the [Ollama library](https://ollama.com/library), look for models with a **tools** tag — this indicates native tool/function-calling support, which produces the best results with FFMPEGA.
 
-### OpenAI
-```
-llm_model: gpt-5.2
-api_key: your-openai-key
-```
-
-### Gemini (Google API)
-```
-llm_model: gemini-3-flash
-api_key: your-google-ai-key
-```
-
 ### Gemini CLI (Free with any Google Account)
 
 Use the [Gemini CLI](https://github.com/google-gemini/gemini-cli) to run Gemini models without an API key. Works with any Google account.
@@ -1641,12 +1613,6 @@ The Gemini CLI auto-selects the best model, but the following are available:
 | Gemini 3 Flash | Fast + capable, good balance |
 
 > Free tier may auto-switch to Flash models when Pro quota is exhausted.
-
-### Anthropic
-```
-llm_model: claude-sonnet-4-6
-api_key: your-anthropic-key
-```
 
 ### Claude Code CLI (Free with Anthropic Account)
 
@@ -1736,29 +1702,7 @@ When [Frame Extraction](SKILLS_REFERENCE.md) is used, FFMPEGA saves extracted fr
 
 ### Custom Model
 
-Select **`custom`** from the model dropdown and type any model name in the `custom_model` field. The provider is auto-detected from the name:
-
-| Prefix | Provider |
-| :--- | :--- |
-| `gpt-*` | OpenAI |
-| `claude-*` | Anthropic |
-| `gemini-*` | Google |
-| Anything else | Ollama (local) |
-
-This lets you use any new model immediately without waiting for a code update.
-
-### 🔒 API Key Security
-
-Your API keys are **automatically scrubbed** and never stored in output files:
-
-- **Error messages** — keys are redacted before being shown in the UI (e.g. `****abcd`)
-- **Workflow metadata** — ComfyUI embeds workflow data in output images/videos; FFMPEGA strips the `api_key` field from this metadata before saving
-- **HTTP errors** — keys are removed from network error messages that might include auth headers
-- **Debug logs** — `LLMConfig` redacts keys in all string representations
-
-No configuration needed — this protection is always active when an API key is provided.
-
-> ⚠️ **Safety precaution:** As with any software, always inspect your output files before sharing them publicly — in the unlikely event of a bug or edge case that bypasses the automatic scrubbing.
+Select **`custom`** from the model dropdown and type any Ollama model name in the `custom_model` field (e.g. `qwen3:14b`). The dropdown only lists models installed on the local Ollama server, so this is how you reach a model it doesn't show — for example one on a remote server set via `ollama_url`.
 
 ### 📊 Token Usage Tracking
 
@@ -1774,8 +1718,6 @@ Monitor your LLM token consumption with opt-in usage tracking. Enable via two to
 | Connector | Source | Estimated? |
 | :--- | :--- | :--- |
 | Ollama | Native API (`prompt_eval_count` / `eval_count`) | No |
-| OpenAI / Gemini API | Native API (`usage` field) | No |
-| Anthropic API | Native API (`usage.input_tokens`) | No |
 | **Gemini CLI** | JSON output via `-o json` | No |
 | **Claude CLI** | JSON output via `--output-format json` | No |
 | Other CLIs | Character-based estimation (~4 chars/token) | Yes |
