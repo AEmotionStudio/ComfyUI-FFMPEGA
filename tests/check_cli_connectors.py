@@ -47,18 +47,12 @@ gemini_mod = load_module("core.llm.gemini_cli", "core/llm/gemini_cli.py")
 qwen_mod = load_module("core.llm.qwen_cli", "core/llm/qwen_cli.py")
 cursor_mod = load_module("core.llm.cursor_agent", "core/llm/cursor_agent.py")
 
-# Also load API and Ollama to test their supports_vision
-api_mod = None
+# Also load Ollama to test its supports_vision
 ollama_mod = None
 try:
-    # API needs httpx + sanitize
+    # Ollama needs httpx + sanitize
     sanitize_mod = load_module("core.sanitize", "core/sanitize.py")
     sys.modules["core.sanitize"] = sanitize_mod
-    api_mod = load_module("core.llm.api", "core/llm/api.py")
-except Exception as e:
-    print(f"  (API connector skipped: {e})")
-
-try:
     ollama_mod = load_module("core.llm.ollama", "core/llm/ollama.py")
 except Exception as e:
     print(f"  (Ollama connector skipped: {e})")
@@ -71,16 +65,6 @@ ALL_CONNECTORS = [
     ("CursorAgent", cursor_mod.CursorAgentConnector),
 ]
 
-if api_mod:
-    ALL_CONNECTORS.append(
-        ("APIConnector (OpenAI)", lambda: api_mod.APIConnector(
-            base_mod.LLMConfig(
-                provider=base_mod.LLMProvider.OPENAI,
-                model="gpt-4o-mini",
-                api_key="test-key",
-            )
-        ))
-    )
 if ollama_mod:
     ALL_CONNECTORS.append(
         ("OllamaConnector", lambda: ollama_mod.OllamaConnector(

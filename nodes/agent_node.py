@@ -71,29 +71,6 @@ class FFMPEGAgentNode:
         "llama3.3:8b",
     ]
 
-    # Stable pointer/alias names — these auto-update and rarely break.
-    # Users can also select "custom" and type any model name.
-    # The list is read from config/models.yaml via core.model_config.load_api_models().
-    # Edit that YAML file to add or remove models without touching Python code.
-    @classmethod
-    def _get_api_models(cls) -> list[str]:
-        """Read API model names from config/models.yaml (cached after first load)."""
-        try:
-            from ..core.model_config import load_api_models  # type: ignore[import-not-found]
-            return load_api_models()
-        except Exception as exc:
-            import logging
-            logging.getLogger("ffmpega").warning(
-                "Failed to load model list from config/models.yaml: %s — "
-                "using built-in fallback list", exc
-            )
-            return [
-                "gpt-5.2", "gpt-5-mini", "gpt-4.1",
-                "claude-sonnet-4-6", "claude-haiku-4-5",
-                "gemini-3-flash", "gemini-2.5-flash",
-                "qwen-max", "qwen-plus", "qwen-turbo",
-            ]
-
     QUALITY_PRESETS = ["draft", "standard", "high", "lossless"]
 
     # Class-level TTL cache for Ollama model list
@@ -131,7 +108,7 @@ class FFMPEGAgentNode:
     def INPUT_TYPES(cls):
         """Define input types for the node."""
         ollama_models = cls._fetch_ollama_models()
-        all_models = ["none"] + ollama_models + cls._get_api_models() + ["custom"]
+        all_models = ["none"] + ollama_models + ["custom"]
 
         # --- CLI auto-detection -------------------------------------------
         # Use shared resolver that checks PATH + well-known user-local dirs.
@@ -150,9 +127,9 @@ class FFMPEGAgentNode:
         if resolve_cli_binary("qwen", "qwen.cmd"):
             cli_models.append("qwen-cli")
 
-        # Insert all CLI models at the boundary between Ollama and API models
-        # so they appear in the intended order.
-        insert_pos = len(ollama_models)
+        # Insert all CLI models right after the Ollama models ("none" is
+        # index 0) so they appear in the intended order.
+        insert_pos = 1 + len(ollama_models)
         for model in cli_models:
             all_models.insert(insert_pos, model)
             insert_pos += 1
@@ -176,8 +153,7 @@ class FFMPEGAgentNode:
                     "tooltip": "AI model for interpreting your prompt. "
                                "CLI models (gemini-cli, claude-cli, etc.) use locally installed CLI tools — no API key needed. "
                                "Ollama models run locally via the Ollama server. "
-                               "Cloud API models (GPT, Claude, Gemini, Qwen) require an api_key. "
-                               "Select 'custom' to type any model name manually. "
+                               "Select 'custom' to type any Ollama model name manually. "
                                "Select 'none' to skip the LLM entirely and use no_llm_mode instead (manual pipeline, SAM3, Whisper, or MMAudio).",
                 }),
                 "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles", "generate_audio (MMAudio)", "generate_music (AudioX)", "foundation1", "fish_speech", "audio_inpaint (AudioX)", "audio_separate (SAM-Audio)", "ace_step", "lip_sync", "animate_portrait", "marigold", "normalcrafter", "video_depth", "sapiens2", "flux_klein", "kiwi_edit", "minimax_remover", "dreamid_omni", "svi", "sharp", "wan_animate", "scail2", "ai_upscale", "rembg", "video_matting", "onion_skin", "comparison", "phyfps"], {
@@ -282,17 +258,11 @@ class FFMPEGAgentNode:
                     "multiline": False,
                     "tooltip": "URL of the Ollama server for local LLM inference. Default: http://localhost:11434.",
                 }),
-                "api_key": ("STRING", {
-                    "default": "",
-                    "multiline": False,
-                    "placeholder": "API key for OpenAI/Anthropic",
-                    "tooltip": "API key required when using cloud models (GPT, Claude, Gemini). Not needed for local Ollama models.",
-                }),
                 "custom_model": ("STRING", {
                     "default": "",
                     "multiline": False,
-                    "placeholder": "Model name (e.g. gpt-5.2, claude-sonnet-4-6)",
-                    "tooltip": "When 'custom' is selected in llm_model, type the exact model name here. Use provider prefixes: gpt-* for OpenAI, claude-* for Anthropic, gemini-* for Google, anything else for Ollama.",
+                    "placeholder": "Ollama model name (e.g. qwen3:14b)",
+                    "tooltip": "When 'custom' is selected in llm_model, type the exact Ollama model name here — useful for models the dropdown doesn't list, such as ones on a remote server set via ollama_url.",
                 }),
 
                 # ── LLM Behavior (always visible) ─────────────────────────
@@ -2333,7 +2303,6 @@ class FFMPEGAgentNode:
         save_output: bool = False,
         output_path: str = "",
         ollama_url: str = "http://localhost:11434",
-        api_key: str = "",
         custom_model: str = "",
         crf: int = -1,
         encoding_preset: str = "auto",
@@ -2403,7 +2372,6 @@ class FFMPEGAgentNode:
             preview_mode: Generate preview instead of full render.
             output_path: Custom output path.
             ollama_url: Ollama server URL.
-            api_key: API key for cloud providers.
             crf: Override CRF value (-1 = use preset).
             encoding_preset: Override encoding preset ("auto" = use preset).
 
@@ -2445,7 +2413,6 @@ class FFMPEGAgentNode:
                 llm_model=llm_model,
                 quality_preset=quality_preset,
                 ollama_url=ollama_url,
-                api_key=api_key,
                 custom_model=custom_model,
                 crf=crf,
                 encoding_preset=encoding_preset,
@@ -3367,7 +3334,6 @@ class FFMPEGAgentNode:
             llm_model=llm_model,
             custom_model=custom_model,
             ollama_url=ollama_url,
-            api_key=api_key,
             use_vision=use_vision,
             ptc_mode=ptc_mode,
         )
@@ -3527,10 +3493,7 @@ class FFMPEGAgentNode:
             resample_rate=int(audio_resample_rate) if audio_resample_rate and audio_resample_rate != "off" else None,
         )
 
-        # --- Sanitize API key from workflow metadata ---
         hidden_extra_pnginfo = kwargs.get("extra_pnginfo")
-        if api_key:
-            self._strip_api_key_from_metadata(api_key, hidden_prompt, hidden_extra_pnginfo)
 
         # --- Save first-frame workflow PNG ---
         if save_output and images_tensor is not None and images_tensor.shape[0] > 0:
@@ -4141,12 +4104,7 @@ class FFMPEGAgentNode:
         """Delegate to output_handler module."""
         return _oh.save_workflow_png(first_frame, png_path, prompt, extra_pnginfo, extra_info)
 
-    @staticmethod
-    def _strip_api_key_from_metadata(api_key, prompt, extra_pnginfo):
-        """Delegate to output_handler module."""
-        return _oh.strip_api_key_from_metadata(api_key, prompt, extra_pnginfo)
-
-    async def _process_batch(self, video_folder, file_pattern, prompt, llm_model, quality_preset, ollama_url, api_key, custom_model, crf, encoding_preset, max_concurrent, save_output, output_path, use_vision=False, verify_output=False, ptc_mode="off", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", pipeline_json="", use_flux_klein=False, flux_klein_model="4b", use_minimax_remover=False, flux_smoothing="none"):
+    async def _process_batch(self, video_folder, file_pattern, prompt, llm_model, quality_preset, ollama_url, custom_model, crf, encoding_preset, max_concurrent, save_output, output_path, use_vision=False, verify_output=False, ptc_mode="off", sam3_max_objects=5, sam3_det_threshold=0.7, mask_points="", pipeline_json="", use_flux_klein=False, flux_klein_model="4b", use_minimax_remover=False, flux_smoothing="none"):
         """Delegate to batch_processor module."""
         return await _bp.process_batch(
             analyzer=self.analyzer, composer=self.composer,
@@ -4156,7 +4114,7 @@ class FFMPEGAgentNode:
             video_folder=video_folder, file_pattern=file_pattern,
             prompt=prompt, llm_model=llm_model,
             quality_preset=quality_preset, ollama_url=ollama_url,
-            api_key=api_key, custom_model=custom_model,
+            custom_model=custom_model,
             crf=crf, encoding_preset=encoding_preset,
             max_concurrent=max_concurrent, save_output=save_output,
             output_path=output_path, use_vision=use_vision,

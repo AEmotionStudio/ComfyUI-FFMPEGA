@@ -1,14 +1,12 @@
 """Tests for tool calling across all connector types.
 
 Tests the chat_with_tools implementation for:
-- APIConnector (OpenAI + Anthropic format conversion)
 - CLIConnectorBase (prompt-based simulation and marker parsing)
 - Tool ID propagation for the agentic loop
 """
 
 import json
 
-from core.llm.base import LLMConfig, LLMProvider
 from core.llm.cli_base import CLIConnectorBase
 
 
@@ -221,62 +219,6 @@ class TestCLIBuildToolPrompt:
         assert "response" in user_prompt
         assert "TOOL_RESULT" in user_prompt
         assert "second message" in user_prompt
-
-
-# ── API connector Anthropic format conversion ─────────────────────────
-
-class TestAnthropicToolConversion:
-    """Tests for Anthropic tool format conversion."""
-
-    def test_openai_to_anthropic_tool_format(self):
-        """OpenAI tool format should convert to Anthropic format correctly."""
-        from core.llm.api import APIConnector
-
-        config = LLMConfig(
-            provider=LLMProvider.ANTHROPIC,
-            model="claude-3.5-sonnet",
-            api_key="test-key",
-        )
-        connector = APIConnector(config)
-
-        # The conversion happens inside _chat_with_tools_anthropic
-        # Test by checking the connector routes correctly
-        assert connector.config.provider == LLMProvider.ANTHROPIC
-
-    def test_anthropic_message_conversion(self):
-        """Tool role messages should convert to Anthropic tool_result format."""
-        # This tests the message conversion logic conceptually
-        messages = [
-            {"role": "system", "content": "system prompt"},
-            {"role": "user", "content": "hello"},
-            {"role": "tool", "content": "result data", "tool_use_id": "call_1"},
-        ]
-
-        # Verify the format we expect _chat_with_tools_anthropic to produce
-        system_prompt = None
-        anthropic_messages = []
-        for msg in messages:
-            if msg["role"] == "system":
-                system_prompt = msg["content"]
-            elif msg["role"] == "tool":
-                anthropic_messages.append({
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": msg.get("tool_use_id", "tool_result"),
-                            "content": msg["content"],
-                        }
-                    ],
-                })
-            else:
-                anthropic_messages.append({"role": msg["role"], "content": msg["content"]})
-
-        assert system_prompt == "system prompt"
-        assert len(anthropic_messages) == 2
-        assert anthropic_messages[1]["role"] == "user"
-        assert anthropic_messages[1]["content"][0]["type"] == "tool_result"
-        assert anthropic_messages[1]["content"][0]["tool_use_id"] == "call_1"
 
 
 # ── OpenAI tool call response parsing ─────────────────────────────────

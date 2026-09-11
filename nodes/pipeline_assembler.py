@@ -20,7 +20,6 @@ async def generate_pipeline_spec(
     llm_model: str,
     custom_model: str,
     ollama_url: str,
-    api_key: str,
     use_vision: bool,
     ptc_mode: str,
 ) -> tuple[dict, object]:
@@ -40,8 +39,6 @@ async def generate_pipeline_spec(
     ------
     ValueError
         If ``llm_model`` is ``"custom"`` but ``custom_model`` is empty.
-    RuntimeError
-        If the LLM call fails and the error contains an API key.
     """
     if not ollama_url or not ollama_url.startswith(("http://", "https://")):
         ollama_url = "http://localhost:11434"
@@ -53,7 +50,7 @@ async def generate_pipeline_spec(
                 "when using 'custom' mode."
             )
         effective_model = custom_model.strip()
-    connector = pipeline_generator.create_connector(effective_model, ollama_url, api_key)
+    connector = pipeline_generator.create_connector(effective_model, ollama_url)
 
     try:
         spec = await pipeline_generator.generate(
@@ -63,12 +60,9 @@ async def generate_pipeline_spec(
             use_vision=use_vision,
             ptc_mode=ptc_mode,
         )
-    except Exception as e:
+    except Exception:
         if hasattr(connector, 'close'):
             await connector.close()  # type: ignore[union-attr]
-        if api_key and api_key in str(e):
-            from core.sanitize import sanitize_api_key
-            raise RuntimeError(sanitize_api_key(str(e), api_key)) from None
         raise
 
     return spec, connector

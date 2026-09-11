@@ -56,7 +56,6 @@ except ImportError:
         "test_media_bridge.py",
         "test_minimax_remover.py",
         "test_node_chaining.py",
-        "test_phase5_model_config.py",
         "test_rembg.py",
         "test_save_video_node.py",
         "test_shader.py",

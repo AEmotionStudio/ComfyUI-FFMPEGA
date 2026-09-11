@@ -39,7 +39,7 @@ export const NODE_DOCS: NodeDoc[] = [
         inputs: [
             { name: "prompt", info: "Natural language instruction describing the desired edit." },
             { name: "video_path", info: "Absolute path to the source video file." },
-            { name: "llm_model", info: "AI model selection: CLI tools, Ollama (local), cloud APIs, or 'none' for manual mode." },
+            { name: "llm_model", info: "AI model selection: CLI tools, Ollama (local), or 'none' for manual mode." },
             { name: "no_llm_mode", info: "What to do when llm_model is 'none': manual, sam3_masking, transcribe, karaoke, generate_audio, lip_sync, animate_portrait, minimax_remover, flux_klein, marigold, video_depth, or ai_upscale." },
             { name: "quality_preset", info: "Output quality: draft (fast), standard (balanced), high (slow), lossless." },
             { name: "images_a", info: "Video as image frames. More slots (images_b, c, …) appear automatically." },
@@ -259,7 +259,6 @@ export const TIPS_AND_TRICKS: TipCategory[] = [
         icon: "⚠️",
         tips: [
             "Don't enable save_output on both the Agent AND a downstream Save Video — you'll get duplicate files.",
-            "If using cloud API models (GPT, Claude, Gemini), you need an api_key. CLI models don't need one.",
             "The Effects Builder output must connect to the Agent's pipeline_json input, not video_path.",
             "For concat/xfade, connect videos to video_a/b/c slots — not the main video_path input.",
             "SAM3 requires GPU — there is no CPU fallback for video segmentation.",

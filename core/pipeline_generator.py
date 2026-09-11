@@ -39,16 +39,14 @@ class PipelineGenerator:
     # ------------------------------------------------------------------ #
 
     @staticmethod
-    def create_connector(model: str, ollama_url: str, api_key: str):
+    def create_connector(model: str, ollama_url: str):
         """Create appropriate LLM connector based on model selection."""
         from ..core.llm.base import LLMConfig, LLMProvider  # type: ignore[import-not-found]
         from ..core.llm.ollama import OllamaConnector  # type: ignore[import-not-found]
-        from ..core.llm.api import APIConnector  # type: ignore[import-not-found]
         from ..core.llm.gemini_cli import GeminiCLIConnector  # type: ignore[import-not-found]
 
-        # Provider is detected by model name prefix.
-        # No need to maintain a hardcoded list — any model with a
-        # recognised prefix is routed to the right API connector.
+        # CLI tools are matched by exact name; every other name is an
+        # Ollama model (including ones like gpt-oss:20b).
 
         # Gemini CLI — uses local binary, no API key needed
         if model == "gemini-cli":
@@ -88,45 +86,6 @@ class PipelineGenerator:
                 temperature=0.3,
             )
             return QwenCodeCLIConnector(config)
-
-        if model.startswith("gpt"):
-            config = LLMConfig(
-                provider=LLMProvider.OPENAI,
-                model=model,
-                api_key=api_key,
-                temperature=0.3,
-            )
-            return APIConnector(config)
-
-        if model.startswith("claude"):
-            config = LLMConfig(
-                provider=LLMProvider.ANTHROPIC,
-                model=model,
-                api_key=api_key,
-                temperature=0.3,
-            )
-            return APIConnector(config)
-
-        if model.startswith("gemini"):
-            config = LLMConfig(
-                provider=LLMProvider.GEMINI,
-                model=model,
-                api_key=api_key,
-                temperature=0.3,
-            )
-            return APIConnector(config)
-
-        # Qwen API models use dash format: qwen-max, qwen-plus, qwen-turbo
-        # Ollama Qwen models use colon format: qwen3:8b, qwen2.5:7b
-        # Only match dash-prefixed names to avoid hijacking Ollama models.
-        if model.startswith("qwen-") and model != "qwen-cli":
-            config = LLMConfig(
-                provider=LLMProvider.QWEN,
-                model=model,
-                api_key=api_key,
-                temperature=0.3,
-            )
-            return APIConnector(config)
 
         # Default: treat as Ollama model
         config = LLMConfig(
@@ -301,7 +260,6 @@ class PipelineGenerator:
         )
         from ..mcp.vision import (  # type: ignore[import-not-found]
             frames_to_base64,
-            frames_to_base64_anthropic,
             frames_to_base64_raw_strings,
         )
         from ..core.llm.cli_base import CLIConnectorBase  # type: ignore[import-not-found]
@@ -605,17 +563,8 @@ class PipelineGenerator:
                                 )
                                 logger.info("Vision: Ollama fallback to color analysis")
                         else:
-                            # API connectors: embed base64 as multimodal content
-                            # Detect Anthropic (needs different image format)
-                            _is_anthropic = (
-                                hasattr(connector, 'config')
-                                and hasattr(connector.config, 'provider')
-                                and str(connector.config.provider) == "anthropic"
-                            )
-                            if _is_anthropic:
-                                image_blocks = frames_to_base64_anthropic(frame_paths)
-                            else:
-                                image_blocks = frames_to_base64(frame_paths)
+                            # Other connectors: embed base64 as multimodal content
+                            image_blocks = frames_to_base64(frame_paths)
                             if image_blocks:
                                 # Build multimodal content: text + images
                                 tool_result_msg["content"] = [
@@ -624,7 +573,7 @@ class PipelineGenerator:
                                 ]
                                 logger.info(
                                     f"Vision: embedded {len(image_blocks)} "
-                                    f"frames for API connector"
+                                    f"frames as multimodal content"
                                 )
                             else:
                                 # Fallback to color analysis
@@ -637,7 +586,7 @@ class PipelineGenerator:
                                     {**result, "color_analysis": fallback},
                                     indent=2,
                                 )
-                                logger.info("Vision: API fallback to color analysis")
+                                logger.info("Vision: fallback to color analysis")
 
                     # Vision routing for PTC execute_code: if the sandbox
                     # called extract_frames, embed the collected frames
@@ -657,22 +606,14 @@ class PipelineGenerator:
                                         len(b64_strings),
                                     )
                             else:
-                                _is_anthropic = (
-                                    hasattr(connector, 'config')
-                                    and hasattr(connector.config, 'provider')
-                                    and str(connector.config.provider) == "anthropic"
-                                )
-                                if _is_anthropic:
-                                    image_blocks = frames_to_base64_anthropic(frame_paths)
-                                else:
-                                    image_blocks = frames_to_base64(frame_paths)
+                                image_blocks = frames_to_base64(frame_paths)
                                 if image_blocks:
                                     tool_result_msg["content"] = [
                                         {"type": "text", "text": result_str},
                                         *image_blocks,
                                     ]
                                     logger.info(
-                                        "PTC Vision: embedded %d frames for API",
+                                        "PTC Vision: embedded %d frames as multimodal content",
                                         len(image_blocks),
                                     )
                         elif use_vision and _is_cli:

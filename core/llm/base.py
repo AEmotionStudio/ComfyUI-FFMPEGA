@@ -9,10 +9,6 @@ from typing import Optional, AsyncIterator
 class LLMProvider(str, Enum):
     """Supported LLM providers."""
     OLLAMA = "ollama"
-    OPENAI = "openai"
-    ANTHROPIC = "anthropic"
-    GEMINI = "gemini"
-    QWEN = "qwen"
     GEMINI_CLI = "gemini_cli"
     CLAUDE_CLI = "claude_cli"
     CURSOR_AGENT = "cursor_agent"

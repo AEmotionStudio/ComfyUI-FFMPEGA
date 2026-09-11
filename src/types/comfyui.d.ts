@@ -183,6 +183,8 @@ export interface ComfyWidget {
     step?: number;
     element?: HTMLElement;
     hidden?: boolean;
+    /** False for widgets LiteGraph leaves out of widgets_values. */
+    serialize?: boolean;
     callback?: (...args: any[]) => void;
     computeSize?: (width: number) => [number, number];
     draw?: (ctx: CanvasRenderingContext2D, node: ComfyNode, width: number, y: number, height: number) => void;

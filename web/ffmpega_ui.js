@@ -52,11 +52,20 @@ function toggleWidget$1(widget, show) {
     if (widget.element) widget.element.hidden = true;
   }
 }
-function needsApiKey(model) {
-  if (!model || typeof model !== "string") return false;
-  if (model === "none") return false;
-  if (model === "gemini-cli" || model === "claude-cli" || model === "cursor-agent" || model === "qwen-cli") return false;
-  return model.startsWith("gpt") || model.startsWith("claude") || model.startsWith("gemini") || model === "custom";
+function dropRemovedApiKeyValue(info, serializedWidgetNames) {
+  const values = info.widgets_values;
+  const named = info.widgets_values_named;
+  if (named) {
+    if (!("api_key" in named)) return;
+    const idx2 = Object.keys(named).indexOf("api_key");
+    delete named.api_key;
+    if (Array.isArray(values)) values.splice(idx2, 1);
+    return;
+  }
+  if (!Array.isArray(values)) return;
+  const idx = serializedWidgetNames.indexOf("custom_model");
+  if (idx < 0) return;
+  if (typeof values[idx + 1] === "string") values.splice(idx, 1);
 }
 function buildPresetMenu(node) {
   const sp = (text) => setPrompt(node, text);
@@ -290,9 +299,17 @@ function buildPresetMenu(node) {
 }
 function registerAgentNode(nodeType, nodeData) {
   if (nodeData.name !== "FFMPEGAgent") return;
+  const origConfigure = nodeType.prototype.configure;
+  nodeType.prototype.configure = function(info) {
+    if (info) {
+      const names = (this.widgets ?? []).filter((w) => w.serialize !== false).map((w) => w.name);
+      dropRemovedApiKeyValue(info, names);
+    }
+    origConfigure == null ? void 0 : origConfigure.call(this, info);
+  };
   const onNodeCreated = nodeType.prototype.onNodeCreated;
   nodeType.prototype.onNodeCreated = function() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K;
     const result = onNodeCreated == null ? void 0 : onNodeCreated.apply(this, arguments);
     const node = this;
     this.color = "#2a3a5a";
@@ -313,7 +330,6 @@ function registerAgentNode(nodeType, nodeData) {
         const model = llmWidget.value;
         const isNone = model === "none";
         toggleWidget$1(customWidget, model === "custom");
-        toggleWidget$1(apiKeyWidget, needsApiKey(model));
         if (ollamaUrlWidget) toggleWidget$1(ollamaUrlWidget, !isNone);
         if (verifyWidget) toggleWidget$1(verifyWidget, !isNone);
         if (visionWidget) toggleWidget$1(visionWidget, !isNone);
@@ -349,11 +365,10 @@ function registerAgentNode(nodeType, nodeData) {
         }
       };
       const customWidget = (_b = this.widgets) == null ? void 0 : _b.find((w) => w.name === "custom_model");
-      const apiKeyWidget = (_c = this.widgets) == null ? void 0 : _c.find((w) => w.name === "api_key");
-      const ollamaUrlWidget = (_d = this.widgets) == null ? void 0 : _d.find((w) => w.name === "ollama_url");
-      const verifyWidget = (_e = this.widgets) == null ? void 0 : _e.find((w) => w.name === "verify_output");
-      const visionWidget = (_f = this.widgets) == null ? void 0 : _f.find((w) => w.name === "use_vision");
-      const ptcWidget = (_g = this.widgets) == null ? void 0 : _g.find((w) => w.name === "ptc_mode");
+      const ollamaUrlWidget = (_c = this.widgets) == null ? void 0 : _c.find((w) => w.name === "ollama_url");
+      const verifyWidget = (_d = this.widgets) == null ? void 0 : _d.find((w) => w.name === "verify_output");
+      const visionWidget = (_e = this.widgets) == null ? void 0 : _e.find((w) => w.name === "use_vision");
+      const ptcWidget = (_f = this.widgets) == null ? void 0 : _f.find((w) => w.name === "ptc_mode");
       updateLlmVisibility = doUpdateLlmVisibility;
       doUpdateLlmVisibility();
       const origLlmCb = llmWidget.callback;
@@ -375,32 +390,32 @@ function registerAgentNode(nodeType, nodeData) {
       "max_concurrent"
     ];
     for (const name of alwaysHidden) {
-      const w = (_h = this.widgets) == null ? void 0 : _h.find((ww) => ww.name === name);
+      const w = (_g = this.widgets) == null ? void 0 : _g.find((ww) => ww.name === name);
       if (w) toggleWidget$1(w, false);
     }
-    const advancedWidget = (_i = this.widgets) == null ? void 0 : _i.find((w) => w.name === "advanced_options");
-    (_j = this.widgets) == null ? void 0 : _j.find((w) => w.name === "subtitle_path");
-    (_k = this.widgets) == null ? void 0 : _k.find((w) => w.name === "use_vision");
-    (_l = this.widgets) == null ? void 0 : _l.find((w) => w.name === "verify_output");
-    (_m = this.widgets) == null ? void 0 : _m.find((w) => w.name === "whisper_device");
-    (_n = this.widgets) == null ? void 0 : _n.find((w) => w.name === "whisper_model");
-    (_o = this.widgets) == null ? void 0 : _o.find((w) => w.name === "sam3_max_objects");
-    (_p = this.widgets) == null ? void 0 : _p.find((w) => w.name === "sam3_det_threshold");
-    (_q = this.widgets) == null ? void 0 : _q.find((w) => w.name === "mask_output_type");
-    (_r = this.widgets) == null ? void 0 : _r.find((w) => w.name === "batch_mode");
-    (_s = this.widgets) == null ? void 0 : _s.find((w) => w.name === "video_folder");
-    (_t = this.widgets) == null ? void 0 : _t.find((w) => w.name === "file_pattern");
-    (_u = this.widgets) == null ? void 0 : _u.find((w) => w.name === "max_concurrent");
-    const trackTokensWidget = (_v = this.widgets) == null ? void 0 : _v.find((w) => w.name === "track_tokens");
-    const logUsageWidget = (_w = this.widgets) == null ? void 0 : _w.find((w) => w.name === "log_usage");
-    const allowDownloadsWidget = (_x = this.widgets) == null ? void 0 : _x.find((w) => w.name === "allow_model_downloads");
-    (_y = this.widgets) == null ? void 0 : _y.find((w) => w.name === "flux_smoothing");
-    (_z = this.widgets) == null ? void 0 : _z.find((w) => w.name === "audio_output_mode");
-    (_A = this.widgets) == null ? void 0 : _A.find((w) => w.name === "marigold_output_type");
-    (_B = this.widgets) == null ? void 0 : _B.find((w) => w.name === "video_depth_encoder");
-    (_C = this.widgets) == null ? void 0 : _C.find((w) => w.name === "video_depth_colormap");
+    const advancedWidget = (_h = this.widgets) == null ? void 0 : _h.find((w) => w.name === "advanced_options");
+    (_i = this.widgets) == null ? void 0 : _i.find((w) => w.name === "subtitle_path");
+    (_j = this.widgets) == null ? void 0 : _j.find((w) => w.name === "use_vision");
+    (_k = this.widgets) == null ? void 0 : _k.find((w) => w.name === "verify_output");
+    (_l = this.widgets) == null ? void 0 : _l.find((w) => w.name === "whisper_device");
+    (_m = this.widgets) == null ? void 0 : _m.find((w) => w.name === "whisper_model");
+    (_n = this.widgets) == null ? void 0 : _n.find((w) => w.name === "sam3_max_objects");
+    (_o = this.widgets) == null ? void 0 : _o.find((w) => w.name === "sam3_det_threshold");
+    (_p = this.widgets) == null ? void 0 : _p.find((w) => w.name === "mask_output_type");
+    (_q = this.widgets) == null ? void 0 : _q.find((w) => w.name === "batch_mode");
+    (_r = this.widgets) == null ? void 0 : _r.find((w) => w.name === "video_folder");
+    (_s = this.widgets) == null ? void 0 : _s.find((w) => w.name === "file_pattern");
+    (_t = this.widgets) == null ? void 0 : _t.find((w) => w.name === "max_concurrent");
+    const trackTokensWidget = (_u = this.widgets) == null ? void 0 : _u.find((w) => w.name === "track_tokens");
+    const logUsageWidget = (_v = this.widgets) == null ? void 0 : _v.find((w) => w.name === "log_usage");
+    const allowDownloadsWidget = (_w = this.widgets) == null ? void 0 : _w.find((w) => w.name === "allow_model_downloads");
+    (_x = this.widgets) == null ? void 0 : _x.find((w) => w.name === "flux_smoothing");
+    (_y = this.widgets) == null ? void 0 : _y.find((w) => w.name === "audio_output_mode");
+    (_z = this.widgets) == null ? void 0 : _z.find((w) => w.name === "marigold_output_type");
+    (_A = this.widgets) == null ? void 0 : _A.find((w) => w.name === "video_depth_encoder");
+    (_B = this.widgets) == null ? void 0 : _B.find((w) => w.name === "video_depth_colormap");
     function updateNoLlmModeVisibility() {
-      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o2, _p2, _q2, _r2, _s2, _t2, _u2, _v2, _w2, _x2, _y2, _z2, _A2, _B2, _C2, _D2, _E2, _F2, _G2, _H2, _I2, _J2, _K2, _L2, _M, _N, _O, _P, _Q, _R, _S, _T, _U, _V, _W, _X, _Y, _Z, __, _$, _aa, _ba, _ca, _da, _ea, _fa, _ga, _ha, _ia;
+      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o2, _p2, _q2, _r2, _s2, _t2, _u2, _v2, _w2, _x2, _y2, _z2, _A2, _B2, _C2, _D2, _E2, _F2, _G2, _H2, _I2, _J2, _K2, _L, _M, _N, _O, _P, _Q, _R, _S, _T, _U, _V, _W, _X, _Y, _Z, __, _$, _aa, _ba, _ca, _da, _ea, _fa, _ga, _ha, _ia;
       const adv = (_a2 = node.widgets) == null ? void 0 : _a2.find((w) => w.name === "advanced_options");
       const showAdvanced = Boolean(adv == null ? void 0 : adv.value);
       const llm = (_b2 = node.widgets) == null ? void 0 : _b2.find((w) => w.name === "llm_model");
@@ -624,7 +639,7 @@ function registerAgentNode(nodeType, nodeData) {
         "wan_animate_face_strength"
       ];
       for (const name of wanAnimateWidgetNames) {
-        const w = (_L2 = node.widgets) == null ? void 0 : _L2.find((ww) => ww.name === name);
+        const w = (_L = node.widgets) == null ? void 0 : _L.find((ww) => ww.name === name);
         if (w) toggleWidget$1(w, showWanAnimate);
       }
       const wanLoraSlots = ["a", "b", "c", "d"];
@@ -813,7 +828,7 @@ function registerAgentNode(nodeType, nodeData) {
         updateAdvancedVisibility();
       };
     }
-    const fluxKleinToggle = (_D = this.widgets) == null ? void 0 : _D.find((w) => w.name === "use_flux_klein");
+    const fluxKleinToggle = (_C = this.widgets) == null ? void 0 : _C.find((w) => w.name === "use_flux_klein");
     if (fluxKleinToggle) {
       const origFluxCb = fluxKleinToggle.callback;
       fluxKleinToggle.callback = function(...args) {
@@ -821,7 +836,7 @@ function registerAgentNode(nodeType, nodeData) {
         updateAdvancedVisibility();
       };
     }
-    const useSam3Toggle = (_E = this.widgets) == null ? void 0 : _E.find((w) => w.name === "use_sam3");
+    const useSam3Toggle = (_D = this.widgets) == null ? void 0 : _D.find((w) => w.name === "use_sam3");
     if (useSam3Toggle) {
       const origSam3Cb = useSam3Toggle.callback;
       useSam3Toggle.callback = function(...args) {
@@ -829,7 +844,7 @@ function registerAgentNode(nodeType, nodeData) {
         updateAdvancedVisibility();
       };
     }
-    const upscaleModelToggle = (_F = this.widgets) == null ? void 0 : _F.find((w) => w.name === "upscale_model");
+    const upscaleModelToggle = (_E = this.widgets) == null ? void 0 : _E.find((w) => w.name === "upscale_model");
     if (upscaleModelToggle) {
       const origUpscaleCb = upscaleModelToggle.callback;
       upscaleModelToggle.callback = function(...args) {
@@ -837,7 +852,7 @@ function registerAgentNode(nodeType, nodeData) {
         updateAdvancedVisibility();
       };
     }
-    const flashvsrProcToggle = (_G = this.widgets) == null ? void 0 : _G.find((w) => w.name === "flashvsr_processing");
+    const flashvsrProcToggle = (_F = this.widgets) == null ? void 0 : _F.find((w) => w.name === "flashvsr_processing");
     if (flashvsrProcToggle) {
       const origFvCb = flashvsrProcToggle.callback;
       flashvsrProcToggle.callback = function(...args) {
@@ -846,7 +861,7 @@ function registerAgentNode(nodeType, nodeData) {
       };
     }
     for (const wName of ["vae_tiling", "vae_tile_preset"]) {
-      const vaeTileW = (_H = this.widgets) == null ? void 0 : _H.find((w) => w.name === wName);
+      const vaeTileW = (_G = this.widgets) == null ? void 0 : _G.find((w) => w.name === wName);
       if (vaeTileW) {
         const origVaeCb = vaeTileW.callback;
         vaeTileW.callback = function(...args) {
@@ -855,7 +870,7 @@ function registerAgentNode(nodeType, nodeData) {
         };
       }
     }
-    const kiwiResolutionToggle = (_I = this.widgets) == null ? void 0 : _I.find((w) => w.name === "kiwi_resolution");
+    const kiwiResolutionToggle = (_H = this.widgets) == null ? void 0 : _H.find((w) => w.name === "kiwi_resolution");
     if (kiwiResolutionToggle) {
       const origKiwiResCb = kiwiResolutionToggle.callback;
       kiwiResolutionToggle.callback = function(...args) {
@@ -864,7 +879,7 @@ function registerAgentNode(nodeType, nodeData) {
       };
     }
     for (const slot of ["a", "b", "c", "d"]) {
-      const wanLoraSlotW = (_J = this.widgets) == null ? void 0 : _J.find((w) => w.name === `wan_animate_lora_${slot}`);
+      const wanLoraSlotW = (_I = this.widgets) == null ? void 0 : _I.find((w) => w.name === `wan_animate_lora_${slot}`);
       if (wanLoraSlotW) {
         const origCb = wanLoraSlotW.callback;
         wanLoraSlotW.callback = function(...args) {
@@ -874,7 +889,7 @@ function registerAgentNode(nodeType, nodeData) {
       }
     }
     for (const slot of ["a", "b", "c", "d"]) {
-      const scail2LoraSlotW = (_K = this.widgets) == null ? void 0 : _K.find((w) => w.name === `scail2_lora_${slot}`);
+      const scail2LoraSlotW = (_J = this.widgets) == null ? void 0 : _J.find((w) => w.name === `scail2_lora_${slot}`);
       if (scail2LoraSlotW) {
         const origCb = scail2LoraSlotW.callback;
         scail2LoraSlotW.callback = function(...args) {
@@ -883,7 +898,7 @@ function registerAgentNode(nodeType, nodeData) {
         };
       }
     }
-    const marigoldTypeWidget = (_L = this.widgets) == null ? void 0 : _L.find((w) => w.name === "marigold_output_type");
+    const marigoldTypeWidget = (_K = this.widgets) == null ? void 0 : _K.find((w) => w.name === "marigold_output_type");
     if (marigoldTypeWidget) {
       const origMtCb = marigoldTypeWidget.callback;
       marigoldTypeWidget.callback = function(...args) {
@@ -4043,7 +4058,7 @@ const NODE_DOCS = [
     inputs: [
       { name: "prompt", info: "Natural language instruction describing the desired edit." },
       { name: "video_path", info: "Absolute path to the source video file." },
-      { name: "llm_model", info: "AI model selection: CLI tools, Ollama (local), cloud APIs, or 'none' for manual mode." },
+      { name: "llm_model", info: "AI model selection: CLI tools, Ollama (local), or 'none' for manual mode." },
       { name: "no_llm_mode", info: "What to do when llm_model is 'none': manual, sam3_masking, transcribe, karaoke, generate_audio, lip_sync, animate_portrait, minimax_remover, flux_klein, marigold, video_depth, or ai_upscale." },
       { name: "quality_preset", info: "Output quality: draft (fast), standard (balanced), high (slow), lossless." },
       { name: "images_a", info: "Video as image frames. More slots (images_b, c, …) appear automatically." },
@@ -4246,7 +4261,6 @@ const TIPS_AND_TRICKS = [
     icon: "⚠️",
     tips: [
       "Don't enable save_output on both the Agent AND a downstream Save Video — you'll get duplicate files.",
-      "If using cloud API models (GPT, Claude, Gemini), you need an api_key. CLI models don't need one.",
       "The Effects Builder output must connect to the Agent's pipeline_json input, not video_path.",
       "For concat/xfade, connect videos to video_a/b/c slots — not the main video_path input.",
       "SAM3 requires GPU — there is no CPU fallback for video segmentation.",

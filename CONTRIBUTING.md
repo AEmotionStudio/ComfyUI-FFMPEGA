@@ -17,7 +17,7 @@ ComfyUI-FFMPEGA/
 │   ├── platform.py     # ComfyUI-specific adapters (folder_paths, VRAM)
 │   ├── logging.py      # Structured logging (JSONFormatter, get_logger)
 │   ├── pipeline_generator.py  # LLM-based pipeline generation
-│   ├── llm/            # LLM connectors (Ollama, OpenAI, Anthropic, etc.)
+│   ├── llm/            # LLM connectors (Ollama, CLI tools)
 │   ├── executor/       # FFmpeg process management
 │   ├── sam3_masker.py   # SAM3 object masking
 │   ├── whisper_transcriber.py

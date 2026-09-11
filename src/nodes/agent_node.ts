@@ -30,8 +30,10 @@ interface AgentNode extends ComfyNode {
     onConfigure?: (info: AgentSerializedInfo) => void;
 }
 
-interface AgentSerializedInfo {
+export interface AgentSerializedInfo {
     inputs?: Array<{ name: string; type: string; link?: number | null }>;
+    widgets_values?: unknown[];
+    widgets_values_named?: Record<string, unknown>;
     [key: string]: unknown;
 }
 
@@ -75,15 +77,45 @@ function toggleWidget(widget: ComfyWidget | undefined, show: boolean): void {
     }
 }
 
-/** Check if an LLM model needs an API key */
-function needsApiKey(model: unknown): boolean {
-    if (!model || typeof model !== "string") return false;
-    if (model === "none") return false;
-    if (model === "gemini-cli" || model === "claude-cli" || model === "cursor-agent" || model === "qwen-cli") return false;
-    return model.startsWith("gpt") ||
-        model.startsWith("claude") ||
-        model.startsWith("gemini") ||
-        model === "custom";
+/**
+ * Drop the saved value of the removed `api_key` widget from a workflow
+ * before LiteGraph restores it.
+ *
+ * ComfyUI restores widgets_values positionally unless its named-values
+ * restore is on, so the slot `api_key` used to hold must be spliced out
+ * first — otherwise custom_model's value lands on use_vision, and every
+ * value after it on the next widget down. It has to happen before the
+ * restore: once values are applied, the trailing widgets have lost their
+ * defaults and there is nothing to shift back into place.
+ *
+ * `serializedWidgetNames` are the node's current widget names, in order,
+ * excluding widgets with `serialize === false` (which LiteGraph skips on
+ * both save and restore). Mutates `info` in place.
+ */
+export function dropRemovedApiKeyValue(
+    info: AgentSerializedInfo,
+    serializedWidgetNames: string[],
+): void {
+    const values = info.widgets_values;
+    const named = info.widgets_values_named;
+
+    // Newer frontends save both forms, and the named map is built in the
+    // same order as the array — so api_key's key position is its index.
+    if (named) {
+        if (!("api_key" in named)) return;
+        const idx = Object.keys(named).indexOf("api_key");
+        delete named.api_key;
+        if (Array.isArray(values)) values.splice(idx, 1);
+        return;
+    }
+
+    // Positional only: api_key sat where custom_model sits now. In an old
+    // layout the next slot holds custom_model's string; in the current one
+    // it holds the use_vision boolean.
+    if (!Array.isArray(values)) return;
+    const idx = serializedWidgetNames.indexOf("custom_model");
+    if (idx < 0) return;
+    if (typeof values[idx + 1] === "string") values.splice(idx, 1);
 }
 
 // ---- Preset menu data ----
@@ -328,6 +360,21 @@ export function registerAgentNode(
 ): void {
     if (nodeData.name !== "FFMPEGAgent") return;
 
+    // Un-shift workflows saved while the node still had an api_key widget.
+    // Wraps configure rather than onConfigure: the latter runs after values
+    // have already been restored.
+    const origConfigure = nodeType.prototype.configure as
+        ((info: AgentSerializedInfo) => void) | undefined;
+    nodeType.prototype.configure = function (this: AgentNode, info: AgentSerializedInfo): void {
+        if (info) {
+            const names = (this.widgets ?? [])
+                .filter((w: ComfyWidget) => w.serialize !== false)
+                .map((w: ComfyWidget) => w.name);
+            dropRemovedApiKeyValue(info, names);
+        }
+        origConfigure?.call(this, info);
+    };
+
     const onNodeCreated = nodeType.prototype.onNodeCreated;
 
     nodeType.prototype.onNodeCreated = function (this: AgentNode) {
@@ -349,11 +396,10 @@ export function registerAgentNode(
         // Hoisted so restoreSlots (onConfigure) can re-run it after values are restored
         let updateLlmVisibility: (() => void) | undefined;
 
-        // --- LLM model → custom_model / api_key visibility ---
+        // --- LLM model → custom_model visibility ---
         const llmWidget = this.widgets?.find((w: ComfyWidget) => w.name === "llm_model");
         if (llmWidget) {
             const customWidget = this.widgets?.find((w: ComfyWidget) => w.name === "custom_model");
-            const apiKeyWidget = this.widgets?.find((w: ComfyWidget) => w.name === "api_key");
             const ollamaUrlWidget = this.widgets?.find((w: ComfyWidget) => w.name === "ollama_url");
             const verifyWidget = this.widgets?.find((w: ComfyWidget) => w.name === "verify_output");
             const visionWidget = this.widgets?.find((w: ComfyWidget) => w.name === "use_vision");
@@ -363,7 +409,6 @@ export function registerAgentNode(
                 const model = llmWidget!.value;
                 const isNone = model === "none";
                 toggleWidget(customWidget, model === "custom");
-                toggleWidget(apiKeyWidget, needsApiKey(model));
                 if (ollamaUrlWidget) toggleWidget(ollamaUrlWidget, !isNone);
                 if (verifyWidget) toggleWidget(verifyWidget, !isNone);
                 if (visionWidget) toggleWidget(visionWidget, !isNone);

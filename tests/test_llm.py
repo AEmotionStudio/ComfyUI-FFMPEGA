@@ -4,7 +4,6 @@ import json
 
 from core.llm.base import LLMConfig, LLMProvider, LLMResponse
 from core.llm.ollama import OllamaConnector
-from core.llm.api import APIConnector
 from prompts.system import get_system_prompt
 from prompts.generation import get_generation_prompt
 
@@ -23,14 +22,14 @@ class TestLLMConfig:
     def test_custom_config(self):
         """Test custom configuration."""
         config = LLMConfig(
-            provider=LLMProvider.OPENAI,
-            model="gpt-4o",
+            provider=LLMProvider.OLLAMA,
+            model="qwen3:14b",
             api_key="test-key",
             temperature=0.5,
         )
 
-        assert config.provider == LLMProvider.OPENAI
-        assert config.model == "gpt-4o"
+        assert config.provider == LLMProvider.OLLAMA
+        assert config.model == "qwen3:14b"
         assert config.api_key == "test-key"
 
 
@@ -86,32 +85,6 @@ class TestOllamaConnector:
         assert len(messages) == 2
         assert messages[0]["role"] == "system"
         assert messages[1]["role"] == "user"
-
-
-class TestAPIConnector:
-    """Tests for APIConnector class."""
-
-    def test_openai_config(self):
-        """Test OpenAI configuration."""
-        config = LLMConfig(
-            provider=LLMProvider.OPENAI,
-            model="gpt-4o",
-            api_key="test-key",
-        )
-        connector = APIConnector(config)
-
-        assert connector.config.provider == LLMProvider.OPENAI
-
-    def test_anthropic_config(self):
-        """Test Anthropic configuration."""
-        config = LLMConfig(
-            provider=LLMProvider.ANTHROPIC,
-            model="claude-3-5-haiku-20241022",
-            api_key="test-key",
-        )
-        connector = APIConnector(config)
-
-        assert connector.config.provider == LLMProvider.ANTHROPIC
 
 
 class TestPromptTemplates:

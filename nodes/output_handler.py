@@ -245,36 +245,6 @@ def save_workflow_png(
     img.save(png_path, pnginfo=metadata, compress_level=4)
 
 
-def strip_api_key_from_metadata(
-    api_key: str,
-    prompt: Optional[dict],
-    extra_pnginfo: Optional[dict],
-) -> None:
-    """Remove api_key values from workflow metadata in-place.
-
-    This prevents API keys from being embedded in output files
-    when downstream Save Image/Video nodes serialize the workflow.
-    """
-    # Strip from the prompt graph (api format — keyed by node id)
-    if prompt:
-        for node_id, node_data in prompt.items():
-            inputs = node_data.get("inputs", {})
-            if "api_key" in inputs:
-                inputs["api_key"] = ""
-
-    # Strip from the workflow JSON (drag-drop format)
-    if extra_pnginfo and "workflow" in extra_pnginfo:
-        workflow = extra_pnginfo["workflow"]
-        for node in workflow.get("nodes", []):
-            # widgets_values is a positional array — scan for the
-            # actual key value and replace it
-            widgets = node.get("widgets_values", [])
-            if isinstance(widgets, list):
-                for i, val in enumerate(widgets):
-                    if val == api_key:
-                        widgets[i] = ""
-
-
 def audio_dict_to_wav(audio: dict) -> Optional[str]:
     """Convert a ComfyUI AUDIO dict to a temporary WAV file.
 

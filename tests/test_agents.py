@@ -4,7 +4,6 @@ Tests cover:
 - LLMConfig/LLMResponse data classes
 - CLIConnectorBase (parse/strip/build prompt/generate/chat_with_tools)
 - CLI subclass hooks (Gemini, Claude, Cursor, Qwen)
-- APIConnector (OpenAI + Anthropic tool calling, API key sanitization)
 - OllamaConnector config defaults
 - cli_utils binary resolution
 - PipelineGenerator agentic loop integration
@@ -13,7 +12,7 @@ Tests cover:
 import asyncio
 import json
 import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, AsyncMock
 
 from core.llm.base import LLMConfig, LLMProvider, LLMResponse, LLMConnector
 from core.llm.cli_base import CLIConnectorBase, _TOOL_CALL_MARKER
@@ -25,7 +24,6 @@ from core.llm.claude_cli import ClaudeCodeCLIConnector
 from core.llm.cursor_agent import CursorAgentConnector
 from core.llm.qwen_cli import QwenCodeCLIConnector
 from core.llm.ollama import OllamaConnector
-from core.llm.api import APIConnector, create_openai_connector, create_anthropic_connector
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -50,13 +48,13 @@ class TestLLMConfig:
     def test_custom_config(self):
         """Custom values should be stored correctly."""
         cfg = LLMConfig(
-            provider=LLMProvider.OPENAI,
-            model="gpt-4o",
+            provider=LLMProvider.OLLAMA,
+            model="qwen3:14b",
             api_key="sk-test1234567890",
             temperature=0.7,
         )
-        assert cfg.provider == LLMProvider.OPENAI
-        assert cfg.model == "gpt-4o"
+        assert cfg.provider == LLMProvider.OLLAMA
+        assert cfg.model == "qwen3:14b"
         assert cfg.api_key == "sk-test1234567890"
         assert cfg.temperature == 0.7
 
@@ -89,16 +87,16 @@ class TestLLMResponse:
         """Response should store all provided fields."""
         resp = LLMResponse(
             content="Hello world",
-            model="gpt-4o",
-            provider=LLMProvider.OPENAI,
+            model="qwen3:14b",
+            provider=LLMProvider.OLLAMA,
             prompt_tokens=10,
             completion_tokens=5,
             total_tokens=15,
             finish_reason="stop",
         )
         assert resp.content == "Hello world"
-        assert resp.model == "gpt-4o"
-        assert resp.provider == LLMProvider.OPENAI
+        assert resp.model == "qwen3:14b"
+        assert resp.provider == LLMProvider.OLLAMA
         assert resp.total_tokens == 15
 
     def test_optional_fields_default_none(self):
@@ -127,7 +125,7 @@ class TestLLMProvider:
     def test_all_providers_exist(self):
         """All expected providers should be defined."""
         expected = {
-            "ollama", "openai", "anthropic", "gemini", "qwen",
+            "ollama",
             "gemini_cli", "claude_cli", "cursor_agent", "qwen_cli",
             "custom",
         }
@@ -136,7 +134,7 @@ class TestLLMProvider:
 
     def test_provider_is_string(self):
         """Provider values should be usable as strings."""
-        assert LLMProvider.OPENAI.value == "openai"
+        assert LLMProvider.CLAUDE_CLI.value == "claude_cli"
         assert LLMProvider.OLLAMA == "ollama"
         assert LLMProvider.GEMINI_CLI.value == "gemini_cli"
 
@@ -787,240 +785,6 @@ class TestOllamaConnector:
         msgs = c.format_messages("test prompt")
         assert len(msgs) == 1
         assert msgs[0]["role"] == "user"
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# APIConnector
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-
-class TestAPIConnector:
-    """Tests for APIConnector."""
-
-    def test_openai_config_routing(self):
-        """OpenAI provider should set correct base_url."""
-        cfg = LLMConfig(
-            provider=LLMProvider.OPENAI,
-            model="gpt-4o",
-            api_key="sk-test",
-        )
-        c = APIConnector(cfg)
-        assert "openai.com" in c.config.base_url
-
-    def test_anthropic_config_routing(self):
-        """Anthropic provider should set correct base_url and auth."""
-        cfg = LLMConfig(
-            provider=LLMProvider.ANTHROPIC,
-            model="claude-3-5-haiku-20241022",
-            api_key="sk-ant-test",
-        )
-        c = APIConnector(cfg)
-        assert "anthropic.com" in c.config.base_url
-        assert c._auth_header == "x-api-key"
-        assert c._auth_prefix == ""
-
-    def test_gemini_api_config_routing(self):
-        """Gemini API provider should set correct base_url."""
-        cfg = LLMConfig(
-            provider=LLMProvider.GEMINI,
-            model="gemini-2.0-flash",
-            api_key="test-key",
-        )
-        c = APIConnector(cfg)
-        assert "generativelanguage.googleapis.com" in c.config.base_url
-
-
-class TestAPIConnectorToolCalling:
-    """Tests for APIConnector tool calling response parsing."""
-
-    @pytest.mark.asyncio
-    async def test_openai_tool_call_response(self):
-        """OpenAI tool call response should be parsed correctly."""
-        cfg = LLMConfig(
-            provider=LLMProvider.OPENAI,
-            model="gpt-4o",
-            api_key="sk-test",
-        )
-        c = APIConnector(cfg)
-
-        mock_response_data = {
-            "model": "gpt-4o",
-            "choices": [{
-                "message": {
-                    "content": "",
-                    "tool_calls": [{
-                        "id": "call_abc123",
-                        "function": {
-                            "name": "search_skills",
-                            "arguments": '{"query": "blur"}',
-                        },
-                    }],
-                },
-                "finish_reason": "tool_calls",
-            }],
-            "usage": {
-                "prompt_tokens": 100,
-                "completion_tokens": 20,
-                "total_tokens": 120,
-            },
-        }
-
-        mock_resp = MagicMock()
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = mock_response_data
-
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value=mock_resp)
-
-        with patch.object(type(c), "client", new_callable=lambda: property(lambda self: mock_client)):
-            result = await c._chat_with_tools_openai(
-                messages=[{"role": "user", "content": "blur"}],
-                tools=[],
-            )
-
-        assert result.tool_calls is not None
-        assert len(result.tool_calls) == 1
-        assert result.tool_calls[0]["id"] == "call_abc123"
-        assert result.tool_calls[0]["function"]["name"] == "search_skills"
-        assert result.tool_calls[0]["function"]["arguments"] == '{"query": "blur"}'
-        assert result.prompt_tokens == 100
-
-    @pytest.mark.asyncio
-    async def test_anthropic_tool_call_response(self):
-        """Anthropic tool_use blocks should be parsed correctly."""
-        cfg = LLMConfig(
-            provider=LLMProvider.ANTHROPIC,
-            model="claude-3-5-haiku-20241022",
-            api_key="sk-ant-test",
-        )
-        c = APIConnector(cfg)
-
-        mock_response_data = {
-            "model": "claude-3-5-haiku-20241022",
-            "content": [
-                {"type": "text", "text": "Let me search for that."},
-                {
-                    "type": "tool_use",
-                    "id": "toolu_abc123",
-                    "name": "search_skills",
-                    "input": {"query": "blur"},
-                },
-            ],
-            "usage": {
-                "input_tokens": 50,
-                "output_tokens": 30,
-            },
-            "stop_reason": "tool_use",
-        }
-
-        mock_resp = MagicMock()
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = mock_response_data
-
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value=mock_resp)
-
-        with patch.object(type(c), "client", new_callable=lambda: property(lambda self: mock_client)):
-            result = await c._chat_with_tools_anthropic(
-                messages=[{"role": "user", "content": "blur"}],
-                tools=[{
-                    "type": "function",
-                    "function": {
-                        "name": "search_skills",
-                        "description": "Search",
-                        "parameters": {"type": "object", "properties": {}},
-                    },
-                }],
-            )
-
-        assert result.tool_calls is not None
-        assert len(result.tool_calls) == 1
-        assert result.tool_calls[0]["id"] == "toolu_abc123"
-        assert result.tool_calls[0]["function"]["name"] == "search_skills"
-        assert result.tool_calls[0]["function"]["arguments"] == {"query": "blur"}
-        assert result.content == "Let me search for that."
-        assert result.prompt_tokens == 50
-
-    @pytest.mark.asyncio
-    async def test_anthropic_tool_result_conversion(self):
-        """Anthropic should convert tool role messages to tool_result blocks."""
-        cfg = LLMConfig(
-            provider=LLMProvider.ANTHROPIC,
-            model="claude-3-5-haiku-20241022",
-            api_key="sk-ant-test",
-        )
-        c = APIConnector(cfg)
-
-        messages = [
-            {"role": "user", "content": "blur"},
-            {
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [{
-                    "id": "toolu_1",
-                    "function": {
-                        "name": "search_skills",
-                        "arguments": '{"query": "blur"}',
-                    },
-                }],
-            },
-            {
-                "role": "tool",
-                "tool_call_id": "toolu_1",
-                "content": '{"results": ["gaussian_blur"]}',
-            },
-        ]
-
-        mock_response_data = {
-            "model": "claude-3-5-haiku-20241022",
-            "content": [{"type": "text", "text": "Found blur skill."}],
-            "usage": {"input_tokens": 10, "output_tokens": 5},
-        }
-
-        mock_resp = MagicMock()
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = mock_response_data
-
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value=mock_resp)
-
-        with patch.object(type(c), "client", new_callable=lambda: property(lambda self: mock_client)):
-            result = await c._chat_with_tools_anthropic(messages, tools=[])
-
-        # Verify the request payload was formed correctly
-        call_args = mock_client.post.call_args
-        payload = call_args.kwargs.get("json") or call_args[1].get("json")
-        assert payload is not None
-
-        # Check that tool result was converted properly
-        anthropic_msgs = payload["messages"]
-        # Find messages that contain tool_result blocks
-        tool_result_msgs = []
-        for m in anthropic_msgs:
-            if m["role"] == "user" and isinstance(m.get("content"), list):
-                for block in m["content"]:
-                    if isinstance(block, dict) and block.get("type") == "tool_result":
-                        tool_result_msgs.append(block)
-        assert len(tool_result_msgs) > 0
-        assert tool_result_msgs[0]["tool_use_id"] == "toolu_1"
-
-
-class TestAPIConnectorFactories:
-    """Tests for convenience factory functions."""
-
-    def test_create_openai_connector(self):
-        """create_openai_connector should create properly configured connector."""
-        c = create_openai_connector(api_key="sk-test", model="gpt-4o-mini")
-        assert c.config.provider == LLMProvider.OPENAI
-        assert c.config.model == "gpt-4o-mini"
-        assert c.config.api_key == "sk-test"
-
-    def test_create_anthropic_connector(self):
-        """create_anthropic_connector should create properly configured connector."""
-        c = create_anthropic_connector(api_key="sk-ant-test")
-        assert c.config.provider == LLMProvider.ANTHROPIC
-        assert c.config.model == "claude-3-5-haiku-20241022"
-        assert c.config.api_key == "sk-ant-test"
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

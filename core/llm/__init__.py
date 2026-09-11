@@ -2,7 +2,6 @@
 
 from .base import LLMConnector, LLMResponse, LLMConfig
 from .ollama import OllamaConnector
-from .api import APIConnector
 from .gemini_cli import GeminiCLIConnector
 
 __all__ = [
@@ -10,6 +9,5 @@ __all__ = [
     "LLMResponse",
     "LLMConfig",
     "OllamaConnector",
-    "APIConnector",
     "GeminiCLIConnector",
 ]

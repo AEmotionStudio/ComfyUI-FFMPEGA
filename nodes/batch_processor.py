@@ -32,7 +32,6 @@ async def process_batch(
     llm_model: str,
     quality_preset: str,
     ollama_url: str,
-    api_key: str,
     custom_model: str,
     crf: int,
     encoding_preset: str,
@@ -121,7 +120,7 @@ async def process_batch(
         effective_model = custom_model.strip()
 
     connected_inputs_str = f"Batch mode: {len(valid_files)} videos in {video_folder}"
-    connector = pipeline_generator.create_connector(effective_model, ollama_url, api_key)
+    connector = pipeline_generator.create_connector(effective_model, ollama_url)
     try:
         spec = await pipeline_generator.generate(
             connector, prompt, metadata_str,
