@@ -1,14 +1,24 @@
 """Programmatic Tool Calling (PTC) executor for FFMPEGA.
 
-Executes LLM-generated Python orchestration code in a restricted
-sandbox.  Only explicitly allowed tool functions, ``json``, and
-``print`` are available — ``import``, ``open``, ``eval``, ``exec``,
-and all other builtins are removed.
+Executes LLM-generated Python orchestration code with a reduced builtins
+namespace.  Only explicitly allowed tool functions, ``json``, and ``print``
+are injected; ``import``, ``open``, ``eval``, ``exec`` and the other builtins
+are removed, and a static pass rejects object-model introspection patterns
+(``__subclasses__``, ``__globals__``, ``__class__``, ``os.``, ``subprocess.``
+and similar) before execution starts.
 
-The sandbox also blocks Python object-model introspection via static
-code analysis — patterns like ``__subclasses__``, ``__globals__``,
-``__class__``, ``__code__``, ``os.``, ``subprocess.``, etc. are
-rejected before execution starts.
+.. warning::
+
+   **This is not a security boundary.**  It is a guard-rail that stops a
+   local model from wandering out of its lane by accident.  The code still
+   runs via ``exec`` in this process, and a blocklist over source text
+   cannot be made airtight against someone deliberately trying to escape it.
+
+   What keeps this safe in practice is provenance: the code comes from the
+   user's own local model, driven by their own prompt.  Treat any input that
+   reaches the model from elsewhere — video metadata, transcripts, filenames
+   — as capable of steering what gets executed here, and do not expose this
+   executor to untrusted prompts.
 
 Inspired by Anthropic's Programmatic Tool Calling pattern, but
 implemented model-agnostically so it works with any LLM provider.

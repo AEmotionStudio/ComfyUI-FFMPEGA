@@ -27,9 +27,9 @@ web = server.web
 def _is_path_sandboxed(filepath: str) -> bool:
     """Check that a resolved path is inside an allowed directory.
 
-    Accepts ComfyUI's managed directories (output, temp, input) as well
-    as the system tempdir, where upstream FFMPEGA nodes create preview-mode
-    renders via ``tempfile.mkdtemp``.
+    Accepts ComfyUI's managed directories (output, temp, input), plus
+    FFMPEGA's own ``ffmpega_*`` scratch directories and files directly
+    under the system tempdir — not the tempdir at large.
     """
     try:
         from .loadlast.discovery.path_utils import is_path_sandboxed
@@ -41,12 +41,19 @@ def _is_path_sandboxed(filepath: str) -> bool:
             filepath,
         )
 
-    # Also accept the system temp directory — upstream FFMPEGA nodes
-    # write preview renders to /tmp/ffmpega_*/
+    # Accept FFMPEGA's own scratch space under the system temp directory — but
+    # only that, not the whole tempdir. Preview renders land in
+    # mkdtemp(prefix="ffmpega_") (nodes/output_handler.py), transcodes in
+    # ffmpega_preview_*.mp4 and extracted first frames in ffmpega_frame_*.png
+    # (this module). Anything else under /tmp belongs to another process, and
+    # serving it over an unauthenticated route is not ours to do.
     import tempfile
     real = os.path.realpath(filepath)
     sys_tmp = os.path.realpath(tempfile.gettempdir())
-    return real == sys_tmp or real.startswith(sys_tmp + os.sep)
+    if not real.startswith(sys_tmp + os.sep):
+        return False
+    first_segment = real[len(sys_tmp) + 1:].split(os.sep)[0]
+    return first_segment.startswith("ffmpega_")
 
 
 def _resolve_video_path(raw_path: str) -> str | None:
@@ -601,21 +608,100 @@ async def waveform_peaks(request):
     return web.json_response(result)
 
 
-# ── Text Presets ─────────────────────────────────────────────────────
+# ── Preset storage ───────────────────────────────────────────────────
+#
+# Presets are user data, so they belong in ComfyUI's user directory rather
+# than inside the extension folder. Stored next to the code they collided
+# with `git pull` and were deleted outright by a Manager reinstall. Files
+# still in the old location are migrated on first read.
+#
+# The POST handlers are unauthenticated (ComfyUI has no auth), so they cap
+# the body size and check the shape before writing anything to disk.
 
-_PRESETS_FILE = os.path.join(os.path.dirname(__file__), "text_presets.json")
+_LEGACY_PRESET_DIR = os.path.dirname(__file__)
+_PRESET_MAX_BYTES = 256 * 1024
+_PRESET_MAX_ITEMS = 500
+
+
+def _preset_path(name: str) -> str:
+    """Absolute path for a preset file, preferring ComfyUI's user directory."""
+    import shutil
+
+    try:
+        import folder_paths
+        base = os.path.join(folder_paths.get_user_directory(), "ffmpega")
+    except Exception:
+        base = _LEGACY_PRESET_DIR
+
+    try:
+        os.makedirs(base, exist_ok=True)
+    except OSError:
+        return os.path.join(_LEGACY_PRESET_DIR, name)
+
+    path = os.path.join(base, name)
+    legacy = os.path.join(_LEGACY_PRESET_DIR, name)
+    if path != legacy and not os.path.isfile(path) and os.path.isfile(legacy):
+        try:
+            shutil.copy2(legacy, path)
+            log.info("Migrated %s into the ComfyUI user directory", name)
+        except OSError as e:
+            log.warning("Could not migrate %s (%s) — using the old location", name, e)
+            return legacy
+    return path
+
+
+def _read_presets(name: str) -> list:
+    """Return the preset list stored under *name*, or an empty list."""
+    path = _preset_path(name)
+    if not os.path.isfile(path):
+        return []
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return data if isinstance(data, list) else []
+
+
+async def _write_presets(request, name: str):
+    """Validate a preset payload and store it. Returns an aiohttp response."""
+    raw = await request.read()
+    if len(raw) > _PRESET_MAX_BYTES:
+        return web.json_response(
+            {"error": f"payload too large (max {_PRESET_MAX_BYTES // 1024} KB)"},
+            status=413,
+        )
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return web.json_response({"error": "invalid JSON"}, status=400)
+
+    if not isinstance(data, list):
+        return web.json_response({"error": "expected array"}, status=400)
+    if len(data) > _PRESET_MAX_ITEMS:
+        return web.json_response(
+            {"error": f"too many presets (max {_PRESET_MAX_ITEMS})"}, status=400,
+        )
+    for item in data:
+        if not isinstance(item, dict):
+            return web.json_response(
+                {"error": "each preset must be an object"}, status=400,
+            )
+        if not all(isinstance(k, str) for k in item):
+            return web.json_response(
+                {"error": "preset keys must be strings"}, status=400,
+            )
+
+    with open(_preset_path(name), "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    return web.json_response({"ok": True})
+
+
+# ── Text Presets ─────────────────────────────────────────────────────
 
 
 @server.PromptServer.instance.routes.get("/ffmpega/text_presets")
 async def _get_text_presets(request):
     """Return saved custom text presets."""
     try:
-        if os.path.isfile(_PRESETS_FILE):
-            with open(_PRESETS_FILE, "r", encoding="utf-8") as f:
-                presets = json.load(f)
-        else:
-            presets = []
-        return web.json_response(presets)
+        return web.json_response(_read_presets("text_presets.json"))
     except Exception as e:
         log.warning("text_presets GET error: %s", e)
         return web.json_response([], status=500)
@@ -625,12 +711,7 @@ async def _get_text_presets(request):
 async def _save_text_presets(request):
     """Save custom text presets (replaces entire list)."""
     try:
-        data = await request.json()
-        if not isinstance(data, list):
-            return web.json_response({"error": "expected array"}, status=400)
-        with open(_PRESETS_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-        return web.json_response({"ok": True})
+        return await _write_presets(request, "text_presets.json")
     except Exception as e:
         log.warning("text_presets POST error: %s", e)
         return web.json_response({"error": str(e)}, status=500)
@@ -638,19 +719,12 @@ async def _save_text_presets(request):
 
 # ── Effects Builder Presets ──────────────────────────────────────────
 
-_EFFECTS_PRESETS_FILE = os.path.join(os.path.dirname(__file__), "effects_presets.json")
-
 
 @server.PromptServer.instance.routes.get("/ffmpega/effects_presets")
 async def _get_effects_presets(request):
     """Return saved custom effects builder presets."""
     try:
-        if os.path.isfile(_EFFECTS_PRESETS_FILE):
-            with open(_EFFECTS_PRESETS_FILE, "r", encoding="utf-8") as f:
-                presets = json.load(f)
-        else:
-            presets = []
-        return web.json_response(presets)
+        return web.json_response(_read_presets("effects_presets.json"))
     except Exception as e:
         log.warning("effects_presets GET error: %s", e)
         return web.json_response([], status=500)
@@ -660,12 +734,7 @@ async def _get_effects_presets(request):
 async def _save_effects_presets(request):
     """Save custom effects builder presets (replaces entire list)."""
     try:
-        data = await request.json()
-        if not isinstance(data, list):
-            return web.json_response({"error": "expected array"}, status=400)
-        with open(_EFFECTS_PRESETS_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-        return web.json_response({"ok": True})
+        return await _write_presets(request, "effects_presets.json")
     except Exception as e:
         log.warning("effects_presets POST error: %s", e)
         return web.json_response({"error": str(e)}, status=500)
@@ -673,19 +742,12 @@ async def _save_effects_presets(request):
 
 # ── Shader Overlay Presets ───────────────────────────────────────────
 
-_SHADER_PRESETS_FILE = os.path.join(os.path.dirname(__file__), "shader_presets.json")
-
 
 @server.PromptServer.instance.routes.get("/ffmpega/shader_presets")
 async def _get_shader_presets(request):
     """Return saved custom shader overlay presets."""
     try:
-        if os.path.isfile(_SHADER_PRESETS_FILE):
-            with open(_SHADER_PRESETS_FILE, "r", encoding="utf-8") as f:
-                presets = json.load(f)
-        else:
-            presets = []
-        return web.json_response(presets)
+        return web.json_response(_read_presets("shader_presets.json"))
     except Exception as e:
         log.warning("shader_presets GET error: %s", e)
         return web.json_response([], status=500)
@@ -695,12 +757,7 @@ async def _get_shader_presets(request):
 async def _save_shader_presets(request):
     """Save custom shader overlay presets (replaces entire list)."""
     try:
-        data = await request.json()
-        if not isinstance(data, list):
-            return web.json_response({"error": "expected array"}, status=400)
-        with open(_SHADER_PRESETS_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-        return web.json_response({"ok": True})
+        return await _write_presets(request, "shader_presets.json")
     except Exception as e:
         log.warning("shader_presets POST error: %s", e)
         return web.json_response({"error": str(e)}, status=500)
