@@ -185,12 +185,16 @@ def _download_model(model_dir: Path, variant: str) -> None:
     _mm.require_downloads_allowed(model_key)
 
     try:
-        from huggingface_hub import snapshot_download
+        import huggingface_hub  # noqa: F401
     except ImportError:
         raise ImportError(
             "huggingface_hub is required to download Kiwi-Edit. "
             "Install with: pip install huggingface_hub"
         )
+
+    # Pinned: the downloaded directory is later loaded with
+    # trust_remote_code=True, so its Python is executed.
+    from .hf_pins import pinned_snapshot_download as snapshot_download
 
     mirror_repo = _MIRROR_REPOS.get(variant)
     hf_repo = _HF_REPOS[variant]
@@ -716,10 +720,13 @@ def _auto_detect_resolution(
     else:
         effective_free = free_vram_gib
 
-    # Select tier table based on precision
-    is_fp8 = precision == "fp8" or (
-        precision == "auto" and _get_fp8_model_dir("instruct") is not None
-    )
+    # Select tier table based on precision.
+    # "auto" resolves to bf16: every Kiwi-Edit repo (mirror and upstream) ships
+    # BF16 weights, and load_pipeline() only understands "auto"/"bf16", so there
+    # is no fp8 checkout to detect. This previously called a
+    # _get_fp8_model_dir() that was never defined, so the default "auto" path
+    # raised NameError before it could pick a tier.
+    is_fp8 = precision == "fp8"
     tiers = _VRAM_RESOLUTION_TIERS_FP8 if is_fp8 else _VRAM_RESOLUTION_TIERS_BF16
     precision_label = "fp8" if is_fp8 else "bf16"
 

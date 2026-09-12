@@ -286,7 +286,7 @@ def _find_or_download_file(
     # Fallback: huggingface_hub
     log.info("Fish Speech: downloading %s from %s ...", filename, vinfo["hf_repo"])
     try:
-        from huggingface_hub import hf_hub_download
+        from .hf_pins import pinned_hf_download as hf_hub_download
 
         for repo in (vinfo["hf_repo"], vinfo.get("fallback_repo", "")):
             if not repo:

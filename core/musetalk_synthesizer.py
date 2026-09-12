@@ -158,9 +158,9 @@ def _find_or_download_model(model_key: str, *, use_float16: bool = True) -> str:
     upstream_file = _UPSTREAM_UNET if model_key in ("unet", "unet_fp16") else filename
 
     def _download():
-        from huggingface_hub import hf_hub_download
+        from .hf_pins import pinned_hf_download
 
-        return hf_hub_download(
+        return pinned_hf_download(
             repo_id=_HF_REPO,
             filename=upstream_file,
             local_dir=model_dir,
@@ -196,9 +196,9 @@ def _get_vae_path() -> str:
     require_downloads_allowed("musetalk")
 
     def _download():
-        from huggingface_hub import snapshot_download
+        from .hf_pins import pinned_snapshot_download
 
-        return snapshot_download(
+        return pinned_snapshot_download(
             repo_id=f"stabilityai/{_VAE_TYPE}",
             local_dir=vae_dir,
         )
@@ -237,9 +237,9 @@ def _get_whisper_path() -> str:
     require_downloads_allowed("musetalk")
 
     def _download():
-        from huggingface_hub import snapshot_download
+        from .hf_pins import pinned_snapshot_download
 
-        return snapshot_download(
+        return pinned_snapshot_download(
             repo_id=_WHISPER_REPO,
             local_dir=whisper_dir,
         )

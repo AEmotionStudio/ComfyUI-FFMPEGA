@@ -29,13 +29,14 @@ def main():
     print("[FFMPEGA] Installing optional dependencies...")
 
     # --- SAM3 / SAM 3.1 (object segmentation for auto_mask) ---
-    # We always want the latest sam3 from GitHub main, because SAM 3.1
-    # ships the build_sam3_multiplex_video_model builder that older copies
-    # of the pip package don't have.
+    # Pinned to an exact commit so an upstream push cannot change what users
+    # install. The pin is past SAM 3.1, so it carries the
+    # build_sam3_multiplex_video_model builder that older copies of the pip
+    # package don't have. Bump the SHA deliberately to take newer sam3.
     if not is_installed("sam3"):
         print("[FFMPEGA] Installing SAM3 (--no-deps to avoid numpy conflicts)...")
         result = subprocess.run(
-            [*pip, "--no-deps", "git+https://github.com/facebookresearch/sam3.git"],
+            [*pip, "--no-deps", "git+https://github.com/facebookresearch/sam3.git@660a5e9e1b8b4c02c0ad97229b88a09a6e4ff5b7"],
         )
         if result.returncode == 0:
             print("[FFMPEGA] ✓ SAM3 installed successfully")
@@ -63,7 +64,7 @@ def main():
             )
             result = subprocess.run([
                 *pip, "--no-deps", "--upgrade", "--force-reinstall",
-                "git+https://github.com/facebookresearch/sam3.git",
+                "git+https://github.com/facebookresearch/sam3.git@660a5e9e1b8b4c02c0ad97229b88a09a6e4ff5b7",
             ])
             if result.returncode == 0:
                 print("[FFMPEGA] ✓ SAM3 upgraded to SAM 3.1-capable revision")
@@ -105,7 +106,7 @@ def main():
     if not is_installed("mmaudio"):
         print("[FFMPEGA] Installing MMAudio (--no-deps to avoid torch/numpy conflicts)...")
         result = subprocess.run(
-            [*pip, "--no-deps", "git+https://github.com/hkchengrex/MMAudio.git"],
+            [*pip, "--no-deps", "git+https://github.com/hkchengrex/MMAudio.git@974010a026c731054592d8f777218bd9d85a6c24"],
         )
         if result.returncode == 0:
             print("[FFMPEGA] ✓ MMAudio installed successfully")
@@ -138,7 +139,7 @@ def main():
     if not is_installed("audiox"):
         print("[FFMPEGA] Installing AudioX from GitHub (--no-deps)...")
         result = subprocess.run(
-            [*pip, "--no-deps", "git+https://github.com/ZeyueT/AudioX.git"],
+            [*pip, "--no-deps", "git+https://github.com/ZeyueT/AudioX.git@3bdfb7081636b9e62224039e37dadaa264dc781f"],
         )
         if result.returncode == 0:
             print("[FFMPEGA] ✓ AudioX installed successfully")
@@ -191,7 +192,7 @@ def main():
     if not is_installed("sam_audio"):
         print("[FFMPEGA] Installing SAM-Audio from GitHub (--no-deps)...")
         result = subprocess.run(
-            [*pip, "--no-deps", "git+https://github.com/facebookresearch/sam-audio.git"],
+            [*pip, "--no-deps", "git+https://github.com/facebookresearch/sam-audio.git@bb4c6999d2677c7402360e426afc01ddfad6dce0"],
         )
         if result.returncode == 0:
             print("[FFMPEGA] ✓ SAM-Audio installed successfully")
@@ -207,8 +208,8 @@ def main():
     ]
     # These are git-only packages — check and install separately
     sam_audio_git_deps = {
-        "dacvae": "git+https://github.com/facebookresearch/dacvae.git",
-        "perception_models": "git+https://github.com/facebookresearch/perception_models@unpin-deps",
+        "dacvae": "git+https://github.com/facebookresearch/dacvae.git@414c20785fc3a28373073ea8ef7a1316eeeaca6e",
+        "perception_models": "git+https://github.com/facebookresearch/perception_models@e72b6810b1133e1c879f2cc965d276eb73803f1f",
     }
     for pkg_name, git_url in sam_audio_git_deps.items():
         if not is_installed(pkg_name):
@@ -237,7 +238,7 @@ def main():
     # Install --no-deps to avoid pulling conflicting torch / transformers pins
     if not is_installed("acestep"):
         print("[FFMPEGA] Installing ACE-Step 1.5 (--no-deps)...")
-        result = subprocess.run([*pip, "--no-deps", "git+https://github.com/ace-step/ACE-Step-1.5.git"])
+        result = subprocess.run([*pip, "--no-deps", "git+https://github.com/ace-step/ACE-Step-1.5.git@ca1e85fe9430179831e6bc6be790c332190a3866"])
         if result.returncode == 0:
             print("[FFMPEGA] ✓ ACE-Step installed")
         else:
@@ -268,7 +269,7 @@ def main():
     # Install --no-deps to avoid pulling torch==2.0.1 / CUDA 11 pins
     if not is_installed("normalcrafter"):
         print("[FFMPEGA] Installing NormalCrafter (--no-deps)...")
-        result = subprocess.run([*pip, "--no-deps", "git+https://github.com/Binyr/NormalCrafter.git"])
+        result = subprocess.run([*pip, "--no-deps", "git+https://github.com/Binyr/NormalCrafter.git@75af9887a2cb14cd1ce3883c5773bc296565777c"])
         if result.returncode == 0:
             print("[FFMPEGA] ✓ NormalCrafter installed")
         else:
@@ -286,7 +287,7 @@ def main():
     if not is_installed("sapiens"):
         print("[FFMPEGA] Installing Sapiens2 (--no-deps)...")
         result = subprocess.run(
-            [*pip, "--no-deps", "git+https://github.com/facebookresearch/sapiens2.git"],
+            [*pip, "--no-deps", "git+https://github.com/facebookresearch/sapiens2.git@7e5bae88456ac418ff0e58e74106c9fe192055d4"],
         )
         if result.returncode == 0:
             print("[FFMPEGA] ✓ Sapiens2 installed successfully")
@@ -314,7 +315,7 @@ def main():
     if not is_installed("sharp"):
         print("[FFMPEGA] Installing SHARP (--no-deps to avoid torch conflicts)...")
         result = subprocess.run(
-            [*pip, "--no-deps", "git+https://github.com/apple/ml-sharp.git"],
+            [*pip, "--no-deps", "git+https://github.com/apple/ml-sharp.git@aed6527499ef91cba3b54c18d49a870f25947190"],
         )
         if result.returncode == 0:
             print("[FFMPEGA] ✓ SHARP installed successfully")

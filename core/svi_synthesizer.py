@@ -155,7 +155,7 @@ def _download_lora(lora_filename: str) -> Path:
     _mm.require_downloads_allowed("svi")
 
     try:
-        from huggingface_hub import hf_hub_download
+        from .hf_pins import pinned_hf_download as hf_hub_download
     except ImportError:
         raise ImportError(
             "huggingface_hub is required to download SVI LoRAs. "
@@ -947,7 +947,7 @@ def _run_svi_inference(
 
             # Inject raw y as c_concat (will be concatenated to x in
             # _apply_model → torch.cat([xc, c_concat], dim=1))
-            y_dev = raw_y.to(device=input_x.device, dtype=input_x.dtype)
+            y_dev = raw_y.to(device=input_x.device, dtype=input_x.dtype)  # noqa: F821 - captured from the enclosing scope
             if y_dev.shape[0] != B:
                 y_dev = y_dev.expand(B, -1, -1, -1, -1)
             # Match temporal dimension

@@ -130,7 +130,7 @@ def _find_or_download_model(model_key: str) -> str:
     # Download from upstream HuggingFace (original .pth format)
     if model_key in _HF_UPSTREAM_FILES:
         try:
-            from huggingface_hub import hf_hub_download
+            from .hf_pins import pinned_hf_download as hf_hub_download
         except ImportError:
             raise RuntimeError(
                 "huggingface_hub is required to download MMAudio models. "
@@ -195,7 +195,7 @@ def _find_or_download_bigvgan() -> str:
 
     # Try mirror first
     try:
-        from huggingface_hub import snapshot_download
+        from .hf_pins import pinned_snapshot_download as snapshot_download
     except ImportError:
         raise RuntimeError(
             "huggingface_hub is required to download BigVGAN. "
@@ -421,8 +421,12 @@ def load_models() -> dict:
             from mmaudio.model.networks import get_my_mmaudio
             model_name = "large_44k_v2" if is_v2 else "large_44k"
             net = get_my_mmaudio(model_name).to(str(offload_device), dtype).eval()
-        net.load_weights(model_sd)
-        del model_sd
+        # model_sd is bound above the try block. The `del` that makes ruff
+        # think it may be unbound lives at the end of the accelerate branch,
+        # while the only ImportError can come from that branch's first lines —
+        # so it is always still bound here.
+        net.load_weights(model_sd)  # noqa: F821
+        del model_sd  # noqa: F821
 
     seq_cfg = CONFIG_44K
 

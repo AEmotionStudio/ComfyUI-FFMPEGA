@@ -166,7 +166,9 @@ def _find_or_download_model(model_key: str) -> str:
         )
 
     def _download():
-        return hf_hub_download(
+        from .hf_pins import pinned_hf_download
+
+        return pinned_hf_download(
             repo_id=_HF_REPO,
             filename=filename,
             local_dir=model_dir,

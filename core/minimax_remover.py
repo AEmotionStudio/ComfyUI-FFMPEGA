@@ -148,18 +148,20 @@ def _download_model(model_dir: Path) -> None:
     log_download_start("minimax_remover")
 
     try:
-        from huggingface_hub import snapshot_download
+        import huggingface_hub  # noqa: F401
     except ImportError:
         raise ImportError(
             "huggingface_hub is required to download MiniMax-Remover. "
             "Install with: pip install huggingface_hub"
         )
 
+    from .hf_pins import pinned_snapshot_download as _pinned_snapshot_download
+
     # Try mirror first, then official
     for repo_id in [_MIRROR_REPO, _HF_REPO]:
         try:
             log.info("Downloading MiniMax-Remover from %s...", repo_id)
-            snapshot_download(
+            _pinned_snapshot_download(
                 repo_id=repo_id,
                 local_dir=str(model_dir),
                 allow_patterns=["vae/*", "transformer/*", "scheduler/*"],

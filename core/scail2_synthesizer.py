@@ -120,7 +120,7 @@ def _ensure_scail2_model() -> str:
             "Could not resolve ComfyUI diffusion_models directory") from exc
 
     try:
-        from huggingface_hub import hf_hub_download
+        from .hf_pins import pinned_hf_download as hf_hub_download
     except ImportError as exc:
         raise ImportError(
             "huggingface_hub is required to download the SCAIL-2 model.") from exc

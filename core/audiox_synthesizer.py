@@ -151,7 +151,9 @@ def _find_or_download_model(model_key: str) -> str:
         )
 
     def _download():
-        return hf_hub_download(
+        from .hf_pins import pinned_hf_download
+
+        return pinned_hf_download(
             repo_id=_HF_REPO,
             filename=filename,
             local_dir=model_dir,
@@ -214,7 +216,7 @@ def _extract_video_frames(
     duration: float,
     target_fps: int = 5,
     frame_size: int = 224,
-) -> "torch.Tensor":
+) -> "torch.Tensor":  # noqa: F821 - torch is imported lazily inside the body
     """Extract video frames using FFmpeg and return as a tensor.
 
     Args:
@@ -896,7 +898,7 @@ def _encode_video_with_synchformer(
     seconds_start: float = 0,
     seconds_total: float = 10,
     device: str = "cuda",
-) -> "torch.Tensor":
+) -> "torch.Tensor":  # noqa: F821 - torch is imported lazily inside the body
     """Encode video frames with Synchformer for AudioX-MAF conditioning.
 
     Returns:
@@ -928,7 +930,17 @@ def _encode_video_with_synchformer(
         from safetensors.torch import load_file
         state_dict = load_file(synchformer_path)
     else:
-        state_dict = torch.load(synchformer_path, map_location="cpu", weights_only=False)
+        try:
+            state_dict = torch.load(synchformer_path, map_location="cpu", weights_only=True)
+        except Exception as exc:
+            # Older Synchformer checkpoints pickle non-tensor objects. Fall back,
+            # but say so — unpickling executes arbitrary code from the file.
+            log.warning(
+                "Synchformer checkpoint %s could not be loaded with weights_only=True "
+                "(%s); falling back to full unpickling. Only load checkpoints you trust.",
+                synchformer_path, exc,
+            )
+            state_dict = torch.load(synchformer_path, map_location="cpu", weights_only=False)
 
     synchformer_model.load_state_dict(state_dict)
     del state_dict

@@ -88,11 +88,16 @@ def load_detector(device: torch.device) -> LoadedDetector:
     )
     _require_downloads_allowed()
     try:
+        from ..hf_pins import revision_for
+    except ImportError:
+        from core.hf_pins import revision_for  # type: ignore
+    _revision = revision_for(_DETR_REPO)
+    try:
         processor = DetrImageProcessor.from_pretrained(
-            _DETR_REPO, cache_dir=str(cache_dir),
+            _DETR_REPO, cache_dir=str(cache_dir), revision=_revision,
         )
         model = DetrForObjectDetection.from_pretrained(
-            _DETR_REPO, cache_dir=str(cache_dir),
+            _DETR_REPO, cache_dir=str(cache_dir), revision=_revision,
         ).eval().to(device)
     except Exception as exc:
         raise RuntimeError(

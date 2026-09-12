@@ -97,7 +97,7 @@ def _download_model(model_dir: Path) -> Path:
 
     model_dir.mkdir(parents=True, exist_ok=True)
 
-    from huggingface_hub import hf_hub_download
+    from .hf_pins import pinned_hf_download as hf_hub_download
 
     # Try safetensors from mirror first
     try:

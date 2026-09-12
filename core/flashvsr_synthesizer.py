@@ -143,7 +143,7 @@ def _download_models(model_dir: Path) -> None:
     _mm.require_downloads_allowed("flashvsr")
 
     try:
-        from huggingface_hub import snapshot_download
+        from .hf_pins import pinned_snapshot_download as snapshot_download
     except ImportError:
         raise ImportError(
             "huggingface_hub is required to download FlashVSR models. "

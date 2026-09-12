@@ -412,7 +412,18 @@ def _load_state_dict(path: str, device: str = "cpu") -> dict:
     except ImportError:
         from core.platform import load_torch_file  # type: ignore
 
-    return load_torch_file(path, device=device, safe_load=False)
+    # safe_load=True keeps torch.load in weights_only mode. The mirror ships
+    # sam3.safetensors, which takes the safetensors path and never unpickles;
+    # a legacy .pt only falls back to unpickling if the safe read fails.
+    try:
+        return load_torch_file(path, device=device, safe_load=True)
+    except Exception as exc:
+        log.warning(
+            "SAM3 checkpoint %s could not be loaded safely (%s); falling back to "
+            "full unpickling. Prefer the .safetensors build from the mirror.",
+            path, exc,
+        )
+        return load_torch_file(path, device=device, safe_load=False)
 
 
 def _load_efficient(model, ckpt: dict, device: str = "cpu") -> None:

@@ -142,8 +142,8 @@ def _find_or_download_model(model_key: str) -> str:
 
     # Fallback to upstream HF (.pth)
     def _download():
-        from huggingface_hub import hf_hub_download
-        return hf_hub_download(
+        from .hf_pins import pinned_hf_download
+        return pinned_hf_download(
             repo_id=_UPSTREAM_REPO,
             filename=pth_filename,
             local_dir=model_dir,
@@ -284,9 +284,21 @@ def _load_state_dict(path: str, device: str = "cpu") -> dict:
         from safetensors.torch import load_file
         return load_file(path, device=device)
     else:
-        # weights_only=False needed because upstream .pth files contain
-        # nested OrderedDicts (e.g. stitching_retargeting_module)
-        state_dict = torch.load(path, map_location=device, weights_only=False)
+        # Upstream .pth files contain nested OrderedDicts (e.g.
+        # stitching_retargeting_module), which older torch versions refuse
+        # under weights_only=True. Try the safe path first anyway: recent
+        # torch allows OrderedDict, so this usually succeeds and only the
+        # genuinely odd checkpoints reach the unpickling fallback.
+        try:
+            state_dict = torch.load(path, map_location=device, weights_only=True)
+        except Exception as exc:
+            log.warning(
+                "LivePortrait checkpoint %s could not be loaded with "
+                "weights_only=True (%s); falling back to full unpickling. "
+                "Only load checkpoints you trust.",
+                path, exc,
+            )
+            state_dict = torch.load(path, map_location=device, weights_only=False)
         # Handle nested checkpoint formats
         if isinstance(state_dict, dict):
             if "model" in state_dict:

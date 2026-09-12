@@ -179,7 +179,7 @@ def _ensure_weights_ready(ckpt_dir: str, fusion_path: str | None = None, precisi
     require_downloads_allowed("dreamid_omni")
 
     try:
-        from huggingface_hub import snapshot_download
+        from .hf_pins import pinned_snapshot_download as snapshot_download
     except ImportError:
         raise RuntimeError(
             "huggingface_hub is required to download DreamID-Omni models. "
@@ -191,7 +191,7 @@ def _ensure_weights_ready(ckpt_dir: str, fusion_path: str | None = None, precisi
         log_download_start("dreamid_omni", "fusion model")
         os.makedirs(omni_dir, exist_ok=True)
         try:
-            from huggingface_hub import hf_hub_download
+            from .hf_pins import pinned_hf_download as hf_hub_download
             # Download FP8 from our mirror (12 GB instead of 47 GB FP32)
             target_file = "dreamid_omni_fp8.safetensors"
             hf_hub_download(
@@ -230,7 +230,7 @@ def _ensure_weights_ready(ckpt_dir: str, fusion_path: str | None = None, precisi
         mma_dir = os.path.join(ckpt_dir, "MMAudio", "ext_weights")
         os.makedirs(mma_dir, exist_ok=True)
         try:
-            from huggingface_hub import hf_hub_download
+            from .hf_pins import pinned_hf_download as hf_hub_download
             for fname in ["ext_weights/v1-16.pth", "ext_weights/best_netG.pt"]:
                 try:
                     hf_hub_download(
@@ -314,7 +314,7 @@ def load_engine(
     ckpt_dir: str | None = None,
     cpu_offload: bool = True,
     precision: str = "auto",
-) -> "DreamIDOmniEngine":
+) -> "DreamIDOmniEngine":  # noqa: F821 - engine class is imported lazily inside
     """Load or return the cached DreamID-Omni engine.
 
     Args:
