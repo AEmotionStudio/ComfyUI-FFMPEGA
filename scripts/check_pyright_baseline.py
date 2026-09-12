@@ -94,8 +94,15 @@ def main() -> int:
         return 1
 
     if count < baseline:
-        write_baseline(count)
-        print(f"Pyright errors fell from {baseline} to {count} — baseline tightened.")
+        # Deliberately does NOT rewrite the file here. In CI this runs against
+        # an ephemeral checkout, so a "tightened" baseline would be discarded
+        # and the message would be a lie told on every run. Tightening is a
+        # local action that produces a commit.
+        print(
+            f"Pyright errors fell from {baseline} to {count}. "
+            f"Tighten the baseline with "
+            f"`python scripts/check_pyright_baseline.py --update` and commit it."
+        )
         return 0
 
     print(f"Pyright errors unchanged at {count}.")
