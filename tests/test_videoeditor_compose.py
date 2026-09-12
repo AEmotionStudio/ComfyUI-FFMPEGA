@@ -1,6 +1,9 @@
 """Tests for videoeditor.processing.compose module."""
 
 import json
+import os
+import tempfile
+
 import pytest
 
 from videoeditor.processing.compose import (
@@ -96,15 +99,18 @@ class TestBuildWatermarkFilter:
         assert build_watermark_filter({"enabled": True, "path": ""}) is None
 
     def test_basic_watermark(self):
+        # Watermark sources must be sandboxed (movie= reads the path); an
+        # ffmpega_* scratch path is accepted by the path authority.
+        wm_path = os.path.join(tempfile.gettempdir(), "ffmpega_wm_test", "logo.png")
         result = build_watermark_filter({
             "enabled": True,
-            "path": "/tmp/logo.png",
+            "path": wm_path,
             "size": 15,
             "opacity": 80,
             "position": "bottom-right",
         })
         assert result is not None
-        assert "movie=/tmp/logo.png" in result
+        assert f"movie={wm_path}" in result
         assert "overlay=" in result
         assert "colorchannelmixer=aa=0.80" in result
 

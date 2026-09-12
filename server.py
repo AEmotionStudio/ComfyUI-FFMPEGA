@@ -27,33 +27,19 @@ web = server.web
 def _is_path_sandboxed(filepath: str) -> bool:
     """Check that a resolved path is inside an allowed directory.
 
-    Accepts ComfyUI's managed directories (output, temp, input), plus
-    FFMPEGA's own ``ffmpega_*`` scratch directories and files directly
-    under the system tempdir — not the tempdir at large.
+    Delegates to the single authority in ``loadlast.discovery.path_utils``
+    (ComfyUI's output/temp/input plus FFMPEGA's ``ffmpega_*`` scratch). These
+    routes are unauthenticated, so this fails **closed** if that import is
+    somehow unavailable rather than falling back to a looser check.
     """
     try:
         from .loadlast.discovery.path_utils import is_path_sandboxed
-        if is_path_sandboxed(filepath):
-            return True
     except ImportError:
-        log.warning(
-            "path_utils.is_path_sandboxed unavailable — checking tempdir only for %r",
-            filepath,
+        log.error(
+            "path_utils unavailable — refusing path %r (failing closed)", filepath,
         )
-
-    # Accept FFMPEGA's own scratch space under the system temp directory — but
-    # only that, not the whole tempdir. Preview renders land in
-    # mkdtemp(prefix="ffmpega_") (nodes/output_handler.py), transcodes in
-    # ffmpega_preview_*.mp4 and extracted first frames in ffmpega_frame_*.png
-    # (this module). Anything else under /tmp belongs to another process, and
-    # serving it over an unauthenticated route is not ours to do.
-    import tempfile
-    real = os.path.realpath(filepath)
-    sys_tmp = os.path.realpath(tempfile.gettempdir())
-    if not real.startswith(sys_tmp + os.sep):
         return False
-    first_segment = real[len(sys_tmp) + 1:].split(os.sep)[0]
-    return first_segment.startswith("ffmpega_")
+    return is_path_sandboxed(filepath)
 
 
 def _resolve_video_path(raw_path: str) -> str | None:
@@ -1026,6 +1012,11 @@ async def resolve_image_path(request):
     if not _is_path_sandboxed(full_path):
         return web.json_response({"error": "Path not allowed"}, status=403)
 
+    # Intentionally returns the absolute path: the load-image node
+    # (src/nodes/load_image_node.ts) feeds it straight into a node widget, so
+    # the client genuinely needs it — unlike /ffmpega/video_export, which
+    # returns a result to display and so strips the path. The value is only
+    # ever an input-dir file that already passed the sandbox check above.
     return web.json_response({"image_path": full_path})
 
 

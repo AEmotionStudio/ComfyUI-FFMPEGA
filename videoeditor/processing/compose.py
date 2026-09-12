@@ -13,6 +13,27 @@ import math
 log = logging.getLogger("ffmpega.videoeditor")
 
 
+def _overlay_path_allowed(path: str) -> bool:
+    """Only allow overlay/watermark sources inside the sandbox.
+
+    ``build_watermark_filter`` feeds this into ffmpeg's ``movie=`` source, and
+    the ``/ffmpega/video_export`` route is unauthenticated — so an arbitrary
+    absolute path must not become a file the server reads and composites into
+    output the caller then downloads. Fails **closed** if the sandbox
+    authority cannot be imported.
+    """
+    if not path:
+        return False
+    try:
+        from ...loadlast.discovery.path_utils import is_path_sandboxed
+    except (ImportError, ValueError):
+        try:
+            from loadlast.discovery.path_utils import is_path_sandboxed
+        except ImportError:
+            return False
+    return is_path_sandboxed(path)
+
+
 # ── PiP (Picture-in-Picture) ────────────────────────────────────────
 
 def build_pip_filter(params: dict) -> str | None:
@@ -94,6 +115,15 @@ def build_watermark_filter(params: dict) -> str | None:
 
     path = params.get("path", "")
     if not path:
+        return None
+
+    # movie= reads this path directly; only allow sandboxed sources.
+    if not _overlay_path_allowed(path):
+        log.warning(
+            "[VideoEditor] watermark path %r is outside the allowed "
+            "directories — skipping watermark. Put the image in ComfyUI's "
+            "input / output / temp folder.", path,
+        )
         return None
 
     size_pct = max(5, min(100, params.get("size", 15))) / 100.0

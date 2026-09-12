@@ -64,38 +64,66 @@ def _capped_insert(store: OrderedDict, key: str, value: dict) -> None:
         store.popitem(last=False)
 
 
-def _resolve_video_path(video_path: str) -> str | None:
-    """Resolve a video path to an absolute path.
+def _sandboxed(path: str | None) -> bool:
+    """Delegate to the shared path-sandbox authority (fails closed)."""
+    if not path:
+        return False
+    try:
+        from ..loadlast.discovery.path_utils import is_path_sandboxed
+    except ImportError:
+        try:
+            from loadlast.discovery.path_utils import is_path_sandboxed
+        except ImportError:
+            return False
+    return is_path_sandboxed(path)
 
-    Handles relative paths like ``input/file.mp4`` by resolving them
-    against ComfyUI's input directory via ``folder_paths``.
+
+def _resolve_video_path(video_path: str) -> str | None:
+    """Resolve a video path to a *sandboxed* absolute path, or None.
+
+    Used by the ``/framepicker/*`` routes, which are unauthenticated — so a
+    path is returned only when it lands inside ComfyUI's input/output/temp
+    dirs (or FFMPEGA scratch). An arbitrary absolute path must not become a
+    file the server reads frames out of and hands back to the caller.
     """
     if not video_path:
         return None
+
+    candidate: str | None = None
     # Already absolute and exists?
     if os.path.isabs(video_path) and os.path.isfile(video_path):
-        return video_path
-    # Try CWD-relative
-    if os.path.isfile(video_path):
-        return os.path.abspath(video_path)
-    # Resolve via folder_paths (handles "input/file.mp4")
-    fp = _get_folder_paths()
-    if fp:
-        # Strip leading "input/" prefix if present
-        clean = video_path
-        for prefix in ("input/", "input\\"):
-            if clean.startswith(prefix):
-                clean = clean[len(prefix):]
-                break
-        for getter in ("get_input_directory", "get_temp_directory",
-                       "get_output_directory"):
-            try:
-                d = getattr(fp, getter)()
-                candidate = os.path.join(d, clean)
-                if os.path.isfile(candidate):
-                    return candidate
-            except Exception:
-                pass
+        candidate = video_path
+    # CWD-relative?
+    elif os.path.isfile(video_path):
+        candidate = os.path.abspath(video_path)
+    else:
+        # Resolve via folder_paths (handles "input/file.mp4")
+        fp = _get_folder_paths()
+        if fp:
+            # Strip leading "input/" prefix if present
+            clean = video_path
+            for prefix in ("input/", "input\\"):
+                if clean.startswith(prefix):
+                    clean = clean[len(prefix):]
+                    break
+            for getter in ("get_input_directory", "get_temp_directory",
+                           "get_output_directory"):
+                try:
+                    d = getattr(fp, getter)()
+                    c = os.path.join(d, clean)
+                    if os.path.isfile(c):
+                        candidate = c
+                        break
+                except Exception:
+                    pass
+
+    if candidate and _sandboxed(candidate):
+        return candidate
+    if candidate:
+        logger.warning(
+            "[FramePicker] video_path %r resolved outside the allowed "
+            "directories — refusing", video_path,
+        )
     return None
 
 
@@ -808,17 +836,8 @@ class FramePickerNode:
 
     @staticmethod
     def _is_path_sandboxed(path: str) -> bool:
-        """Check if a path is within ComfyUI's or system temp directories."""
-        try:
-            from ..loadlast.discovery.path_utils import is_path_sandboxed
-            if is_path_sandboxed(path):
-                return True
-        except ImportError:
-            pass
-
-        real = os.path.realpath(path)
-        sys_tmp = os.path.realpath(tempfile.gettempdir())
-        return real == sys_tmp or real.startswith(sys_tmp + os.sep)
+        """Delegate to the shared path-sandbox authority (fails closed)."""
+        return _sandboxed(path)
 
 
 # Clean up temp video files on process exit

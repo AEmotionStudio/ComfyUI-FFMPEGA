@@ -28,7 +28,13 @@ WEB_DIRECTORY = "./web"
 try:
     from . import server as _server  # noqa: F401
 except Exception:
-    pass
+    # A failure here means the UI loads with none of FFMPEGA's routes and no
+    # visible error, so log it rather than swallowing silently.
+    import logging
+    logging.getLogger("FFMPEGA").error(
+        "[FFMPEGA] Failed to register server routes — preview, export and "
+        "preset endpoints will be unavailable", exc_info=True,
+    )
 
 __all__ = [
     "NODE_CLASS_MAPPINGS",

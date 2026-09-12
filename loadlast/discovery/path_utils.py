@@ -1,15 +1,21 @@
 """
-Path sandboxing utilities for LoadLast nodes.
+Path sandboxing — the single authority for the whole extension.
 
-Validates that user-supplied paths are within ComfyUI's allowed
-directories (output, temp, input) to prevent arbitrary filesystem
-access.
+Validates that user-supplied paths are within ComfyUI's allowed directories
+(output, temp, input) or FFMPEGA's own ``ffmpega_*`` scratch space under the
+system temp directory, to prevent arbitrary filesystem access.
+
+Every path check across the extension — server routes, node inputs, the video
+editor export — delegates here rather than re-implementing the rule, so it
+cannot drift between copies (which is exactly how the tempdir check ended up
+too wide in several places before this was consolidated).
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import tempfile
 
 logger = logging.getLogger(__name__)
 
@@ -25,15 +31,19 @@ except ImportError:
 
 
 def get_allowed_directories() -> list[str]:
-    """Return the set of directories users are allowed to access."""
+    """Return the set of directories users are allowed to access.
+
+    Resolved defensively: a ``folder_paths`` that is missing one of the
+    getters (e.g. a partial stub) skips that directory rather than raising, so
+    a path check never crashes the route it guards.
+    """
     if folder_paths is None:
         return []
     dirs = []
-    for getter in (
-        folder_paths.get_output_directory,
-        folder_paths.get_temp_directory,
-        folder_paths.get_input_directory,
-    ):
+    for name in ("get_output_directory", "get_temp_directory", "get_input_directory"):
+        getter = getattr(folder_paths, name, None)
+        if getter is None:
+            continue
         try:
             dirs.append(os.path.realpath(getter()))
         except Exception:
@@ -61,13 +71,36 @@ def get_scan_directories() -> list[str]:
     return dirs
 
 
+def _is_ffmpega_scratch(real: str) -> bool:
+    """True only for FFMPEGA's own ``ffmpega_*`` entries under the system tempdir.
+
+    Preview renders land in ``mkdtemp(prefix="ffmpega_")`` and transcodes /
+    extracted first frames in ``ffmpega_preview_*`` / ``ffmpega_frame_*`` there,
+    so those must be accepted. Anything else in the tempdir belongs to another
+    process and must not be — accepting the whole tempdir over an
+    unauthenticated route is an arbitrary-file-read hole.
+
+    *real* must already be an ``os.path.realpath``.
+    """
+    sys_tmp = os.path.realpath(tempfile.gettempdir())
+    if real != sys_tmp and not real.startswith(sys_tmp + os.sep):
+        return False
+    rel = real[len(sys_tmp):].lstrip(os.sep)
+    if not rel:
+        return False  # the tempdir itself
+    return rel.split(os.sep)[0].startswith("ffmpega_")
+
+
 def is_path_sandboxed(path: str) -> bool:
-    """Check if a path is within ComfyUI's allowed directories."""
+    """True if *path* is inside ComfyUI's allowed dirs or FFMPEGA scratch.
+
+    The single authority for path sandboxing — see the module docstring.
+    """
     real = os.path.realpath(path)
     for allowed in get_allowed_directories():
         if real == allowed or real.startswith(allowed + os.sep):
             return True
-    return False
+    return _is_ffmpega_scratch(real)
 
 
 def resolve_scan_dirs(source: str) -> list[str]:
