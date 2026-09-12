@@ -113,11 +113,11 @@ class TestProcessRembgOnly:
         mock_tensor = torch.zeros(1, 2, 2, 3)
         mock_audio = {}
 
-        with patch("nodes.nollm_modes.build_output_path") as mock_bop, \
+        with patch("nodes.modes.rembg.build_output_path") as mock_bop, \
              patch("skills.handlers.visual._f_remove_background", return_value=handler_result), \
-             patch("nodes.nollm_modes._get_ffmpeg_bin", return_value="ffmpeg"), \
+             patch("nodes.modes.rembg._get_ffmpeg_bin", return_value="ffmpeg"), \
              patch("asyncio.to_thread") as mock_thread, \
-             patch("nodes.nollm_modes.collect_frame_output", return_value=(mock_tensor, mock_audio)):
+             patch("nodes.modes.rembg.collect_frame_output", return_value=(mock_tensor, mock_audio)):
 
             mock_bop.return_value = (output_dir + "/out.mp4", output_dir)
 
@@ -164,11 +164,11 @@ class TestProcessRembgOnly:
         mock_tensor = torch.zeros(1, 2, 2, 3)
         mock_audio = {}
 
-        with patch("nodes.nollm_modes.build_output_path") as mock_bop, \
+        with patch("nodes.modes.rembg.build_output_path") as mock_bop, \
              patch("skills.handlers.visual._f_remove_background", return_value=handler_result), \
-             patch("nodes.nollm_modes._get_ffmpeg_bin", return_value="ffmpeg"), \
+             patch("nodes.modes.rembg._get_ffmpeg_bin", return_value="ffmpeg"), \
              patch("asyncio.to_thread") as mock_thread, \
-             patch("nodes.nollm_modes.collect_frame_output", return_value=(mock_tensor, mock_audio)):
+             patch("nodes.modes.rembg.collect_frame_output", return_value=(mock_tensor, mock_audio)):
 
             mock_bop.return_value = (output_dir + "/out.mp4", output_dir)
             mock_thread.side_effect = [handler_result, mock_proc]
@@ -200,7 +200,7 @@ class TestProcessRembgOnly:
         mock_media = MagicMock()
         handler_result = self._make_handler_result(fc="")
 
-        with patch("nodes.nollm_modes.build_output_path") as mock_bop, \
+        with patch("nodes.modes.rembg.build_output_path") as mock_bop, \
              patch("skills.handlers.visual._f_remove_background", return_value=handler_result), \
              patch("asyncio.to_thread", return_value=handler_result):
 
@@ -233,9 +233,9 @@ class TestProcessRembgOnly:
         mock_proc.stdout = ""
         mock_proc.stderr = "Error encoding"
 
-        with patch("nodes.nollm_modes.build_output_path") as mock_bop, \
+        with patch("nodes.modes.rembg.build_output_path") as mock_bop, \
              patch("skills.handlers.visual._f_remove_background", return_value=handler_result), \
-             patch("nodes.nollm_modes._get_ffmpeg_bin", return_value="ffmpeg"), \
+             patch("nodes.modes.rembg._get_ffmpeg_bin", return_value="ffmpeg"), \
              patch("asyncio.to_thread") as mock_thread:
 
             mock_bop.return_value = (output_dir + "/out.mp4", output_dir)
