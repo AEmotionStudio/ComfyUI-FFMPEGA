@@ -1,7 +1,7 @@
 """Unit tests for the SCAIL-2 synthesizer module.
 
 Tests cover:
-- Block swap registration via the shared core.vram_utils helper
+- Block swap registration via the shared core.blockswap helper
 - scail2_blockswap_blocks / scail2_tiled_vae widget plumbing on the Agent node
 """
 
@@ -22,7 +22,7 @@ class TestScail2BlockSwap:
     """Test the scail2_blockswap_blocks VRAM option.
 
     Mirrors TestSVIBlockSwap in test_svi.py — both delegate to the same
-    core.vram_utils.register_blockswap helper, so the contract is identical
+    core.blockswap.register_blockswap helper, so the contract is identical
     apart from the wrapper key and label.
     """
 

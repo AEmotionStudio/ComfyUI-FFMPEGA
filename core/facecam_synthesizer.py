@@ -1764,9 +1764,9 @@ def _run_facecam_dit(
     # weights have to actually leave the GPU as well.
     if blockswap_blocks > 0:
         try:
-            from .vram_utils import register_blockswap
+            from .blockswap import register_blockswap
         except ImportError:
-            from core.vram_utils import register_blockswap  # type: ignore
+            from core.blockswap import register_blockswap  # type: ignore
         register_blockswap(
             merged_high, blockswap_blocks,
             key="facecam_blockswap_high", label="FaceCam HIGH",

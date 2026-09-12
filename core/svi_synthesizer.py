@@ -364,9 +364,9 @@ def _encode_video_from_frames(
 def _register_blockswap(model_patcher, blocks_to_swap: int) -> None:
     """Keep ~blocks_to_swap transformer blocks' worth of DiT weights off-GPU."""
     try:
-        from .vram_utils import register_blockswap
+        from .blockswap import register_blockswap
     except ImportError:
-        from core.vram_utils import register_blockswap  # type: ignore
+        from core.blockswap import register_blockswap  # type: ignore
 
     register_blockswap(
         model_patcher, blocks_to_swap, key="svi_blockswap", label="SVI",

@@ -1,6 +1,11 @@
 # coding: utf-8
 """Shared VRAM management utilities for FFMPEGA synthesizers.
 
+Not to be confused with ``core/blockswap.py``, which budgets VRAM for
+ComfyUI-native ModelPatcher paths. This module evicts models to free
+VRAM before a synthesizer loads its own; that one keeps weights off-GPU
+during sampling.
+
 Every synthesizer (FLUX Klein, LaMa, LivePortrait, MMAudio, MuseTalk,
 SAM3, Marigold, VDA, Upscaler, MiniMax-Remover, SAM-Audio) needs to
 free GPU VRAM before loading its own model.  The pattern is always the
