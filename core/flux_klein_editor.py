@@ -957,7 +957,7 @@ def _composite_frame(
     original,
     edited,
     mask,
-) -> "np.ndarray":  # type: ignore[name-defined]
+) -> "np.ndarray":  # type: ignore[name-defined]  # noqa: F821 - numpy imported lazily
     """Composite edited pixels onto original using the mask.
 
     Args:

@@ -6891,6 +6891,8 @@ async def process_wan_animate_only(
     import asyncio
     import tempfile
 
+    import numpy as np
+
     cmd_log = "🎭 Wan-Animate Mode\n"
 
     # ── Validate inputs ──────────────────────────────────────────────────

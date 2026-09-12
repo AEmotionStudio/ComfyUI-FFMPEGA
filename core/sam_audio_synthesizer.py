@@ -368,7 +368,7 @@ def _get_ffprobe_bin() -> str:
 
 def _load_audio_ffmpeg(
     audio_path: str, sample_rate: int = 48000
-) -> "torch.Tensor":
+) -> "torch.Tensor":  # noqa: F821 - torch is imported lazily inside the body
     """Load audio file via FFmpeg and return as mono tensor.
 
     Returns tensor of shape (1, N) at the target sample rate.
@@ -400,7 +400,7 @@ def _load_audio_ffmpeg(
 
 
 def _save_audio_ffmpeg(
-    tensor: "torch.Tensor",
+    tensor: "torch.Tensor",  # noqa: F821 - torch is imported lazily inside the body
     output_path: str,
     sample_rate: int = 48000,
 ):
@@ -633,7 +633,7 @@ def separate_audio(
                 return model.forward(
                     noisy_audio=noisy_audio,
                     time=t.expand(noisy_audio.size(0)),
-                    **forward_args,
+                    **forward_args,  # noqa: F821 - captured from the enclosing scope
                 )
 
             states = odeint(

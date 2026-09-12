@@ -245,7 +245,14 @@ def render_edits(
                     shader_fc_path,
                 ]
                 log.info("[VideoEditor] Shader fc pass: %s", " ".join(shader_cmd))
-                _run(shader_cmd, cancel_event=cancel_event)
+                shader_result = subprocess.run(
+                    shader_cmd, capture_output=True, text=True, timeout=600,
+                )
+                if shader_result.returncode != 0:
+                    log.warning(
+                        "[VideoEditor] Shader fc pass failed: %s",
+                        (shader_result.stderr or "")[-500:],
+                    )
                 if os.path.isfile(shader_fc_path) and os.path.getsize(shader_fc_path) > 0:
                     current = shader_fc_path
                 else:
