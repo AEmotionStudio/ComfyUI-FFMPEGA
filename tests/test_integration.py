@@ -27,6 +27,17 @@ from skills.composer import SkillComposer, Pipeline
 _ffmpeg = shutil.which("ffmpeg")
 _ffprobe = shutil.which("ffprobe")
 
+# These are the only tests that drive a real ffmpeg pipeline end to end, and
+# the whole file is skip-guarded on ffmpeg being present. That is friendly
+# locally but dangerous in CI: without ffmpeg the suite would go green having
+# verified nothing. FFMPEGA_REQUIRE_FFMPEG=1 (set in CI) turns the skip into
+# a hard failure.
+if not _ffmpeg and os.environ.get("FFMPEGA_REQUIRE_FFMPEG") == "1":
+    raise RuntimeError(
+        "FFMPEGA_REQUIRE_FFMPEG=1 but ffmpeg is not on PATH — the integration "
+        "tests would have been skipped silently."
+    )
+
 pytestmark = pytest.mark.skipif(
     not _ffmpeg,
     reason="ffmpeg not found",

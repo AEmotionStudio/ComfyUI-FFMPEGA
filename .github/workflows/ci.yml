@@ -4,10 +4,10 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches: ['**']
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -27,9 +27,43 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[dev]"
 
+      # Narrow, high-signal rule set: undefined names, syntax errors and
+      # broken assertions. The full E/F/W/I/UP/B set runs in pre-commit on
+      # files you touch; gating on it here would fail on a large backlog.
+      - name: Lint (ruff)
+        run: python -m ruff check --select F821,E9,F63,F7 .
+
+      # FFMPEGA_REQUIRE_FFMPEG makes tests/test_integration.py fail rather
+      # than skip if ffmpeg is missing, so the suite cannot go green having
+      # skipped the only real end-to-end coverage.
       - name: Run tests with coverage
-        run: python -m pytest tests/ -x -q --cov=core --cov=skills --cov-report=term-missing --cov-report=xml --cov-fail-under=8
+        env:
+          FFMPEGA_REQUIRE_FFMPEG: "1"
+        run: python -m pytest tests/ -x -q --cov=core --cov=skills --cov-report=term-missing --cov-report=xml --cov-fail-under=10
+
+      - name: Type check (pyright, baseline-gated)
+        run: python scripts/check_pyright_baseline.py
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Type check
-        run: python -m pyright
-        continue-on-error: true
+        run: pnpm exec tsc --noEmit
+
+      - name: Unit tests
+        run: pnpm exec vitest run

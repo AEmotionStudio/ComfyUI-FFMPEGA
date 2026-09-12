@@ -1,10 +1,26 @@
 line-length = 120
 target-version = "py310"
 
+# Vendored upstream model code. Not ours to restyle, and linting it buries
+# our own findings — the whole-repo run reports ~4,500 violations, nearly all
+# from these trees.
+exclude = [
+    "core/dreamid_omni/",
+    "core/flashvsr/",
+    "core/liveportrait/",
+    "core/matanyone2/",
+    "core/minimax/",
+    "core/musetalk/",
+    "core/sapiens2/",
+    "core/seedvr/",
+    "core/video_depth_anything/",
+    "core/visual_chronometer/",
+    "core/wan_animate/",
+]
+
 [lint]
 select = ["E", "F", "W", "I", "UP", "B"]
 ignore = ["E501"]  # handled by formatter
 
 [lint.per-file-ignores]
 "tests/*" = ["B", "UP"]
-"core/musetalk/*" = ["E", "F", "W", "I", "UP", "B"]  # vendored code
