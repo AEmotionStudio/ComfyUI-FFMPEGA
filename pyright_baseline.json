@@ -1,4 +1,4 @@
 {
-  "errorCount": 976,
-  "_comment": "Pyright error backlog. CI fails if the count rises above this, so new code must be clean while the backlog is paid down separately. This number comes from CI itself (Python 3.11, only the [dev] extras installed, no ComfyUI venv on ../..); a local run with torch present reports a different count, so do not regenerate it from a dev machine — take the number CI reports. Dropped 1141 -> 976 when INPUT_TYPES and nollm_modes were split into modules."
+  "errorCount": 975,
+  "_comment": "Pyright error backlog. CI fails if the count rises above this, so new code must be clean while the backlog is paid down separately. This number comes from CI itself (Python 3.11, only the [dev] extras installed, no ComfyUI venv on ../..); a local run with torch present reports a different count, so do not regenerate it from a dev machine — take the number CI reports. Dropped 1141 -> 976 when INPUT_TYPES and nollm_modes were split into modules. Dropped 976 -> 975 when common_upscale was declared in the comfy.utils stub."
 }
