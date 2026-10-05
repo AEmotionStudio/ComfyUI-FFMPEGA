@@ -5,7 +5,7 @@
 **The ultimate video editing suite for ComfyUI — edit with natural language or hands-on manual controls.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-2.20.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-2.21.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-3-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 [![Last Commit](https://img.shields.io/github/last-commit/AEmotionStudio/ComfyUI-FFMPEGA?style=for-the-badge&label=Last%20Update&color=orange)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/commits)
@@ -21,27 +21,20 @@
 
 ---
 
-## 🚀 What's New in v2.20.0
+## 🚀 What's New in v2.21.0
 
-*See [CHANGELOG.md](CHANGELOG.md#2200---2026-09-11) for the full detail.*
+*See [CHANGELOG.md](CHANGELOG.md#2210---2026-10-05) for the full detail.*
 
-*   🕺 **SCAIL-2** — pose-driven character animation, rebuilt ComfyUI-native and in-process (no subprocess). Native SAM 3.1 identity tracking, colored per-identity pose masks, 25 advanced widgets. Replaces the vendored SCAIL v1 pipeline
-*   ⚡ **FlashVSR** — one-step video super-resolution with `full` / `tiny` / `tiny_long` pipelines, DiT block swap, and near-lossless spatial decode tiling
-*   ♾️ **SVI 2.0 Pro** — infinite-length video generation (ICLR 2026 Oral) via iterative 81-frame Wan 2.2 I2V-A14B clips, with block swap and tiled VAE
-*   🎭 **Wan-Animate** & **MatAnyone2** — ComfyUI-native Wan 2.2 Animate character animation, plus CVPR 2026 video matting with temporal coherence
-*   🧍 **Meta Sapiens2** — human-centric vision: 308-keypoint pose, 29-class body-part segmentation, normals, pointmap and matting, with an fp8 5B option
-*   🧊 **SHARP** & **PhyFPS** — single-image 3D Gaussian view synthesis, and physical frame-rate detection/re-timing via the Visual Chronometer
-*   🖼️ **Multi-Source Comparison** — Save Video and Save Image now combine multiple inputs into one side-by-side or grid clip/image, with layout, per-panel labels and gap controls
-*   📹 **FaceCam Analytic Face Mesh** — camera pose is projected from MediaPipe's canonical model instead of being detected back off a rendered proxy head, so conditioning survives past 40–50° of yaw and `orbit_left`/`orbit_right` are exact mirrors
-*   🎨 **Correct Video Levels** — encoding now emits standard limited-range BT.709 instead of deprecated `yuvj420p`, fixing crushed blacks and blown highlights in players that re-expand it
-*   🎬 **Advanced Save Video Output** — H.264/H.265/VP9/AV1/ProRes/FFV1/GIF/WebP, CRF, presets, 10-bit, audio codec, loop, pingpong and workflow-in-the-container metadata — while the default stays a zero-cost file copy
-*   🌈 **Selectable Colour Policy** — one shared, measured colour path across every encoder, with a truthful sRGB default and an exact "match ComfyUI native" mode for A/B comparison
+*   🏔️ **Marigold V2** — depth, surface normals and albedo from a frozen Qwen-Image-Edit-2509 DiT plus a per-task LoRA, VAE and baked conditioning. One deterministic Euler step, no CFG, no seed. Reached through `depth (v2)` / `normals (v2)` / `albedo (v2)` on the existing `marigold` mode, so nothing already in your workflows changes; also selectable as a `depth_backend` on the Shader Overlay node. ~22.5 GB for the first task, ~2 GB per task after (the base is shared), at roughly 3–4 s per frame
+*   🎚️ **Fixes ComfyUI's stock Marigold V2 sampling** — the shipped blueprints patch `ModelSamplingAuraFlow` with `sampling="flow"`, which hands the DiT a half-scale latent and returns `0.5·(z − v)`. This backend defaults to `IMG_TO_IMG_VELOCITY`, which yields `z − v` from an unscaled latent and matches the reference implementation exactly; `flow` stays selectable to reproduce the stock template
+*   🔧 **BlockSwap block discovery** — the swap budget was sized from `model.diffusion_model.blocks` only, so any model naming its stack otherwise fell back to an estimate scaled by Wan's 40-block depth. It now also finds `transformer_blocks`, `double_blocks` and `single_blocks`, which matters for 60-block Qwen-Image
 
 <details>
 <summary><b>📋 Previous Releases</b></summary>
 
 | Version | Highlights |
 | :--- | :--- |
+| **v2.20.0** | SCAIL-2 pose-driven character animation, FlashVSR one-step super-resolution, SVI 2.0 Pro infinite-length video, Wan-Animate, MatAnyone2 matting, Meta Sapiens2, SHARP, PhyFPS, multi-source comparison, corrected BT.709 video levels |
 | **v2.19.0** | DreamID-Omni talking-head generation, FaceCam camera control, Fish Speech TTS, Foundation-1 music samples, Frame Picker node, 15 new GLSL shaders (70 total) |
 | **v2.18.0** | Kiwi-Edit AI video editing, SAM3 + Kiwi-Edit, RTX Video Super Resolution, SeedVR AI Upscaling, FacePoke expression presets |
 | **v2.17.0** | FacePoke interactive face editor, driving video reference, shader effects system, Flux Klein FP8, onion skin compositing, unified audio output mode |
