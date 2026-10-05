@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.21.0] - 2026-10-05
 
 ### Added
 - **Marigold V2 (Depth / Normals / Albedo)**: The `marigold` no-LLM mode and skill now reach Marigold V2 through three new `marigold_output_type` entries — `depth (v2)`, `normals (v2)`, `albedo (v2)` — with `depth (v2)` as the new default. v1.1 stays exactly as it was and remains the only source of `appearance` and `lighting`. *(`core/marigold_v2_synthesizer.py`)*
