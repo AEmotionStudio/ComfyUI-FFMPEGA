@@ -185,6 +185,7 @@ class SkillComposer:
         "depth_estimation": "marigold",
         "normals_estimation": "marigold",
         "intrinsic_decomposition": "marigold",
+        "albedo": "marigold",
         "albedo_map": "marigold",
         "material_map": "marigold",
         # Video Depth Anything — Temporal Video Depth
@@ -1797,6 +1798,7 @@ def _get_dispatch() -> dict:
         "depth_estimation": _f_marigold,
         "normals_estimation": _f_marigold,
         "intrinsic_decomposition": _f_marigold,
+        "albedo": _f_marigold,
         "albedo_map": _f_marigold,
         "material_map": _f_marigold,
         # Video Depth Anything — Temporal Video Depth

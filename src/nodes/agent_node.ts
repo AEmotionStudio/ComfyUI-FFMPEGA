@@ -530,7 +530,11 @@ export function registerAgentNode(
             const mw = node.widgets?.find((w: ComfyWidget) => w.name === "marigold_output_type");
             const mc = node.widgets?.find((w: ComfyWidget) => w.name === "marigold_colormap");
             if (mw) toggleWidget(mw, showMarigold);
-            if (mc) toggleWidget(mc, showMarigold && String(mw?.value) === "depth");
+            // Colormap is v1.1-only — Marigold V2 renders depth directly with
+            // no colormap step, so hide it for the "(v2)" entries.
+            const marigoldVal = String(mw?.value ?? "");
+            const isMarigoldV2 = marigoldVal.endsWith("(v2)");
+            if (mc) toggleWidget(mc, showMarigold && marigoldVal === "depth");
 
             // Video Depth Anything
             const ve = node.widgets?.find((w: ComfyWidget) => w.name === "video_depth_encoder");
@@ -557,7 +561,9 @@ export function registerAgentNode(
             const isGanModel = showUpscale && !isSeedvr && !isRtxVsr;
             if (us) toggleWidget(us, isGanModel || isRtxVsr || isFlashvsr);  // scale for GAN + RTX + FlashVSR
             if (sr) toggleWidget(sr, isSeedvr);                 // resolution for SeedVR2
-            if (bb) toggleWidget(bb, isSeedvr || isFlashvsr);   // blockswap for SeedVR2 + FlashVSR
+            // blockswap for SeedVR2 + FlashVSR, and as an escape hatch for the
+            // 20.5 GB Marigold V2 base on small cards (default 0 = off).
+            if (bb) toggleWidget(bb, isSeedvr || isFlashvsr || (showMarigold && isMarigoldV2));
             if (fp) toggleWidget(fp, isFlashvsr);               // processing strategy for FlashVSR
             if (fw) toggleWidget(fw, isFlashvsr && String(fp?.value) === "temporal");  // frame window when temporal
             if (fcf) toggleWidget(fcf, isFlashvsr);             // color fix for FlashVSR

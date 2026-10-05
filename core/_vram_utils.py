@@ -41,6 +41,7 @@ ALL_SYNTHESIZER_MODULES: tuple[str, ...] = (
     "flux_klein_editor",  # NB: not *_synthesizer — module is named flux_klein_editor
     "lama_inpainter",
     "marigold_synthesizer",
+    "marigold_v2_synthesizer",
     "vda_synthesizer",
     "upscaler",
     "minimax_remover",

@@ -22,6 +22,18 @@ from ._shared import (
 )
 
 
+#: Marigold V2 entries are distinguished by a suffix on ``marigold_output_type``
+#: rather than a separate widget, so saved workflows keep resolving to v1.1.
+_V2_SUFFIX = " (v2)"
+
+
+def _split_version(output_type: str) -> tuple[str, str]:
+    """Split ``"depth (v2)"`` into ``("v2", "depth")``; plain names are v1.1."""
+    if output_type.endswith(_V2_SUFFIX):
+        return "v2", output_type[: -len(_V2_SUFFIX)]
+    return "v1.1", output_type
+
+
 async def process_marigold_only(
     # dependencies
     media_converter,
@@ -55,23 +67,41 @@ async def process_marigold_only(
     Returns the standard 6-tuple:
         (images_tensor, audio, output_path, command_log, analysis, mask_overlay_path)
     """
+    version, output_type = _split_version(marigold_output_type)
     logger.info(
-        "Marigold mode: type=%s, steps=%d, ensemble=%d",
-        marigold_output_type, marigold_num_steps, marigold_ensemble_size,
+        "Marigold mode: version=%s, type=%s, steps=%d, ensemble=%d",
+        version, output_type, marigold_num_steps, marigold_ensemble_size,
     )
 
-    # --- Import Marigold synthesizer ---
-    try:
+    # --- Import the backend for the selected version ---
+    if version == "v2":
         try:
-            from ...core.marigold_synthesizer import run_marigold, cleanup as _mg_cleanup
+            try:
+                from ...core.marigold_v2_synthesizer import (
+                    run_marigold_v2, cleanup as _mg_cleanup,
+                )
+            except ImportError:
+                from core.marigold_v2_synthesizer import (  # type: ignore
+                    run_marigold_v2, cleanup as _mg_cleanup,
+                )
+        except ImportError as exc:
+            raise RuntimeError(
+                "Marigold V2 is not available: "
+                f"{exc}. Ensure core/marigold_v2_synthesizer.py exists and "
+                "ComfyUI is at least 0.36.0."
+            ) from exc
+    else:
+        try:
+            try:
+                from ...core.marigold_synthesizer import run_marigold, cleanup as _mg_cleanup
+            except ImportError:
+                from core.marigold_synthesizer import run_marigold, cleanup as _mg_cleanup  # type: ignore
         except ImportError:
-            from core.marigold_synthesizer import run_marigold, cleanup as _mg_cleanup  # type: ignore
-    except ImportError:
-        raise RuntimeError(
-            "Marigold is not available. "
-            "Ensure diffusers >= 0.28.0 is installed and "
-            "core/marigold_synthesizer.py exists."
-        )
+            raise RuntimeError(
+                "Marigold is not available. "
+                "Ensure diffusers >= 0.28.0 is installed and "
+                "core/marigold_synthesizer.py exists."
+            )
 
     # --- Build output path ---
     output_path, temp_render_dir = build_output_path(
@@ -84,13 +114,24 @@ async def process_marigold_only(
     # --- Run Marigold (in-process with GPU offloading) ---
     marigold_output = None
     try:
-        marigold_output = run_marigold(
-            input_path=effective_video_path,
-            output_type=marigold_output_type,
-            colormap=marigold_colormap,
-            num_steps=marigold_num_steps,
-            ensemble_size=marigold_ensemble_size,
-        )
+        if version == "v2":
+            marigold_output = run_marigold_v2(
+                input_path=effective_video_path,
+                output_type=output_type,
+                # The shader bridge overrides this; the agent node follows
+                # ComfyUI's own near=bright convention.
+                depth_polarity="near_bright",
+                depth_range="auto",
+                blocks_to_swap=int(kwargs.get("blockswap_blocks", 0) or 0),
+            )
+        else:
+            marigold_output = run_marigold(
+                input_path=effective_video_path,
+                output_type=output_type,
+                colormap=marigold_colormap,
+                num_steps=marigold_num_steps,
+                ensemble_size=marigold_ensemble_size,
+            )
     except Exception as e:
         logger.error("Marigold mode: inference failed: %s", e)
         # Free VRAM on failure
@@ -156,15 +197,26 @@ async def process_marigold_only(
         _type_desc = {
             "depth": "Monocular depth estimation",
             "normals": "Surface normals estimation",
+            "albedo": "Linear-RGB albedo (intrinsic decomposition)",
             "appearance": "Intrinsic decomposition (albedo, roughness, metallicity)",
             "lighting": "Intrinsic decomposition (albedo, shading, residual)",
         }
+        if version == "v2":
+            _settings = (
+                "Sampling: 1 Euler step, no CFG, no seed (deterministic)\n"
+                "Base: Qwen-Image-Edit-2509 int8 + task LoRA/VAE/conditioning"
+            )
+        else:
+            _settings = (
+                f"Denoising steps: {marigold_num_steps}\n"
+                f"Ensemble size: {marigold_ensemble_size}"
+            )
         analysis = (
             f"Marigold Mode (no LLM)\n"
-            f"Output type: {marigold_output_type} — "
-            f"{_type_desc.get(marigold_output_type, marigold_output_type)}\n"
-            f"Denoising steps: {marigold_num_steps}\n"
-            f"Ensemble size: {marigold_ensemble_size}\n\n"
+            f"Version: {version}\n"
+            f"Output type: {output_type} — "
+            f"{_type_desc.get(output_type, output_type)}\n"
+            f"{_settings}\n\n"
             f"Source: {effective_video_path}\n"
             f"Marigold output: {marigold_output}\n"
             f"Output: {output_path}"

@@ -19,6 +19,29 @@ log = logging.getLogger("ffmpega")
 # when the patcher doesn't expose its blocks.
 WAN_NUM_BLOCKS = 40
 
+# Attribute names diffusion transformers use for their block list, in the order
+# we try them. Wan-family models use ``blocks``; Qwen-Image uses
+# ``transformer_blocks``; Flux-style models split into double/single stacks.
+_BLOCK_ATTRS = ("blocks", "transformer_blocks", "double_blocks", "single_blocks")
+
+
+def find_transformer_blocks(model_patcher):
+    """Return the patcher's transformer block list, or None if it has none.
+
+    Tries each name in ``_BLOCK_ATTRS`` and returns the first non-empty
+    sequence. Callers fall back to a size estimate when this returns None.
+    """
+    try:
+        diffusion_model = model_patcher.model.diffusion_model
+    except AttributeError:
+        return None
+
+    for attr in _BLOCK_ATTRS:
+        blocks = getattr(diffusion_model, attr, None)
+        if blocks is not None and len(blocks) > 0:
+            return blocks
+    return None
+
 
 def register_blockswap(
     model_patcher,
@@ -43,10 +66,10 @@ def register_blockswap(
     import comfy.model_management as mm  # type: ignore[import-not-found]
     import comfy.patcher_extension as pe  # type: ignore[import-not-found]
 
-    try:
-        blocks = model_patcher.model.diffusion_model.blocks
+    blocks = find_transformer_blocks(model_patcher)
+    if blocks is not None:
         swap_bytes = min(blocks_to_swap, len(blocks)) * mm.module_size(blocks[0])  # type: ignore[attr-defined]
-    except AttributeError:
+    else:
         swap_bytes = int(
             model_patcher.model_size()
             * min(blocks_to_swap, num_blocks) / num_blocks

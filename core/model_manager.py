@@ -188,6 +188,17 @@ _MODEL_INFO: dict[str, dict] = {
         "manual": "Models are auto-downloaded by diffusers via from_pretrained(). "
                   "See https://huggingface.co/prs-eth for upstream checkpoints.",
     },
+    "marigold_v2": {
+        "name": "Marigold V2 (Depth / Normals / Albedo)",
+        "size": "~22.5 GB for the first task, ~2 GB per extra task "
+                "(the 20.5 GB Qwen-Image-Edit base is shared)",
+        "url": "https://huggingface.co/Comfy-Org/marigold-v2-0",
+        "mirror_repo": "Comfy-Org/marigold-v2-0",
+        "license": "Apache 2.0 (Qwen-Image-Edit-2509 keeps its own license)",
+        "manual": "Download from https://huggingface.co/Comfy-Org/marigold-v2-0 "
+                  "into ComfyUI/models/ — the repo's diffusion_models/, loras/, "
+                  "vae/ and embeddings/ folders map 1:1 onto ComfyUI's.",
+    },
     "video_depth": {
         "name": "Video Depth Anything (Temporal Video Depth)",
         "size": "~102 MB (Small), ~390 MB (Base), ~670 MB (Large)",

@@ -373,7 +373,7 @@ FFMPEGA includes a comprehensive skill system with **226 operations** organized 
 | `remove_background` | AI background removal with BRIA RMBG — 6 model choices |
 | `ai_upscale` | AI super-resolution upscaling with Real-ESRGAN, HAT, DAT, or SwinIR — auto-VRAM tile sizing |
 | `video_depth` | Temporal depth estimation with Video Depth Anything — consistent depth maps across frames |
-| `marigold` | Dense vision analysis with Marigold — depth, normals, appearance, and lighting estimation |
+| `marigold` | Dense vision analysis with Marigold — depth, normals, appearance and lighting (v1.1), plus `depth (v2)` / `normals (v2)` / `albedo (v2)` on Marigold V2 |
 | `ace_step` | AI music generation with ACE-Step 1.5 — direct no-LLM mode for quick generation |
 
 > ⚠️ **License Notice:** The `generate_audio` skill uses [MMAudio](https://github.com/hkchengrex/MMAudio) model weights which are licensed under **CC-BY-NC 4.0** (non-commercial use only). Model weights are downloaded on first use — by downloading them you accept the [CC-BY-NC 4.0 license](https://creativecommons.org/licenses/by-nc/4.0/). The FFMPEGA code itself remains GPL-3.0.

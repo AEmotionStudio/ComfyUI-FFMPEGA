@@ -162,18 +162,56 @@ def register_skills(registry: SkillRegistry) -> None:
             "AI dense vision analysis: estimate depth maps, surface normals, "
             "or intrinsic image properties (albedo, roughness, metallicity, "
             "shading) from a single image or video using the Marigold "
-            "diffusion pipeline. Select output_type to choose what to produce."
+            "diffusion pipeline. Select output_type to choose what to produce, "
+            "and whether to run Marigold V2 (sharpest, slower) or v1.1."
         ),
         parameters=[
             SkillParameter(
                 name="output_type",
                 type=ParameterType.STRING,
                 description=(
-                    "Type of output: 'depth' (depth map), 'normals' (surface "
-                    "normals), 'appearance' (albedo+roughness+metallicity), "
-                    "or 'lighting' (albedo+shading+residual)"
+                    "Type of output. Marigold V2 (sharpest, ~3-4 s/frame, "
+                    "needs ~22 GB of weights): 'depth (v2)', 'normals (v2)', "
+                    "'albedo (v2)'. Marigold v1.1 (much faster, ~2.5 GB): "
+                    "'depth', 'normals', 'appearance' "
+                    "(albedo+roughness+metallicity), 'lighting' "
+                    "(albedo+shading+residual). Prefer a (v2) variant for "
+                    "stills; prefer v1.1 or video_depth for long clips."
                 ),
                 required=True,
+            ),
+            SkillParameter(
+                name="depth_polarity",
+                type=ParameterType.STRING,
+                description=(
+                    "Depth shading convention, V2 depth only: 'near_bright' "
+                    "(near is white, ComfyUI/MiDaS convention) or 'far_bright'"
+                ),
+                required=False,
+                default="near_bright",
+            ),
+            SkillParameter(
+                name="depth_range",
+                type=ParameterType.STRING,
+                description=(
+                    "Depth normalisation range, V2 depth only: 'auto', "
+                    "'global' (one range across the clip, avoids flicker) or "
+                    "'per_frame'"
+                ),
+                required=False,
+                default="auto",
+            ),
+            SkillParameter(
+                name="max_frames",
+                type=ParameterType.INT,
+                description=(
+                    "Stop after this many frames, V2 only. 0 = no limit. "
+                    "Useful because V2 costs ~3-4 s per frame"
+                ),
+                required=False,
+                default=0,
+                min_value=0,
+                max_value=100000,
             ),
             SkillParameter(
                 name="num_steps",

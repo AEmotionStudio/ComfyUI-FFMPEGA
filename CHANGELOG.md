@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Marigold V2 (Depth / Normals / Albedo)**: The `marigold` no-LLM mode and skill now reach Marigold V2 through three new `marigold_output_type` entries — `depth (v2)`, `normals (v2)`, `albedo (v2)` — with `depth (v2)` as the new default. v1.1 stays exactly as it was and remains the only source of `appearance` and `lighting`. *(`core/marigold_v2_synthesizer.py`)*
+  - **Architecture**: V2 is not a new version of V1, it is a different model. Where v1.1 is a Stable-Diffusion-2 diffusers pipeline, V2 is a frozen Qwen-Image-Edit-2509 DiT (20.5 GB, int8+convrot) plus a per-task LoRA, a per-task VAE and a precomputed conditioning embedding — no text encoder is ever loaded. Upstream ships no diffusers pipeline, so this backend rebuilds ComfyUI's own graph in-process against `comfy.sd` / `comfy.samplers` rather than wrapping a pipeline. Inference is a single Euler step at sigma 0.5 with no CFG and no seed.
+  - **Corrects a bug in the stock blueprint**: ComfyUI's shipped Marigold V2 templates patch `ModelSamplingAuraFlow` with `sampling="flow"`, which resolves to `CONST`. With `DisableNoise` and sigmas `[0.5, 0]` that feeds the DiT `0.5·z` and returns `0.5·(z − v)`. The reference implementation computes `z − v` from an unscaled `z`, which is what `IMG_TO_IMG_VELOCITY` produces — the class ComfyUI added in the very same commit and then did not select. This backend defaults to `img_to_img_velocity`; `flow` stays reachable to reproduce the stock template. Note the difference is largely normalised away for depth and normals, so it shows up mainly in albedo.
+  - **Deterministic**: `WanVAE.encode` returns `mu` rather than sampling the posterior, so there is no seed anywhere in the pipeline and repeat runs are bit-identical. This is the one intentional deviation from the reference, which samples with seed 2025.
+  - **One image at a time**: for this 16-channel 3-D-latent VAE, `VAE.encode` maps a multi-image batch onto the *time* axis and then temporally compresses it, so an N-image batch would silently collapse to one prediction. Frames are encoded individually.
+  - **Post-processing is reimplemented, not delegated**: depth normalisation can span the whole clip (`depth_range="global"`, automatic for video) instead of renormalising every frame against its own min/max, which is the usual source of depth-video flicker. Normals use an explicit `1e-6` epsilon and zero out degenerate vectors rather than `F.normalize`, whose `1e-12` default amplifies them to unit length. Albedo uses the reference's gamma 2.2. Depth polarity is selectable.
+  - **Shared base**: all three tasks clone one 20.5 GB DiT patcher, so switching task costs ~1.7 GB of LoRA patches plus a 254 MB VAE, not another full load.
+  - **Cost**: roughly 3-4 s per frame on a 12 GB card, with the weights streamed by ComfyUI's lowvram loader. Video works and reports progress, but Video Depth Anything and Marigold v1.1 are far faster and temporally consistent; prefer them for anything long.
+
+- **Shader Overlay depth backend**: New `depth_backend` widget on the Shader Overlay node selects between `vda` (default, unchanged) and `marigold-v2` for the depth and normals prepass. `core/depth_shader_bridge.py`'s `generate_depth_map` / `generate_normal_map` grew a matching `backend` argument. Marigold V2 output is inverted to `near_bright` so it matches VDA's disparity convention and the downstream mask logic behaves identically for both.
+
+### Fixed
+- **BlockSwap block discovery**: `core/blockswap.py` only looked for `model.diffusion_model.blocks`, so any model naming its stack differently fell through to a size estimate scaled by Wan's 40-block depth. Qwen-Image uses `transformer_blocks` (60 of them), which made that estimate wrong by 1.5x. `find_transformer_blocks()` now walks `blocks`, `transformer_blocks`, `double_blocks` and `single_blocks`, first non-empty wins. Existing Wan-family callers hit `blocks` first and are unaffected.
+
 ## [2.20.0] - 2026-09-11
 
 ### Added

@@ -270,6 +270,19 @@ class ShaderOverlayNode:
                         "Forwarded as-is to the mask output."
                     ),
                 }),
+                # Appended last on purpose — ComfyUI restores widget values by
+                # position, so inserting above would shift saved workflows.
+                "depth_backend": (["vda", "marigold-v2"], {
+                    "default": "vda",
+                    "tooltip": (
+                        "Model used for the depth/normals prepass. "
+                        "'vda' = Video Depth Anything + NormalCrafter: fast and "
+                        "temporally consistent, the right default for clips. "
+                        "'marigold-v2' = Marigold V2: sharper per frame, but a "
+                        "20.5 GB model at roughly 3-4 s/frame with no temporal "
+                        "smoothing — best on stills and very short clips."
+                    ),
+                }),
             },
         }
 
@@ -291,7 +304,7 @@ class ShaderOverlayNode:
                   "shader_params", "resolution_scale",
                   "enable_vda", "enable_normals",
                   "depth_encoder", "depth_input", "normals_input",
-                  "depth_strength"):
+                  "depth_strength", "depth_backend"):
             m.update(str(kwargs.get(k, "")).encode())
         return m.hexdigest()
 
@@ -317,6 +330,7 @@ class ShaderOverlayNode:
         enable_vda: bool = False,
         enable_normals: bool = False,
         depth_encoder: str = "vits",
+        depth_backend: str = "vda",
         depth_input: str = "",
         normals_input: str = "",
         depth_strength: float = 1.0,
@@ -536,6 +550,7 @@ class ShaderOverlayNode:
                     else:
                         _depth_path = _gen_depth(
                             resolved_path, encoder=depth_encoder,
+                            backend=depth_backend,
                         )
                     if not _depth_path:
                         log.warning("⚠️  VDA depth failed.")
@@ -547,7 +562,11 @@ class ShaderOverlayNode:
                         _normals_path = normals_input.strip()
                         log.info("[ShaderOverlay] Using external normals: %s", _normals_path)
                     else:
-                        _normals_path = _gen_normals(resolved_path)
+                        _normals_path = _gen_normals(
+                            resolved_path,
+                            backend=("marigold-v2" if depth_backend == "marigold-v2"
+                                     else "normalcrafter"),
+                        )
                     if not _normals_path:
                         log.warning("⚠️  NormalCrafter normals failed.")
 
@@ -722,6 +741,7 @@ class ShaderOverlayNode:
                     invert_mask=invert_mask,
                     depth_mode="none",  # No redundant depth
                     depth_encoder=depth_encoder,
+                    depth_backend=depth_backend,
                     depth_input=depth_input,
                     depth_strength=depth_strength,
                 )
@@ -733,6 +753,7 @@ class ShaderOverlayNode:
                 invert_mask=invert_mask,
                 depth_mode="foreground_focus" if _want_vda else "none",
                 depth_encoder=depth_encoder,
+                depth_backend=depth_backend,
                 depth_input=depth_input,
                 depth_strength=depth_strength,
             )
@@ -909,6 +930,7 @@ class ShaderOverlayNode:
         invert_mask: bool = False,
         depth_mode: str = "none",
         depth_encoder: str = "vits",
+        depth_backend: str = "vda",
         depth_input: str = "",
         depth_strength: float = 1.0,
     ) -> str:
@@ -965,6 +987,7 @@ class ShaderOverlayNode:
             depth_path = generate_depth_map(
                 original_path,
                 encoder=depth_encoder,
+                backend=depth_backend,
             )
 
         if depth_path is None:

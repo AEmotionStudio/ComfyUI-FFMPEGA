@@ -37,6 +37,7 @@ PINNED_REVISIONS: dict[str, str] = {
     "linyq/kiwi-edit-5b-instruct-reference-diffusers": "2760d8197b6bdb49181bce8cceb2da781568b766",
 
     # --- Third-party weights ---
+    "Comfy-Org/marigold-v2-0": "70e2127d026c8f6b62d8049b73f5392e1e81ebfa",
     "zibojia/minimax-remover": "889e41651d903bcef2d2aea307155812b6d326fd",
     "hkchengrex/MMAudio": "eb13a1a98fdbec91753775c57b074ccdfc60587c",
     "TMElyralab/MuseTalk": "3ef28bc5cff08c90ad8178a25f1b570cd800170f",

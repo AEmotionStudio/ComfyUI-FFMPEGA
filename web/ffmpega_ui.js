@@ -445,7 +445,9 @@ function registerAgentNode(nodeType, nodeData) {
       const mw = (_d2 = node.widgets) == null ? void 0 : _d2.find((w) => w.name === "marigold_output_type");
       const mc = (_e2 = node.widgets) == null ? void 0 : _e2.find((w) => w.name === "marigold_colormap");
       if (mw) toggleWidget$1(mw, showMarigold);
-      if (mc) toggleWidget$1(mc, showMarigold && String(mw == null ? void 0 : mw.value) === "depth");
+      const marigoldVal = String((mw == null ? void 0 : mw.value) ?? "");
+      const isMarigoldV2 = marigoldVal.endsWith("(v2)");
+      if (mc) toggleWidget$1(mc, showMarigold && marigoldVal === "depth");
       const ve = (_f2 = node.widgets) == null ? void 0 : _f2.find((w) => w.name === "video_depth_encoder");
       const vc = (_g2 = node.widgets) == null ? void 0 : _g2.find((w) => w.name === "video_depth_colormap");
       if (ve) toggleWidget$1(ve, showVda);
@@ -467,7 +469,7 @@ function registerAgentNode(nodeType, nodeData) {
       const isGanModel = showUpscale && !isSeedvr && !isRtxVsr;
       if (us) toggleWidget$1(us, isGanModel || isRtxVsr || isFlashvsr);
       if (sr) toggleWidget$1(sr, isSeedvr);
-      if (bb) toggleWidget$1(bb, isSeedvr || isFlashvsr);
+      if (bb) toggleWidget$1(bb, isSeedvr || isFlashvsr || showMarigold && isMarigoldV2);
       if (fp) toggleWidget$1(fp, isFlashvsr);
       if (fw) toggleWidget$1(fw, isFlashvsr && String(fp == null ? void 0 : fp.value) === "temporal");
       if (fcf) toggleWidget$1(fcf, isFlashvsr);

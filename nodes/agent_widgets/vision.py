@@ -16,13 +16,25 @@ from __future__ import annotations
 def marigold() -> dict:
     """Advanced: Marigold."""
     return {
-        "marigold_output_type": (["depth", "normals", "appearance", "lighting"], {
-            "default": "depth",
+        # v2 entries are appended, never inserted: ComfyUI restores combo
+        # values as strings, so saved workflows holding "depth" keep resolving
+        # to v1.1 while new nodes default to v2. Same shape as the "5b (fp8)"
+        # entry in sapiens2_size below.
+        "marigold_output_type": ([
+            "depth", "normals", "appearance", "lighting",
+            "depth (v2)", "normals (v2)", "albedo (v2)",
+        ], {
+            "default": "depth (v2)",
             "tooltip": "Marigold output type (used in 'marigold' no_llm_mode or agentic mode). "
+                       "v2 = Marigold V2: one deterministic step on a 20.5 GB Qwen-Image-Edit "
+                       "base, sharpest quality, ~3-4 s per frame, no temporal smoothing. "
+                       "Unsuffixed entries are Marigold v1.1 (diffusers, ~2.5 GB, much faster, "
+                       "and the only ones offering appearance/lighting). "
                        "'depth' = monocular depth map. "
                        "'normals' = surface normals. "
-                       "'appearance' = albedo + roughness + metallicity. "
-                       "'lighting' = albedo + shading + residual.",
+                       "'albedo (v2)' = linear-RGB albedo. "
+                       "'appearance' = albedo + roughness + metallicity (v1.1 only). "
+                       "'lighting' = albedo + shading + residual (v1.1 only).",
         }),
         "marigold_colormap": (["Spectral", "gray", "inferno", "turbo", "plasma", "magma", "viridis", "hot", "bone"], {
             "default": "Spectral",

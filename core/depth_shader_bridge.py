@@ -210,23 +210,84 @@ def unpack_sbs(
     return None
 
 
+#: Backends selectable for the depth/normal map generators.
+DEPTH_BACKENDS = ("vda", "marigold-v2")
+NORMAL_BACKENDS = ("normalcrafter", "marigold-v2")
+
+
+def _run_marigold_v2(
+    video_path: str,
+    output_type: str,
+    max_res: int = 0,
+    depth_polarity: str = "near_bright",
+) -> str | None:
+    """Shared Marigold V2 entry for both map generators."""
+    try:
+        try:
+            from .marigold_v2_synthesizer import run_marigold_v2
+        except ImportError:
+            from core.marigold_v2_synthesizer import run_marigold_v2  # type: ignore
+    except ImportError:
+        log.error(
+            "[DepthBridge] Marigold V2 not available. "
+            "Ensure core/marigold_v2_synthesizer.py exists."
+        )
+        return None
+
+    try:
+        out = run_marigold_v2(
+            input_path=video_path,
+            output_type=output_type,
+            depth_polarity=depth_polarity,
+            depth_range="global",
+            max_res=max_res,
+        )
+        if out and os.path.isfile(out):
+            log.info("[DepthBridge] Marigold V2 %s map: %s", output_type, out)
+            return out
+    except Exception as exc:
+        log.error("[DepthBridge] Marigold V2 inference failed: %s", exc)
+
+    return None
+
+
 def generate_depth_map(
     video_path: str,
     encoder: str = "vits",
     input_size: int = 518,
     max_res: int = 1280,
+    backend: str = "vda",
 ) -> str | None:
-    """Run VDA to produce a grayscale depth video.
+    """Produce a grayscale depth video (white=far, black=near).
 
     Args:
         video_path: Path to source video.
-        encoder: VDA model variant (vits, vitb, vitl).
-        input_size: Model input resolution.
+        encoder: VDA model variant (vits, vitb, vitl). VDA backend only.
+        input_size: Model input resolution. VDA backend only.
         max_res: Maximum video resolution for processing.
+        backend: 'vda' (default, fast and temporally consistent) or
+            'marigold-v2' (sharper per frame, ~3-4 s/frame, no temporal model).
 
     Returns:
         Path to the grayscale depth video, or None on failure.
     """
+    if backend == "marigold-v2":
+        return _run_marigold_v2(
+            video_path, "depth", max_res,
+            # Match VDA so both backends feed the mask logic below identically.
+            # VDA's head is ReLU-bounded disparity (core/video_depth_anything/
+            # dpt.py:118-123), so its grayscale is near=WHITE. Marigold V2's raw
+            # output is log depth, which is the opposite way round, so ask for
+            # the inversion here.
+            #
+            # NOTE: the "white=far, black=near" comments further down this file
+            # describe the opposite convention and look stale. Leaving them and
+            # the negate logic alone on purpose — changing them would alter
+            # existing VDA shader output, which is out of scope here. What
+            # matters for this backend is that it matches VDA.
+            depth_polarity="near_bright",
+        )
+
     try:
         try:
             from .vda_synthesizer import run_video_depth
@@ -259,16 +320,23 @@ def generate_depth_map(
 def generate_normal_map(
     video_path: str,
     max_res: str | int = "auto",
+    backend: str = "normalcrafter",
 ) -> str | None:
-    """Run NormalCrafter to produce an RGB normal map video.
+    """Produce an RGB normal map video.
 
     Args:
         video_path: Path to source video.
         max_res: Maximum resolution ("auto" for GPU-tuned, or int).
+        backend: 'normalcrafter' (default, temporally consistent) or
+            'marigold-v2' (sharper per frame, ~3-4 s/frame, no temporal model).
 
     Returns:
         Path to the RGB normal map video, or None on failure.
     """
+    if backend == "marigold-v2":
+        res = 0 if max_res == "auto" else int(max_res)
+        return _run_marigold_v2(video_path, "normals", res)
+
     try:
         try:
             from .normalcrafter_synthesizer import run_normalcrafter
