@@ -5,7 +5,7 @@
 **The ultimate video editing suite for ComfyUI — edit with natural language or hands-on manual controls.**
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Extension-green?style=for-the-badge)](https://github.com/comfyanonymous/ComfyUI)
-[![Version](https://img.shields.io/badge/Version-2.21.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
+[![Version](https://img.shields.io/badge/Version-2.22.0-orange?style=for-the-badge)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-red?style=for-the-badge)](LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-3-brightgreen?style=for-the-badge&color=blue)](requirements.txt)
 [![Last Commit](https://img.shields.io/github/last-commit/AEmotionStudio/ComfyUI-FFMPEGA?style=for-the-badge&label=Last%20Update&color=orange)](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA/commits)
@@ -21,19 +21,18 @@
 
 ---
 
-## 🚀 What's New in v2.21.0
+## 🚀 What's New in v2.22.0
 
-*See [CHANGELOG.md](CHANGELOG.md#2210---2026-10-05) for the full detail.*
+*See [CHANGELOG.md](CHANGELOG.md#2220---2026-10-16) for the full detail.*
 
-*   🏔️ **Marigold V2** — depth, surface normals and albedo from a frozen Qwen-Image-Edit-2509 DiT plus a per-task LoRA, VAE and baked conditioning. One deterministic Euler step, no CFG, no seed. Reached through `depth (v2)` / `normals (v2)` / `albedo (v2)` on the existing `marigold` mode, so nothing already in your workflows changes; also selectable as a `depth_backend` on the Shader Overlay node. ~22.5 GB for the first task, ~2 GB per task after (the base is shared), at roughly 3–4 s per frame
-*   🎚️ **Fixes ComfyUI's stock Marigold V2 sampling** — the shipped blueprints patch `ModelSamplingAuraFlow` with `sampling="flow"`, which hands the DiT a half-scale latent and returns `0.5·(z − v)`. This backend defaults to `IMG_TO_IMG_VELOCITY`, which yields `z − v` from an unscaled latent and matches the reference implementation exactly; `flow` stays selectable to reproduce the stock template
-*   🔧 **BlockSwap block discovery** — the swap budget was sized from `model.diffusion_model.blocks` only, so any model naming its stack otherwise fell back to an estimate scaled by Wan's 40-block depth. It now also finds `transformer_blocks`, `double_blocks` and `single_blocks`, which matters for 60-block Qwen-Image
+*   🧠 **LM Studio & OpenAI-compatible servers** — point `ollama_url` at a `/v1` URL (LM Studio `http://localhost:1234/v1`, Unsloth Studio, llama.cpp, vLLM), pick `custom` and enter the model ID. Tool calling, vision and verification work as they do with Ollama; servers that need a key read it from `FFMPEGA_LLM_API_KEY`, so it never lands in workflows. See [docs/LLM-SETUP.md](docs/LLM-SETUP.md#lm-studio-unsloth-studio--other-openai-compatible-servers-local--free)
 
 <details>
 <summary><b>📋 Previous Releases</b></summary>
 
 | Version | Highlights |
 | :--- | :--- |
+| **v2.21.0** | Marigold V2 depth, normals and albedo; fix for ComfyUI's stock Marigold V2 sampling; BlockSwap block discovery for non-Wan models |
 | **v2.20.0** | SCAIL-2 pose-driven character animation, FlashVSR one-step super-resolution, SVI 2.0 Pro infinite-length video, Wan-Animate, MatAnyone2 matting, Meta Sapiens2, SHARP, PhyFPS, multi-source comparison, corrected BT.709 video levels |
 | **v2.19.0** | DreamID-Omni talking-head generation, FaceCam camera control, Fish Speech TTS, Foundation-1 music samples, Frame Picker node, 15 new GLSL shaders (70 total) |
 | **v2.18.0** | Kiwi-Edit AI video editing, SAM3 + Kiwi-Edit, RTX Video Super Resolution, SeedVR AI Upscaling, FacePoke expression presets |
