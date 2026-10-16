@@ -76,13 +76,13 @@ def basic_options() -> dict:
         "ollama_url": ("STRING", {
             "default": "http://localhost:11434",
             "multiline": False,
-            "tooltip": "URL of the Ollama server for local LLM inference. Default: http://localhost:11434.",
+            "tooltip": "URL of the local LLM server. Default: http://localhost:11434 (Ollama). A URL ending in /v1 uses the OpenAI-compatible API instead — LM Studio (http://localhost:1234/v1), Unsloth Studio, llama.cpp, vLLM. Pick 'custom' in llm_model and enter the server's model ID. If the server needs an API key, set the FFMPEGA_LLM_API_KEY environment variable before starting ComfyUI.",
         }),
         "custom_model": ("STRING", {
             "default": "",
             "multiline": False,
-            "placeholder": "Ollama model name (e.g. qwen3:14b)",
-            "tooltip": "When 'custom' is selected in llm_model, type the exact Ollama model name here — useful for models the dropdown doesn't list, such as ones on a remote server set via ollama_url.",
+            "placeholder": "Model name (e.g. qwen3:14b or qwen/qwen3-8b)",
+            "tooltip": "When 'custom' is selected in llm_model, type the exact model name here — an Ollama name (qwen3:14b) or, for an OpenAI-compatible server set via ollama_url, its model ID (e.g. LM Studio's qwen/qwen3-8b, as listed by GET <url>/models).",
         }),
     }
 

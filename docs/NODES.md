@@ -44,8 +44,8 @@ FFMPEGA provides **14 nodes** that work together:
 | `preview_mode` | BOOLEAN | Quick low-res preview (480p, 10s) instead of full render. |
 | `save_output` | BOOLEAN | Save video + workflow PNG to output folder. |
 | `output_path` | STRING | Custom output file/folder path. Empty = ComfyUI default. |
-| `ollama_url` | STRING | Ollama server URL (default: `http://localhost:11434`). |
-| `custom_model` | STRING | Exact Ollama model name when `llm_model` is set to `custom`. |
+| `ollama_url` | STRING | LLM server URL (default: `http://localhost:11434`, Ollama). A URL ending in `/v1` uses the OpenAI-compatible API (LM Studio `http://localhost:1234/v1`, Unsloth Studio, llama.cpp, vLLM); the API key, if needed, comes from `FFMPEGA_LLM_API_KEY`. |
+| `custom_model` | STRING | Exact model name when `llm_model` is set to `custom`: an Ollama name, or the model ID of the OpenAI-compatible server in `ollama_url`. |
 | `crf` | INT | Override CRF (0 = lossless, 23 = default, 51 = worst). -1 uses `quality_preset`. |
 | `encoding_preset` | DROPDOWN | Override x264/x265 speed preset (`ultrafast` → `veryslow`). `auto` follows `quality_preset`. |
 | `use_vision` | BOOLEAN | Embed video frames as images for vision-capable LLMs. Off = numeric color analysis only. |

@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **LM Studio and other OpenAI-compatible servers**: Set `ollama_url` to a URL ending in `/v1` and the Agent uses the OpenAI-compatible API (`/v1/chat/completions`) instead of Ollama's. This covers LM Studio (`http://localhost:1234/v1`), Unsloth Studio, llama.cpp `llama-server`, vLLM and similar servers. Pick `custom` in `llm_model` and enter the server's model ID in `custom_model`. Tool calling, vision and verification work as they do with Ollama. If the server needs a key (Unsloth Studio, or LM Studio with authentication on), set the `FFMPEGA_LLM_API_KEY` environment variable; the key is never stored in workflows. No widgets were added, so saved workflows are unaffected. *(`core/llm/openai_compat.py`)*
+
 ## [2.21.0] - 2026-10-05
 
 ### Added

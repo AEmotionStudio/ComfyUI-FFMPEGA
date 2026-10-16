@@ -125,7 +125,7 @@ class TestLLMProvider:
     def test_all_providers_exist(self):
         """All expected providers should be defined."""
         expected = {
-            "ollama",
+            "ollama", "openai_compat",
             "gemini_cli", "claude_cli", "cursor_agent", "qwen_cli",
             "custom",
         }

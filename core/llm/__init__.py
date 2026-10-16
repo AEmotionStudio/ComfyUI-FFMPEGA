@@ -2,6 +2,7 @@
 
 from .base import LLMConnector, LLMResponse, LLMConfig
 from .ollama import OllamaConnector
+from .openai_compat import OpenAICompatConnector
 from .gemini_cli import GeminiCLIConnector
 
 __all__ = [
@@ -9,5 +10,6 @@ __all__ = [
     "LLMResponse",
     "LLMConfig",
     "OllamaConnector",
+    "OpenAICompatConnector",
     "GeminiCLIConnector",
 ]

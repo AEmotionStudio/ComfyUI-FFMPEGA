@@ -87,7 +87,7 @@ Use the **Effects Builder** to visually compose up to 5 effects with parameters.
 <td width="50%">
 
 ### 🤖 Multi-LLM Support
-Works with **Ollama** (local, free) and **CLI tools** (Gemini CLI, Claude Code, Cursor Agent, Qwen Code). Use any local model — Llama 3.1, Qwen3, Mistral, and more. Or skip the LLM entirely.
+Works with **Ollama** and **OpenAI-compatible local servers** (LM Studio, Unsloth Studio, llama.cpp, vLLM), plus **CLI tools** (Gemini CLI, Claude Code, Cursor Agent, Qwen Code). Use any local model — Llama 3.1, Qwen3, Mistral, and more. Or skip the LLM entirely.
 
 </td>
 <td width="50%">
@@ -129,7 +129,7 @@ Worked examples: prompts, the pipelines they produce, and the resulting output.
 - **Python 3.10+**
 - **FFMPEG** installed and in PATH ([install guide](#ffmpeg-not-found))
 - **Node.js 18+** (required for CLI tools: Gemini CLI, Claude CLI, Qwen CLI — [download](https://nodejs.org/))
-- **Ollama** (optional, for local LLM inference — [download](https://ollama.com/download))
+- **Ollama** or an OpenAI-compatible server such as **LM Studio** (optional, for local LLM inference — [Ollama](https://ollama.com/download), [LM Studio](https://lmstudio.ai))
 
 ### Option 1: ComfyUI Manager (Recommended)
 1. Open **ComfyUI Manager**
@@ -305,7 +305,7 @@ All 200+ skills by category, their parameters, and how to write your own.
 
 ## 🤖 LLM Configuration
 
-Ollama, the four CLI connectors (Gemini CLI, Claude Code, Cursor Agent, Qwen Code), model choice and troubleshooting.
+Ollama, LM Studio and other OpenAI-compatible servers, the four CLI connectors (Gemini CLI, Claude Code, Cursor Agent, Qwen Code), model choice and troubleshooting.
 
 **→ [docs/LLM-SETUP.md](docs/LLM-SETUP.md)**
 
@@ -343,7 +343,7 @@ Make sure Ollama is running:
 ```bash
 ollama serve
 ```
-If using a custom URL, set it in the node's `ollama_url` field.
+If using a custom URL, set it in the node's `ollama_url` field. For LM Studio and other OpenAI-compatible servers, the URL must end in `/v1` (e.g. `http://localhost:1234/v1`).
 
 </details>
 

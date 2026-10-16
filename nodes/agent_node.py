@@ -154,7 +154,7 @@ class FFMPEGAgentNode:
                     "tooltip": "AI model for interpreting your prompt. "
                                "CLI models (gemini-cli, claude-cli, etc.) use locally installed CLI tools — no API key needed. "
                                "Ollama models run locally via the Ollama server. "
-                               "Select 'custom' to type any Ollama model name manually. "
+                               "Select 'custom' to type any model name manually — an Ollama model, or a model on an OpenAI-compatible server such as LM Studio (set ollama_url to its /v1 URL). "
                                "Select 'none' to skip the LLM entirely and use no_llm_mode instead (manual pipeline, SAM3, Whisper, or MMAudio).",
                 }),
                 "no_llm_mode": (["manual", "sam3_masking", "transcribe", "karaoke_subtitles", "generate_audio (MMAudio)", "generate_music (AudioX)", "foundation1", "fish_speech", "audio_inpaint (AudioX)", "audio_separate (SAM-Audio)", "ace_step", "lip_sync", "animate_portrait", "marigold", "normalcrafter", "video_depth", "sapiens2", "flux_klein", "kiwi_edit", "minimax_remover", "dreamid_omni", "svi", "sharp", "wan_animate", "scail2", "ai_upscale", "rembg", "video_matting", "onion_skin", "comparison", "phyfps"], {

@@ -6,6 +6,7 @@ generation, JSON parsing, and retry logic.
 
 import json
 import logging
+import os
 import re
 from typing import Optional
 
@@ -39,14 +40,15 @@ class PipelineGenerator:
     # ------------------------------------------------------------------ #
 
     @staticmethod
-    def create_connector(model: str, ollama_url: str):
+    def create_connector(model: str, server_url: str):
         """Create appropriate LLM connector based on model selection."""
         from ..core.llm.base import LLMConfig, LLMProvider  # type: ignore[import-not-found]
         from ..core.llm.ollama import OllamaConnector  # type: ignore[import-not-found]
         from ..core.llm.gemini_cli import GeminiCLIConnector  # type: ignore[import-not-found]
 
-        # CLI tools are matched by exact name; every other name is an
-        # Ollama model (including ones like gpt-oss:20b).
+        # CLI tools are matched by exact name; every other name is a model
+        # on server_url (including Ollama names like gpt-oss:20b). A URL
+        # ending in /v1 is an OpenAI-compatible server, otherwise Ollama.
 
         # Gemini CLI — uses local binary, no API key needed
         if model == "gemini-cli":
@@ -87,11 +89,24 @@ class PipelineGenerator:
             )
             return QwenCodeCLIConnector(config)
 
+        # LM Studio, Unsloth Studio, llama.cpp, vLLM — key from the env so
+        # it never lands in saved workflows.
+        if server_url.rstrip("/").endswith("/v1"):
+            from ..core.llm.openai_compat import OpenAICompatConnector  # type: ignore[import-not-found]
+            config = LLMConfig(
+                provider=LLMProvider.OPENAI_COMPAT,
+                model=model,
+                base_url=server_url,
+                api_key=os.environ.get("FFMPEGA_LLM_API_KEY") or None,
+                temperature=0.3,
+            )
+            return OpenAICompatConnector(config)
+
         # Default: treat as Ollama model
         config = LLMConfig(
             provider=LLMProvider.OLLAMA,
             model=model,
-            base_url=ollama_url,
+            base_url=server_url,
             temperature=0.3,
         )
         return OllamaConnector(config)

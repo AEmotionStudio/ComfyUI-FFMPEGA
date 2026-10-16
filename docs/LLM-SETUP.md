@@ -47,6 +47,32 @@ ollama pull qwen3:8b
 
 > **Tip:** On the [Ollama library](https://ollama.com/library), look for models with a **tools** tag — this indicates native tool/function-calling support, which produces the best results with FFMPEGA.
 
+### LM Studio, Unsloth Studio & Other OpenAI-Compatible Servers (Local — Free)
+
+Any local server that speaks the OpenAI-compatible `/v1/chat/completions` API works. If the URL in `ollama_url` ends in `/v1`, FFMPEGA talks to it with the OpenAI-compatible API instead of Ollama's.
+
+| Server | URL for `ollama_url` |
+| :--- | :--- |
+| [LM Studio](https://lmstudio.ai) | `http://localhost:1234/v1` |
+| [Unsloth Studio](https://unsloth.ai/docs/basics/api) | The URL shown under **Settings → API**, plus `/v1` (needs an API key, see below) |
+| llama.cpp `llama-server` | `http://localhost:8080/v1` |
+| vLLM | `http://localhost:8000/v1` |
+
+**Use in FFMPEGA:**
+1. Start the server and load a model (in LM Studio: **Developer → Start Server**).
+2. Set `llm_model` to **`custom`**.
+3. Set `ollama_url` to the server's `/v1` URL.
+4. Type the model ID in `custom_model`, exactly as the server lists it at `<url>/models` — for example `qwen/qwen3-8b` in LM Studio.
+
+**API keys:** Unsloth Studio always needs a key, and LM Studio does when authentication is turned on. Set it as an environment variable before starting ComfyUI. It is sent as `Authorization: Bearer <key>` and is never stored in workflows.
+
+```bash
+export FFMPEGA_LLM_API_KEY=sk-unsloth-...      # Linux / macOS
+set FFMPEGA_LLM_API_KEY=sk-unsloth-...         # Windows (cmd)
+```
+
+> **Tips:** As with Ollama, use a model that supports tool calling. Only turn on `use_vision` with a vision model; text-only models reject images, and FFMPEGA shows the server's error.
+
 ### Gemini CLI (Free with any Google Account)
 
 Use the [Gemini CLI](https://github.com/google-gemini/gemini-cli) to run Gemini models without an API key. Works with any Google account.
@@ -189,7 +215,7 @@ When [Frame Extraction](../SKILLS_REFERENCE.md) is used, FFMPEGA saves extracted
 
 ### Custom Model
 
-Select **`custom`** from the model dropdown and type any Ollama model name in the `custom_model` field (e.g. `qwen3:14b`). The dropdown only lists models installed on the local Ollama server, so this is how you reach a model it doesn't show — for example one on a remote server set via `ollama_url`.
+Select **`custom`** from the model dropdown and type the model name in the `custom_model` field (e.g. `qwen3:14b`). The dropdown only lists models installed on the local Ollama server, so this is how you reach a model it doesn't show. That includes models on a remote Ollama server and on [OpenAI-compatible servers](#lm-studio-unsloth-studio--other-openai-compatible-servers-local--free) set via `ollama_url`.
 
 ### 📊 Token Usage Tracking
 
