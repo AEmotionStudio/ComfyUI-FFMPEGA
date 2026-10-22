@@ -1,0 +1,4 @@
+allowBuilds:
+  esbuild: false
+minimumReleaseAge: 1440
+trustPolicy: no-downgrade
